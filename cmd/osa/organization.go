@@ -60,7 +60,7 @@ type orgResources struct {
 	logger  *slog.Logger
 	pool    *sql.DB
 	queries *sqlcgen.Queries
-	ctl     dockerctl.Controller
+	ctl     *dockerctl.Ctl
 }
 
 // newOrgResources loads the config and logger, then optionally opens the
@@ -240,7 +240,7 @@ func newOrganizationStopCommand(parent *ff.FlagSet, configPath *string) *ff.Comm
 // createOrganization validates subdomain and provisions it as a new
 // organization (DB record + headscale container) under domain, writing a
 // confirmation to out.
-func createOrganization(ctx context.Context, out io.Writer, pool *sql.DB, ctl dockerctl.Controller, logger *slog.Logger, domain, subdomain string) error {
+func createOrganization(ctx context.Context, out io.Writer, pool *sql.DB, ctl *dockerctl.Ctl, logger *slog.Logger, domain, subdomain string) error {
 	if err := dockerctl.ValidateSubdomain(subdomain); err != nil {
 		return fmt.Errorf("validate subdomain: %w", err)
 	}
@@ -256,7 +256,7 @@ func createOrganization(ctx context.Context, out io.Writer, pool *sql.DB, ctl do
 
 // deleteOrganization looks up subdomain, removes its container via ctl,
 // then deletes its DB record, writing a confirmation to out.
-func deleteOrganization(ctx context.Context, out io.Writer, queries *sqlcgen.Queries, ctl dockerctl.Controller, subdomain string) error {
+func deleteOrganization(ctx context.Context, out io.Writer, queries *sqlcgen.Queries, ctl *dockerctl.Ctl, subdomain string) error {
 	org, err := queries.GetOrganizationBySubdomain(ctx, subdomain)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("no organization with subdomain %q", subdomain)
@@ -277,7 +277,7 @@ func deleteOrganization(ctx context.Context, out io.Writer, queries *sqlcgen.Que
 
 // listOrganizations prints every organization recorded in queries along
 // with its current container state (as reported by ctl) to out.
-func listOrganizations(ctx context.Context, out io.Writer, queries *sqlcgen.Queries, ctl dockerctl.Controller) error {
+func listOrganizations(ctx context.Context, out io.Writer, queries *sqlcgen.Queries, ctl *dockerctl.Ctl) error {
 	organizations, err := queries.ListOrganizations(ctx)
 	if err != nil {
 		return fmt.Errorf("list organizations: %w", err)
@@ -308,7 +308,7 @@ func listOrganizations(ctx context.Context, out io.Writer, queries *sqlcgen.Quer
 // policy didn't already handle it). It doesn't create or provision
 // anything new; organizations that no longer have containers (e.g. removed
 // out of band) are reported as errors but don't stop the rest from starting.
-func startOrganizations(ctx context.Context, out io.Writer, logger *slog.Logger, queries *sqlcgen.Queries, ctl dockerctl.Controller) error {
+func startOrganizations(ctx context.Context, out io.Writer, logger *slog.Logger, queries *sqlcgen.Queries, ctl *dockerctl.Ctl) error {
 	organizations, err := queries.ListOrganizations(ctx)
 	if err != nil {
 		return fmt.Errorf("list organizations: %w", err)
@@ -338,7 +338,7 @@ func startOrganizations(ctx context.Context, out io.Writer, logger *slog.Logger,
 // maintenance action (e.g. before a host reboot or `docker compose down`)
 // and is not run automatically on ownscale process shutdown, since these
 // containers are meant to keep running across ownscale restarts/deploys.
-func stopOrganizations(ctx context.Context, out io.Writer, ctl dockerctl.Controller, timeout time.Duration) error {
+func stopOrganizations(ctx context.Context, out io.Writer, ctl *dockerctl.Ctl, timeout time.Duration) error {
 	if err := ctl.StopAll(ctx, timeout); err != nil {
 		return fmt.Errorf("stop organizations: %w", err)
 	}

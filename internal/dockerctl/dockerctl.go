@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -40,53 +41,22 @@ func HSContainerName(subdomain string) string { return "hs-" + subdomain }
 func HPContainerName(subdomain string) string { return "hp-" + subdomain }
 func HPVolumeName(subdomain string) string    { return "hp-" + subdomain + "-data" }
 
-var subdomainRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
-
-// reservedSubdomains are single DNS labels that organizations may not use,
-// because they're reserved for fixed, non-organization Caddy site blocks
-// (e.g. "admin" serves the ownscale admin panel at admin.<base_domain>).
-var reservedSubdomains = map[string]bool{
-	"admin": true,
-	"www":   true,
+// API is the subset of the Docker Engine API that Ctl depends on.
+// The intention behind making this interface is to allow tests in other packages
+// to use Ctl implementations, not fakes/mocks. That way tests test more.
+type API interface {
+	client.ContainerAPIClient
+	client.NetworkAPIClient
+	client.VolumeAPIClient
+	io.Closer
 }
 
-// ValidateSubdomain checks that s is a valid single DNS label and not one of
-// the reserved names used by fixed, non-organization site blocks.
-func ValidateSubdomain(s string) (err error) {
-	defer derrors.Wrap(&err, "dockerctl.ValidateSubdomain(%q)", s)
-
-	if !subdomainRe.MatchString(s) {
-		return fmt.Errorf("must be a DNS label (lowercase letters, digits, hyphens)")
-	}
-	if len(s) < 4 {
-		return fmt.Errorf("must be at least 4 characters")
-	}
-	if reservedSubdomains[strings.ToLower(s)] {
-		return fmt.Errorf("%q is a reserved subdomain and cannot be used for an organization", s)
-	}
-	return nil
-}
+var _ API = (*client.Client)(nil)
 
 type Ctl struct {
-	cli     *client.Client
+	cli     API
 	dataDir string
 }
-
-// Controller is the subset of *Ctl's behavior used by callers (the CLI in
-// cmd/osa and internal/orgs). It exists so those callers can depend on an
-// interface instead of the concrete Docker-backed *Ctl, making them
-// testable with a fake controller that doesn't require a real Docker
-// daemon. *Ctl satisfies this interface.
-type Controller interface {
-	CreateOrganization(ctx context.Context, queries *sqlcgen.Queries, orgID, subdomain, baseDomain string) (string, error)
-	RemoveOrganization(ctx context.Context, subdomain string) error
-	StartOrganization(ctx context.Context, subdomain string) error
-	ContainerState(ctx context.Context, subdomain string) (string, error)
-	StopAll(ctx context.Context, timeout time.Duration) error
-	Close() error
-}
-
-var _ Controller = (*Ctl)(nil)
 
 // New creates a controller using the standard Docker environment (DOCKER_HOST
 // etc.). dataDir must be an absolute, host-real directory: it's used as the
@@ -98,13 +68,22 @@ var _ Controller = (*Ctl)(nil)
 func New(dataDir string) (_ *Ctl, err error) {
 	defer derrors.Wrap(&err, "dockerctl.New(%q)", dataDir)
 
-	if !filepath.IsAbs(dataDir) {
-		return nil, fmt.Errorf("dataDir must be an absolute path, got %q", dataDir)
-	}
-
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, err
+	}
+	return NewWithClient(cli, dataDir)
+}
+
+// NewWithClient creates a controller backed by an arbitrary API
+// implementation. It's exposed primarily so tests can inject a fake (see
+// internal/dockerctl/dockerfake) without a real Docker daemon; production
+// code should use New.
+func NewWithClient(cli API, dataDir string) (_ *Ctl, err error) {
+	defer derrors.Wrap(&err, "dockerctl.NewWithClient(dataDir=%q)", dataDir)
+
+	if !filepath.IsAbs(dataDir) {
+		return nil, fmt.Errorf("dataDir must be an absolute path, got %q", dataDir)
 	}
 	return &Ctl{cli: cli, dataDir: dataDir}, nil
 }
@@ -509,4 +488,31 @@ func (c *Ctl) StopAll(ctx context.Context, timeout time.Duration) (err error) {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+var subdomainRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+
+// reservedSubdomains are single DNS labels that organizations may not use,
+// because they're reserved for fixed, non-organization Caddy site blocks
+// (e.g. "admin" serves the ownscale admin panel at admin.<base_domain>).
+var reservedSubdomains = map[string]bool{
+	"admin": true,
+	"www":   true,
+}
+
+// ValidateSubdomain checks that s is a valid single DNS label and not one of
+// the reserved names used by fixed, non-organization site blocks.
+func ValidateSubdomain(s string) (err error) {
+	defer derrors.Wrap(&err, "dockerctl.ValidateSubdomain(%q)", s)
+
+	if !subdomainRe.MatchString(s) {
+		return fmt.Errorf("must be a DNS label (lowercase letters, digits, hyphens)")
+	}
+	if len(s) < 4 {
+		return fmt.Errorf("must be at least 4 characters")
+	}
+	if reservedSubdomains[strings.ToLower(s)] {
+		return fmt.Errorf("%q is a reserved subdomain and cannot be used for an organization", s)
+	}
+	return nil
 }

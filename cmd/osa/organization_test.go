@@ -12,11 +12,16 @@ import (
 	"testing"
 	"time"
 
+	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/network"
 	"github.com/google/uuid"
+	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pressly/goose/v3"
 
 	dbpkg "github.com/ownscalenet/ownscale/internal/db"
 	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/internal/dockerctl"
+	"github.com/ownscalenet/ownscale/internal/dockerctl/dockerfake"
 )
 
 // newTestDB opens a temp-file SQLite database and applies the real embedded
@@ -69,70 +74,30 @@ func insertOrg(t *testing.T, queries *sqlcgen.Queries, subdomain string) sqlcgen
 	return org
 }
 
-// fakeCtl is a hand-written dockerctl.Controller fake: no Docker daemon is
-// required to exercise the organization business logic, only the
-// interactions it has with the Controller interface.
-type fakeCtl struct {
-	createFn func(ctx context.Context, queries *sqlcgen.Queries, orgID, subdomain, baseDomain string) (string, error)
-	removeFn func(ctx context.Context, subdomain string) error
-	startFn  func(ctx context.Context, subdomain string) error
-	stateFn  func(ctx context.Context, subdomain string) (string, error)
-	stopFn   func(ctx context.Context, timeout time.Duration) error
-
-	removed     []string
-	started     []string
-	stopTimeout time.Duration
-	stopCalled  bool
-}
-
-func (f *fakeCtl) CreateOrganization(ctx context.Context, queries *sqlcgen.Queries, orgID, subdomain, baseDomain string) (string, error) {
-	if f.createFn != nil {
-		return f.createFn(ctx, queries, orgID, subdomain, baseDomain)
+// newTestCtl builds a *dockerctl.Ctl backed by api (a
+// *dockerfake.API, whose zero value already fakes every Docker call as a
+// success), so the organization business logic can be exercised against
+// dockerctl's real config/tar-building and container-naming logic without a
+// Docker daemon. dataDir is a fresh temp directory since CreateOrganization
+// creates real host directories under it.
+func newTestCtl(t *testing.T, api *dockerfake.API) *dockerctl.Ctl {
+	t.Helper()
+	ctl, err := dockerctl.NewWithClient(api, t.TempDir())
+	if err != nil {
+		t.Fatalf("dockerctl.NewWithClient: %v", err)
 	}
-	return "container-" + subdomain, nil
+	return ctl
 }
-
-func (f *fakeCtl) RemoveOrganization(ctx context.Context, subdomain string) error {
-	f.removed = append(f.removed, subdomain)
-	if f.removeFn != nil {
-		return f.removeFn(ctx, subdomain)
-	}
-	return nil
-}
-
-func (f *fakeCtl) StartOrganization(ctx context.Context, subdomain string) error {
-	f.started = append(f.started, subdomain)
-	if f.startFn != nil {
-		return f.startFn(ctx, subdomain)
-	}
-	return nil
-}
-
-func (f *fakeCtl) ContainerState(ctx context.Context, subdomain string) (string, error) {
-	if f.stateFn != nil {
-		return f.stateFn(ctx, subdomain)
-	}
-	return "running", nil
-}
-
-func (f *fakeCtl) StopAll(ctx context.Context, timeout time.Duration) error {
-	f.stopCalled = true
-	f.stopTimeout = timeout
-	if f.stopFn != nil {
-		return f.stopFn(ctx, timeout)
-	}
-	return nil
-}
-
-func (f *fakeCtl) Close() error { return nil }
 
 func TestCreateOrganization(t *testing.T) {
 	t.Run("invalid subdomain", func(t *testing.T) {
 		pool, _ := newTestDB(t)
-		ctl := &fakeCtl{createFn: func(context.Context, *sqlcgen.Queries, string, string, string) (string, error) {
-			t.Fatal("docker should not be invoked for an invalid subdomain")
-			return "", nil
-		}}
+		ctl := newTestCtl(t, &dockerfake.API{
+			ContainerCreateFn: func(context.Context, *container.Config, *container.HostConfig, *network.NetworkingConfig, *ocispec.Platform, string) (container.CreateResponse, error) {
+				t.Fatal("docker should not be invoked for an invalid subdomain")
+				return container.CreateResponse{}, nil
+			},
+		})
 		var out strings.Builder
 		err := createOrganization(context.Background(), &out, pool, ctl, discardLogger(), "example.com", "ab")
 		if err == nil {
@@ -144,7 +109,7 @@ func TestCreateOrganization(t *testing.T) {
 		pool, queries := newTestDB(t)
 		insertOrg(t, queries, "acme")
 
-		ctl := &fakeCtl{}
+		ctl := newTestCtl(t, &dockerfake.API{})
 		var out strings.Builder
 		err := createOrganization(context.Background(), &out, pool, ctl, discardLogger(), "example.com", "acme")
 		if err == nil {
@@ -156,9 +121,11 @@ func TestCreateOrganization(t *testing.T) {
 		pool, queries := newTestDB(t)
 
 		wantErr := errors.New("docker exploded")
-		ctl := &fakeCtl{createFn: func(context.Context, *sqlcgen.Queries, string, string, string) (string, error) {
-			return "", wantErr
-		}}
+		ctl := newTestCtl(t, &dockerfake.API{
+			ContainerCreateFn: func(context.Context, *container.Config, *container.HostConfig, *network.NetworkingConfig, *ocispec.Platform, string) (container.CreateResponse, error) {
+				return container.CreateResponse{}, wantErr
+			},
+		})
 		var out strings.Builder
 		err := createOrganization(context.Background(), &out, pool, ctl, discardLogger(), "example.com", "acme")
 		if err == nil || !strings.Contains(err.Error(), "docker exploded") {
@@ -173,7 +140,7 @@ func TestCreateOrganization(t *testing.T) {
 	t.Run("success", func(t *testing.T) {
 		pool, queries := newTestDB(t)
 
-		ctl := &fakeCtl{}
+		ctl := newTestCtl(t, &dockerfake.API{})
 		var out strings.Builder
 		if err := createOrganization(context.Background(), &out, pool, ctl, discardLogger(), "example.com", "acme"); err != nil {
 			t.Fatalf("createOrganization: %v", err)
@@ -186,8 +153,9 @@ func TestCreateOrganization(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetOrganizationBySubdomain: %v", err)
 		}
-		if org.ContainerID != "container-acme" {
-			t.Errorf("ContainerID = %q, want %q", org.ContainerID, "container-acme")
+		wantContainerID := "fake-" + dockerctl.HSContainerName("acme")
+		if org.ContainerID != wantContainerID {
+			t.Errorf("ContainerID = %q, want %q", org.ContainerID, wantContainerID)
 		}
 	})
 }
@@ -196,7 +164,7 @@ func TestDeleteOrganization(t *testing.T) {
 	t.Run("not found", func(t *testing.T) {
 		_, queries := newTestDB(t)
 		var out strings.Builder
-		err := deleteOrganization(context.Background(), &out, queries, &fakeCtl{}, "missing")
+		err := deleteOrganization(context.Background(), &out, queries, newTestCtl(t, &dockerfake.API{}), "missing")
 		if err == nil || !strings.Contains(err.Error(), "no organization with subdomain") {
 			t.Fatalf("got err %v, want a not-found error", err)
 		}
@@ -207,7 +175,9 @@ func TestDeleteOrganization(t *testing.T) {
 		insertOrg(t, queries, "acme")
 
 		wantErr := errors.New("cannot remove container")
-		ctl := &fakeCtl{removeFn: func(context.Context, string) error { return wantErr }}
+		ctl := newTestCtl(t, &dockerfake.API{
+			ContainerRemoveFn: func(context.Context, string, container.RemoveOptions) error { return wantErr },
+		})
 		var out strings.Builder
 		err := deleteOrganization(context.Background(), &out, queries, ctl, "acme")
 		if err == nil || !strings.Contains(err.Error(), "cannot remove container") {
@@ -222,7 +192,13 @@ func TestDeleteOrganization(t *testing.T) {
 		_, queries := newTestDB(t)
 		insertOrg(t, queries, "acme")
 
-		ctl := &fakeCtl{}
+		var removed []string
+		ctl := newTestCtl(t, &dockerfake.API{
+			ContainerRemoveFn: func(_ context.Context, containerID string, _ container.RemoveOptions) error {
+				removed = append(removed, containerID)
+				return nil
+			},
+		})
 		var out strings.Builder
 		if err := deleteOrganization(context.Background(), &out, queries, ctl, "acme"); err != nil {
 			t.Fatalf("deleteOrganization: %v", err)
@@ -230,8 +206,9 @@ func TestDeleteOrganization(t *testing.T) {
 		if !strings.Contains(out.String(), "deleted organization acme") {
 			t.Errorf("output = %q, want a deletion confirmation", out.String())
 		}
-		if len(ctl.removed) != 1 || ctl.removed[0] != "acme" {
-			t.Errorf("removed = %v, want [acme]", ctl.removed)
+		wantRemoved := []string{dockerctl.HSContainerName("acme"), dockerctl.HPContainerName("acme")}
+		if len(removed) != len(wantRemoved) || removed[0] != wantRemoved[0] || removed[1] != wantRemoved[1] {
+			t.Errorf("removed containers = %v, want %v", removed, wantRemoved)
 		}
 		if _, err := queries.GetOrganizationBySubdomain(context.Background(), "acme"); !errors.Is(err, sql.ErrNoRows) {
 			t.Fatalf("expected organization row to be gone, got err %v", err)
@@ -243,7 +220,7 @@ func TestListOrganizations(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
 		_, queries := newTestDB(t)
 		var out strings.Builder
-		if err := listOrganizations(context.Background(), &out, queries, &fakeCtl{}); err != nil {
+		if err := listOrganizations(context.Background(), &out, queries, newTestCtl(t, &dockerfake.API{})); err != nil {
 			t.Fatalf("listOrganizations: %v", err)
 		}
 		if strings.TrimSpace(out.String()) != "no organizations" {
@@ -256,12 +233,16 @@ func TestListOrganizations(t *testing.T) {
 		insertOrg(t, queries, "acme")
 		insertOrg(t, queries, "beta")
 
-		ctl := &fakeCtl{stateFn: func(_ context.Context, subdomain string) (string, error) {
-			if subdomain == "beta" {
-				return "", errors.New("no such container")
-			}
-			return "running", nil
-		}}
+		ctl := newTestCtl(t, &dockerfake.API{
+			ContainerInspectFn: func(_ context.Context, containerID string) (container.InspectResponse, error) {
+				if containerID == dockerctl.HSContainerName("beta") {
+					return container.InspectResponse{}, errors.New("no such container")
+				}
+				return container.InspectResponse{
+					ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running"}},
+				}, nil
+			},
+		})
 		var out strings.Builder
 		if err := listOrganizations(context.Background(), &out, queries, ctl); err != nil {
 			t.Fatalf("listOrganizations: %v", err)
@@ -269,7 +250,7 @@ func TestListOrganizations(t *testing.T) {
 		if !strings.Contains(out.String(), "acme") || !strings.Contains(out.String(), "running") {
 			t.Errorf("output missing acme/running row: %q", out.String())
 		}
-		if !strings.Contains(out.String(), "error: no such container") {
+		if !strings.Contains(out.String(), "error:") || !strings.Contains(out.String(), "no such container") {
 			t.Errorf("output missing beta error row: %q", out.String())
 		}
 	})
@@ -279,7 +260,7 @@ func TestStartOrganizations(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
 		_, queries := newTestDB(t)
 		var out strings.Builder
-		if err := startOrganizations(context.Background(), &out, discardLogger(), queries, &fakeCtl{}); err != nil {
+		if err := startOrganizations(context.Background(), &out, discardLogger(), queries, newTestCtl(t, &dockerfake.API{})); err != nil {
 			t.Fatalf("startOrganizations: %v", err)
 		}
 		if strings.TrimSpace(out.String()) != "no organizations" {
@@ -292,12 +273,14 @@ func TestStartOrganizations(t *testing.T) {
 		insertOrg(t, queries, "acme")
 		insertOrg(t, queries, "beta")
 
-		ctl := &fakeCtl{startFn: func(_ context.Context, subdomain string) error {
-			if subdomain == "beta" {
-				return errors.New("container missing")
-			}
-			return nil
-		}}
+		ctl := newTestCtl(t, &dockerfake.API{
+			ContainerStartFn: func(_ context.Context, containerID string, _ container.StartOptions) error {
+				if containerID == dockerctl.HSContainerName("beta") {
+					return errors.New("container missing")
+				}
+				return nil
+			},
+		})
 		var out strings.Builder
 		err := startOrganizations(context.Background(), &out, discardLogger(), queries, ctl)
 		if err == nil || !strings.Contains(err.Error(), "failed to start 1/2 organizations") {
@@ -311,13 +294,24 @@ func TestStartOrganizations(t *testing.T) {
 
 func TestStopOrganizations(t *testing.T) {
 	t.Run("passes the timeout through", func(t *testing.T) {
-		ctl := &fakeCtl{}
+		var stopCalled bool
+		var gotTimeout *int
+		ctl := newTestCtl(t, &dockerfake.API{
+			ContainerListFn: func(context.Context, container.ListOptions) ([]container.Summary, error) {
+				return []container.Summary{{ID: "abc", Names: []string{"/" + dockerctl.HSContainerName("acme")}}}, nil
+			},
+			ContainerStopFn: func(_ context.Context, _ string, options container.StopOptions) error {
+				stopCalled = true
+				gotTimeout = options.Timeout
+				return nil
+			},
+		})
 		var out strings.Builder
 		if err := stopOrganizations(context.Background(), &out, ctl, 5*time.Second); err != nil {
 			t.Fatalf("stopOrganizations: %v", err)
 		}
-		if !ctl.stopCalled || ctl.stopTimeout != 5*time.Second {
-			t.Errorf("stopCalled=%v stopTimeout=%v, want called with 5s", ctl.stopCalled, ctl.stopTimeout)
+		if !stopCalled || gotTimeout == nil || *gotTimeout != 5 {
+			t.Errorf("stopCalled=%v gotTimeout=%v, want called with 5s", stopCalled, gotTimeout)
 		}
 		if !strings.Contains(out.String(), "stopped all organization containers") {
 			t.Errorf("output = %q, want a stop confirmation", out.String())
@@ -326,7 +320,12 @@ func TestStopOrganizations(t *testing.T) {
 
 	t.Run("wraps a stop error", func(t *testing.T) {
 		wantErr := errors.New("stop exploded")
-		ctl := &fakeCtl{stopFn: func(context.Context, time.Duration) error { return wantErr }}
+		ctl := newTestCtl(t, &dockerfake.API{
+			ContainerListFn: func(context.Context, container.ListOptions) ([]container.Summary, error) {
+				return []container.Summary{{ID: "abc", Names: []string{"/" + dockerctl.HSContainerName("acme")}}}, nil
+			},
+			ContainerStopFn: func(context.Context, string, container.StopOptions) error { return wantErr },
+		})
 		var out strings.Builder
 		err := stopOrganizations(context.Background(), &out, ctl, time.Second)
 		if err == nil || !strings.Contains(err.Error(), "stop exploded") {

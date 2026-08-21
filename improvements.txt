@@ -1,0 +1,26 @@
+
+Codebase is already in good shape (derrors,  Controller  interface,  NewMux  factored out, table-driven CLI tests). Highest-value issues:
+
+Structural
+
+1. Dead params / layering violation —  dockerctl.CreateOrganization(ctx, queries *sqlcgen.Queries, orgID, ...) :  queries  and  orgID  are never used, in  CreateOrganization  or  createHeadplane . Docker layer shouldn't import  sqlcgen  at all. Dropping them simplifies the  Controller  interface and every fake.
+2. Global auth state —  auth.Setup()  mutates  gothic.Store  and  goth.UseProviders  package globals. This is the single biggest testability blocker: no handler touching sessions can be tested without global setup, and tests can't run in parallel. Make it an  auth.Authenticator  struct (store + provider) injected into  Handlers .
+3.  Handlers  leaks internals —  h.Queries()  /  h.Logger()  exist only so  server.NewMux  can wire middleware. Pass logger and an auth middleware into  NewMux  explicitly instead. Also  handlers.New  returns an  error  it never produces.
+4.  Handlers  holds both  pool  and  queries  and calls  orgs.Create(ctx, h.pool, h.ctl, h.baseDomain, ..., h.logger) . Prefer an injected  orgs.Service  (struct with pool/ctl/baseDomain/logger, method  Create(ctx, subdomain) ) — collapses the 6-arg function and lets handlers be tested with a fake service.
+5.  main()  ordering +  os.Exit  skips defers —  cfg.Validate()  runs after  db.Connect  (which creates dirs/files). And  defer pool.Close()  never runs because later failures call  os.Exit(1) . Standard fix:  func main() { if err := run(); err != nil {...} } , validate immediately after  Load .
+6. Duplicated bootstrap —  cmd/ownscale  and  cmd/osa 's  newOrgResources  both build config→logger→db→docker. Extract to a shared  internal/app  builder; one place to fake.
+7.  dockerctl.go  is 512 lines mixing validation, YAML templates, tar building, and container lifecycle — split into  subdomain.go ,  config.go ,  tar.go ,  ctl.go .
+
+Testability
+
+8. Concrete  *sqlcgen.Queries  everywhere —  auth.RequireAuthAPI(queries *sqlcgen.Queries, ...)  only needs  GetUserByID . Enable  emit_interface: true  in  sqlc.yaml , or declare narrow local interfaces ( type userGetter interface{ GetUserByID(...) } ). Then middleware/handler tests need no DB.
+9. Wrap the Docker SDK —  Ctl.cli  is  *client.Client . Define an unexported  dockerAPI  interface (the ~10 methods used);  CreateOrganization 's orchestration then becomes unit-testable.
+10. Zero tests outside  derrors  and  cmd/osa . Cheap, high-value gaps:  ValidateSubdomain ,  configTar ,  buildHSConfig / buildHPConfig ,  config.Load  precedence (defaults→YAML→env),  logging.New ,  webui  SPA fallback, and  httptest -driven  server.NewMux  route tests (auth 401s,  TLSAsk  allow/deny matrix).
+11.  webui.Handler()  panics and hardcodes the embedded FS.  HandlerFS(fsys fs.FS)  + a thin  Handler()  wrapper makes SPA-fallback logic testable without a real build.
+
+Smaller
+
+•  provisionOrganization  retries 3× on any error — should only retry on subdomain collision.
+•  logging.New : empty  Level  errors out ( Format  handles  ""  gracefully) — treat  ""  as info.
+•  Config.Database()  uses a value receiver; all other methods use pointers.
+•  db.Connect  has no  context  ( PingContext ).

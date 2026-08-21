@@ -49,3 +49,11 @@ func PkgFunc(ctx context.Context, subdomain, baseDomain string) (_ string, err e
   `go test ./...` (or `make build` / `make test`) all pass cleanly on
   `main` — run these after making backend changes.
 - make sure variables and functions are not exported when not needed
+
+## Testing
+
+Try to create as few as possible fakes/mocks when testing the code. For example,
+code that relies on dockerctl.Ctl are running with a real implementation of Ctl,
+not a fake. The fake is done at the outside edge with docker's client.Client.
+For tests that rely on a database, use a temporary sqlite which had the migrations
+applied.

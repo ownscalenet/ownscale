@@ -9,6 +9,7 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/gorilla/sessions v1.4.0
 	github.com/markbates/goth v1.82.0
+	github.com/opencontainers/image-spec v1.1.1
 	github.com/peterbourgon/ff/v4 v4.0.0-beta.1
 	github.com/pressly/goose/v3 v3.27.3
 	gopkg.in/yaml.v3 v3.0.1
@@ -61,7 +62,6 @@ require (
 	github.com/morikuni/aec v1.0.0 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
-	github.com/opencontainers/image-spec v1.1.1 // indirect
 	github.com/paulmach/orb v0.13.0 // indirect
 	github.com/pierrec/lz4/v4 v4.1.27 // indirect
 	github.com/pkg/errors v0.9.1 // indirect

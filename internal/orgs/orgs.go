@@ -23,7 +23,7 @@ import (
 // the headscale container for subdomain via ctl, and records the container
 // id, all within a single transaction against pool. Queries run against the
 // transaction are logged at debug level via logger.
-func Create(ctx context.Context, pool *sql.DB, ctl dockerctl.Controller, baseDomain, subdomain string, logger *slog.Logger) (_ sqlcgen.Organization, err error) {
+func Create(ctx context.Context, pool *sql.DB, ctl *dockerctl.Ctl, baseDomain, subdomain string, logger *slog.Logger) (_ sqlcgen.Organization, err error) {
 	defer derrors.Wrap(&err, "orgs.Create(ctx, pool, ctl, %q, %q, logger)", baseDomain, subdomain)
 
 	if err := dockerctl.ValidateSubdomain(subdomain); err != nil {
