@@ -1,0 +1,7 @@
+organizations/
+/config.yaml
+data/
+frontend/node_modules/
+bin/
+.env
+/coverage.out

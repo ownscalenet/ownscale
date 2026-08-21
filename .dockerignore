@@ -1,0 +1,8 @@
+.git
+bin
+data
+organizations
+frontend/node_modules
+frontend/dist
+config.yaml
+*.db

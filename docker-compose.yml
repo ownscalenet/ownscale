@@ -1,0 +1,62 @@
+services:
+  ownscale:
+    image: ownscale:latest
+    build: .
+    environment:
+      OWNSCALE_BASE_DOMAIN: ${BASE_DOMAIN:-localhost}
+      OWNSCALE_DATA_DIR: ${OWNSCALE_DATA_DIR:?set OWNSCALE_DATA_DIR to an absolute host path in .env}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${OWNSCALE_DATA_DIR}:${OWNSCALE_DATA_DIR}
+      - ./config.yaml:/etc/ownscale/config.yaml:ro
+    networks:
+      - os-net
+    restart: unless-stopped
+
+  # Replicates every SQLite database under ${PWD}/data to a remote
+  # destination (see etc/litestream/litestream.yaml and .env.example).
+  litestream:
+    image: litestream/litestream:0.5.16
+    command: ["replicate", "-config", "/etc/litestream/config.yaml"]
+    environment:
+      OWNSCALE_DATA_DIR: ${PWD}/data
+      LITESTREAM_REPLICA_URL: ${LITESTREAM_REPLICA_URL:-}
+      LITESTREAM_REGION: ${LITESTREAM_REGION:-}
+      LITESTREAM_ENDPOINT: ${LITESTREAM_ENDPOINT:-}
+      LITESTREAM_SYNC_INTERVAL: ${LITESTREAM_SYNC_INTERVAL:-10s}
+      LITESTREAM_ACCESS_KEY_ID: ${LITESTREAM_ACCESS_KEY_ID:-}
+      LITESTREAM_SECRET_ACCESS_KEY: ${LITESTREAM_SECRET_ACCESS_KEY:-}
+    volumes:
+      # litestream LTX-based writes internal bookkeeping tables.
+      # the volume must be writable
+      - ${PWD}/data:${PWD}/data
+      - ./etc/litestream/config.yaml:/etc/litestream/config.yaml:ro
+    networks:
+      - os-net
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2
+    environment:
+      BASE_DOMAIN: ${BASE_DOMAIN:-localhost}
+      CADDY_LOG_LEVEL: ${CADDY_LOG_LEVEL:-debug}
+    ports:
+      - "0.0.0.0:80:80"
+      - "0.0.0.0:443:443"
+      - "0.0.0.0:443:443/udp"
+    volumes:
+      - ./etc/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./etc/caddy/site:/srv/site:ro
+      - ./etc/caddy/admin:/srv/admin:ro
+      - caddy-data:/data
+      - caddy-config:/config
+    networks:
+      - os-net
+
+volumes:
+  caddy-data:
+  caddy-config:
+
+networks:
+  os-net:
+    name: os-net

@@ -1,0 +1,53 @@
+{
+	# Ask the admin panel before issuing a certificate for a subdomain.
+	on_demand_tls {
+		ask http://ownscale:8080/api/tls-ask
+	}
+
+	# Set CADDY_LOG_LEVEL=debug in docker-compose.yaml to get verbose
+	# debug-level logs from Caddy.
+	log {
+		level {$CADDY_LOG_LEVEL:INFO}
+	}
+}
+
+{$BASE_DOMAIN} {
+	root * /srv/site
+	file_server
+}
+
+admin.{$BASE_DOMAIN} {
+	# Because "*.{$BASE_DOMAIN}" appears as a subject below, Caddy considers
+	# this name covered by the wildcard site and will not proactively manage a
+	# certificate for it, so it must use on-demand issuance as well.
+	tls {
+		on_demand
+	}
+	root * /srv/admin
+	file_server
+}
+
+
+# Route https://<sub>.{$BASE_DOMAIN} to the hs-<sub> container, and
+# https://<sub>.{$BASE_DOMAIN}/admin to the hp-<sub> (headplane) container.
+*.{$BASE_DOMAIN} {
+	tls {
+		on_demand
+	}
+
+    map {host} {backend} {
+           ~^([a-z0-9-]+)\. "hs-${1}:8080"
+    }
+
+    map {host} {hpbackend} {
+           ~^([a-z0-9-]+)\. "hp-${1}:3000"
+    }
+
+    handle /admin* {
+           reverse_proxy {hpbackend}
+    }
+
+    handle {
+           reverse_proxy {backend}
+    }
+}

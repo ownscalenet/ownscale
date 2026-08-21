@@ -1,0 +1,44 @@
+# Example configuration
+#
+# By default the app looks for this file at /etc/ownscale/config.yaml. Use
+# --config <path> to point at a different location.
+#
+# Every value here can also be set (or overridden) via an OWNSCALE_*
+# environment variable, e.g. OWNSCALE_BASE_DOMAIN, OWNSCALE_DATABASE_URL,
+# OWNSCALE_AUTH_GOOGLE_CLIENT_ID. Environment variables take precedence over
+# this file, which takes precedence over built-in defaults.
+
+# Address the HTTP server listens on.
+addr: ":8080"
+
+# Wildcard domain organizations are provisioned under (e.g. "example.com" for
+# "<sub>.example.com"). Required to run the server (for POST /api/organizations)
+# and to use the "osa organization delete/list" CLI subcommands.
+base_domain: "example.com"
+
+# Directory under which all SQLite-backed state lives: this admin panel's
+# own database (see "database" below, unless overridden) plus a
+# "headscale/<subdomain>" subdirectory bind-mounted into each
+# organization's headscale container. Defaults to "data" (relative to the
+# working directory) for native/local runs. When running via
+# docker-compose, this must be set (via OWNSCALE_DATA_DIR) to an
+# absolute host path -- see docker-compose.yml and .env.example.
+data_dir: "data"
+
+auth:
+  # Random string used to sign the login session cookie. Required to run the server.
+  session_secret: "changeme"
+
+  google:
+    # Google OAuth 2.0 client ID. Required to run the server.
+    client_id: ""
+    # Google OAuth 2.0 client secret. Required to run the server.
+    client_secret: ""
+    # Must match the redirect URI configured on the Google OAuth client.
+    callback_url: "http://localhost:8080/auth/google/callback"
+
+log:
+  # Minimum level to log: "debug", "info", "warn", or "error". Defaults to "info".
+  level: "info"
+  # Log output encoding: "json" or "text". Defaults to "json".
+  format: "json"

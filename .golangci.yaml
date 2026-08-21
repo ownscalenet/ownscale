@@ -1,0 +1,11 @@
+version: "2"
+linters:
+  default: standard
+  settings:
+  # Ignore deferred Close errors.
+  # https://github.com/kisielk/errcheck/issues/101#issuecomment-2763272605
+  exclusions:
+    rules:
+      - linters:
+          - errcheck
+        source: ^\s*defer\s+
