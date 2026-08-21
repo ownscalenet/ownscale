@@ -25,7 +25,6 @@ import (
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
 
-	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/internal/derrors"
 )
 
@@ -277,8 +276,8 @@ func configTar(path, content string) (*bytes.Buffer, error) {
 
 // CreateOrganization provisions and starts a headscale container serving
 // https://<subdomain>.<baseDomain>. It returns the container ID.
-func (c *Ctl) CreateOrganization(ctx context.Context, queries *sqlcgen.Queries, orgID, subdomain, baseDomain string) (_ string, err error) {
-	defer derrors.Wrap(&err, "c.CreateOrganization(%q, %q, %q)", orgID, subdomain, baseDomain)
+func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain string) (_ string, err error) {
+	defer derrors.Wrap(&err, "c.CreateOrganization(%q, %q)", subdomain, baseDomain)
 
 	if err := ValidateSubdomain(subdomain); err != nil {
 		return "", err
@@ -338,7 +337,7 @@ func (c *Ctl) CreateOrganization(ctx context.Context, queries *sqlcgen.Queries, 
 		return "", fmt.Errorf("start container: %w", err)
 	}
 
-	if err := c.createHeadplane(ctx, queries, orgID, subdomain, domain); err != nil {
+	if err := c.createHeadplane(ctx, subdomain, domain); err != nil {
 		return "", fmt.Errorf("create headplane: %w", err)
 	}
 
@@ -348,8 +347,8 @@ func (c *Ctl) CreateOrganization(ctx context.Context, queries *sqlcgen.Queries, 
 // createHeadplane provisions and starts the headplane container for an
 // organization, configured to talk to that organization's headscale
 // container over the shared Docker network.
-func (c *Ctl) createHeadplane(ctx context.Context, queries *sqlcgen.Queries, orgID, subdomain, domain string) (err error) {
-	defer derrors.Wrap(&err, "c.createHeadplane(%q, %q, %q)", orgID, subdomain, domain)
+func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain string) (err error) {
+	defer derrors.Wrap(&err, "c.createHeadplane(%q, %q)", subdomain, domain)
 
 	cookieSecret, err := randomCookieSecret()
 	if err != nil {

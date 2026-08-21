@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"flag"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
@@ -14,6 +15,7 @@ import (
 	"github.com/ownscalenet/ownscale/internal/auth"
 	"github.com/ownscalenet/ownscale/internal/config"
 	"github.com/ownscalenet/ownscale/internal/db"
+	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/internal/dockerctl"
 	"github.com/ownscalenet/ownscale/internal/handlers"
 	"github.com/ownscalenet/ownscale/internal/logging"
@@ -22,58 +24,60 @@ import (
 )
 
 // shutdownTimeout bounds how long we wait for in-flight requests to finish
-// forcing the process to exit.
+// before forcing the process to exit.
 const shutdownTimeout = 10 * time.Second
 
 func main() {
-	// bootstrap is a minimal default logger used only until the real one
-	// (built from the loaded config's Log settings) is available.
-	bootstrap := slog.New(slog.NewJSONHandler(os.Stderr, nil))
+	if err := run(); err != nil {
+		// No config/logger may be available yet (e.g. run failed while
+		// loading them), so fall back to a minimal default logger.
+		slog.New(slog.NewJSONHandler(os.Stderr, nil)).Error("fatal", "error", err)
+		os.Exit(1)
+	}
+}
 
+// run wires up and serves the admin panel, returning (rather than calling
+// os.Exit) on failure so every deferred cleanup (closing the DB pool, the
+// Docker client, etc.) always runs.
+func run() error {
 	var configPath string
 	flag.StringVar(&configPath, "config", "", "path to config file (default: "+config.DefaultPath+")")
 	flag.Parse()
 
 	cfg, err := config.Load(configPath)
 	if err != nil {
-		bootstrap.Error("load config", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("load config: %w", err)
+	}
+	if err := cfg.Validate(); err != nil {
+		return fmt.Errorf("validate config: %w", err)
 	}
 
 	logger, err := logging.New(cfg.Log)
 	if err != nil {
-		bootstrap.Error("build logger", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("build logger: %w", err)
 	}
 
 	pool, err := db.Connect(cfg.Database())
 	if err != nil {
-		logger.Error("db connect", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("db connect: %w", err)
 	}
 	defer pool.Close()
 
-	if err := cfg.Validate(); err != nil {
-		logger.Error("validate config", "error", err)
-		os.Exit(1)
-	}
-
 	ctl, err := dockerctl.New(cfg.DataDir)
 	if err != nil {
-		logger.Error("docker init", "error", err)
-		os.Exit(1)
+		return fmt.Errorf("docker init: %w", err)
 	}
 	defer ctl.Close()
 
-	h, err := handlers.New(pool, ctl, cfg.BaseDomain, logger)
-	if err != nil {
-		logger.Error("handlers init", "error", err)
-		os.Exit(1)
-	}
+	queries := sqlcgen.New(db.NewLoggingDBTX(pool, logger))
+	h := handlers.New(queries, pool, ctl, cfg.BaseDomain, logger)
 
 	auth.Setup(cfg.Auth.SessionSecret, cfg.Auth.Google.ClientID, cfg.Auth.Google.ClientSecret, cfg.Auth.Google.CallbackURL)
 
-	mux := server.NewMux(h, webui.Handler())
+	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
+		return auth.RequireAuthAPI(queries, next)
+	}
+	mux := server.NewMux(h, requireAuthAPI, logger, webui.Handler())
 
 	srv := &http.Server{Addr: cfg.Addr, Handler: mux}
 
@@ -89,8 +93,7 @@ func main() {
 	select {
 	case err := <-serveErr:
 		if err != nil && !errors.Is(err, http.ErrServerClosed) {
-			logger.Error("serve", "error", err)
-			os.Exit(1)
+			return fmt.Errorf("serve: %w", err)
 		}
 	case <-ctx.Done():
 		stop()
@@ -106,4 +109,5 @@ func main() {
 		}
 		logger.Info("shutdown complete")
 	}
+	return nil
 }

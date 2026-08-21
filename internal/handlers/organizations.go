@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/ownscalenet/ownscale/internal/dockerctl"
-	"github.com/ownscalenet/ownscale/internal/orgs"
 )
 
 // createOrganizationRequest is the POST /api/organizations request body.
@@ -19,7 +18,7 @@ type createOrganizationRequest struct {
 // organization record as JSON. This is the HTTP equivalent of the
 // `ownscale create-organization <subdomain>` CLI command.
 func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
-	if h.ctl == nil || h.baseDomain == "" {
+	if h.orgs == nil {
 		h.writeError(w, http.StatusServiceUnavailable, "organization provisioning is not configured (base_domain/Docker unavailable)")
 		return
 	}
@@ -36,7 +35,7 @@ func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	org, err := orgs.Create(r.Context(), h.pool, h.ctl, h.baseDomain, subdomain, h.logger)
+	org, err := h.orgs.Create(r.Context(), subdomain)
 	if err != nil {
 		h.serverError(w, err)
 		return

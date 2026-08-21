@@ -5,21 +5,19 @@
 package server
 
 import (
+	"log/slog"
 	"net/http"
 
-	"github.com/ownscalenet/ownscale/internal/auth"
 	"github.com/ownscalenet/ownscale/internal/handlers"
 )
 
-// NewMux builds the admin panel's http.ServeMux. static serves the built
-// frontend (SPA fallback to index.html for client-side routes); pass
+// NewMux builds the admin panel's http.ServeMux. requireAuthAPI wraps an
+// http.HandlerFunc so it only runs for an authenticated session (see
+// auth.RequireAuthAPI), responding 401 JSON otherwise. static serves the
+// built frontend (SPA fallback to index.html for client-side routes); pass
 // http.NotFoundHandler() if the frontend hasn't been built. Every request is
-// logged via h.Logger() before being dispatched.
-func NewMux(h *handlers.Handlers, static http.Handler) http.Handler {
-	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
-		return auth.RequireAuthAPI(h.Queries(), next)
-	}
-
+// logged via logger before being dispatched.
+func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.HandlerFunc, logger *slog.Logger, static http.Handler) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/session", requireAuthAPI(h.Session))
@@ -40,5 +38,5 @@ func NewMux(h *handlers.Handlers, static http.Handler) http.Handler {
 	// client-side routes (/, /login, /machines, ...).
 	mux.Handle("/", static)
 
-	return loggingMiddleware(h.Logger(), mux)
+	return loggingMiddleware(logger, mux)
 }

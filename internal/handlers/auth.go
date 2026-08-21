@@ -91,7 +91,7 @@ func (h *Handlers) AuthCallback(w http.ResponseWriter, r *http.Request) {
 // subdomain (DB row + headscale container), retrying a couple of times on
 // the unlikely event of a subdomain collision.
 func (h *Handlers) provisionOrganization(ctx context.Context) (sqlcgen.Organization, error) {
-	if h.ctl == nil || h.baseDomain == "" {
+	if h.orgs == nil {
 		return sqlcgen.Organization{}, errors.New("organization auto-provisioning is not configured (BASE_DOMAIN/Docker unavailable)")
 	}
 
@@ -102,7 +102,7 @@ func (h *Handlers) provisionOrganization(ctx context.Context) (sqlcgen.Organizat
 		if err != nil {
 			return sqlcgen.Organization{}, err
 		}
-		org, err := orgs.Create(ctx, h.pool, h.ctl, h.baseDomain, subdomain, h.logger)
+		org, err := h.orgs.Create(ctx, subdomain)
 		if err == nil {
 			return org, nil
 		}

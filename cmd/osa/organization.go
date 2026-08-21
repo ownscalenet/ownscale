@@ -147,7 +147,8 @@ func newOrganizationCreateCommand(parent *ff.FlagSet, configPath *string) *ff.Co
 			if err != nil {
 				return err
 			}
-			return createOrganization(ctx, os.Stdout, res.pool, res.ctl, res.logger, domain, args[0])
+			svc := orgs.NewService(res.pool, res.ctl, domain, res.logger)
+			return createOrganization(ctx, os.Stdout, svc, args[0])
 		},
 	}
 }
@@ -238,19 +239,20 @@ func newOrganizationStopCommand(parent *ff.FlagSet, configPath *string) *ff.Comm
 }
 
 // createOrganization validates subdomain and provisions it as a new
-// organization (DB record + headscale container) under domain, writing a
-// confirmation to out.
-func createOrganization(ctx context.Context, out io.Writer, pool *sql.DB, ctl *dockerctl.Ctl, logger *slog.Logger, domain, subdomain string) error {
+// organization (DB record + headscale container) under svc's base domain,
+// writing a confirmation to out.
+func createOrganization(ctx context.Context, out io.Writer, svc *orgs.Service, subdomain string) error {
 	if err := dockerctl.ValidateSubdomain(subdomain); err != nil {
 		return fmt.Errorf("validate subdomain: %w", err)
 	}
 
-	if _, err := orgs.Create(ctx, pool, ctl, domain, subdomain, logger); err != nil {
+	if _, err := svc.Create(ctx, subdomain); err != nil {
 		return fmt.Errorf("create organization: %w", err)
 	}
 
-	fmt.Fprintf(out, "created organization %s.%s (container %s)\n", subdomain, domain, dockerctl.HSContainerName(subdomain))
-	fmt.Fprintf(out, "headscale will be reachable at https://%s.%s once Caddy is running\n", subdomain, domain)
+	domain := svc.BaseDomain()
+	_, _ = fmt.Fprintf(out, "created organization %s.%s (container %s)\n", subdomain, domain, dockerctl.HSContainerName(subdomain))
+	_, _ = fmt.Fprintf(out, "headscale will be reachable at https://%s.%s once Caddy is running\n", subdomain, domain)
 	return nil
 }
 
@@ -271,7 +273,7 @@ func deleteOrganization(ctx context.Context, out io.Writer, queries *sqlcgen.Que
 	if err := queries.DeleteOrganization(ctx, org.ID); err != nil {
 		return fmt.Errorf("delete organization record: %w", err)
 	}
-	fmt.Fprintf(out, "deleted organization %s\n", subdomain)
+	_, _ = fmt.Fprintf(out, "deleted organization %s\n", subdomain)
 	return nil
 }
 
@@ -283,17 +285,17 @@ func listOrganizations(ctx context.Context, out io.Writer, queries *sqlcgen.Quer
 		return fmt.Errorf("list organizations: %w", err)
 	}
 	if len(organizations) == 0 {
-		fmt.Fprintln(out, "no organizations")
+		_, _ = fmt.Fprintln(out, "no organizations")
 		return nil
 	}
 
-	fmt.Fprintf(out, "%-20s %-12s %-20s %s\n", "SUBDOMAIN", "STATE", "CREATED", "CONTAINER")
+	_, _ = fmt.Fprintf(out, "%-20s %-12s %-20s %s\n", "SUBDOMAIN", "STATE", "CREATED", "CONTAINER")
 	for _, org := range organizations {
 		state, err := ctl.ContainerState(ctx, org.Subdomain)
 		if err != nil {
 			state = "error: " + err.Error()
 		}
-		fmt.Fprintf(out, "%-20s %-12s %-20s %s\n",
+		_, _ = fmt.Fprintf(out, "%-20s %-12s %-20s %s\n",
 			org.Subdomain, state,
 			org.CreatedAt.Format("2006-01-02 15:04:05"),
 			dockerctl.HSContainerName(org.Subdomain))
@@ -314,7 +316,7 @@ func startOrganizations(ctx context.Context, out io.Writer, logger *slog.Logger,
 		return fmt.Errorf("list organizations: %w", err)
 	}
 	if len(organizations) == 0 {
-		fmt.Fprintln(out, "no organizations")
+		_, _ = fmt.Fprintln(out, "no organizations")
 		return nil
 	}
 
@@ -325,7 +327,7 @@ func startOrganizations(ctx context.Context, out io.Writer, logger *slog.Logger,
 			failed++
 			continue
 		}
-		fmt.Fprintf(out, "started organization %s\n", org.Subdomain)
+		_, _ = fmt.Fprintf(out, "started organization %s\n", org.Subdomain)
 	}
 	if failed > 0 {
 		return fmt.Errorf("failed to start %d/%d organizations", failed, len(organizations))
@@ -342,6 +344,6 @@ func stopOrganizations(ctx context.Context, out io.Writer, ctl *dockerctl.Ctl, t
 	if err := ctl.StopAll(ctx, timeout); err != nil {
 		return fmt.Errorf("stop organizations: %w", err)
 	}
-	fmt.Fprintln(out, "stopped all organization containers")
+	_, _ = fmt.Fprintln(out, "stopped all organization containers")
 	return nil
 }

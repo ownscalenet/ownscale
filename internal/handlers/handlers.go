@@ -7,30 +7,33 @@ import (
 	"net/http"
 
 	"github.com/ownscalenet/ownscale/internal/auth"
-	"github.com/ownscalenet/ownscale/internal/db"
 	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/internal/derrors"
 	"github.com/ownscalenet/ownscale/internal/dockerctl"
+	"github.com/ownscalenet/ownscale/internal/orgs"
 )
 
 type Handlers struct {
-	pool       *sql.DB
 	queries    *sqlcgen.Queries
-	ctl        *dockerctl.Ctl
+	orgs       *orgs.Service // nil if organization provisioning isn't configured (no ctl/base_domain)
 	baseDomain string
 	logger     *slog.Logger
 }
 
-func New(pool *sql.DB, ctl *dockerctl.Ctl, baseDomain string, logger *slog.Logger) (_ *Handlers, err error) {
-	defer derrors.Wrap(&err, "handlers.New(%q)", baseDomain)
-
-	return &Handlers{
-		pool:       pool,
-		queries:    sqlcgen.New(db.NewLoggingDBTX(pool, logger)),
-		ctl:        ctl,
+// New builds the Handlers. queries serves reads/writes outside the
+// organization-provisioning transaction; pool and ctl are used to build the
+// orgs.Service that backs organization creation, and are only required if
+// ctl is non-nil and baseDomain is set (otherwise provisioning-related
+// handlers respond with 503, see CreateOrganization).
+func New(queries *sqlcgen.Queries, pool *sql.DB, ctl *dockerctl.Ctl, baseDomain string, logger *slog.Logger) *Handlers {
+	h := &Handlers{
+		queries:    queries,
 		baseDomain: baseDomain,
 		logger:     logger,
-	}, nil
+	}
+	if ctl != nil && baseDomain != "" {
+		h.orgs = orgs.NewService(pool, ctl, baseDomain, logger)
+	}
+	return h
 }
 
 // writeJSON encodes v as the JSON response body with the given status code.
@@ -53,16 +56,6 @@ func (h *Handlers) writeError(w http.ResponseWriter, status int, msg string) {
 func (h *Handlers) serverError(w http.ResponseWriter, err error) {
 	h.logger.Error("request failed", "error", err)
 	h.writeError(w, http.StatusInternalServerError, "internal server error")
-}
-
-// Queries exposes the sqlc queries for wiring auth middleware in main.
-func (h *Handlers) Queries() *sqlcgen.Queries {
-	return h.queries
-}
-
-// Logger exposes the request logger for wiring logging middleware in server.NewMux.
-func (h *Handlers) Logger() *slog.Logger {
-	return h.logger
 }
 
 // Session returns the currently authenticated user as JSON. It is mounted

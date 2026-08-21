@@ -22,6 +22,7 @@ import (
 	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/internal/dockerctl"
 	"github.com/ownscalenet/ownscale/internal/dockerctl/dockerfake"
+	"github.com/ownscalenet/ownscale/internal/orgs"
 )
 
 // newTestDB opens a temp-file SQLite database and applies the real embedded
@@ -38,7 +39,7 @@ func newTestDB(t *testing.T) (*sql.DB, *sqlcgen.Queries) {
 	if err != nil {
 		t.Fatalf("connect: %v", err)
 	}
-	t.Cleanup(func() { pool.Close() })
+	t.Cleanup(func() { _ = pool.Close() })
 
 	sub, err := fs.Sub(dbpkg.MigrationsFS, "migrations")
 	if err != nil {
@@ -99,7 +100,7 @@ func TestCreateOrganization(t *testing.T) {
 			},
 		})
 		var out strings.Builder
-		err := createOrganization(context.Background(), &out, pool, ctl, discardLogger(), "example.com", "ab")
+		err := createOrganization(context.Background(), &out, orgs.NewService(pool, ctl, "example.com", discardLogger()), "ab")
 		if err == nil {
 			t.Fatal("expected an error for an invalid (too short) subdomain")
 		}
@@ -111,7 +112,7 @@ func TestCreateOrganization(t *testing.T) {
 
 		ctl := newTestCtl(t, &dockerfake.API{})
 		var out strings.Builder
-		err := createOrganization(context.Background(), &out, pool, ctl, discardLogger(), "example.com", "acme")
+		err := createOrganization(context.Background(), &out, orgs.NewService(pool, ctl, "example.com", discardLogger()), "acme")
 		if err == nil {
 			t.Fatal("expected an error creating a duplicate subdomain")
 		}
@@ -127,7 +128,7 @@ func TestCreateOrganization(t *testing.T) {
 			},
 		})
 		var out strings.Builder
-		err := createOrganization(context.Background(), &out, pool, ctl, discardLogger(), "example.com", "acme")
+		err := createOrganization(context.Background(), &out, orgs.NewService(pool, ctl, "example.com", discardLogger()), "acme")
 		if err == nil || !strings.Contains(err.Error(), "docker exploded") {
 			t.Fatalf("got err %v, want it to wrap %v", err, wantErr)
 		}
@@ -142,7 +143,7 @@ func TestCreateOrganization(t *testing.T) {
 
 		ctl := newTestCtl(t, &dockerfake.API{})
 		var out strings.Builder
-		if err := createOrganization(context.Background(), &out, pool, ctl, discardLogger(), "example.com", "acme"); err != nil {
+		if err := createOrganization(context.Background(), &out, orgs.NewService(pool, ctl, "example.com", discardLogger()), "acme"); err != nil {
 			t.Fatalf("createOrganization: %v", err)
 		}
 
