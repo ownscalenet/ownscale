@@ -15,7 +15,6 @@ import (
 	"github.com/ownscalenet/ownscale/internal/auth"
 	"github.com/ownscalenet/ownscale/internal/config"
 	"github.com/ownscalenet/ownscale/internal/db"
-	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/internal/dockerctl"
 	"github.com/ownscalenet/ownscale/internal/handlers"
 	"github.com/ownscalenet/ownscale/internal/logging"
@@ -69,13 +68,13 @@ func run() error {
 	}
 	defer ctl.Close()
 
-	queries := sqlcgen.New(db.NewLoggingDBTX(pool, logger))
-	h := handlers.New(queries, pool, ctl, cfg.BaseDomain, logger)
+	queries := db.New(pool, logger)
+	h := handlers.New(queries, ctl, cfg.BaseDomain, logger)
 
 	auth.Setup(cfg.Auth.SessionSecret, cfg.Auth.Google.ClientID, cfg.Auth.Google.ClientSecret, cfg.Auth.Google.CallbackURL)
 
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
-		return auth.RequireAuthAPI(queries, next)
+		return auth.RequireAuthAPI(queries.Queries, next)
 	}
 	mux := server.NewMux(h, requireAuthAPI, logger, webui.Handler())
 

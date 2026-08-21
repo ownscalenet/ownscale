@@ -31,7 +31,7 @@ import (
 // real database (rather than faking sqlcgen.Queries) means these tests
 // exercise real SQL behavior (uniqueness constraints, transaction rollback,
 // etc.), matching the direction to fake only the Docker dependency.
-func newTestDB(t *testing.T) (*sql.DB, *sqlcgen.Queries) {
+func newTestDB(t *testing.T) (*sql.DB, *dbpkg.TxQueries) {
 	t.Helper()
 
 	dbPath := filepath.Join(t.TempDir(), "test.sqlite")
@@ -54,7 +54,7 @@ func newTestDB(t *testing.T) (*sql.DB, *sqlcgen.Queries) {
 	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return pool, sqlcgen.New(dbpkg.NewLoggingDBTX(pool, logger))
+	return pool, dbpkg.New(pool, logger)
 }
 
 func discardLogger() *slog.Logger {
@@ -63,7 +63,7 @@ func discardLogger() *slog.Logger {
 
 // insertOrg inserts an organization row directly via queries, mirroring
 // what orgs.Create does before it hands off to Docker, and returns it.
-func insertOrg(t *testing.T, queries *sqlcgen.Queries, subdomain string) sqlcgen.Organization {
+func insertOrg(t *testing.T, queries *dbpkg.TxQueries, subdomain string) sqlcgen.Organization {
 	t.Helper()
 	org, err := queries.CreateOrganization(context.Background(), sqlcgen.CreateOrganizationParams{
 		ID:        uuid.Must(uuid.NewV7()).String(),
@@ -92,7 +92,7 @@ func newTestCtl(t *testing.T, api *dockerfake.API) *dockerctl.Ctl {
 
 func TestCreateOrganization(t *testing.T) {
 	t.Run("invalid subdomain", func(t *testing.T) {
-		pool, _ := newTestDB(t)
+		_, queries := newTestDB(t)
 		ctl := newTestCtl(t, &dockerfake.API{
 			ContainerCreateFn: func(context.Context, *container.Config, *container.HostConfig, *network.NetworkingConfig, *ocispec.Platform, string) (container.CreateResponse, error) {
 				t.Fatal("docker should not be invoked for an invalid subdomain")
@@ -100,26 +100,26 @@ func TestCreateOrganization(t *testing.T) {
 			},
 		})
 		var out strings.Builder
-		err := createOrganization(context.Background(), &out, orgs.NewService(pool, ctl, "example.com", discardLogger()), "ab")
+		err := createOrganization(context.Background(), &out, orgs.NewService(queries, ctl, "example.com"), "ab")
 		if err == nil {
 			t.Fatal("expected an error for an invalid (too short) subdomain")
 		}
 	})
 
 	t.Run("duplicate subdomain", func(t *testing.T) {
-		pool, queries := newTestDB(t)
+		_, queries := newTestDB(t)
 		insertOrg(t, queries, "acme")
 
 		ctl := newTestCtl(t, &dockerfake.API{})
 		var out strings.Builder
-		err := createOrganization(context.Background(), &out, orgs.NewService(pool, ctl, "example.com", discardLogger()), "acme")
+		err := createOrganization(context.Background(), &out, orgs.NewService(queries, ctl, "example.com"), "acme")
 		if err == nil {
 			t.Fatal("expected an error creating a duplicate subdomain")
 		}
 	})
 
 	t.Run("docker failure rolls back the DB row", func(t *testing.T) {
-		pool, queries := newTestDB(t)
+		_, queries := newTestDB(t)
 
 		wantErr := errors.New("docker exploded")
 		ctl := newTestCtl(t, &dockerfake.API{
@@ -128,7 +128,7 @@ func TestCreateOrganization(t *testing.T) {
 			},
 		})
 		var out strings.Builder
-		err := createOrganization(context.Background(), &out, orgs.NewService(pool, ctl, "example.com", discardLogger()), "acme")
+		err := createOrganization(context.Background(), &out, orgs.NewService(queries, ctl, "example.com"), "acme")
 		if err == nil || !strings.Contains(err.Error(), "docker exploded") {
 			t.Fatalf("got err %v, want it to wrap %v", err, wantErr)
 		}
@@ -139,11 +139,11 @@ func TestCreateOrganization(t *testing.T) {
 	})
 
 	t.Run("success", func(t *testing.T) {
-		pool, queries := newTestDB(t)
+		_, queries := newTestDB(t)
 
 		ctl := newTestCtl(t, &dockerfake.API{})
 		var out strings.Builder
-		if err := createOrganization(context.Background(), &out, orgs.NewService(pool, ctl, "example.com", discardLogger()), "acme"); err != nil {
+		if err := createOrganization(context.Background(), &out, orgs.NewService(queries, ctl, "example.com"), "acme"); err != nil {
 			t.Fatalf("createOrganization: %v", err)
 		}
 

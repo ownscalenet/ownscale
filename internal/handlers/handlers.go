@@ -1,37 +1,36 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"log/slog"
 	"net/http"
 
 	"github.com/ownscalenet/ownscale/internal/auth"
-	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/internal/db"
 	"github.com/ownscalenet/ownscale/internal/dockerctl"
 	"github.com/ownscalenet/ownscale/internal/orgs"
 )
 
 type Handlers struct {
-	queries    *sqlcgen.Queries
+	queries    *db.TxQueries
 	orgs       *orgs.Service // nil if organization provisioning isn't configured (no ctl/base_domain)
 	baseDomain string
 	logger     *slog.Logger
 }
 
 // New builds the Handlers. queries serves reads/writes outside the
-// organization-provisioning transaction; pool and ctl are used to build the
-// orgs.Service that backs organization creation, and are only required if
-// ctl is non-nil and baseDomain is set (otherwise provisioning-related
-// handlers respond with 503, see CreateOrganization).
-func New(queries *sqlcgen.Queries, pool *sql.DB, ctl *dockerctl.Ctl, baseDomain string, logger *slog.Logger) *Handlers {
+// organization-provisioning transaction, and (if ctl is non-nil and
+// baseDomain is set) backs the orgs.Service used for organization creation;
+// otherwise provisioning-related handlers respond with 503 (see
+// CreateOrganization).
+func New(queries *db.TxQueries, ctl *dockerctl.Ctl, baseDomain string, logger *slog.Logger) *Handlers {
 	h := &Handlers{
 		queries:    queries,
 		baseDomain: baseDomain,
 		logger:     logger,
 	}
 	if ctl != nil && baseDomain != "" {
-		h.orgs = orgs.NewService(pool, ctl, baseDomain, logger)
+		h.orgs = orgs.NewService(queries, ctl, baseDomain)
 	}
 	return h
 }

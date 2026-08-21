@@ -14,7 +14,6 @@ import (
 
 	"github.com/ownscalenet/ownscale/internal/config"
 	"github.com/ownscalenet/ownscale/internal/db"
-	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/internal/dockerctl"
 	"github.com/ownscalenet/ownscale/internal/logging"
 	"github.com/ownscalenet/ownscale/internal/orgs"
@@ -58,8 +57,7 @@ func baseDomain(cfg *config.Config) (string, error) {
 type orgResources struct {
 	cfg     *config.Config
 	logger  *slog.Logger
-	pool    *sql.DB
-	queries *sqlcgen.Queries
+	queries *db.TxQueries
 	ctl     *dockerctl.Ctl
 }
 
@@ -89,8 +87,7 @@ func newOrgResources(configPath *string, withDB, withDocker bool) (_ *orgResourc
 			return nil, cleanup, fmt.Errorf("db connect: %w", err)
 		}
 		closers = append(closers, pool.Close)
-		res.pool = pool
-		res.queries = sqlcgen.New(db.NewLoggingDBTX(pool, logger))
+		res.queries = db.New(pool, logger)
 	}
 
 	if withDocker {
@@ -147,7 +144,7 @@ func newOrganizationCreateCommand(parent *ff.FlagSet, configPath *string) *ff.Co
 			if err != nil {
 				return err
 			}
-			svc := orgs.NewService(res.pool, res.ctl, domain, res.logger)
+			svc := orgs.NewService(res.queries, res.ctl, domain)
 			return createOrganization(ctx, os.Stdout, svc, args[0])
 		},
 	}
@@ -258,7 +255,7 @@ func createOrganization(ctx context.Context, out io.Writer, svc *orgs.Service, s
 
 // deleteOrganization looks up subdomain, removes its container via ctl,
 // then deletes its DB record, writing a confirmation to out.
-func deleteOrganization(ctx context.Context, out io.Writer, queries *sqlcgen.Queries, ctl *dockerctl.Ctl, subdomain string) error {
+func deleteOrganization(ctx context.Context, out io.Writer, queries *db.TxQueries, ctl *dockerctl.Ctl, subdomain string) error {
 	org, err := queries.GetOrganizationBySubdomain(ctx, subdomain)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("no organization with subdomain %q", subdomain)
@@ -279,7 +276,7 @@ func deleteOrganization(ctx context.Context, out io.Writer, queries *sqlcgen.Que
 
 // listOrganizations prints every organization recorded in queries along
 // with its current container state (as reported by ctl) to out.
-func listOrganizations(ctx context.Context, out io.Writer, queries *sqlcgen.Queries, ctl *dockerctl.Ctl) error {
+func listOrganizations(ctx context.Context, out io.Writer, queries *db.TxQueries, ctl *dockerctl.Ctl) error {
 	organizations, err := queries.ListOrganizations(ctx)
 	if err != nil {
 		return fmt.Errorf("list organizations: %w", err)
@@ -310,7 +307,7 @@ func listOrganizations(ctx context.Context, out io.Writer, queries *sqlcgen.Quer
 // policy didn't already handle it). It doesn't create or provision
 // anything new; organizations that no longer have containers (e.g. removed
 // out of band) are reported as errors but don't stop the rest from starting.
-func startOrganizations(ctx context.Context, out io.Writer, logger *slog.Logger, queries *sqlcgen.Queries, ctl *dockerctl.Ctl) error {
+func startOrganizations(ctx context.Context, out io.Writer, logger *slog.Logger, queries *db.TxQueries, ctl *dockerctl.Ctl) error {
 	organizations, err := queries.ListOrganizations(ctx)
 	if err != nil {
 		return fmt.Errorf("list organizations: %w", err)

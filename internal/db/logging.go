@@ -17,10 +17,10 @@ type loggingDBTX struct {
 	logger *slog.Logger
 }
 
-// NewLoggingDBTX wraps dbtx so every query it runs is logged at debug level
+// newLoggingDBTX wraps dbtx so every query it runs is logged at debug level
 // via logger. Pass the result to sqlcgen.New (instead of the raw *sql.DB or
 // *sql.Tx) to enable query logging for that Queries instance.
-func NewLoggingDBTX(dbtx sqlcgen.DBTX, logger *slog.Logger) sqlcgen.DBTX {
+func newLoggingDBTX(dbtx sqlcgen.DBTX, logger *slog.Logger) sqlcgen.DBTX {
 	return &loggingDBTX{db: dbtx, logger: logger}
 }
 

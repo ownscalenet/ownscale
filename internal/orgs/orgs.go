@@ -6,10 +6,8 @@ package orgs
 import (
 	"context"
 	"crypto/rand"
-	"database/sql"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 
 	"github.com/ownscalenet/ownscale/internal/db"
 	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
@@ -19,22 +17,20 @@ import (
 	"github.com/google/uuid"
 )
 
-// Service provisions organizations against a fixed pool, Docker controller,
-// and base domain. It's shared by the CLI (cmd/osa) and the web server
-// (internal/handlers) so both wire it up once instead of threading the same
-// four dependencies through every call site.
+// Service provisions organizations against a fixed set of queries, Docker
+// controller, and base domain. It's shared by the CLI (cmd/osa) and the web
+// server (internal/handlers) so both wire it up once instead of threading
+// the same dependencies through every call site.
 type Service struct {
-	pool       *sql.DB
+	queries    *db.TxQueries
 	ctl        *dockerctl.Ctl
 	baseDomain string
-	logger     *slog.Logger
 }
 
-// NewService builds a Service backed by pool and ctl, provisioning
-// organizations under baseDomain. Queries run against transactions started
-// by Create are logged at debug level via logger.
-func NewService(pool *sql.DB, ctl *dockerctl.Ctl, baseDomain string, logger *slog.Logger) *Service {
-	return &Service{pool: pool, ctl: ctl, baseDomain: baseDomain, logger: logger}
+// NewService builds a Service backed by queries and ctl, provisioning
+// organizations under baseDomain.
+func NewService(queries *db.TxQueries, ctl *dockerctl.Ctl, baseDomain string) *Service {
+	return &Service{queries: queries, ctl: ctl, baseDomain: baseDomain}
 }
 
 // BaseDomain returns the domain organizations are provisioned under (e.g.
@@ -45,7 +41,7 @@ func (s *Service) BaseDomain() string {
 
 // Create provisions an organization: it inserts the organizations row, starts
 // the headscale container for subdomain via ctl, and records the container
-// id, all within a single transaction against pool.
+// id, all within a single transaction.
 func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organization, err error) {
 	defer derrors.Wrap(&err, "(*orgs.Service).Create(ctx, %q)", subdomain)
 
@@ -53,38 +49,33 @@ func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organ
 		return sqlcgen.Organization{}, err
 	}
 
-	tx, err := s.pool.BeginTx(ctx, nil)
+	var org sqlcgen.Organization
+	qtx, commit, rollback, err := s.queries.StartTx(ctx)
 	if err != nil {
-		return sqlcgen.Organization{}, fmt.Errorf("begin transaction: %w", err)
+		return org, err
 	}
-	defer tx.Rollback() //nolint:errcheck // no-op once committed
+	defer rollback() // safe, rollback becomes no-op if already comitted.
 
-	qtx := sqlcgen.New(db.NewLoggingDBTX(tx, s.logger))
-
-	org, err := qtx.CreateOrganization(ctx, sqlcgen.CreateOrganizationParams{
+	org, err = qtx.CreateOrganization(ctx, sqlcgen.CreateOrganizationParams{
 		ID:        uuid.Must(uuid.NewV7()).String(),
 		Subdomain: subdomain,
 	})
 	if err != nil {
-		return sqlcgen.Organization{}, fmt.Errorf("create organization record (already exists?): %w", err)
+		return org, fmt.Errorf("create organization record (already exists?): %w", err)
 	}
 
 	containerID, err := s.ctl.CreateOrganization(ctx, subdomain, s.baseDomain)
 	if err != nil {
-		return sqlcgen.Organization{}, fmt.Errorf("create container: %w", err)
+		return org, fmt.Errorf("create container: %w", err)
 	}
 	if err := qtx.SetOrganizationContainerID(ctx, sqlcgen.SetOrganizationContainerIDParams{
 		ContainerID: containerID,
 		ID:          org.ID,
 	}); err != nil {
-		return sqlcgen.Organization{}, fmt.Errorf("store container id: %w", err)
+		return org, fmt.Errorf("store container id: %w", err)
 	}
 
-	if err := tx.Commit(); err != nil {
-		return sqlcgen.Organization{}, fmt.Errorf("commit transaction: %w", err)
-	}
-	org.ContainerID = containerID
-	return org, nil
+	return org, commit()
 }
 
 // RandomSubdomain generates a short, DNS-label-safe random subdomain (e.g.
