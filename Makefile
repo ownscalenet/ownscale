@@ -4,7 +4,7 @@
 # (go:embed needs real files at Go build time), so run `make frontend`
 # whenever frontend/ changes and commit the updated internal/webui/dist.
 
-.PHONY: build frontend backend osa test migration archive docker-image rm-orphans purge ci
+.PHONY: build frontend backend osa test coverage migration archive docker-image rm-orphans purge ci
 
 DOCKER_IMAGE := ownscale:latest
 
@@ -32,6 +32,11 @@ run:
 
 test:
 	go test ./...
+
+BROWSER := firefox
+coverage:
+	go test -coverprofile=coverage.out ./...
+	BROWSER=$(BROWSER) go tool cover -html=coverage.out
 
 # Build the ownscale Docker image locally, tagged to match the "image:"
 # name docker-compose.yml expects for the ownscale service.
