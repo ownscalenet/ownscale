@@ -113,10 +113,12 @@ func Load(path string) (_ *Config, err error) {
 		path = DefaultPath
 	}
 
-	data, err := os.ReadFile(path)
+	f, err := os.Open(path)
 	switch {
 	case err == nil:
-		if err := yaml.Unmarshal(data, cfg); err != nil {
+		dec := yaml.NewDecoder(f)
+		dec.KnownFields(true)
+		if err := dec.Decode(cfg); err != nil {
 			return nil, fmt.Errorf("parse config file %s: %w", path, err)
 		}
 	case explicit:

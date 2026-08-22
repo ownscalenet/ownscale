@@ -50,7 +50,6 @@ archive: docker-image
 	tar czf - \
 		--exclude='.git' \
 		--exclude='config.yaml' \
-		--exclude='organizations' \
 		--exclude='data' \
 		--exclude='node_modules' \
 		--exclude='bin' \
