@@ -201,6 +201,7 @@ var configTemplateHP = template.Must(template.New("headplaneConfig").Parse(`serv
 headscale:
   url: "http://{{.HSContainerName}}:8080"
   public_url: "{{.HSExternalEndpoint}}"
+  config_path: "{{.HSConfigPath}}"
 
 integration:
   agent:
@@ -221,11 +222,19 @@ func buildHPConfig(subdomain, domain, cookieSecret string) (_ string, err error)
 	defer derrors.Wrap(&err, "buildHPConfig(%q, %q, %q)", subdomain, domain, cookieSecret)
 
 	var buf bytes.Buffer
-	if err := configTemplateHP.Execute(&buf, struct{ BaseURL, CookieSecret, HSContainerName, HSExternalEndpoint string }{
+	type tplData struct {
+		BaseURL            string
+		CookieSecret       string
+		HSContainerName    string
+		HSExternalEndpoint string
+		HSConfigPath       string
+	}
+	if err := configTemplateHP.Execute(&buf, tplData{
 		BaseURL:            domain,
 		CookieSecret:       cookieSecret,
 		HSContainerName:    HSContainerName(subdomain),
 		HSExternalEndpoint: HSExternalEndpoint(domain),
+		HSConfigPath:       headscaleConfigPath,
 	}); err != nil {
 		return "", err
 	}
@@ -252,7 +261,8 @@ func randomCookieSecret() (string, error) {
 // so we can't extract directly into headscaleConfigDir/headplaneConfigDir.
 // Rooting the archive at "/" (which always exists) and including directory
 // entries lets the daemon's tar extraction create any missing directories.
-func configTar(path, content string) (*bytes.Buffer, error) {
+func configTar(path, content string) (_ *bytes.Buffer, err error) {
+	defer derrors.Wrap(&err, "configTar(%s)", path)
 	var buf bytes.Buffer
 	tw := tar.NewWriter(&buf)
 
@@ -352,7 +362,7 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 	}
 	go c.streamLogs(resp.ID, HSContainerName(subdomain))
 
-	if err := c.createHeadplane(ctx, subdomain, domain); err != nil {
+	if err := c.createHeadplane(ctx, subdomain, domain, cfg); err != nil {
 		return "", fmt.Errorf("create headplane: %w", err)
 	}
 
@@ -362,7 +372,7 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 // createHeadplane provisions and starts the headplane container for an
 // organization, configured to talk to that organization's headscale
 // container over the shared Docker network.
-func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain string) (err error) {
+func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain, hsCfg string) (err error) {
 	defer derrors.Wrap(&err, "c.createHeadplane(%q, %q)", subdomain, domain)
 
 	cookieSecret, err := randomCookieSecret()
@@ -408,6 +418,19 @@ func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain string) (er
 	}
 
 	tarBuf, err := configTar(headplaneConfigPath, cfg)
+	if err != nil {
+		return fmt.Errorf("build config archive: %w", err)
+	}
+	if err := c.cli.CopyToContainer(ctx, resp.ID, "/", tarBuf, container.CopyToContainerOptions{}); err != nil {
+		return fmt.Errorf("copy config into container: %w", err)
+	}
+	// Copy the headscale config to headplane too.
+	// It enables features in the UI:
+	// https://github.com/tale/headplane/blob/9375e18b55a20a230c83ec80ed2eef7d1bf37a21/config.example.yaml#L113-L117
+	// TODO: as it is, this is broken. headplane has a copy of the file in its
+	// own container and it is writable, but that's not the copy that headscale uses.
+	// Upon config change, headscale is restarted by headplane based on configured integration.
+	tarBuf, err = configTar(headscaleConfigPath, hsCfg)
 	if err != nil {
 		return fmt.Errorf("build config archive: %w", err)
 	}
