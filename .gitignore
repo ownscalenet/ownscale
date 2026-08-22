@@ -4,3 +4,11 @@ frontend/node_modules/
 bin/
 .env
 /coverage.out
+
+# Hugo build cache/artifacts for the site/ docs module. The actual built
+# output that gets served lives at etc/caddy/site/ and IS committed; only
+# ad-hoc local `hugo` runs inside site/ produce these.
+/site/public/
+/site/resources/_gen/
+/site/.hugo_build.lock
+

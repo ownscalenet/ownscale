@@ -8,3 +8,5 @@ frontend, one needs to get a headscale key from the headscale container)
 - Check if litestream container logs can be changed from text to json
 - dockerfile user and permissions
 - check how .env and config.yaml can be collapsed into one
+- requirements for the admin:
+  - a name, (can't be admin?)

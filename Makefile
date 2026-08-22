@@ -4,7 +4,7 @@
 # (go:embed needs real files at Go build time), so run `make frontend`
 # whenever frontend/ changes and commit the updated internal/webui/dist.
 
-.PHONY: build frontend backend osa test test-integration coverage migration archive docker-image rm-orphans purge ci
+.PHONY: build frontend backend osa test test-integration coverage migration archive docker-image rm-orphans purge ci docs
 
 DOCKER_IMAGE := ownscale:latest
 
@@ -19,6 +19,14 @@ backend:
 
 osa:
 	go build -o bin/osa ./cmd/osa
+
+# Build the site/ Hugo module (hugo-book theme) into etc/caddy/site, which
+# Caddy serves at {$BASE_DOMAIN}. The generated output is committed to the
+# repo, so re-run this and commit the result whenever site/content changes.
+# Requires `go` on PATH for Hugo Modules to resolve the hugo-book theme.
+docs:
+	rm -rf etc/caddy/site
+	hugo --source site --destination ../etc/caddy/site --minify
 
 # Usage: make migration up | make migration status
 migration:

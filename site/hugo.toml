@@ -1,0 +1,28 @@
+baseURL = "/"
+locale = "en-US"
+title = "ownscale Documentation"
+
+[module]
+  [[module.imports]]
+    path = "github.com/alex-shpak/hugo-book"
+
+[markup]
+  [markup.goldmark]
+    [markup.goldmark.renderer]
+      unsafe = true
+
+[params]
+  BookTheme = "auto"
+  BookToC = true
+  BookSection = "docs"
+  BookRepo = "https://github.com/ownscalenet/ownscale"
+  BookEditPath = "edit/main/site/content"
+  BookSearch = true
+  BookComments = false
+  BookPortableLinks = true
+
+[menu]
+  [[menu.after]]
+    name = "GitHub"
+    url = "https://github.com/ownscalenet/ownscale"
+    weight = 10
