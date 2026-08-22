@@ -49,7 +49,7 @@ func newTestDB(t *testing.T) (*sql.DB, *dbpkg.TxQueries) {
 	if err != nil {
 		t.Fatalf("goose provider: %v", err)
 	}
-	if _, err := provider.Up(context.Background()); err != nil {
+	if _, err := provider.Up(t.Context()); err != nil {
 		t.Fatalf("apply migrations: %v", err)
 	}
 
@@ -65,7 +65,7 @@ func discardLogger() *slog.Logger {
 // what orgs.Create does before it hands off to Docker, and returns it.
 func insertOrg(t *testing.T, queries *dbpkg.TxQueries, subdomain string) sqlcgen.Organization {
 	t.Helper()
-	org, err := queries.CreateOrganization(context.Background(), sqlcgen.CreateOrganizationParams{
+	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
 		ID:        uuid.Must(uuid.NewV7()).String(),
 		Subdomain: subdomain,
 	})
@@ -100,7 +100,7 @@ func TestCreateOrganization(t *testing.T) {
 			},
 		})
 		var out strings.Builder
-		err := createOrganization(context.Background(), &out, orgs.NewService(queries, ctl, "example.com"), "ab")
+		err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com"), "ab")
 		if err == nil {
 			t.Fatal("expected an error for an invalid (too short) subdomain")
 		}
@@ -112,7 +112,7 @@ func TestCreateOrganization(t *testing.T) {
 
 		ctl := newTestCtl(t, &dockerfake.API{})
 		var out strings.Builder
-		err := createOrganization(context.Background(), &out, orgs.NewService(queries, ctl, "example.com"), "acme")
+		err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com"), "acme")
 		if err == nil {
 			t.Fatal("expected an error creating a duplicate subdomain")
 		}
@@ -128,12 +128,12 @@ func TestCreateOrganization(t *testing.T) {
 			},
 		})
 		var out strings.Builder
-		err := createOrganization(context.Background(), &out, orgs.NewService(queries, ctl, "example.com"), "acme")
+		err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com"), "acme")
 		if err == nil || !strings.Contains(err.Error(), "docker exploded") {
 			t.Fatalf("got err %v, want it to wrap %v", err, wantErr)
 		}
 
-		if _, err := queries.GetOrganizationBySubdomain(context.Background(), "acme"); !errors.Is(err, sql.ErrNoRows) {
+		if _, err := queries.GetOrganizationBySubdomain(t.Context(), "acme"); !errors.Is(err, sql.ErrNoRows) {
 			t.Fatalf("expected no organization row after rollback, got err %v", err)
 		}
 	})
@@ -143,14 +143,14 @@ func TestCreateOrganization(t *testing.T) {
 
 		ctl := newTestCtl(t, &dockerfake.API{})
 		var out strings.Builder
-		if err := createOrganization(context.Background(), &out, orgs.NewService(queries, ctl, "example.com"), "acme"); err != nil {
+		if err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com"), "acme"); err != nil {
 			t.Fatalf("createOrganization: %v", err)
 		}
 
 		if !strings.Contains(out.String(), "created organization acme.example.com") {
 			t.Errorf("output = %q, want it to mention the created organization", out.String())
 		}
-		if _, err := queries.GetOrganizationBySubdomain(context.Background(), "acme"); err != nil {
+		if _, err := queries.GetOrganizationBySubdomain(t.Context(), "acme"); err != nil {
 			t.Fatalf("GetOrganizationBySubdomain: %v", err)
 		}
 	})
@@ -160,7 +160,7 @@ func TestDeleteOrganization(t *testing.T) {
 	t.Run("not found", func(t *testing.T) {
 		_, queries := newTestDB(t)
 		var out strings.Builder
-		err := deleteOrganization(context.Background(), &out, queries, newTestCtl(t, &dockerfake.API{}), "missing")
+		err := deleteOrganization(t.Context(), &out, queries, newTestCtl(t, &dockerfake.API{}), "missing")
 		if err == nil || !strings.Contains(err.Error(), "no organization with subdomain") {
 			t.Fatalf("got err %v, want a not-found error", err)
 		}
@@ -175,11 +175,11 @@ func TestDeleteOrganization(t *testing.T) {
 			ContainerRemoveFn: func(context.Context, string, container.RemoveOptions) error { return wantErr },
 		})
 		var out strings.Builder
-		err := deleteOrganization(context.Background(), &out, queries, ctl, "acme")
+		err := deleteOrganization(t.Context(), &out, queries, ctl, "acme")
 		if err == nil || !strings.Contains(err.Error(), "cannot remove container") {
 			t.Fatalf("got err %v, want it to wrap %v", err, wantErr)
 		}
-		if _, err := queries.GetOrganizationBySubdomain(context.Background(), "acme"); err != nil {
+		if _, err := queries.GetOrganizationBySubdomain(t.Context(), "acme"); err != nil {
 			t.Fatalf("expected organization row to still exist, got err %v", err)
 		}
 	})
@@ -196,7 +196,7 @@ func TestDeleteOrganization(t *testing.T) {
 			},
 		})
 		var out strings.Builder
-		if err := deleteOrganization(context.Background(), &out, queries, ctl, "acme"); err != nil {
+		if err := deleteOrganization(t.Context(), &out, queries, ctl, "acme"); err != nil {
 			t.Fatalf("deleteOrganization: %v", err)
 		}
 		if !strings.Contains(out.String(), "deleted organization acme") {
@@ -206,7 +206,7 @@ func TestDeleteOrganization(t *testing.T) {
 		if len(removed) != len(wantRemoved) || removed[0] != wantRemoved[0] || removed[1] != wantRemoved[1] {
 			t.Errorf("removed containers = %v, want %v", removed, wantRemoved)
 		}
-		if _, err := queries.GetOrganizationBySubdomain(context.Background(), "acme"); !errors.Is(err, sql.ErrNoRows) {
+		if _, err := queries.GetOrganizationBySubdomain(t.Context(), "acme"); !errors.Is(err, sql.ErrNoRows) {
 			t.Fatalf("expected organization row to be gone, got err %v", err)
 		}
 	})
@@ -216,7 +216,7 @@ func TestListOrganizations(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
 		_, queries := newTestDB(t)
 		var out strings.Builder
-		if err := listOrganizations(context.Background(), &out, queries, newTestCtl(t, &dockerfake.API{})); err != nil {
+		if err := listOrganizations(t.Context(), &out, queries, newTestCtl(t, &dockerfake.API{})); err != nil {
 			t.Fatalf("listOrganizations: %v", err)
 		}
 		if strings.TrimSpace(out.String()) != "no organizations" {
@@ -240,7 +240,7 @@ func TestListOrganizations(t *testing.T) {
 			},
 		})
 		var out strings.Builder
-		if err := listOrganizations(context.Background(), &out, queries, ctl); err != nil {
+		if err := listOrganizations(t.Context(), &out, queries, ctl); err != nil {
 			t.Fatalf("listOrganizations: %v", err)
 		}
 		if !strings.Contains(out.String(), "acme") || !strings.Contains(out.String(), "running") {
@@ -256,7 +256,7 @@ func TestStartOrganizations(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
 		_, queries := newTestDB(t)
 		var out strings.Builder
-		if err := startOrganizations(context.Background(), &out, discardLogger(), queries, newTestCtl(t, &dockerfake.API{})); err != nil {
+		if err := startOrganizations(t.Context(), &out, discardLogger(), queries, newTestCtl(t, &dockerfake.API{})); err != nil {
 			t.Fatalf("startOrganizations: %v", err)
 		}
 		if strings.TrimSpace(out.String()) != "no organizations" {
@@ -278,7 +278,7 @@ func TestStartOrganizations(t *testing.T) {
 			},
 		})
 		var out strings.Builder
-		err := startOrganizations(context.Background(), &out, discardLogger(), queries, ctl)
+		err := startOrganizations(t.Context(), &out, discardLogger(), queries, ctl)
 		if err == nil || !strings.Contains(err.Error(), "failed to start 1/2 organizations") {
 			t.Fatalf("got err %v, want a 1/2 failure count", err)
 		}
@@ -303,7 +303,7 @@ func TestStopOrganizations(t *testing.T) {
 			},
 		})
 		var out strings.Builder
-		if err := stopOrganizations(context.Background(), &out, ctl, 5*time.Second); err != nil {
+		if err := stopOrganizations(t.Context(), &out, ctl, 5*time.Second); err != nil {
 			t.Fatalf("stopOrganizations: %v", err)
 		}
 		if !stopCalled || gotTimeout == nil || *gotTimeout != 5 {
@@ -323,7 +323,7 @@ func TestStopOrganizations(t *testing.T) {
 			ContainerStopFn: func(context.Context, string, container.StopOptions) error { return wantErr },
 		})
 		var out strings.Builder
-		err := stopOrganizations(context.Background(), &out, ctl, time.Second)
+		err := stopOrganizations(t.Context(), &out, ctl, time.Second)
 		if err == nil || !strings.Contains(err.Error(), "stop exploded") {
 			t.Fatalf("got err %v, want it to wrap %v", err, wantErr)
 		}

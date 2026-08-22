@@ -4,7 +4,7 @@
 # (go:embed needs real files at Go build time), so run `make frontend`
 # whenever frontend/ changes and commit the updated internal/webui/dist.
 
-.PHONY: build frontend backend osa test coverage migration archive docker-image rm-orphans purge ci
+.PHONY: build frontend backend osa test test-integration coverage migration archive docker-image rm-orphans purge ci
 
 DOCKER_IMAGE := ownscale:latest
 
@@ -32,6 +32,9 @@ run:
 
 test:
 	go test ./...
+
+test-integration:
+	go test -tags=integration ./...
 
 BROWSER := firefox
 coverage:

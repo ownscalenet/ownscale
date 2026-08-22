@@ -94,6 +94,10 @@ func NewWithClient(cli API, dataDir string, logger *slog.Logger) (_ *Ctl, err er
 	if !filepath.IsAbs(dataDir) {
 		return nil, fmt.Errorf("dataDir must be an absolute path, got %q", dataDir)
 	}
+	// TODO: instantiating background context here seems suspicious.
+	// Story is we need two contexts in this code:
+	// 1. for making regular docker requests (create container, stop container, etc.)
+	// 2. for long-running watcher for logs of containers from 1.
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Ctl{cli: cli, dataDir: dataDir, logger: logger, ctx: ctx, cancel: cancel}, nil
 }

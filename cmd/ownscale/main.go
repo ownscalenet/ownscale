@@ -67,7 +67,8 @@ func run() error {
 		return fmt.Errorf("docker init: %w", err)
 	}
 	defer ctl.Close()
-	if err := ctl.StreamAllLogs(context.Background()); err != nil {
+	ctx := context.Background()
+	if err := ctl.StreamAllLogs(ctx); err != nil {
 		logger.Warn("reattach organization container logs", "error", err)
 	}
 
@@ -83,7 +84,7 @@ func run() error {
 
 	srv := &http.Server{Addr: cfg.Addr, Handler: mux}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
 	serveErr := make(chan error, 1)

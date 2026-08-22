@@ -8,9 +8,12 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/pkg/stdcopy"
 
 	"github.com/ownscalenet/ownscale/internal/dockerctl/dockerfake"
@@ -28,10 +31,35 @@ func newCapturingLogger(buf *bytes.Buffer) *slog.Logger {
 	return slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug}))
 }
 
+// syncBuffer is a bytes.Buffer safe for concurrent writes, needed when
+// multiple streamLogs goroutines (as started by StreamAllLogs) log through
+// the same handler at once.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (b *syncBuffer) Write(p []byte) (int, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.Write(p)
+}
+
+func (b *syncBuffer) String() string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return b.buf.String()
+}
+
 func parseLogRecords(t *testing.T, buf *bytes.Buffer) []logRecord {
 	t.Helper()
+	return parseLogRecordsFromString(t, buf.String())
+}
+
+func parseLogRecordsFromString(t *testing.T, content string) []logRecord {
+	t.Helper()
 	var records []logRecord
-	for line := range strings.SplitSeq(strings.TrimSpace(buf.String()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(content), "\n") {
 		if line == "" {
 			continue
 		}
@@ -101,6 +129,75 @@ func TestLineWriter(t *testing.T) {
 			t.Fatalf("expected no log output before a newline, got %q", buf.String())
 		}
 	})
+}
+
+func TestStreamAllLogs(t *testing.T) {
+	var listFilters filters.Args
+	var listCalled bool
+
+	var frames bytes.Buffer
+	stdoutW := stdcopy.NewStdWriter(&frames, stdcopy.Stdout)
+	_, _ = stdoutW.Write([]byte("booted\n"))
+
+	api := &dockerfake.API{
+		ContainerListFn: func(ctx context.Context, options container.ListOptions) ([]container.Summary, error) {
+			listCalled = true
+			listFilters = options.Filters
+			return []container.Summary{
+				{ID: "id-1", Names: []string{"/hs-acme"}},
+				{ID: "id-2", Names: []string{"/hp-acme"}},
+			}, nil
+		},
+		ContainerLogsFn: func(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error) {
+			return io.NopCloser(bytes.NewReader(frames.Bytes())), nil
+		},
+	}
+
+	buf := &syncBuffer{}
+	ctl, err := NewWithClient(api, t.TempDir(), slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	if err := ctl.StreamAllLogs(t.Context()); err != nil {
+		t.Fatalf("StreamAllLogs: %v", err)
+	}
+
+	if !listCalled {
+		t.Fatal("expected ContainerList to be called")
+	}
+	if !listFilters.ExactMatch("label", "ownscale.organization=true") {
+		t.Errorf("filters = %+v, want a label=ownscale.organization=true filter", listFilters)
+	}
+	if !listFilters.ExactMatch("status", "running") {
+		t.Errorf("filters = %+v, want a status=running filter", listFilters)
+	}
+
+	// streamLogs is started in goroutines (one per container); poll briefly
+	// for both to have logged their line, tagged with the right container
+	// name (derived from ct.Names[0]).
+	deadline := time.Now().Add(2 * time.Second)
+	var records []logRecord
+	for time.Now().Before(deadline) {
+		records = parseLogRecordsFromString(t, buf.String())
+		if len(records) >= 2 {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+
+	wantContainers := map[string]bool{"/hs-acme": false, "/hp-acme": false}
+	for _, r := range records {
+		if _, ok := wantContainers[r.Container]; ok {
+			wantContainers[r.Container] = true
+		}
+	}
+	for name, seen := range wantContainers {
+		if !seen {
+			t.Errorf("expected a log record for container %q, got records=%+v", name, records)
+		}
+	}
 }
 
 func TestStreamLogs(t *testing.T) {
