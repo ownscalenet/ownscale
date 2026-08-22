@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -31,7 +32,7 @@ import (
 const (
 	ownscaleNetwork     = "os-net"
 	Image               = "headscale/headscale:0.29.3"
-	headplaneImage      = "ghcr.io/tale/headplane:0.7.0"
+	headplaneImage      = "ghcr.io/tale/headplane:0.7.0-shell"
 	headscaleConfigPath = "/etc/headscale/config.yaml"
 	headplaneConfigPath = "/etc/headplane/config.yaml"
 )
@@ -39,6 +40,7 @@ const (
 func HSContainerName(subdomain string) string { return "hs-" + subdomain }
 func HPContainerName(subdomain string) string { return "hp-" + subdomain }
 func HPVolumeName(subdomain string) string    { return "hp-" + subdomain + "-data" }
+func HSExternalEndpoint(domain string) string { return "https://" + domain }
 
 // API is the subset of the Docker Engine API that Ctl depends on.
 // The intention behind making this interface is to allow tests in other packages
@@ -55,6 +57,14 @@ var _ API = (*client.Client)(nil)
 type Ctl struct {
 	cli     API
 	dataDir string
+	logger  *slog.Logger
+
+	// ctx/cancel bound background log-streaming goroutines (see logs.go)
+	// to Ctl's own lifetime rather than to any single request's context,
+	// since streaming must keep running after the call that started a
+	// container returns, and must stop cleanly on Close.
+	ctx    context.Context
+	cancel context.CancelFunc
 }
 
 // New creates a controller using the standard Docker environment (DOCKER_HOST
@@ -64,27 +74,28 @@ type Ctl struct {
 // headscaleHostDir and CreateOrganization), and that source is resolved by
 // the Docker daemon, not by this process's own filesystem view (see
 // Config.DataDir's doc comment in internal/config for why that matters).
-func New(dataDir string) (_ *Ctl, err error) {
+func New(dataDir string, logger *slog.Logger) (_ *Ctl, err error) {
 	defer derrors.Wrap(&err, "dockerctl.New(%q)", dataDir)
 
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, err
 	}
-	return NewWithClient(cli, dataDir)
+	return NewWithClient(cli, dataDir, logger)
 }
 
 // NewWithClient creates a controller backed by an arbitrary API
 // implementation. It's exposed primarily so tests can inject a fake (see
 // internal/dockerctl/dockerfake) without a real Docker daemon; production
 // code should use New.
-func NewWithClient(cli API, dataDir string) (_ *Ctl, err error) {
+func NewWithClient(cli API, dataDir string, logger *slog.Logger) (_ *Ctl, err error) {
 	defer derrors.Wrap(&err, "dockerctl.NewWithClient(dataDir=%q)", dataDir)
 
 	if !filepath.IsAbs(dataDir) {
 		return nil, fmt.Errorf("dataDir must be an absolute path, got %q", dataDir)
 	}
-	return &Ctl{cli: cli, dataDir: dataDir}, nil
+	ctx, cancel := context.WithCancel(context.Background())
+	return &Ctl{cli: cli, dataDir: dataDir, logger: logger, ctx: ctx, cancel: cancel}, nil
 }
 
 // headscaleHostDir returns the host directory bind-mounted at
@@ -97,6 +108,7 @@ func (c *Ctl) headscaleHostDir(subdomain string) string {
 
 func (c *Ctl) Close() (err error) {
 	defer derrors.Wrap(&err, "c.Close()")
+	c.cancel()
 	return c.cli.Close()
 }
 
@@ -187,7 +199,8 @@ var configTemplateHP = template.Must(template.New("headplaneConfig").Parse(`serv
   data_path: "/var/lib/headplane"
 
 headscale:
-  url: "http://{{.HeadscaleContainer}}:8080"
+  url: "http://{{.HSContainerName}}:8080"
+  public_url: "{{.HSExternalEndpoint}}"
 
 integration:
   agent:
@@ -208,10 +221,11 @@ func buildHPConfig(subdomain, domain, cookieSecret string) (_ string, err error)
 	defer derrors.Wrap(&err, "buildHPConfig(%q, %q, %q)", subdomain, domain, cookieSecret)
 
 	var buf bytes.Buffer
-	if err := configTemplateHP.Execute(&buf, struct{ BaseURL, CookieSecret, HeadscaleContainer string }{
+	if err := configTemplateHP.Execute(&buf, struct{ BaseURL, CookieSecret, HSContainerName, HSExternalEndpoint string }{
 		BaseURL:            domain,
 		CookieSecret:       cookieSecret,
-		HeadscaleContainer: HSContainerName(subdomain),
+		HSContainerName:    HSContainerName(subdomain),
+		HSExternalEndpoint: HSExternalEndpoint(domain),
 	}); err != nil {
 		return "", err
 	}
@@ -336,6 +350,7 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 	if err := c.cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		return "", fmt.Errorf("start container: %w", err)
 	}
+	go c.streamLogs(resp.ID, HSContainerName(subdomain))
 
 	if err := c.createHeadplane(ctx, subdomain, domain); err != nil {
 		return "", fmt.Errorf("create headplane: %w", err)
@@ -403,6 +418,7 @@ func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain string) (er
 	if err := c.cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		return fmt.Errorf("start container: %w", err)
 	}
+	go c.streamLogs(resp.ID, HPContainerName(subdomain))
 	return nil
 }
 
@@ -444,9 +460,11 @@ func (c *Ctl) StartOrganization(ctx context.Context, subdomain string) (err erro
 	if err := c.cli.ContainerStart(ctx, HSContainerName(subdomain), container.StartOptions{}); err != nil {
 		return fmt.Errorf("start container: %w", err)
 	}
+	go c.streamLogs(HSContainerName(subdomain), HSContainerName(subdomain))
 	if err := c.cli.ContainerStart(ctx, HPContainerName(subdomain), container.StartOptions{}); err != nil {
 		return fmt.Errorf("start headplane container: %w", err)
 	}
+	go c.streamLogs(HPContainerName(subdomain), HPContainerName(subdomain))
 	return nil
 }
 

@@ -83,7 +83,7 @@ func insertOrg(t *testing.T, queries *dbpkg.TxQueries, subdomain string) sqlcgen
 // creates real host directories under it.
 func newTestCtl(t *testing.T, api *dockerfake.API) *dockerctl.Ctl {
 	t.Helper()
-	ctl, err := dockerctl.NewWithClient(api, t.TempDir())
+	ctl, err := dockerctl.NewWithClient(api, t.TempDir(), discardLogger())
 	if err != nil {
 		t.Fatalf("dockerctl.NewWithClient: %v", err)
 	}

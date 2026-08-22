@@ -50,6 +50,7 @@ archive: docker-image
 	tar czf - \
 		--exclude='.git' \
 		--exclude='config.yaml' \
+		--exclude='.env' \
 		--exclude='data' \
 		--exclude='node_modules' \
 		--exclude='bin' \
@@ -70,6 +71,7 @@ rm-orphans:
 ci:
 	go build ./...
 	go vet ./...
+	go fix ./...
 	go test -race -shuffle=on -covermode=atomic -coverprofile=coverage.out ./...
 	go mod tidy
 	go run golang.org/x/tools/cmd/goimports@latest -w .

@@ -4,6 +4,7 @@
 package dockerfake
 
 import (
+	"bytes"
 	"context"
 	"io"
 
@@ -12,18 +13,11 @@ import (
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-
-	"github.com/ownscalenet/ownscale/internal/dockerctl"
 )
 
-// API is a fake dockerctl.API. It embeds the Docker SDK's own client
-// interfaces as nil values, so it only needs to implement the handful of
-// methods Ctl actually calls; every field below defaults to a reasonable
-// success response when left nil, but can be set to a func to observe
-// calls or return specific results/errors. Any method not listed below
-// (i.e. not used by Ctl) will panic with a nil pointer dereference if ever
-// called, which is a clear signal that a test is exercising a code path
-// this fake doesn't support yet.
+// API is a fake dockerctl.API. It embeds the Docker SDK's own client interfaces
+// as nil values, so it only needs to implement the handful of methods Ctl
+// actually calls.
 type API struct {
 	client.ContainerAPIClient
 	client.NetworkAPIClient
@@ -36,6 +30,7 @@ type API struct {
 	ContainerInspectFn func(ctx context.Context, containerID string) (container.InspectResponse, error)
 	ContainerListFn    func(ctx context.Context, options container.ListOptions) ([]container.Summary, error)
 	CopyToContainerFn  func(ctx context.Context, containerID, path string, content io.Reader, options container.CopyToContainerOptions) error
+	ContainerLogsFn    func(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error)
 
 	NetworkInspectFn func(ctx context.Context, networkID string, options network.InspectOptions) (network.Inspect, error)
 	NetworkCreateFn  func(ctx context.Context, name string, options network.CreateOptions) (network.CreateResponse, error)
@@ -45,8 +40,6 @@ type API struct {
 
 	CloseFn func() error
 }
-
-var _ dockerctl.API = (*API)(nil)
 
 // ContainerCreate fakes container.Config creation, returning ContainerCreateFn's
 // result if set, or a synthetic "fake-<containerName>" ID otherwise.
@@ -105,6 +98,15 @@ func (a *API) CopyToContainer(ctx context.Context, containerID, path string, con
 		return a.CopyToContainerFn(ctx, containerID, path, content, options)
 	}
 	return nil
+}
+
+// ContainerLogs fakes streaming a container's logs, defaulting to an empty
+// (already at EOF) stream.
+func (a *API) ContainerLogs(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error) {
+	if a.ContainerLogsFn != nil {
+		return a.ContainerLogsFn(ctx, containerID, options)
+	}
+	return io.NopCloser(new(bytes.Buffer)), nil
 }
 
 // NetworkInspect fakes inspecting a network, defaulting to "already exists".

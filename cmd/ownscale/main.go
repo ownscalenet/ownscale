@@ -62,11 +62,14 @@ func run() error {
 	}
 	defer pool.Close()
 
-	ctl, err := dockerctl.New(cfg.DataDir)
+	ctl, err := dockerctl.New(cfg.DataDir, logger)
 	if err != nil {
 		return fmt.Errorf("docker init: %w", err)
 	}
 	defer ctl.Close()
+	if err := ctl.StreamAllLogs(context.Background()); err != nil {
+		logger.Warn("reattach organization container logs", "error", err)
+	}
 
 	queries := db.New(pool, logger)
 	h := handlers.New(queries, ctl, cfg.BaseDomain, logger)
