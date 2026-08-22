@@ -10,10 +10,9 @@ import (
 )
 
 type Organization struct {
-	ID          string
-	Subdomain   string
-	ContainerID string
-	CreatedAt   time.Time
+	ID        string
+	Subdomain string
+	CreatedAt time.Time
 }
 
 type Orgconfig struct {

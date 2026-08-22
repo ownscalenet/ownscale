@@ -39,9 +39,9 @@ func (s *Service) BaseDomain() string {
 	return s.baseDomain
 }
 
-// Create provisions an organization: it inserts the organizations row, starts
-// the headscale container for subdomain via ctl, and records the container
-// id, all within a single transaction.
+// Create provisions an organization: it inserts the organizations row and
+// starts the headscale container for subdomain via ctl, all within a
+// single transaction.
 func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organization, err error) {
 	defer derrors.Wrap(&err, "(*orgs.Service).Create(ctx, %q)", subdomain)
 
@@ -64,15 +64,8 @@ func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organ
 		return org, fmt.Errorf("create organization record (already exists?): %w", err)
 	}
 
-	containerID, err := s.ctl.CreateOrganization(ctx, subdomain, s.baseDomain)
-	if err != nil {
+	if _, err := s.ctl.CreateOrganization(ctx, subdomain, s.baseDomain); err != nil {
 		return org, fmt.Errorf("create container: %w", err)
-	}
-	if err := qtx.SetOrganizationContainerID(ctx, sqlcgen.SetOrganizationContainerIDParams{
-		ContainerID: containerID,
-		ID:          org.ID,
-	}); err != nil {
-		return org, fmt.Errorf("store container id: %w", err)
 	}
 
 	return org, commit()

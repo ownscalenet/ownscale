@@ -150,13 +150,8 @@ func TestCreateOrganization(t *testing.T) {
 		if !strings.Contains(out.String(), "created organization acme.example.com") {
 			t.Errorf("output = %q, want it to mention the created organization", out.String())
 		}
-		org, err := queries.GetOrganizationBySubdomain(context.Background(), "acme")
-		if err != nil {
+		if _, err := queries.GetOrganizationBySubdomain(context.Background(), "acme"); err != nil {
 			t.Fatalf("GetOrganizationBySubdomain: %v", err)
-		}
-		wantContainerID := "fake-" + dockerctl.HSContainerName("acme")
-		if org.ContainerID != wantContainerID {
-			t.Errorf("ContainerID = %q, want %q", org.ContainerID, wantContainerID)
 		}
 	})
 }

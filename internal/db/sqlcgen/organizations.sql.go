@@ -12,7 +12,7 @@ import (
 const createOrganization = `-- name: CreateOrganization :one
 INSERT INTO organizations (id, subdomain)
 VALUES (?, ?)
-RETURNING id, subdomain, container_id, created_at
+RETURNING id, subdomain, created_at
 `
 
 type CreateOrganizationParams struct {
@@ -23,12 +23,7 @@ type CreateOrganizationParams struct {
 func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error) {
 	row := q.db.QueryRowContext(ctx, createOrganization, arg.ID, arg.Subdomain)
 	var i Organization
-	err := row.Scan(
-		&i.ID,
-		&i.Subdomain,
-		&i.ContainerID,
-		&i.CreatedAt,
-	)
+	err := row.Scan(&i.ID, &i.Subdomain, &i.CreatedAt)
 	return i, err
 }
 
@@ -42,23 +37,18 @@ func (q *Queries) DeleteOrganization(ctx context.Context, id string) error {
 }
 
 const getOrganizationBySubdomain = `-- name: GetOrganizationBySubdomain :one
-SELECT id, subdomain, container_id, created_at FROM organizations WHERE subdomain = ?
+SELECT id, subdomain, created_at FROM organizations WHERE subdomain = ?
 `
 
 func (q *Queries) GetOrganizationBySubdomain(ctx context.Context, subdomain string) (Organization, error) {
 	row := q.db.QueryRowContext(ctx, getOrganizationBySubdomain, subdomain)
 	var i Organization
-	err := row.Scan(
-		&i.ID,
-		&i.Subdomain,
-		&i.ContainerID,
-		&i.CreatedAt,
-	)
+	err := row.Scan(&i.ID, &i.Subdomain, &i.CreatedAt)
 	return i, err
 }
 
 const listOrganizations = `-- name: ListOrganizations :many
-SELECT id, subdomain, container_id, created_at FROM organizations ORDER BY subdomain
+SELECT id, subdomain, created_at FROM organizations ORDER BY subdomain
 `
 
 func (q *Queries) ListOrganizations(ctx context.Context) ([]Organization, error) {
@@ -70,12 +60,7 @@ func (q *Queries) ListOrganizations(ctx context.Context) ([]Organization, error)
 	var items []Organization
 	for rows.Next() {
 		var i Organization
-		if err := rows.Scan(
-			&i.ID,
-			&i.Subdomain,
-			&i.ContainerID,
-			&i.CreatedAt,
-		); err != nil {
+		if err := rows.Scan(&i.ID, &i.Subdomain, &i.CreatedAt); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
@@ -87,18 +72,4 @@ func (q *Queries) ListOrganizations(ctx context.Context) ([]Organization, error)
 		return nil, err
 	}
 	return items, nil
-}
-
-const setOrganizationContainerID = `-- name: SetOrganizationContainerID :exec
-UPDATE organizations SET container_id = ? WHERE id = ?
-`
-
-type SetOrganizationContainerIDParams struct {
-	ContainerID string
-	ID          string
-}
-
-func (q *Queries) SetOrganizationContainerID(ctx context.Context, arg SetOrganizationContainerIDParams) error {
-	_, err := q.db.ExecContext(ctx, setOrganizationContainerID, arg.ContainerID, arg.ID)
-	return err
 }
