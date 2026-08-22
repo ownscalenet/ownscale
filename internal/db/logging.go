@@ -24,7 +24,7 @@ func newLoggingDBTX(dbtx sqlcgen.DBTX, logger *slog.Logger) sqlcgen.DBTX {
 	return &loggingDBTX{db: dbtx, logger: logger}
 }
 
-func (l *loggingDBTX) ExecContext(ctx context.Context, query string, args ...interface{}) (sql.Result, error) {
+func (l *loggingDBTX) ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error) {
 	start := time.Now()
 	res, err := l.db.ExecContext(ctx, query, args...)
 	l.log(ctx, "exec", query, len(args), time.Since(start), err)
@@ -38,7 +38,7 @@ func (l *loggingDBTX) PrepareContext(ctx context.Context, query string) (*sql.St
 	return stmt, err
 }
 
-func (l *loggingDBTX) QueryContext(ctx context.Context, query string, args ...interface{}) (*sql.Rows, error) {
+func (l *loggingDBTX) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	start := time.Now()
 	rows, err := l.db.QueryContext(ctx, query, args...)
 	l.log(ctx, "query", query, len(args), time.Since(start), err)
@@ -47,7 +47,7 @@ func (l *loggingDBTX) QueryContext(ctx context.Context, query string, args ...in
 
 // QueryRowContext has no error to report directly: *sql.Row defers error
 // reporting to the eventual Scan call, so it's logged without one.
-func (l *loggingDBTX) QueryRowContext(ctx context.Context, query string, args ...interface{}) *sql.Row {
+func (l *loggingDBTX) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
 	start := time.Now()
 	row := l.db.QueryRowContext(ctx, query, args...)
 	l.log(ctx, "query_row", query, len(args), time.Since(start), nil)

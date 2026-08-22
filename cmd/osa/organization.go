@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/peterbourgon/ff/v4"
@@ -70,8 +71,8 @@ type orgResources struct {
 func newOrgResources(configPath *string, withDB, withDocker bool) (_ *orgResources, cleanup func(), err error) {
 	var closers []func() error
 	cleanup = func() {
-		for i := len(closers) - 1; i >= 0; i-- {
-			closers[i]() //nolint:errcheck // best-effort close on process exit
+		for _, closer := range slices.Backward(closers) {
+			closer() //nolint:errcheck // best-effort close on process exit
 		}
 	}
 

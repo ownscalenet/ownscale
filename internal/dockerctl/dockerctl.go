@@ -257,14 +257,14 @@ func configTar(path, content string) (*bytes.Buffer, error) {
 	tw := tar.NewWriter(&buf)
 
 	rel := strings.TrimPrefix(path, "/")
-	dir := ""
-	for _, part := range strings.Split(filepath.Dir(rel), "/") {
+	var dir strings.Builder
+	for part := range strings.SplitSeq(filepath.Dir(rel), "/") {
 		if part == "" || part == "." {
 			continue
 		}
-		dir += part + "/"
+		dir.WriteString(part + "/")
 		if err := tw.WriteHeader(&tar.Header{
-			Name:     dir,
+			Name:     dir.String(),
 			Typeflag: tar.TypeDir,
 			Mode:     0o755,
 		}); err != nil {

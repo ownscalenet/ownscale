@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"slices"
 	"strings"
 	"testing"
 
@@ -30,7 +31,7 @@ func newCapturingLogger(buf *bytes.Buffer) *slog.Logger {
 func parseLogRecords(t *testing.T, buf *bytes.Buffer) []logRecord {
 	t.Helper()
 	var records []logRecord
-	for _, line := range strings.Split(strings.TrimSpace(buf.String()), "\n") {
+	for line := range strings.SplitSeq(strings.TrimSpace(buf.String()), "\n") {
 		if line == "" {
 			continue
 		}
@@ -141,11 +142,8 @@ func TestStreamLogs(t *testing.T) {
 	}
 	for _, w := range want {
 		var found bool
-		for _, r := range records {
-			if r == w {
-				found = true
-				break
-			}
+		if slices.Contains(records, w) {
+			found = true
 		}
 		if !found {
 			t.Errorf("records = %+v, want it to contain %+v", records, w)

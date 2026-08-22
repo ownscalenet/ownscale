@@ -97,7 +97,7 @@ func (h *Handlers) provisionOrganization(ctx context.Context) (sqlcgen.Organizat
 
 	const maxAttempts = 3
 	var lastErr error
-	for attempt := 0; attempt < maxAttempts; attempt++ {
+	for range maxAttempts {
 		subdomain, err := orgs.RandomSubdomain()
 		if err != nil {
 			return sqlcgen.Organization{}, err
