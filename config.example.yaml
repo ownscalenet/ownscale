@@ -25,6 +25,11 @@ base_domain: "example.com"
 # absolute host path -- see docker-compose.yml and .env.example.
 data_dir: "data"
 
+# For easier development on local, caddy uses self-signed certificates with a CA
+# that is mounted/trusted by all other containers. osa local-ca-init is the command
+# that generates the CA.
+local_ca_dir: "local-ca"
+
 auth:
   # Random string used to sign the login session cookie. Required to run the server.
   session_secret: "changeme"

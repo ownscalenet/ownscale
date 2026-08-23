@@ -85,7 +85,7 @@ func TestServiceCreateCreatesOIDCClient(t *testing.T) {
 			return container.ExecInspect{ExitCode: 0}, nil
 		},
 	}
-	ctl, err := dockerctl.NewWithClient(api, t.TempDir(), false, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctl, err := dockerctl.NewWithClient(api, t.TempDir(), "", slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("dockerctl.NewWithClient: %v", err)
 	}

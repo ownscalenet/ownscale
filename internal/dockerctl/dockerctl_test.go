@@ -8,7 +8,6 @@ import (
 	"log/slog"
 	"maps"
 	"net"
-	"os"
 	"slices"
 	"strings"
 	"testing"
@@ -21,6 +20,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/ownscalenet/ownscale/internal/dockerctl/dockerfake"
+	"github.com/ownscalenet/ownscale/internal/localca"
 )
 
 func discardLogger() *slog.Logger {
@@ -103,7 +103,7 @@ func TestCreateOrganizationBootstrapsHeadscaleAPIKey(t *testing.T) {
 			return container.ExecInspect{ExitCode: 0}, nil
 		},
 	}
-	ctl, err := NewWithClient(api, t.TempDir(), false, discardLogger())
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
 	if err != nil {
 		t.Fatalf("NewWithClient: %v", err)
 	}
@@ -149,18 +149,9 @@ func tarContents(r io.Reader) (map[string]string, error) {
 	}
 }
 
-func singleFileTar(name, content string) *bytes.Buffer {
-	var buf bytes.Buffer
-	tw := tar.NewWriter(&buf)
-	_ = tw.WriteHeader(&tar.Header{Name: name, Mode: 0o644, Size: int64(len(content))})
-	_, _ = tw.Write([]byte(content))
-	_ = tw.Close()
-	return &buf
-}
-
 func TestEnsureCaddyNetworkAliasNoCaddyFound(t *testing.T) {
 	api := &dockerfake.API{}
-	ctl, err := NewWithClient(api, t.TempDir(), false, discardLogger())
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
 	if err != nil {
 		t.Fatalf("NewWithClient: %v", err)
 	}
@@ -193,7 +184,7 @@ func TestEnsureCaddyNetworkAliasConnectsWhenNotAttached(t *testing.T) {
 			return nil
 		},
 	}
-	ctl, err := NewWithClient(api, t.TempDir(), false, discardLogger())
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
 	if err != nil {
 		t.Fatalf("NewWithClient: %v", err)
 	}
@@ -235,7 +226,7 @@ func TestEnsureCaddyNetworkAliasReconnectsWhenAliasMissing(t *testing.T) {
 			return nil
 		},
 	}
-	ctl, err := NewWithClient(api, t.TempDir(), false, discardLogger())
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
 	if err != nil {
 		t.Fatalf("NewWithClient: %v", err)
 	}
@@ -274,7 +265,7 @@ func TestEnsureCaddyNetworkAliasNoopWhenAlreadyAliased(t *testing.T) {
 			return nil
 		},
 	}
-	ctl, err := NewWithClient(api, t.TempDir(), false, discardLogger())
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
 	if err != nil {
 		t.Fatalf("NewWithClient: %v", err)
 	}
@@ -285,66 +276,15 @@ func TestEnsureCaddyNetworkAliasNoopWhenAlreadyAliased(t *testing.T) {
 	}
 }
 
-func TestEnsureCaddyCATrustFailsWhenAbsent(t *testing.T) {
-	api := &dockerfake.API{} // CopyFromContainerFn unset -> defaults to os.ErrNotExist
-	ctl, err := NewWithClient(api, t.TempDir(), false, discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
-	t.Cleanup(func() { _ = ctl.Close() })
-
-	if err := ctl.ensureCaddyCATrust(t.Context(), "hs-acme"); err == nil {
-		t.Fatal("ensureCaddyCATrust: want error when caddy CA is absent, got nil")
-	}
-}
-
-func TestEnsureCaddyCATrustAppendsWhenPresent(t *testing.T) {
-	const caCert = "-----BEGIN CERTIFICATE-----\nfake-caddy-ca\n-----END CERTIFICATE-----\n"
-	const systemBundle = "-----BEGIN CERTIFICATE-----\nfake-system-root\n-----END CERTIFICATE-----\n"
-
-	var writtenBundle string
-	api := &dockerfake.API{
-		CopyFromContainerFn: func(ctx context.Context, containerID, srcPath string) (io.ReadCloser, container.PathStat, error) {
-			switch srcPath {
-			case CaddyDataMountTarget + "/" + CaddyLocalCARelPath:
-				return io.NopCloser(singleFileTar("root.crt", caCert)), container.PathStat{}, nil
-			case headscaleCABundlePath:
-				return io.NopCloser(singleFileTar("ca-certificates.crt", systemBundle)), container.PathStat{}, nil
-			default:
-				return nil, container.PathStat{}, os.ErrNotExist
-			}
-		},
-		CopyToContainerFn: func(ctx context.Context, containerID, path string, content io.Reader, options container.CopyToContainerOptions) error {
-			files, err := tarContents(content)
-			if err != nil {
-				return err
-			}
-			writtenBundle = files[strings.TrimPrefix(headscaleCABundlePath, "/")]
-			return nil
-		},
-	}
-	ctl, err := NewWithClient(api, t.TempDir(), false, discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
-	t.Cleanup(func() { _ = ctl.Close() })
-
-	if err := ctl.ensureCaddyCATrust(t.Context(), "hs-acme"); err != nil {
-		t.Fatalf("ensureCaddyCATrust: %v", err)
-	}
-	if !strings.Contains(writtenBundle, systemBundle) || !strings.Contains(writtenBundle, caCert) {
-		t.Fatalf("written CA bundle = %q, want it to contain both the system bundle and caddy's local CA", writtenBundle)
-	}
-}
-
-func TestCreateOrganizationMountsCaddyDataVolumeAndSetsHeadplaneEnv(t *testing.T) {
+func TestCreateOrganizationMountsLocalCADirAndSetsEnvWhenConfigured(t *testing.T) {
 	var hsMounts, hpMounts []mount.Mount
-	var hpEnv []string
+	var hsEnv, hpEnv []string
 	api := &dockerfake.API{
 		ContainerCreateFn: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
 			switch containerName {
 			case HSContainerName("acme"):
 				hsMounts = hostConfig.Mounts
+				hsEnv = config.Env
 			case HPContainerName("acme"):
 				hpMounts = hostConfig.Mounts
 				hpEnv = config.Env
@@ -352,7 +292,8 @@ func TestCreateOrganizationMountsCaddyDataVolumeAndSetsHeadplaneEnv(t *testing.T
 			return container.CreateResponse{ID: containerName}, nil
 		},
 	}
-	ctl, err := NewWithClient(api, t.TempDir(), false, discardLogger())
+	localCADir := t.TempDir()
+	ctl, err := NewWithClient(api, t.TempDir(), localCADir, discardLogger())
 	if err != nil {
 		t.Fatalf("NewWithClient: %v", err)
 	}
@@ -366,32 +307,37 @@ func TestCreateOrganizationMountsCaddyDataVolumeAndSetsHeadplaneEnv(t *testing.T
 
 	for _, mounts := range [][]mount.Mount{hsMounts, hpMounts} {
 		if !slices.ContainsFunc(mounts, func(m mount.Mount) bool {
-			return m.Type == mount.TypeVolume && m.Source == caddyDataVolume && m.Target == CaddyDataMountTarget && m.ReadOnly
+			return m.Type == mount.TypeBind && m.Source == localCADir && m.Target == LocalCAMountTarget && m.ReadOnly
 		}) {
-			t.Fatalf("mounts = %+v, want a read-only caddy-data volume mount at %q", mounts, CaddyDataMountTarget)
+			t.Fatalf("mounts = %+v, want a read-only bind mount of %q at %q", mounts, localCADir, LocalCAMountTarget)
 		}
 	}
 
-	wantEnv := "NODE_EXTRA_CA_CERTS=" + CaddyDataMountTarget + "/" + CaddyLocalCARelPath
-	if !slices.Contains(hpEnv, wantEnv) {
-		t.Fatalf("headplane env = %v, want it to contain %q", hpEnv, wantEnv)
+	wantHSEnv := "SSL_CERT_DIR=/etc/ssl/certs:/etc/pki/tls/certs:" + LocalCAMountTarget
+	if !slices.Contains(hsEnv, wantHSEnv) {
+		t.Fatalf("headscale env = %v, want it to contain %q", hsEnv, wantHSEnv)
+	}
+
+	wantHPEnv := "NODE_EXTRA_CA_CERTS=" + LocalCAMountTarget + "/" + localca.RootCertFileName
+	if !slices.Contains(hpEnv, wantHPEnv) {
+		t.Fatalf("headplane env = %v, want it to contain %q", hpEnv, wantHPEnv)
 	}
 }
 
-func TestCreateOrganizationSkipsCaddyCATrustWhenNotRequired(t *testing.T) {
-	var copiedCA bool
+func TestCreateOrganizationSkipsLocalCAMountWhenNotConfigured(t *testing.T) {
+	var hsMounts, hpMounts []mount.Mount
 	api := &dockerfake.API{
 		ContainerCreateFn: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+			switch containerName {
+			case HSContainerName("acme"):
+				hsMounts = hostConfig.Mounts
+			case HPContainerName("acme"):
+				hpMounts = hostConfig.Mounts
+			}
 			return container.CreateResponse{ID: containerName}, nil
 		},
-		CopyFromContainerFn: func(ctx context.Context, containerID, srcPath string) (io.ReadCloser, container.PathStat, error) {
-			if srcPath == CaddyDataMountTarget+"/"+CaddyLocalCARelPath {
-				copiedCA = true
-			}
-			return nil, container.PathStat{}, os.ErrNotExist
-		},
 	}
-	ctl, err := NewWithClient(api, t.TempDir(), false, discardLogger())
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
 	if err != nil {
 		t.Fatalf("NewWithClient: %v", err)
 	}
@@ -402,27 +348,10 @@ func TestCreateOrganizationSkipsCaddyCATrustWhenNotRequired(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
-	if copiedCA {
-		t.Fatal("CreateOrganization attempted to read caddy's local CA even though requireCaddyLocalCerts is false")
-	}
-}
 
-func TestCreateOrganizationFailsWhenCaddyLocalCertsRequiredAndCAAbsent(t *testing.T) {
-	api := &dockerfake.API{
-		ContainerCreateFn: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
-			return container.CreateResponse{ID: containerName}, nil
-		},
-		// CopyFromContainerFn unset -> defaults to os.ErrNotExist for every path.
-	}
-	ctl, err := NewWithClient(api, t.TempDir(), true, discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
-	t.Cleanup(func() { _ = ctl.Close() })
-
-	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{
-		Issuer: "https://example.com", ClientID: "id", ClientSecret: "secret",
-	}); err == nil {
-		t.Fatal("CreateOrganization: want error when requireCaddyLocalCerts is true and caddy's local CA is absent, got nil")
+	for _, mounts := range [][]mount.Mount{hsMounts, hpMounts} {
+		if slices.ContainsFunc(mounts, func(m mount.Mount) bool { return m.Target == LocalCAMountTarget }) {
+			t.Fatalf("mounts = %+v, want no local CA mount when LocalCADir is unset", mounts)
+		}
 	}
 }

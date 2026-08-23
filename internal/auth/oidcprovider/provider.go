@@ -35,7 +35,7 @@ func New(cfg *config.Config, queries *sqlcgen.Queries) (_ op.OpenIDProvider, _ *
 	}
 	storage := newStorage(queries, newSigningKey(rsaKey), cfg.Auth.OIDCProvider.Issuer, accessTokenLifetime, idTokenLifetime)
 	cryptoKey := sha256.Sum256([]byte(cfg.Auth.SessionSecret + ":oidc-crypto-key"))
-	provider, err := op.NewOpenIDProvider(cfg.Auth.OIDCProvider.Issuer, &op.Config{
+	provider, err := op.NewProvider(&op.Config{
 		CryptoKey:                cryptoKey,
 		DefaultLogoutRedirectURI: "/",
 		CodeMethodS256:           true,
@@ -43,7 +43,7 @@ func New(cfg *config.Config, queries *sqlcgen.Queries) (_ op.OpenIDProvider, _ *
 		AuthMethodPrivateKeyJWT:  false,
 		GrantTypeRefreshToken:    true,
 		RequestObjectSupported:   false,
-	}, storage)
+	}, storage, op.StaticIssuer(cfg.Auth.OIDCProvider.Issuer))
 	if err != nil {
 		return nil, nil, err
 	}

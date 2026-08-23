@@ -154,7 +154,7 @@ func TestStreamAllLogs(t *testing.T) {
 	}
 
 	buf := &syncBuffer{}
-	ctl, err := NewWithClient(api, t.TempDir(), false, slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
+	ctl, err := NewWithClient(api, t.TempDir(), "", slog.New(slog.NewJSONHandler(buf, &slog.HandlerOptions{Level: slog.LevelDebug})))
 	if err != nil {
 		t.Fatalf("NewWithClient: %v", err)
 	}
@@ -217,7 +217,7 @@ func TestStreamLogs(t *testing.T) {
 	}
 
 	var buf bytes.Buffer
-	ctl, err := NewWithClient(api, t.TempDir(), false, newCapturingLogger(&buf))
+	ctl, err := NewWithClient(api, t.TempDir(), "", newCapturingLogger(&buf))
 	if err != nil {
 		t.Fatalf("NewWithClient: %v", err)
 	}

@@ -92,7 +92,7 @@ base_domain: example.com
 	t.Setenv("OWNSCALE_ADDR", ":7070")
 	t.Setenv("OWNSCALE_BASE_DOMAIN", "override.example.com")
 	t.Setenv("OWNSCALE_LOG_LEVEL", "warn")
-	t.Setenv("OWNSCALE_CADDY_LOCAL_CERTS", "local_certs")
+	t.Setenv("OWNSCALE_LOCAL_CA_DIR", "custom-local-ca")
 
 	cfg, err := Load("")
 	if err != nil {
@@ -107,8 +107,9 @@ base_domain: example.com
 	if cfg.Log.Level != "warn" {
 		t.Errorf("Log.Level = %q, want %q (env override of default)", cfg.Log.Level, "warn")
 	}
-	if cfg.CaddyLocalCerts != "local_certs" {
-		t.Errorf("CaddyLocalCerts = %q, want %q (env override)", cfg.CaddyLocalCerts, "local_certs")
+	wantLocalCADir := filepath.Join(cfg.DataDir, "custom-local-ca")
+	if cfg.LocalCADir != wantLocalCADir {
+		t.Errorf("LocalCADir = %q, want %q (env override, resolved under DataDir)", cfg.LocalCADir, wantLocalCADir)
 	}
 }
 

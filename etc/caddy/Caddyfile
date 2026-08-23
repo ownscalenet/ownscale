@@ -14,6 +14,23 @@
 	# Caddy gets real, publicly-trusted certificates via ACME as usual.
 	{$CADDY_LOCAL_CERTS:}
 
+	# Sign every "internal"/local cert (i.e. whatever CADDY_LOCAL_CERTS
+	# above actually triggers) from a pre-generated root CA instead of one
+	# Caddy generates itself on first use -- see docker-compose.yml's
+	# "local-ca-init" service and internal/localca, which idempotently
+	# generate this exact cert/key pair ahead of time, in every
+	# environment. That lets every other container (ownscale itself,
+	# headscale, headplane) trust a single, always-already-existing file
+	# via a plain static mount.
+	pki {
+		ca local {
+			root {
+				cert /etc/ownscale-local-ca/root.crt
+				key /etc/ownscale-local-ca/root.key
+			}
+		}
+	}
+
 	# Set CADDY_LOG_LEVEL=debug in docker-compose.yaml to get verbose
 	# debug-level logs from Caddy.
 	log {
@@ -48,7 +65,6 @@ dex.{$BASE_DOMAIN} {
 	reverse_proxy dex:5556
 }
 
-
 # Route https://<sub>.{$BASE_DOMAIN} to the hs-<sub> container, and
 # https://<sub>.{$BASE_DOMAIN}/admin to the hp-<sub> (headplane) container.
 *.{$BASE_DOMAIN} {
@@ -56,19 +72,19 @@ dex.{$BASE_DOMAIN} {
 		on_demand
 	}
 
-    map {host} {backend} {
-           ~^([a-z0-9-]+)\. "hs-${1}:8080"
-    }
+	map {host} {backend} {
+		~^([a-z0-9-]+)\. "hs-${1}:8080"
+	}
 
-    map {host} {hpbackend} {
-           ~^([a-z0-9-]+)\. "hp-${1}:3000"
-    }
+	map {host} {hpbackend} {
+		~^([a-z0-9-]+)\. "hp-${1}:3000"
+	}
 
-    handle /admin* {
-           reverse_proxy {hpbackend}
-    }
+	handle /admin* {
+		reverse_proxy {hpbackend}
+	}
 
-    handle {
-           reverse_proxy {backend}
-    }
+	handle {
+		reverse_proxy {backend}
+	}
 }

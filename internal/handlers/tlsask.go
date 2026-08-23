@@ -17,10 +17,15 @@ func (h *Handlers) TLSAsk(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// The bare base domain and the "admin" subdomain are always statically
-	// routed by Caddy (not on-demand), but they still fall within the
-	// "*.{base}" wildcard subject, for TLS.
-	if domain == base || domain == "admin."+base || domain == "auth."+base || domain == "docs."+base || domain == "dex."+base {
+	// docs.{base} and dex.{base} are fixed, known-in-advance subdomains
+	// (unlike per-organization ones, which need the
+	// GetOrganizationBySubdomain check below); they still use on-demand
+	// TLS (see etc/caddy/Caddyfile), so they go through this endpoint, but
+	// are always allowed rather than looked up. The bare base domain gets
+	// eager/static TLS and doesn't call this endpoint at all, but is
+	// included here too since it still falls within the "*.{base}"
+	// wildcard subject.
+	if domain == base || domain == "docs."+base || domain == "dex."+base {
 		w.WriteHeader(http.StatusOK)
 		return
 	}

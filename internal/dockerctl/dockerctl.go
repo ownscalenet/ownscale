@@ -29,6 +29,7 @@ import (
 	"github.com/docker/docker/pkg/stdcopy"
 
 	"github.com/ownscalenet/ownscale/internal/derrors"
+	"github.com/ownscalenet/ownscale/internal/localca"
 )
 
 const (
@@ -38,37 +39,8 @@ const (
 	headscaleConfigPath = "/etc/headscale/config.yaml"
 	headplaneConfigPath = "/etc/headplane/config.yaml"
 
-	// caddyDataVolume is the named volume Caddy stores its data (including
-	// its local, self-signed CA used for BASE_DOMAIN values Caddy can't get
-	// a public ACME cert for, e.g. "localhost") in. It's declared in
-	// docker-compose.yml and mounted read-only into organization containers
-	// so they can trust that CA (see ensureCaddyCATrust).
-	//
-	// This literal name must match docker-compose.yml's volumes.caddy-data
-	// "name:" override exactly (the same way ownscaleNetwork below must
-	// match the os-net network's "name:" override): without that override,
-	// Compose would create the real volume as "<project>_caddy-data"
-	// instead, and mounting by this literal name here would silently
-	// auto-create an unrelated, permanently empty volume rather than
-	// erroring, so this constant would look correct while never actually
-	// reaching Caddy's data.
-	caddyDataVolume = "caddy-data"
-	// CaddyDataMountTarget is where caddyDataVolume is mounted (read-only)
-	// inside organization containers, and (see internal/auth.Setup) inside
-	// the ownscale app container itself, so it too can trust Caddy's local
-	// CA when talking to an upstream OIDC provider (e.g. Dex) proxied
-	// through Caddy under a non-public BASE_DOMAIN.
-	CaddyDataMountTarget = "/data"
-	// CaddyLocalCARelPath is where Caddy's local CA root cert lives inside
-	// caddyDataVolume, matching Caddy's own /data mount (see the "Trust
-	// Caddy localhost certs" section of README.md). Only present once Caddy
-	// has issued at least one self-signed "internal" cert -- i.e. only for
-	// non-public BASE_DOMAIN values; absent (harmlessly) in production.
-	CaddyLocalCARelPath = "caddy/pki/authorities/local/root.crt"
-	// headscaleCABundlePath is the system CA bundle path Go's crypto/x509
-	// reads by default on Linux (no SSL_CERT_FILE/SSL_CERT_DIR needed) and
-	// that headscale/headscale:0.29.3 ships at this exact path.
-	headscaleCABundlePath = "/etc/ssl/certs/ca-certificates.crt"
+	// Caddy self-signed CA is mounted here for organization containers.
+	LocalCAMountTarget = "/etc/ownscale-local-ca"
 )
 
 func HSContainerName(subdomain string) string { return "hs-" + subdomain }
@@ -108,11 +80,13 @@ type Ctl struct {
 	ctx    context.Context
 	cancel context.CancelFunc
 
-	// requireCaddyLocalCerts mirrors Config.CaddyLocalCerts being non-empty:
-	// when true, CreateOrganization copies Caddy's local CA into every new
-	// headscale container and requires that copy to succeed (see
-	// ensureCaddyCATrust); when false, it skips that step entirely.
-	requireCaddyLocalCerts bool
+	// localCADir mirrors Config.LocalCADir: the host directory containing
+	// the pre-generated local development root CA (see internal/localca),
+	// bind-mounted read-only at LocalCAMountTarget into every organization
+	// container. Empty means "don't mount anything" -- e.g. if the config
+	// value was cleared entirely, though in practice it always defaults to
+	// a real path (see config.Load).
+	localCADir string
 }
 
 // New creates a controller using the standard Docker environment (DOCKER_HOST
@@ -122,22 +96,22 @@ type Ctl struct {
 // headscaleHostDir and CreateOrganization), and that source is resolved by
 // the Docker daemon, not by this process's own filesystem view (see
 // Config.DataDir's doc comment in internal/config for why that matters).
-// requireCaddyLocalCerts should be Config.CaddyLocalCerts != "".
-func New(dataDir string, requireCaddyLocalCerts bool, logger *slog.Logger) (_ *Ctl, err error) {
+// localCADir should be Config.LocalCADir.
+func New(dataDir, localCADir string, logger *slog.Logger) (_ *Ctl, err error) {
 	defer derrors.Wrap(&err, "dockerctl.New(%q)", dataDir)
 
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, err
 	}
-	return NewWithClient(cli, dataDir, requireCaddyLocalCerts, logger)
+	return NewWithClient(cli, dataDir, localCADir, logger)
 }
 
 // NewWithClient creates a controller backed by an arbitrary API
 // implementation. It's exposed primarily so tests can inject a fake (see
 // internal/dockerctl/dockerfake) without a real Docker daemon; production
 // code should use New.
-func NewWithClient(cli API, dataDir string, requireCaddyLocalCerts bool, logger *slog.Logger) (_ *Ctl, err error) {
+func NewWithClient(cli API, dataDir, localCADir string, logger *slog.Logger) (_ *Ctl, err error) {
 	defer derrors.Wrap(&err, "dockerctl.NewWithClient(dataDir=%q)", dataDir)
 
 	if !filepath.IsAbs(dataDir) {
@@ -148,7 +122,18 @@ func NewWithClient(cli API, dataDir string, requireCaddyLocalCerts bool, logger 
 	// 1. for making regular docker requests (create container, stop container, etc.)
 	// 2. for long-running watcher for logs of containers from 1.
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Ctl{cli: cli, dataDir: dataDir, logger: logger, ctx: ctx, cancel: cancel, requireCaddyLocalCerts: requireCaddyLocalCerts}, nil
+	return &Ctl{cli: cli, dataDir: dataDir, logger: logger, ctx: ctx, cancel: cancel, localCADir: localCADir}, nil
+}
+
+// localCAMount returns the read-only bind mount attaching localCADir at
+// LocalCAMountTarget, and true, or a zero Mount and false if no local CA
+// directory is configured. Added to every organization container so they
+// can trust the local development root CA Caddy signs its local certs from
+func (c *Ctl) localCAMount() (mount.Mount, bool) {
+	if c.localCADir == "" {
+		return mount.Mount{}, false
+	}
+	return mount.Mount{Type: mount.TypeBind, Source: c.localCADir, Target: LocalCAMountTarget, ReadOnly: true}, true
 }
 
 // headscaleHostDir returns the host directory bind-mounted at
@@ -490,64 +475,6 @@ func configTar(path, content string) (_ *bytes.Buffer, err error) {
 	return &buf, nil
 }
 
-// caddyDataMount returns the read-only mount attaching caddyDataVolume at
-// CaddyDataMountTarget, added to organization containers so they can find
-// (and trust) Caddy's local CA if present -- see ensureCaddyCATrust.
-func caddyDataMount() mount.Mount {
-	return mount.Mount{Type: mount.TypeVolume, Source: caddyDataVolume, Target: CaddyDataMountTarget, ReadOnly: true}
-}
-
-// readFileFromContainer reads a single file's content out of a (possibly
-// not-yet-started) container's filesystem, e.g. from a mounted volume.
-func (c *Ctl) readFileFromContainer(ctx context.Context, containerID, path string) (_ []byte, err error) {
-	defer derrors.Wrap(&err, "c.readFileFromContainer(%q, %q)", containerID, path)
-
-	reader, _, err := c.cli.CopyFromContainer(ctx, containerID, path)
-	if err != nil {
-		return nil, err
-	}
-	defer reader.Close()
-
-	tr := tar.NewReader(reader)
-	if _, err := tr.Next(); err != nil {
-		return nil, err
-	}
-	return io.ReadAll(tr)
-}
-
-// ensureCaddyCATrust makes headscale (a distroless, shell-less Go binary)
-// trust Caddy's local CA by appending it to the same on-disk CA bundle Go's
-// crypto/x509 already reads by default (headscaleCABundlePath) -- no
-// entrypoint wrapping or update-ca-certificates call needed, since we can
-// just overwrite that file via the Docker API before the container starts.
-//
-// Callers should only invoke this when Caddy is actually configured to use
-// its own local CA (i.e. Ctl.requireCaddyLocalCerts; see CreateOrganization's
-// call site) -- in that case a missing/unreadable CA is a real
-// misconfiguration (headscale would otherwise fail OIDC discovery with a
-// confusing TLS trust error later), so it's treated as a hard error rather
-// than silently skipped.
-func (c *Ctl) ensureCaddyCATrust(ctx context.Context, containerID string) (err error) {
-	defer derrors.Wrap(&err, "c.ensureCaddyCATrust(%q)", containerID)
-
-	caCert, err := c.readFileFromContainer(ctx, containerID, filepath.Join(CaddyDataMountTarget, CaddyLocalCARelPath))
-	if err != nil {
-		return fmt.Errorf("caddy local CA not found (required because CADDY_LOCAL_CERTS is set): %w", err)
-	}
-
-	bundle, err := c.readFileFromContainer(ctx, containerID, headscaleCABundlePath)
-	if err != nil {
-		return fmt.Errorf("read system CA bundle: %w", err)
-	}
-
-	combined := append(append(bundle, '\n'), caCert...)
-	tarBuf, err := configTar(headscaleCABundlePath, string(combined))
-	if err != nil {
-		return fmt.Errorf("build CA bundle archive: %w", err)
-	}
-	return c.cli.CopyToContainer(ctx, containerID, "/", tarBuf, container.CopyToContainerOptions{})
-}
-
 func (c *Ctl) bootstrapHeadscaleAPIKey(ctx context.Context, containerID string) (_ string, err error) {
 	defer derrors.Wrap(&err, "c.bootstrapHeadscaleAPIKey(%q)", containerID)
 
@@ -625,10 +552,20 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 		return "", fmt.Errorf("create data directory: %w", err)
 	}
 
+	mounts := []mount.Mount{
+		{Type: mount.TypeBind, Source: hostDir, Target: "/var/lib/headscale"},
+	}
+	var env []string
+	if m, ok := c.localCAMount(); ok {
+		mounts = append(mounts, m)
+		env = append(env, "SSL_CERT_DIR=/etc/ssl/certs:/etc/pki/tls/certs:"+LocalCAMountTarget)
+	}
+
 	resp, err := c.cli.ContainerCreate(ctx,
 		&container.Config{
 			Image: Image,
 			Cmd:   []string{"serve"},
+			Env:   env,
 			Labels: map[string]string{
 				"ownscale.organization": "true",
 				"ownscale.subdomain":    subdomain,
@@ -637,10 +574,7 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 		},
 		&container.HostConfig{
 			RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
-			Mounts: []mount.Mount{
-				{Type: mount.TypeBind, Source: hostDir, Target: "/var/lib/headscale"},
-				caddyDataMount(),
-			},
+			Mounts:        mounts,
 		},
 		&network.NetworkingConfig{
 			EndpointsConfig: map[string]*network.EndpointSettings{
@@ -660,12 +594,6 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 	}
 	if err := c.cli.CopyToContainer(ctx, resp.ID, "/", tarBuf, container.CopyToContainerOptions{}); err != nil {
 		return "", fmt.Errorf("copy config into container: %w", err)
-	}
-
-	if c.requireCaddyLocalCerts {
-		if err := c.ensureCaddyCATrust(ctx, resp.ID); err != nil {
-			return "", fmt.Errorf("ensure caddy CA trust: %w", err)
-		}
 	}
 
 	if err := c.cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
@@ -705,6 +633,13 @@ func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain, hsCfg, hea
 		return fmt.Errorf("create volume: %w", err)
 	}
 
+	mounts := []mount.Mount{
+		{Type: mount.TypeVolume, Source: volName, Target: "/var/lib/headplane"},
+	}
+	if m, ok := c.localCAMount(); ok {
+		mounts = append(mounts, m)
+	}
+
 	resp, err := c.cli.ContainerCreate(ctx,
 		&container.Config{
 			Image: headplaneImage,
@@ -717,18 +652,13 @@ func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain, hsCfg, hea
 			// Node.js only reads NODE_EXTRA_CA_CERTS in addition to its
 			// built-in trust store (it doesn't replace it), and silently
 			// ignores the variable if the file doesn't exist -- so this is
-			// safe to always set: it makes headplane trust Caddy's local CA
-			// when present (non-public BASE_DOMAIN dev setups), and is a
-			// no-op in production where Caddy holds a publicly-trusted ACME
-			// cert.
-			Env: []string{"NODE_EXTRA_CA_CERTS=" + filepath.Join(CaddyDataMountTarget, CaddyLocalCARelPath)},
+			// safe to always set: it makes headplane trust the local
+			// development root CA.
+			Env: []string{"NODE_EXTRA_CA_CERTS=" + filepath.Join(LocalCAMountTarget, localca.RootCertFileName)},
 		},
 		&container.HostConfig{
 			RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
-			Mounts: []mount.Mount{
-				{Type: mount.TypeVolume, Source: volName, Target: "/var/lib/headplane"},
-				caddyDataMount(),
-			},
+			Mounts:        mounts,
 		},
 		&network.NetworkingConfig{
 			EndpointsConfig: map[string]*network.EndpointSettings{

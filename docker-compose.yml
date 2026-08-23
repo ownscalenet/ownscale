@@ -1,24 +1,36 @@
 services:
+  # One-shot: idempotently generates the local development root CA (see
+  # internal/localca) that Caddy signs all its local certs from (see
+  # etc/caddy/Caddyfile's "pki" block), under ${OWNSCALE_DATA_DIR}/local-ca.
+  # Present (and harmless/unused) when using a real domain.
+  local-ca-init:
+    image: ownscale:latest
+    build: .
+    entrypoint: ["/app/osa"]
+    command: ["gen-local-ca", "--config", "/etc/ownscale/config.yaml", "--caddy-data-dir", "/caddy-data"]
+    environment:
+      OWNSCALE_DATA_DIR: ${OWNSCALE_DATA_DIR:?set OWNSCALE_DATA_DIR to an absolute host path in .env}
+    volumes:
+      - ${OWNSCALE_DATA_DIR}:${OWNSCALE_DATA_DIR}
+      - ./config.yaml:/etc/ownscale/config.yaml:ro
+      - caddy-data:/caddy-data
+    networks:
+      - os-net
+
   ownscale:
     image: ownscale:latest
     build: .
+    depends_on:
+      local-ca-init:
+        condition: service_completed_successfully
     environment:
       OWNSCALE_BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
       OWNSCALE_DATA_DIR: ${OWNSCALE_DATA_DIR:?set OWNSCALE_DATA_DIR to an absolute host path in .env}
-      OWNSCALE_CADDY_LOCAL_CERTS: ${CADDY_LOCAL_CERTS:-}
+      SSL_CERT_DIR: /etc/ssl/certs:/etc/pki/tls/certs:${OWNSCALE_DATA_DIR}/local-ca
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${OWNSCALE_DATA_DIR}:${OWNSCALE_DATA_DIR}
       - ./config.yaml:/etc/ownscale/config.yaml:ro
-      # Read-only access to Caddy's local CA (see CADDY_LOCAL_CERTS above),
-      # so ownscale itself can trust it for outbound HTTPS calls to its
-      # upstream OIDC provider when that's also proxied through Caddy under
-      # a non-public BASE_DOMAIN (e.g. the bundled "dex" service below) --
-      # see internal/auth.RegisterUpstreamOIDC and
-      # internal/dockerctl.CaddyLocalCARelPath. Unused (and harmless) when
-      # CADDY_LOCAL_CERTS is unset, i.e. a real, publicly-trusted upstream
-      # issuer in production.
-      - caddy-data:/data:ro
     networks:
       - os-net
     restart: unless-stopped
@@ -62,6 +74,9 @@ services:
 
   caddy:
     image: caddy:2
+    depends_on:
+      local-ca-init:
+        condition: service_completed_successfully
     environment:
       BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
       CADDY_LOG_LEVEL: ${CADDY_LOG_LEVEL:-debug}
@@ -75,28 +90,20 @@ services:
       - ./etc/caddy/site:/srv/site:ro
       - caddy-data:/data
       - caddy-config:/config
+      - ${OWNSCALE_DATA_DIR}/local-ca:/etc/ownscale-local-ca:ro
     networks:
       os-net:
-        # Docker-network alias for Dex's own subdomain, declared here
-        # (rather than set imperatively like BASE_DOMAIN itself -- see
+        # Docker-network alias for Dex's own subdomain; see
         # internal/dockerctl.EnsureCaddyNetworkAlias) since it's a fixed,
-        # always-needed local-dev hostname rather than a per-organization
-        # one created at runtime. Without this, the ownscale service's
+        # always-needed. Without this, the ownscale service's
         # outbound HTTPS calls to its configured auth.upstream_oidc.issuer
         # (https://dex.${BASE_DOMAIN} by default) would have nowhere to
         # resolve to, since a non-public BASE_DOMAIN like "ownscale.test"
-        # has no real DNS at all. Being compose-declared (unlike the
-        # imperative BASE_DOMAIN alias), it also survives Caddy's
-        # container being recreated without needing to be re-asserted.
+        # has no real DNS at all.
         aliases:
           - dex.${BASE_DOMAIN:-ownscale.test}
 
 volumes:
-  # Named explicitly (rather than left to Compose's default
-  # <project>_<name> prefixing) because internal/dockerctl/dockerctl.go's
-  # caddyDataVolume constant mounts this exact literal name into every
-  # organization container -- keep them in sync (mirrors the os-net
-  # network override below, needed for the same reason).
   caddy-data:
     name: caddy-data
   caddy-config:

@@ -29,6 +29,7 @@ func main() {
 	rootCmd.Subcommands = append(rootCmd.Subcommands,
 		newOrganizationCommand(rootFlags, configPath),
 		newMigrateCommand(rootFlags, configPath),
+		newGenLocalCACommand(rootFlags, configPath),
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

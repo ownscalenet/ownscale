@@ -98,7 +98,7 @@ func newOrgResources(configPath *string, withDB, withDocker bool) (_ *orgResourc
 	}
 
 	if withDocker {
-		ctl, err := dockerctl.New(cfg.DataDir, cfg.CaddyLocalCerts != "", logger)
+		ctl, err := dockerctl.New(cfg.DataDir, cfg.LocalCADir, logger)
 		if err != nil {
 			return nil, cleanup, fmt.Errorf("docker init: %w", err)
 		}

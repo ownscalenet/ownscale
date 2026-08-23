@@ -56,7 +56,7 @@ func newTestQueries(t *testing.T) *dbpkg.TxQueries {
 // exercised without a real Docker daemon.
 func newTestCtl(t *testing.T, api *dockerfake.API) *dockerctl.Ctl {
 	t.Helper()
-	ctl, err := dockerctl.NewWithClient(api, t.TempDir(), false, discardLogger())
+	ctl, err := dockerctl.NewWithClient(api, t.TempDir(), "", discardLogger())
 	if err != nil {
 		t.Fatalf("dockerctl.NewWithClient: %v", err)
 	}

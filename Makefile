@@ -4,7 +4,7 @@
 # (go:embed needs real files at Go build time), so run `make frontend`
 # whenever frontend/ changes and commit the updated internal/webui/dist.
 
-.PHONY: build frontend backend osa test test-integration coverage migration archive docker-image rm-orphans purge ci docs
+.PHONY: build frontend backend osa test test-integration coverage migration archive docker-image rm-orphans purge ci docs load-cert
 
 DOCKER_IMAGE := ownscale:latest
 
@@ -76,6 +76,33 @@ purge:
 
 rm-orphans:
 	docker ps -aq --filter "label=ownscale.organization=true" | xargs -r docker stop | xargs -r docker rm
+
+# ghetto script for trusting caddy's self-signed certificates.
+# To manually trust the certificates in firefox:
+#  1. Copy the root cert out of `${OWNSCALE_DATA_DIR}/local-ca/root.crt` (no
+#     `docker cp` needed -- it's a plain file on the host).
+#  2. Go to `about:preferences#privacy` → scroll to Certificates → View Certificates
+#  3. Authorities tab → Import → select `root.crt`
+#  4. Check "Trust this CA to identify websites"
+CERT := $(if $(OWNSCALE_DATA_DIR),$(OWNSCALE_DATA_DIR),data)/local-ca/root.crt
+load-cert:
+	@test -f $(CERT) || { echo "$(CERT) not found -- start docker compose (local-ca-init) first"; exit 1; }
+	@command -v certutil >/dev/null || { echo "certutil not found -- install it (e.g. 'sudo apt install libnss3-tools')"; exit 1; }
+	@found=0; \
+	for profiles_dir in "$$HOME/.mozilla/firefox" "$$HOME/snap/firefox/common/.mozilla/firefox" "$$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox"; do \
+		[ -d "$$profiles_dir" ] || continue; \
+		for profile in "$$profiles_dir"/*/; do \
+			[ -f "$${profile}cert9.db" ] || continue; \
+			found=1; \
+			echo "importing into $$profile"; \
+			certutil -A -n "ownscale local dev CA" -t "C,," -i "$(CERT)" -d "sql:$${profile%/}"; \
+		done; \
+	done; \
+	if [ "$$found" = 0 ]; then \
+		echo "no Firefox profiles (cert9.db) found under ~/.mozilla/firefox, ~/snap/firefox, or ~/.var/app/org.mozilla.firefox"; \
+		exit 1; \
+	fi
+	@echo "done -- restart Firefox for the change to take effect"
 
 # Run the same checks as .github/workflows/ci.yml, for local sanity-checking
 # before pushing. Requires golangci-lint and govulncheck.
