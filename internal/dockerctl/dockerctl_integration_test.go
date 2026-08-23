@@ -52,7 +52,7 @@ func TestDockerctlIntegration(t *testing.T) {
 	var logBuf syncBuffer
 	logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
 
-	ctl, err := dockerctl.New(t.TempDir(), logger)
+	ctl, err := dockerctl.New(t.TempDir(), false, logger)
 	if err != nil {
 		t.Fatalf("dockerctl.New: %v", err)
 	}
@@ -89,7 +89,16 @@ func TestDockerctlIntegration(t *testing.T) {
 	})
 
 	t.Run("CreateOrganization starts real containers", func(t *testing.T) {
-		if _, err := ctl.CreateOrganization(ctx, subdomain, baseDomain); err != nil {
+		// OIDCClientCredentials is intentionally left empty here: headscale
+		// (0.29.3) does eager, fatal OIDC discovery at startup whenever an
+		// issuer is configured, and a reachable issuer for baseDomain only
+		// exists when Caddy is actually running as part of the full
+		// docker-compose stack (see ensureCaddyNetworkAlias), which this
+		// daemon-only integration test doesn't spin up. The OIDC
+		// issuer/network-alias wiring itself is covered by dockerfake-backed
+		// unit tests instead (TestEnsureCaddyNetworkAlias*,
+		// TestCreateOrganizationMountsCaddyDataVolumeAndSetsHeadplaneEnv).
+		if _, err := ctl.CreateOrganization(ctx, subdomain, baseDomain, dockerctl.OIDCClientCredentials{}); err != nil {
 			t.Fatalf("CreateOrganization: %v", err)
 		}
 

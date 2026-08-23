@@ -3,12 +3,37 @@ services:
     image: ownscale:latest
     build: .
     environment:
-      OWNSCALE_BASE_DOMAIN: ${BASE_DOMAIN:-localhost}
+      OWNSCALE_BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
       OWNSCALE_DATA_DIR: ${OWNSCALE_DATA_DIR:?set OWNSCALE_DATA_DIR to an absolute host path in .env}
+      OWNSCALE_CADDY_LOCAL_CERTS: ${CADDY_LOCAL_CERTS:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${OWNSCALE_DATA_DIR}:${OWNSCALE_DATA_DIR}
       - ./config.yaml:/etc/ownscale/config.yaml:ro
+      # Read-only access to Caddy's local CA (see CADDY_LOCAL_CERTS above),
+      # so ownscale itself can trust it for outbound HTTPS calls to its
+      # upstream OIDC provider when that's also proxied through Caddy under
+      # a non-public BASE_DOMAIN (e.g. the bundled "dex" service below) --
+      # see internal/auth.RegisterUpstreamOIDC and
+      # internal/dockerctl.CaddyLocalCARelPath. Unused (and harmless) when
+      # CADDY_LOCAL_CERTS is unset, i.e. a real, publicly-trusted upstream
+      # issuer in production.
+      - caddy-data:/data:ro
+    networks:
+      - os-net
+    restart: unless-stopped
+
+  # Local-dev-only OIDC provider ownscale federates its own login to by
+  # default (see config.yaml's auth.upstream_oidc.* and
+  # etc/dex/config.yaml). Swap auth.upstream_oidc.issuer/client_id/
+  # client_secret/callback_url to point at a real IdP (Google, Okta, ...)
+  # in production and simply omit this service -- ownscale's own code never
+  # references Dex specifically, only generic OIDC discovery.
+  dex:
+    image: dexidp/dex:v2.45.1
+    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    volumes:
+      - ./etc/dex/config.yaml:/etc/dex/config.yaml:ro
     networks:
       - os-net
     restart: unless-stopped
@@ -38,8 +63,9 @@ services:
   caddy:
     image: caddy:2
     environment:
-      BASE_DOMAIN: ${BASE_DOMAIN:-localhost}
+      BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
       CADDY_LOG_LEVEL: ${CADDY_LOG_LEVEL:-debug}
+      CADDY_LOCAL_CERTS: ${CADDY_LOCAL_CERTS:-}
     ports:
       - "0.0.0.0:80:80"
       - "0.0.0.0:443:443"
@@ -47,15 +73,34 @@ services:
     volumes:
       - ./etc/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./etc/caddy/site:/srv/site:ro
-      - ./etc/caddy/admin:/srv/admin:ro
       - caddy-data:/data
       - caddy-config:/config
     networks:
-      - os-net
+      os-net:
+        # Docker-network alias for Dex's own subdomain, declared here
+        # (rather than set imperatively like BASE_DOMAIN itself -- see
+        # internal/dockerctl.EnsureCaddyNetworkAlias) since it's a fixed,
+        # always-needed local-dev hostname rather than a per-organization
+        # one created at runtime. Without this, the ownscale service's
+        # outbound HTTPS calls to its configured auth.upstream_oidc.issuer
+        # (https://dex.${BASE_DOMAIN} by default) would have nowhere to
+        # resolve to, since a non-public BASE_DOMAIN like "ownscale.test"
+        # has no real DNS at all. Being compose-declared (unlike the
+        # imperative BASE_DOMAIN alias), it also survives Caddy's
+        # container being recreated without needing to be re-asserted.
+        aliases:
+          - dex.${BASE_DOMAIN:-ownscale.test}
 
 volumes:
+  # Named explicitly (rather than left to Compose's default
+  # <project>_<name> prefixing) because internal/dockerctl/dockerctl.go's
+  # caddyDataVolume constant mounts this exact literal name into every
+  # organization container -- keep them in sync (mirrors the os-net
+  # network override below, needed for the same reason).
   caddy-data:
+    name: caddy-data
   caddy-config:
+    name: caddy-config
 
 networks:
   os-net:

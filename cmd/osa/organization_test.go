@@ -18,6 +18,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pressly/goose/v3"
 
+	"github.com/ownscalenet/ownscale/internal/config"
 	dbpkg "github.com/ownscalenet/ownscale/internal/db"
 	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/internal/dockerctl"
@@ -83,11 +84,41 @@ func insertOrg(t *testing.T, queries *dbpkg.TxQueries, subdomain string) sqlcgen
 // creates real host directories under it.
 func newTestCtl(t *testing.T, api *dockerfake.API) *dockerctl.Ctl {
 	t.Helper()
-	ctl, err := dockerctl.NewWithClient(api, t.TempDir(), discardLogger())
+	ctl, err := dockerctl.NewWithClient(api, t.TempDir(), false, discardLogger())
 	if err != nil {
 		t.Fatalf("dockerctl.NewWithClient: %v", err)
 	}
 	return ctl
+}
+
+func TestBaseDomain(t *testing.T) {
+	t.Run("empty rejected", func(t *testing.T) {
+		if _, err := baseDomain(&config.Config{}); err == nil {
+			t.Fatal("baseDomain: want error for empty base_domain, got nil")
+		}
+	})
+
+	t.Run("localhost rejected", func(t *testing.T) {
+		for _, v := range []string{"localhost", "LOCALHOST", "LocalHost"} {
+			_, err := baseDomain(&config.Config{BaseDomain: v})
+			if err == nil {
+				t.Fatalf("baseDomain: want error for base_domain %q, got nil", v)
+			}
+			if !strings.Contains(err.Error(), "localhost") {
+				t.Errorf("baseDomain error = %q, want it to mention %q", err.Error(), "localhost")
+			}
+		}
+	})
+
+	t.Run("valid domain passes", func(t *testing.T) {
+		got, err := baseDomain(&config.Config{BaseDomain: "example.com"})
+		if err != nil {
+			t.Fatalf("baseDomain: %v", err)
+		}
+		if got != "example.com" {
+			t.Errorf("baseDomain = %q, want %q", got, "example.com")
+		}
+	})
 }
 
 func TestCreateOrganization(t *testing.T) {
@@ -100,7 +131,7 @@ func TestCreateOrganization(t *testing.T) {
 			},
 		})
 		var out strings.Builder
-		err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com"), "ab")
+		err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com", "https://auth.example.com"), "ab")
 		if err == nil {
 			t.Fatal("expected an error for an invalid (too short) subdomain")
 		}
@@ -112,7 +143,7 @@ func TestCreateOrganization(t *testing.T) {
 
 		ctl := newTestCtl(t, &dockerfake.API{})
 		var out strings.Builder
-		err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com"), "acme")
+		err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com", "https://auth.example.com"), "acme")
 		if err == nil {
 			t.Fatal("expected an error creating a duplicate subdomain")
 		}
@@ -128,7 +159,7 @@ func TestCreateOrganization(t *testing.T) {
 			},
 		})
 		var out strings.Builder
-		err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com"), "acme")
+		err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com", "https://auth.example.com"), "acme")
 		if err == nil || !strings.Contains(err.Error(), "docker exploded") {
 			t.Fatalf("got err %v, want it to wrap %v", err, wantErr)
 		}
@@ -143,7 +174,7 @@ func TestCreateOrganization(t *testing.T) {
 
 		ctl := newTestCtl(t, &dockerfake.API{})
 		var out strings.Builder
-		if err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com"), "acme"); err != nil {
+		if err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com", "https://auth.example.com"), "acme"); err != nil {
 			t.Fatalf("createOrganization: %v", err)
 		}
 
@@ -256,7 +287,7 @@ func TestStartOrganizations(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
 		_, queries := newTestDB(t)
 		var out strings.Builder
-		if err := startOrganizations(t.Context(), &out, discardLogger(), queries, newTestCtl(t, &dockerfake.API{})); err != nil {
+		if err := startOrganizations(t.Context(), &out, discardLogger(), queries, newTestCtl(t, &dockerfake.API{}), "example.com"); err != nil {
 			t.Fatalf("startOrganizations: %v", err)
 		}
 		if strings.TrimSpace(out.String()) != "no organizations" {
@@ -278,7 +309,7 @@ func TestStartOrganizations(t *testing.T) {
 			},
 		})
 		var out strings.Builder
-		err := startOrganizations(t.Context(), &out, discardLogger(), queries, ctl)
+		err := startOrganizations(t.Context(), &out, discardLogger(), queries, ctl, "example.com")
 		if err == nil || !strings.Contains(err.Error(), "failed to start 1/2 organizations") {
 			t.Fatalf("got err %v, want a 1/2 failure count", err)
 		}

@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/rand"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 
 	"github.com/ownscalenet/ownscale/internal/db"
@@ -15,6 +16,7 @@ import (
 	"github.com/ownscalenet/ownscale/internal/dockerctl"
 
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 )
 
 // Service provisions organizations against a fixed set of queries, Docker
@@ -25,12 +27,13 @@ type Service struct {
 	queries    *db.TxQueries
 	ctl        *dockerctl.Ctl
 	baseDomain string
+	issuer     string
 }
 
 // NewService builds a Service backed by queries and ctl, provisioning
 // organizations under baseDomain.
-func NewService(queries *db.TxQueries, ctl *dockerctl.Ctl, baseDomain string) *Service {
-	return &Service{queries: queries, ctl: ctl, baseDomain: baseDomain}
+func NewService(queries *db.TxQueries, ctl *dockerctl.Ctl, baseDomain, issuer string) *Service {
+	return &Service{queries: queries, ctl: ctl, baseDomain: baseDomain, issuer: issuer}
 }
 
 // BaseDomain returns the domain organizations are provisioned under (e.g.
@@ -64,21 +67,53 @@ func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organ
 		return org, fmt.Errorf("create organization record (already exists?): %w", err)
 	}
 
-	if _, err := s.ctl.CreateOrganization(ctx, subdomain, s.baseDomain); err != nil {
+	clientID, err := randomHex(8)
+	if err != nil {
+		return org, err
+	}
+	clientID = "os_" + subdomain + "_" + clientID
+	clientSecret, err := randomHex(32)
+	if err != nil {
+		return org, err
+	}
+	clientSecretHash, err := bcrypt.GenerateFromPassword([]byte(clientSecret), bcrypt.DefaultCost)
+	if err != nil {
+		return org, err
+	}
+	redirectURIsJSON, err := json.Marshal([]string{
+		"https://" + subdomain + "." + s.baseDomain + "/oidc/callback",
+		"https://" + subdomain + "." + s.baseDomain + "/admin/oidc/callback",
+	})
+	if err != nil {
+		return org, err
+	}
+	if _, err := qtx.CreateOIDCClient(ctx, sqlcgen.CreateOIDCClientParams{
+		ID:               uuid.Must(uuid.NewV7()).String(),
+		OrganizationID:   org.ID,
+		ClientID:         clientID,
+		ClientSecretHash: string(clientSecretHash),
+		RedirectUris:     string(redirectURIsJSON),
+	}); err != nil {
+		return org, err
+	}
+
+	if _, err := s.ctl.CreateOrganization(ctx, subdomain, s.baseDomain, dockerctl.OIDCClientCredentials{
+		Issuer:       s.issuer,
+		ClientID:     clientID,
+		ClientSecret: clientSecret,
+	}); err != nil {
 		return org, fmt.Errorf("create container: %w", err)
 	}
 
 	return org, commit()
 }
 
-// RandomSubdomain generates a short, DNS-label-safe random subdomain (e.g.
-// "org-3f9a21c8") suitable for auto-provisioning a new organization.
-func RandomSubdomain() (_ string, err error) {
-	defer derrors.Wrap(&err, "orgs.RandomSubdomain()")
+func randomHex(n int) (_ string, err error) {
+	defer derrors.Wrap(&err, "orgs.randomHex(%d)", n)
 
-	buf := make([]byte, 4)
+	buf := make([]byte, n)
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
 	}
-	return "org-" + hex.EncodeToString(buf), nil
+	return hex.EncodeToString(buf), nil
 }

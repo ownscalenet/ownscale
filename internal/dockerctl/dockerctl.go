@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"text/template"
 	"time"
@@ -25,6 +26,7 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 
 	"github.com/ownscalenet/ownscale/internal/derrors"
 )
@@ -35,12 +37,52 @@ const (
 	headplaneImage      = "ghcr.io/tale/headplane:0.7.0-shell"
 	headscaleConfigPath = "/etc/headscale/config.yaml"
 	headplaneConfigPath = "/etc/headplane/config.yaml"
+
+	// caddyDataVolume is the named volume Caddy stores its data (including
+	// its local, self-signed CA used for BASE_DOMAIN values Caddy can't get
+	// a public ACME cert for, e.g. "localhost") in. It's declared in
+	// docker-compose.yml and mounted read-only into organization containers
+	// so they can trust that CA (see ensureCaddyCATrust).
+	//
+	// This literal name must match docker-compose.yml's volumes.caddy-data
+	// "name:" override exactly (the same way ownscaleNetwork below must
+	// match the os-net network's "name:" override): without that override,
+	// Compose would create the real volume as "<project>_caddy-data"
+	// instead, and mounting by this literal name here would silently
+	// auto-create an unrelated, permanently empty volume rather than
+	// erroring, so this constant would look correct while never actually
+	// reaching Caddy's data.
+	caddyDataVolume = "caddy-data"
+	// CaddyDataMountTarget is where caddyDataVolume is mounted (read-only)
+	// inside organization containers, and (see internal/auth.Setup) inside
+	// the ownscale app container itself, so it too can trust Caddy's local
+	// CA when talking to an upstream OIDC provider (e.g. Dex) proxied
+	// through Caddy under a non-public BASE_DOMAIN.
+	CaddyDataMountTarget = "/data"
+	// CaddyLocalCARelPath is where Caddy's local CA root cert lives inside
+	// caddyDataVolume, matching Caddy's own /data mount (see the "Trust
+	// Caddy localhost certs" section of README.md). Only present once Caddy
+	// has issued at least one self-signed "internal" cert -- i.e. only for
+	// non-public BASE_DOMAIN values; absent (harmlessly) in production.
+	CaddyLocalCARelPath = "caddy/pki/authorities/local/root.crt"
+	// headscaleCABundlePath is the system CA bundle path Go's crypto/x509
+	// reads by default on Linux (no SSL_CERT_FILE/SSL_CERT_DIR needed) and
+	// that headscale/headscale:0.29.3 ships at this exact path.
+	headscaleCABundlePath = "/etc/ssl/certs/ca-certificates.crt"
 )
 
 func HSContainerName(subdomain string) string { return "hs-" + subdomain }
 func HPContainerName(subdomain string) string { return "hp-" + subdomain }
 func HPVolumeName(subdomain string) string    { return "hp-" + subdomain + "-data" }
 func HSExternalEndpoint(domain string) string { return "https://" + domain }
+
+// OIDCClientCredentials are the per-organization relying-party credentials
+// templated into headscale and headplane.
+type OIDCClientCredentials struct {
+	Issuer       string
+	ClientID     string
+	ClientSecret string
+}
 
 // API is the subset of the Docker Engine API that Ctl depends on.
 // The intention behind making this interface is to allow tests in other packages
@@ -65,6 +107,12 @@ type Ctl struct {
 	// container returns, and must stop cleanly on Close.
 	ctx    context.Context
 	cancel context.CancelFunc
+
+	// requireCaddyLocalCerts mirrors Config.CaddyLocalCerts being non-empty:
+	// when true, CreateOrganization copies Caddy's local CA into every new
+	// headscale container and requires that copy to succeed (see
+	// ensureCaddyCATrust); when false, it skips that step entirely.
+	requireCaddyLocalCerts bool
 }
 
 // New creates a controller using the standard Docker environment (DOCKER_HOST
@@ -74,21 +122,22 @@ type Ctl struct {
 // headscaleHostDir and CreateOrganization), and that source is resolved by
 // the Docker daemon, not by this process's own filesystem view (see
 // Config.DataDir's doc comment in internal/config for why that matters).
-func New(dataDir string, logger *slog.Logger) (_ *Ctl, err error) {
+// requireCaddyLocalCerts should be Config.CaddyLocalCerts != "".
+func New(dataDir string, requireCaddyLocalCerts bool, logger *slog.Logger) (_ *Ctl, err error) {
 	defer derrors.Wrap(&err, "dockerctl.New(%q)", dataDir)
 
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, err
 	}
-	return NewWithClient(cli, dataDir, logger)
+	return NewWithClient(cli, dataDir, requireCaddyLocalCerts, logger)
 }
 
 // NewWithClient creates a controller backed by an arbitrary API
 // implementation. It's exposed primarily so tests can inject a fake (see
 // internal/dockerctl/dockerfake) without a real Docker daemon; production
 // code should use New.
-func NewWithClient(cli API, dataDir string, logger *slog.Logger) (_ *Ctl, err error) {
+func NewWithClient(cli API, dataDir string, requireCaddyLocalCerts bool, logger *slog.Logger) (_ *Ctl, err error) {
 	defer derrors.Wrap(&err, "dockerctl.NewWithClient(dataDir=%q)", dataDir)
 
 	if !filepath.IsAbs(dataDir) {
@@ -99,7 +148,7 @@ func NewWithClient(cli API, dataDir string, logger *slog.Logger) (_ *Ctl, err er
 	// 1. for making regular docker requests (create container, stop container, etc.)
 	// 2. for long-running watcher for logs of containers from 1.
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Ctl{cli: cli, dataDir: dataDir, logger: logger, ctx: ctx, cancel: cancel}, nil
+	return &Ctl{cli: cli, dataDir: dataDir, logger: logger, ctx: ctx, cancel: cancel, requireCaddyLocalCerts: requireCaddyLocalCerts}, nil
 }
 
 // headscaleHostDir returns the host directory bind-mounted at
@@ -129,6 +178,108 @@ func (c *Ctl) EnsureNetwork(ctx context.Context) (err error) {
 	}
 	_, err = c.cli.NetworkCreate(ctx, ownscaleNetwork, network.CreateOptions{})
 	return err
+}
+
+// EnsureCaddyNetworkAlias re-asserts baseDomain as a network alias for the
+// Caddy container on the shared network (see ensureCaddyNetworkAlias). It's
+// exported so callers can reconcile this on ownscale process startup, not
+// just when a new organization is created: the alias is set imperatively
+// via the Docker API rather than declared in docker-compose.yml, so it does
+// NOT survive Caddy's container being recreated (image rebuild, `docker
+// compose up`, etc.) -- only the container being merely restarted keeps it.
+// Without this, every org container created before such a recreation would
+// silently lose the ability to resolve https://{baseDomain} to Caddy (it
+// falls back to baseDomain's public DNS record, if any, which typically
+// points nowhere useful from inside the container), breaking their OIDC
+// login (discovery, and especially the token endpoint fetch) until the
+// alias is restored.
+func (c *Ctl) EnsureCaddyNetworkAlias(ctx context.Context, baseDomain string) (err error) {
+	defer derrors.Wrap(&err, "c.EnsureCaddyNetworkAlias(%q)", baseDomain)
+
+	if err := c.EnsureNetwork(ctx); err != nil {
+		return fmt.Errorf("ensure network: %w", err)
+	}
+	return c.ensureCaddyNetworkAlias(ctx, ownscaleNetwork, baseDomain)
+}
+
+// caddyComposeServiceLabel is the label Docker Compose sets on every
+// container it creates for a given service, e.g. "caddy" for the compose.yml
+// "caddy:" service. It's used (rather than a container name, which varies by
+// Compose project name) to reliably find the Caddy container.
+const caddyComposeServiceLabel = "com.docker.compose.service=caddy"
+
+// findCaddyContainer returns the ID of the running Caddy container (found
+// via its Compose service label), or "" if none is found (e.g. Caddy isn't
+// running, or this deployment doesn't use the bundled docker-compose.yml).
+func (c *Ctl) findCaddyContainer(ctx context.Context) (_ string, err error) {
+	defer derrors.Wrap(&err, "c.findCaddyContainer(ctx)")
+
+	containers, err := c.cli.ContainerList(ctx, container.ListOptions{
+		Filters: filters.NewArgs(filters.Arg("label", caddyComposeServiceLabel)),
+	})
+	if err != nil {
+		return "", err
+	}
+	if len(containers) == 0 {
+		return "", nil
+	}
+	return containers[0].ID, nil
+}
+
+// ensureCaddyNetworkAlias makes sure the Caddy container (found via its
+// Compose service label) is connected to networkName with baseDomain as a
+// network alias, so that any other container on networkName can resolve
+// https://{baseDomain} straight to Caddy via Docker's embedded DNS, instead
+// of failing DNS resolution (e.g. for BASE_DOMAIN=localhost) or relying on
+// hairpinning back through the host's published ports.
+//
+// It's idempotent: a no-op if Caddy is already connected to networkName
+// with the alias present. If Caddy isn't found at all, this logs a warning
+// and returns nil rather than failing organization creation outright, since
+// Caddy not running only breaks OIDC login for the new organization, not
+// organization creation itself.
+//
+// This is deliberately written as a per-network operation (rather than
+// hardcoded to the shared ownscaleNetwork) so that it keeps working if/when
+// organizations move to their own isolated per-org networks: the caller
+// would simply pass that org's network name instead.
+func (c *Ctl) ensureCaddyNetworkAlias(ctx context.Context, networkName, baseDomain string) (err error) {
+	defer derrors.Wrap(&err, "c.ensureCaddyNetworkAlias(%q, %q)", networkName, baseDomain)
+
+	caddyID, err := c.findCaddyContainer(ctx)
+	if err != nil {
+		return err
+	}
+	if caddyID == "" {
+		c.logger.Warn("caddy container not found; skipping network alias setup (OIDC discovery from org containers may fail)", "network", networkName, "base_domain", baseDomain)
+		return nil
+	}
+
+	inspected, err := c.cli.ContainerInspect(ctx, caddyID)
+	if err != nil {
+		return err
+	}
+
+	var existing *network.EndpointSettings
+	if inspected.NetworkSettings != nil {
+		existing = inspected.NetworkSettings.Networks[networkName]
+	}
+	if existing != nil && slices.Contains(existing.Aliases, baseDomain) {
+		return nil // already aliased
+	}
+
+	aliases := []string{baseDomain}
+	if existing != nil {
+		aliases = append(aliases, existing.Aliases...)
+		// Reconnecting requires disconnecting first if already attached.
+		if err := c.cli.NetworkDisconnect(ctx, networkName, caddyID, false); err != nil {
+			return fmt.Errorf("disconnect caddy from %s: %w", networkName, err)
+		}
+	}
+	if err := c.cli.NetworkConnect(ctx, networkName, caddyID, &network.EndpointSettings{Aliases: aliases}); err != nil {
+		return fmt.Errorf("connect caddy to %s with alias %q: %w", networkName, baseDomain, err)
+	}
+	return nil
 }
 
 // headscale config for an organization; ServerURL must match the public subdomain.
@@ -171,16 +322,34 @@ dns:
 
 unix_socket: /var/run/headscale/headscale.sock
 unix_socket_permission: "0770"
+
+oidc:
+  issuer: "{{.OIDCIssuer}}"
+  client_id: "{{.OIDCClientID}}"
+  client_secret: "{{.OIDCClientSecret}}"
+  scope: ["openid", "profile", "email", "offline_access"]
+  pkce:
+    enabled: true
+    method: S256
 `))
 
 // buildHSConfig renders the headscale config.yaml content for an organization.
-func buildHSConfig(subdomain, domain string) (_ string, err error) {
+func buildHSConfig(subdomain, domain string, oidcCreds OIDCClientCredentials) (_ string, err error) {
 	defer derrors.Wrap(&err, "buildHSConfig(%q, %q)", subdomain, domain)
 
 	var buf bytes.Buffer
-	if err := configTemplateHS.Execute(&buf, struct{ Subdomain, ServerURL string }{
-		Subdomain: subdomain,
-		ServerURL: domain,
+	if err := configTemplateHS.Execute(&buf, struct {
+		Subdomain        string
+		ServerURL        string
+		OIDCIssuer       string
+		OIDCClientID     string
+		OIDCClientSecret string
+	}{
+		Subdomain:        subdomain,
+		ServerURL:        domain,
+		OIDCIssuer:       oidcCreds.Issuer,
+		OIDCClientID:     oidcCreds.ClientID,
+		OIDCClientSecret: oidcCreds.ClientSecret,
 	}); err != nil {
 		return "", err
 	}
@@ -206,6 +375,17 @@ headscale:
   url: "http://{{.HSContainerName}}:8080"
   public_url: "{{.HSExternalEndpoint}}"
   config_path: "{{.HSConfigPath}}"
+  api_key: "{{.HeadscaleAPIKey}}"
+
+oidc:
+  enabled: true
+  issuer: "{{.OIDCIssuer}}"
+  token_endpoint_auth_method: "client_secret_basic"
+  client_id: "{{.OIDCClientID}}"
+  client_secret: "{{.OIDCClientSecret}}"
+  use_pkce: true
+  disable_api_key_login: false
+  scope: "openid email profile offline_access"
 
 integration:
   agent:
@@ -222,7 +402,7 @@ integration:
 
 // buildHPConfig renders the headplane config.yaml content for an
 // organization.
-func buildHPConfig(subdomain, domain, cookieSecret string) (_ string, err error) {
+func buildHPConfig(subdomain, domain, cookieSecret, headscaleAPIKey string, oidcCreds OIDCClientCredentials) (_ string, err error) {
 	defer derrors.Wrap(&err, "buildHPConfig(%q, %q, %q)", subdomain, domain, cookieSecret)
 
 	var buf bytes.Buffer
@@ -232,6 +412,10 @@ func buildHPConfig(subdomain, domain, cookieSecret string) (_ string, err error)
 		HSContainerName    string
 		HSExternalEndpoint string
 		HSConfigPath       string
+		HeadscaleAPIKey    string
+		OIDCIssuer         string
+		OIDCClientID       string
+		OIDCClientSecret   string
 	}
 	if err := configTemplateHP.Execute(&buf, tplData{
 		BaseURL:            domain,
@@ -239,6 +423,10 @@ func buildHPConfig(subdomain, domain, cookieSecret string) (_ string, err error)
 		HSContainerName:    HSContainerName(subdomain),
 		HSExternalEndpoint: HSExternalEndpoint(domain),
 		HSConfigPath:       headscaleConfigPath,
+		HeadscaleAPIKey:    headscaleAPIKey,
+		OIDCIssuer:         oidcCreds.Issuer,
+		OIDCClientID:       oidcCreds.ClientID,
+		OIDCClientSecret:   oidcCreds.ClientSecret,
 	}); err != nil {
 		return "", err
 	}
@@ -302,9 +490,118 @@ func configTar(path, content string) (_ *bytes.Buffer, err error) {
 	return &buf, nil
 }
 
+// caddyDataMount returns the read-only mount attaching caddyDataVolume at
+// CaddyDataMountTarget, added to organization containers so they can find
+// (and trust) Caddy's local CA if present -- see ensureCaddyCATrust.
+func caddyDataMount() mount.Mount {
+	return mount.Mount{Type: mount.TypeVolume, Source: caddyDataVolume, Target: CaddyDataMountTarget, ReadOnly: true}
+}
+
+// readFileFromContainer reads a single file's content out of a (possibly
+// not-yet-started) container's filesystem, e.g. from a mounted volume.
+func (c *Ctl) readFileFromContainer(ctx context.Context, containerID, path string) (_ []byte, err error) {
+	defer derrors.Wrap(&err, "c.readFileFromContainer(%q, %q)", containerID, path)
+
+	reader, _, err := c.cli.CopyFromContainer(ctx, containerID, path)
+	if err != nil {
+		return nil, err
+	}
+	defer reader.Close()
+
+	tr := tar.NewReader(reader)
+	if _, err := tr.Next(); err != nil {
+		return nil, err
+	}
+	return io.ReadAll(tr)
+}
+
+// ensureCaddyCATrust makes headscale (a distroless, shell-less Go binary)
+// trust Caddy's local CA by appending it to the same on-disk CA bundle Go's
+// crypto/x509 already reads by default (headscaleCABundlePath) -- no
+// entrypoint wrapping or update-ca-certificates call needed, since we can
+// just overwrite that file via the Docker API before the container starts.
+//
+// Callers should only invoke this when Caddy is actually configured to use
+// its own local CA (i.e. Ctl.requireCaddyLocalCerts; see CreateOrganization's
+// call site) -- in that case a missing/unreadable CA is a real
+// misconfiguration (headscale would otherwise fail OIDC discovery with a
+// confusing TLS trust error later), so it's treated as a hard error rather
+// than silently skipped.
+func (c *Ctl) ensureCaddyCATrust(ctx context.Context, containerID string) (err error) {
+	defer derrors.Wrap(&err, "c.ensureCaddyCATrust(%q)", containerID)
+
+	caCert, err := c.readFileFromContainer(ctx, containerID, filepath.Join(CaddyDataMountTarget, CaddyLocalCARelPath))
+	if err != nil {
+		return fmt.Errorf("caddy local CA not found (required because CADDY_LOCAL_CERTS is set): %w", err)
+	}
+
+	bundle, err := c.readFileFromContainer(ctx, containerID, headscaleCABundlePath)
+	if err != nil {
+		return fmt.Errorf("read system CA bundle: %w", err)
+	}
+
+	combined := append(append(bundle, '\n'), caCert...)
+	tarBuf, err := configTar(headscaleCABundlePath, string(combined))
+	if err != nil {
+		return fmt.Errorf("build CA bundle archive: %w", err)
+	}
+	return c.cli.CopyToContainer(ctx, containerID, "/", tarBuf, container.CopyToContainerOptions{})
+}
+
+func (c *Ctl) bootstrapHeadscaleAPIKey(ctx context.Context, containerID string) (_ string, err error) {
+	defer derrors.Wrap(&err, "c.bootstrapHeadscaleAPIKey(%q)", containerID)
+
+	var lastErr error
+	for attempt := range 5 {
+		// Tty is deliberately false: with Tty:true some Docker Engine
+		// versions still frame the attach stream with stdcopy's
+		// multiplexing headers (rather than raw bytes), which corrupts the
+		// API key. Tty:false makes stdcopy demuxing mandatory instead of
+		// version-dependent, so we always decode it explicitly.
+		execResp, err := c.cli.ContainerExecCreate(ctx, containerID, container.ExecOptions{
+			AttachStdout: true,
+			AttachStderr: true,
+			Cmd:          []string{"headscale", "apikeys", "create", "--expiration", "87600h"},
+		})
+		if err != nil {
+			lastErr = err
+		} else {
+			attachResp, err := c.cli.ContainerExecAttach(ctx, execResp.ID, container.ExecAttachOptions{})
+			if err != nil {
+				lastErr = err
+			} else {
+				var stdout, stderr bytes.Buffer
+				_, readErr := stdcopy.StdCopy(&stdout, &stderr, attachResp.Reader)
+				attachResp.Close()
+				out := stdout.Bytes()
+				if readErr != nil {
+					lastErr = readErr
+				} else {
+					inspectResp, inspectErr := c.cli.ContainerExecInspect(ctx, execResp.ID)
+					if inspectErr != nil {
+						lastErr = inspectErr
+					} else if inspectResp.ExitCode == 0 {
+						apiKey := strings.TrimSpace(string(out))
+						if apiKey != "" {
+							return apiKey, nil
+						}
+						lastErr = fmt.Errorf("empty API key output")
+					} else {
+						lastErr = fmt.Errorf("exit code %d: stdout=%q stderr=%q", inspectResp.ExitCode, strings.TrimSpace(string(out)), strings.TrimSpace(stderr.String()))
+					}
+				}
+			}
+		}
+		if attempt < 4 {
+			time.Sleep(time.Duration(attempt+1) * 500 * time.Millisecond)
+		}
+	}
+	return "", lastErr
+}
+
 // CreateOrganization provisions and starts a headscale container serving
 // https://<subdomain>.<baseDomain>. It returns the container ID.
-func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain string) (_ string, err error) {
+func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain string, oidcCreds OIDCClientCredentials) (_ string, err error) {
 	defer derrors.Wrap(&err, "c.CreateOrganization(%q, %q)", subdomain, baseDomain)
 
 	if err := ValidateSubdomain(subdomain); err != nil {
@@ -313,9 +610,12 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 	if err := c.EnsureNetwork(ctx); err != nil {
 		return "", fmt.Errorf("ensure network: %w", err)
 	}
+	if err := c.ensureCaddyNetworkAlias(ctx, ownscaleNetwork, baseDomain); err != nil {
+		return "", fmt.Errorf("ensure caddy network alias: %w", err)
+	}
 
 	domain := subdomain + "." + baseDomain
-	cfg, err := buildHSConfig(subdomain, domain)
+	cfg, err := buildHSConfig(subdomain, domain, oidcCreds)
 	if err != nil {
 		return "", fmt.Errorf("build config: %w", err)
 	}
@@ -339,6 +639,7 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 			RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
 			Mounts: []mount.Mount{
 				{Type: mount.TypeBind, Source: hostDir, Target: "/var/lib/headscale"},
+				caddyDataMount(),
 			},
 		},
 		&network.NetworkingConfig{
@@ -361,12 +662,23 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 		return "", fmt.Errorf("copy config into container: %w", err)
 	}
 
+	if c.requireCaddyLocalCerts {
+		if err := c.ensureCaddyCATrust(ctx, resp.ID); err != nil {
+			return "", fmt.Errorf("ensure caddy CA trust: %w", err)
+		}
+	}
+
 	if err := c.cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		return "", fmt.Errorf("start container: %w", err)
 	}
 	go c.streamLogs(resp.ID, HSContainerName(subdomain))
 
-	if err := c.createHeadplane(ctx, subdomain, domain, cfg); err != nil {
+	headscaleAPIKey, err := c.bootstrapHeadscaleAPIKey(ctx, resp.ID)
+	if err != nil {
+		return "", fmt.Errorf("bootstrap headscale api key: %w", err)
+	}
+
+	if err := c.createHeadplane(ctx, subdomain, domain, cfg, headscaleAPIKey, oidcCreds); err != nil {
 		return "", fmt.Errorf("create headplane: %w", err)
 	}
 
@@ -376,14 +688,14 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 // createHeadplane provisions and starts the headplane container for an
 // organization, configured to talk to that organization's headscale
 // container over the shared Docker network.
-func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain, hsCfg string) (err error) {
+func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain, hsCfg, headscaleAPIKey string, oidcCreds OIDCClientCredentials) (err error) {
 	defer derrors.Wrap(&err, "c.createHeadplane(%q, %q)", subdomain, domain)
 
 	cookieSecret, err := randomCookieSecret()
 	if err != nil {
 		return fmt.Errorf("generate cookie secret: %w", err)
 	}
-	cfg, err := buildHPConfig(subdomain, domain, cookieSecret)
+	cfg, err := buildHPConfig(subdomain, domain, cookieSecret, headscaleAPIKey, oidcCreds)
 	if err != nil {
 		return fmt.Errorf("build headplane config: %w", err)
 	}
@@ -402,11 +714,20 @@ func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain, hsCfg stri
 				"ownscale.domain":       domain,
 				"ownscale.component":    "headplane",
 			},
+			// Node.js only reads NODE_EXTRA_CA_CERTS in addition to its
+			// built-in trust store (it doesn't replace it), and silently
+			// ignores the variable if the file doesn't exist -- so this is
+			// safe to always set: it makes headplane trust Caddy's local CA
+			// when present (non-public BASE_DOMAIN dev setups), and is a
+			// no-op in production where Caddy holds a publicly-trusted ACME
+			// cert.
+			Env: []string{"NODE_EXTRA_CA_CERTS=" + filepath.Join(CaddyDataMountTarget, CaddyLocalCARelPath)},
 		},
 		&container.HostConfig{
 			RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
 			Mounts: []mount.Mount{
 				{Type: mount.TypeVolume, Source: volName, Target: "/var/lib/headplane"},
+				caddyDataMount(),
 			},
 		},
 		&network.NetworkingConfig{
@@ -537,10 +858,16 @@ func (c *Ctl) StopAll(ctx context.Context, timeout time.Duration) (err error) {
 var subdomainRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 // reservedSubdomains are single DNS labels that organizations may not use,
-// because they're reserved for fixed, non-organization Caddy site blocks
-// (e.g. "admin" serves the ownscale admin panel at admin.<base_domain>).
+// because they're reserved for fixed, non-organization Caddy site blocks:
+// the ownscale app itself (admin panel, login, OIDC provider) is bound to
+// the bare base domain, "docs" serves the documentation site, and "admin"/
+// "auth" are kept reserved defensively even though they aren't currently
+// bound to their own Caddy site blocks, to avoid confusion with the app's
+// former routing and any future re-introduction of dedicated subdomains.
 var reservedSubdomains = map[string]bool{
 	"admin": true,
+	"auth":  true,
+	"docs":  true,
 	"www":   true,
 }
 

@@ -43,6 +43,28 @@ follows the same "static file + env var expansion" pattern as
 `etc/caddy/Caddyfile` — it's not generated from `config.yaml`.
 
 
+## Single sign-on (via ownscale's own OIDC provider)
+
+Sign in at `https://<base_domain>/login` (ownscale — admin panel, login,
+and OIDC provider — is bound to the bare base domain; the documentation
+site lives at `https://docs.<base_domain>`). ownscale federates the initial
+login to a configurable upstream OIDC provider (`auth.upstream_oidc` in
+`config.yaml`) — any standard OIDC issuer works: Google, Okta, Dex, etc. —
+then acts as its own OIDC provider so each organization's Headscale and
+Headplane containers trust it as a relying party: one upstream login
+covers the admin panel and every organization's tailnet/Headplane
+dashboard. See `site/content/docs/getting-started.md` for details.
+
+For local dev, `docker-compose.yml` bundles a
+[Dex](https://dexidp.io/) instance (see the `dex` service and
+`etc/dex/config.yaml`) as a lightweight, zero-external-account-setup
+upstream provider — `config.yaml`'s `auth.upstream_oidc.*` defaults point
+at it already. It seeds one test login: `admin@ownscale.test` /
+`ownscale`. Add more entries to `etc/dex/config.yaml`'s `staticPasswords`
+to test with additional users. In production, point `auth.upstream_oidc.*`
+at a real IdP instead and simply omit the `dex` service — ownscale's own
+code never references Dex specifically, only generic OIDC discovery.
+
 ## Headscale organizations (per-subdomain)
 
 Provision one headscale container, plus a [Headplane](https://github.com/tale/headplane)
@@ -50,14 +72,66 @@ web UI container, per subdomain of `base_domain` using the Docker SDK.
 
 Prerequisites:
 
-- a wildcard DNS record `*.example.com` pointing at this server
+- a wildcard DNS record `*.example.com` pointing at this server (for local
+  dev, use `ownscale.test` instead -- see below -- which needs `/etc/hosts`
+  entries per subdomain, since it has no real wildcard DNS)
 - Docker running locally (the standard `DOCKER_HOST` env vars are honored)
 - the `caddy` compose service running for HTTPS (see below)
 
-## Trust Caddy localhost certs
+`base_domain` must not be `"localhost"`: every OS and container resolves
+that exact name from a built-in loopback entry (`/etc/hosts`'s
+`127.0.0.1 localhost`) before ever consulting DNS, which silently defeats
+the Docker-network-alias routing organization containers rely on to reach
+Caddy (`ownscale`/`osa` reject `base_domain: localhost` outright).
+
+For local dev, use a private, [RFC 2606](https://www.rfc-editor.org/rfc/rfc2606)-reserved
+TLD like **`ownscale.test`** (the default in `config.example.yaml`/`.env.example`):
+since ownscale's own upstream OIDC login no longer has to be a real,
+publicly-trusted IdP (see "Single sign-on" above), there's nothing left
+requiring a real public domain like the previously-used `lvh.me`. Unlike
+`lvh.me`, though, `ownscale.test` has no real wildcard DNS, so every
+subdomain you actually use locally needs an `/etc/hosts` entry pointing at
+`127.0.0.1`: `ownscale.test`, `dex.ownscale.test`, `docs.ownscale.test`,
+and one per organization created (e.g. `acme.ownscale.test`). A
+`dnsmasq`-based wildcard resolver is a nicer alternative if you create
+organizations often.
+
+You still won't get real certificates for a domain like this: Let's
+Encrypt rejects reserved/non-public TLDs outright (`Cannot issue for
+"os.test": Domain name does not end with a valid public suffix (TLD)`).
+Set `CADDY_LOCAL_CERTS=local_certs` in `.env` (see `.env.example`) so Caddy
+issues everything -- including the on-demand per-organization certs, and
+Dex's own certificate -- from its own internal, self-signed CA instead of
+ACME. Leave it unset in production, where `base_domain` is a real,
+reachable public domain and Caddy should get publicly-trusted certificates.
+
+Setting `CADDY_LOCAL_CERTS` also changes how organization creation behaves:
+ownscale then copies Caddy's local CA into every new headscale container and
+requires that copy to succeed, failing organization creation immediately if
+it doesn't, rather than silently starting a container that would later fail
+OIDC login with a confusing TLS trust error. When unset (production), that
+copy step is skipped entirely. It similarly changes how ownscale itself
+trusts its own configured `auth.upstream_oidc.issuer` (e.g. the bundled Dex
+instance): see `internal/auth.RegisterUpstreamOIDC`.
+
+## Trust Caddy local dev certs
 1. Extract the root cert from the running container:
 docker cp <caddy-container>:/data/caddy/pki/authorities/local/root.crt ./caddy-root.crt
 2. Import into Firefox (Firefox uses its own NSS store, ignoring the OS trust store by default):
-• Go to  about:preferences#privacy  → scroll to Certificates → View Certificates
-• Authorities tab → Import → select  caddy-root.crt
+• Go to  about:preferences#privacy  → scroll to Certificates → View Certificates
+• Authorities tab → Import → select  caddy-root.crt
 • Check "Trust this CA to identify websites"
+
+Organization headscale/headplane containers trust this same local CA
+automatically: they mount the `caddy-data` volume read-only and, if Caddy's
+local CA is present there, headscale gets it appended to its system CA
+bundle and headplane gets `NODE_EXTRA_CA_CERTS` pointed at it. The
+`ownscale` service itself does the same (see `internal/auth.go`), so it can
+trust its own upstream OIDC provider (e.g. the bundled Dex instance) when
+that's also proxied through Caddy under a non-public `BASE_DOMAIN`. This
+only matters for a non-public `BASE_DOMAIN` (e.g. `ownscale.test`), where
+Caddy issues its own self-signed certs instead of publicly-trusted ones;
+it's a no-op in production. Additionally, dockerctl connects the running
+Caddy container to each organization's Docker network with `BASE_DOMAIN` as
+an alias, so those containers can resolve `https://{BASE_DOMAIN}` straight
+to Caddy for OIDC discovery.

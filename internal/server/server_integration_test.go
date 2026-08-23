@@ -90,7 +90,7 @@ func TestServerIntegration(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	queries := newTestQueries(t)
 
-	ctl, err := dockerctl.New(t.TempDir(), logger)
+	ctl, err := dockerctl.New(t.TempDir(), false, logger)
 	if err != nil {
 		t.Fatalf("dockerctl.New: %v", err)
 	}
@@ -107,12 +107,12 @@ func TestServerIntegration(t *testing.T) {
 		}
 	})
 
-	h := handlers.New(queries, ctl, baseDomain, logger)
-	auth.Setup("test-session-secret-at-least-32-bytes-long", "client-id", "client-secret", "http://localhost/auth/google/callback")
+	h := handlers.New(queries, ctl, baseDomain, nil, logger)
+	auth.Setup("test-session-secret-at-least-32-bytes-long")
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
 		return auth.RequireAuthAPI(queries.Queries, next)
 	}
-	mux := server.NewMux(h, requireAuthAPI, logger, http.NotFoundHandler())
+	mux := server.NewMux(h, requireAuthAPI, logger, http.NotFoundHandler(), nil)
 
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
@@ -122,7 +122,7 @@ func TestServerIntegration(t *testing.T) {
 	id := uuid.Must(uuid.NewV7()).String()
 	user, err := queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
 		ID:             id,
-		Provider:       "google",
+		Provider:       "oidc",
 		ProviderUserID: id,
 		Email:          id + "@example.com",
 		Name:           "Integration Test User",

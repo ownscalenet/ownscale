@@ -53,11 +53,11 @@ func newTestQueries(t *testing.T) *dbpkg.TxQueries {
 func newTestMux(t *testing.T) http.Handler {
 	t.Helper()
 	queries := newTestQueries(t)
-	h := handlers.New(queries, nil, "", discardLogger())
+	h := handlers.New(queries, nil, "", nil, discardLogger())
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
 		return auth.RequireAuthAPI(queries.Queries, next)
 	}
-	return NewMux(h, requireAuthAPI, discardLogger(), http.NotFoundHandler())
+	return NewMux(h, requireAuthAPI, discardLogger(), http.NotFoundHandler(), nil)
 }
 
 func TestNewMuxProtectedRoutesRequireAuth(t *testing.T) {
@@ -96,7 +96,7 @@ func TestNewMuxTLSAskUnauthenticated(t *testing.T) {
 
 func TestNewMuxUnmatchedPathFallsBackToStatic(t *testing.T) {
 	queries := newTestQueries(t)
-	h := handlers.New(queries, nil, "", discardLogger())
+	h := handlers.New(queries, nil, "", nil, discardLogger())
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
 		return auth.RequireAuthAPI(queries.Queries, next)
 	}
@@ -106,7 +106,7 @@ func TestNewMuxUnmatchedPathFallsBackToStatic(t *testing.T) {
 		staticCalled = true
 		w.WriteHeader(http.StatusTeapot)
 	})
-	mux := NewMux(h, requireAuthAPI, discardLogger(), static)
+	mux := NewMux(h, requireAuthAPI, discardLogger(), static, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/some/spa/route", nil)
 	rec := httptest.NewRecorder()
@@ -122,17 +122,17 @@ func TestNewMuxUnmatchedPathFallsBackToStatic(t *testing.T) {
 
 func TestNewMuxAuthenticatedSession(t *testing.T) {
 	queries := newTestQueries(t)
-	h := handlers.New(queries, nil, "", discardLogger())
+	h := handlers.New(queries, nil, "", nil, discardLogger())
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
 		return auth.RequireAuthAPI(queries.Queries, next)
 	}
-	mux := NewMux(h, requireAuthAPI, discardLogger(), http.NotFoundHandler())
+	mux := NewMux(h, requireAuthAPI, discardLogger(), http.NotFoundHandler(), nil)
 
-	auth.Setup("test-session-secret-at-least-32-bytes-long", "client-id", "client-secret", "http://localhost/auth/google/callback")
+	auth.Setup("test-session-secret-at-least-32-bytes-long")
 	id := uuid.Must(uuid.NewV7()).String()
 	user, err := queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
 		ID:             id,
-		Provider:       "google",
+		Provider:       "oidc",
 		ProviderUserID: id,
 		Email:          id + "@example.com",
 		Name:           "Test User",

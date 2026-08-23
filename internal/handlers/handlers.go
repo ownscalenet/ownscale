@@ -6,6 +6,7 @@ import (
 	"net/http"
 
 	"github.com/ownscalenet/ownscale/internal/auth"
+	"github.com/ownscalenet/ownscale/internal/auth/oidcprovider"
 	"github.com/ownscalenet/ownscale/internal/db"
 	"github.com/ownscalenet/ownscale/internal/dockerctl"
 	"github.com/ownscalenet/ownscale/internal/orgs"
@@ -15,6 +16,7 @@ type Handlers struct {
 	queries    *db.TxQueries
 	orgs       *orgs.Service // nil if organization provisioning isn't configured (no ctl/base_domain)
 	baseDomain string
+	oidc       *oidcprovider.Storage
 	logger     *slog.Logger
 }
 
@@ -23,14 +25,19 @@ type Handlers struct {
 // baseDomain is set) backs the orgs.Service used for organization creation;
 // otherwise provisioning-related handlers respond with 503 (see
 // CreateOrganization).
-func New(queries *db.TxQueries, ctl *dockerctl.Ctl, baseDomain string, logger *slog.Logger) *Handlers {
+func New(queries *db.TxQueries, ctl *dockerctl.Ctl, baseDomain string, oidc *oidcprovider.Storage, logger *slog.Logger) *Handlers {
 	h := &Handlers{
 		queries:    queries,
 		baseDomain: baseDomain,
+		oidc:       oidc,
 		logger:     logger,
 	}
 	if ctl != nil && baseDomain != "" {
-		h.orgs = orgs.NewService(queries, ctl, baseDomain)
+		issuer := ""
+		if oidc != nil {
+			issuer = oidc.Issuer()
+		}
+		h.orgs = orgs.NewService(queries, ctl, baseDomain, issuer)
 	}
 	return h
 }

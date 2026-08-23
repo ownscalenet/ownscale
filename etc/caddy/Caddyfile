@@ -4,6 +4,16 @@
 		ask http://ownscale:8080/api/tls-ask
 	}
 
+	# Set CADDY_LOCAL_CERTS=local_certs in .env whenever BASE_DOMAIN isn't a
+	# publicly-resolvable domain (e.g. "os.test", or any local dev domain
+	# under a reserved/non-public TLD -- see RFC 2606). This makes Caddy
+	# issue every certificate (including on-demand ones) from its own
+	# internal CA instead of attempting real ACME issuance via Let's
+	# Encrypt, which always fails for such domains ("Domain name does not
+	# end with a valid public suffix (TLD)"). Leave unset in production, so
+	# Caddy gets real, publicly-trusted certificates via ACME as usual.
+	{$CADDY_LOCAL_CERTS:}
+
 	# Set CADDY_LOG_LEVEL=debug in docker-compose.yaml to get verbose
 	# debug-level logs from Caddy.
 	log {
@@ -12,19 +22,30 @@
 }
 
 {$BASE_DOMAIN} {
+	reverse_proxy ownscale:8080
+}
+
+docs.{$BASE_DOMAIN} {
+	tls {
+		on_demand
+	}
 	root * /srv/site
 	file_server
 }
 
-admin.{$BASE_DOMAIN} {
-	# Because "*.{$BASE_DOMAIN}" appears as a subject below, Caddy considers
-	# this name covered by the wildcard site and will not proactively manage a
-	# certificate for it, so it must use on-demand issuance as well.
+# Local-dev OIDC provider (dexidp/dex, see docker-compose.yml) that
+# ownscale federates its own login to (see internal/auth,
+# auth.upstream_oidc.issuer in config.yaml). Exposing it through Caddy
+# under its own subdomain means the browser-facing authorization endpoint
+# and ownscale's server-to-server discovery/token/userinfo calls all hit
+# the same HTTPS origin, so no split browser-vs-backend endpoint config is
+# needed -- and it reuses the same local-CA trust story as every other
+# subdomain here.
+dex.{$BASE_DOMAIN} {
 	tls {
 		on_demand
 	}
-	root * /srv/admin
-	file_server
+	reverse_proxy dex:5556
 }
 
 

@@ -20,7 +20,7 @@ func (h *Handlers) TLSAsk(w http.ResponseWriter, r *http.Request) {
 	// The bare base domain and the "admin" subdomain are always statically
 	// routed by Caddy (not on-demand), but they still fall within the
 	// "*.{base}" wildcard subject, for TLS.
-	if domain == base || domain == "admin."+base {
+	if domain == base || domain == "admin."+base || domain == "auth."+base || domain == "docs."+base || domain == "dex."+base {
 		w.WriteHeader(http.StatusOK)
 		return
 	}

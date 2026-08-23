@@ -7,11 +7,15 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net"
+	"os"
 
+	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/pkg/stdcopy"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 )
 
@@ -23,17 +27,23 @@ type API struct {
 	client.NetworkAPIClient
 	client.VolumeAPIClient
 
-	ContainerCreateFn  func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error)
-	ContainerStartFn   func(ctx context.Context, containerID string, options container.StartOptions) error
-	ContainerStopFn    func(ctx context.Context, containerID string, options container.StopOptions) error
-	ContainerRemoveFn  func(ctx context.Context, containerID string, options container.RemoveOptions) error
-	ContainerInspectFn func(ctx context.Context, containerID string) (container.InspectResponse, error)
-	ContainerListFn    func(ctx context.Context, options container.ListOptions) ([]container.Summary, error)
-	CopyToContainerFn  func(ctx context.Context, containerID, path string, content io.Reader, options container.CopyToContainerOptions) error
-	ContainerLogsFn    func(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error)
+	ContainerCreateFn      func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error)
+	ContainerStartFn       func(ctx context.Context, containerID string, options container.StartOptions) error
+	ContainerStopFn        func(ctx context.Context, containerID string, options container.StopOptions) error
+	ContainerRemoveFn      func(ctx context.Context, containerID string, options container.RemoveOptions) error
+	ContainerInspectFn     func(ctx context.Context, containerID string) (container.InspectResponse, error)
+	ContainerListFn        func(ctx context.Context, options container.ListOptions) ([]container.Summary, error)
+	CopyToContainerFn      func(ctx context.Context, containerID, path string, content io.Reader, options container.CopyToContainerOptions) error
+	CopyFromContainerFn    func(ctx context.Context, containerID, srcPath string) (io.ReadCloser, container.PathStat, error)
+	ContainerLogsFn        func(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error)
+	ContainerExecCreateFn  func(ctx context.Context, containerID string, options container.ExecOptions) (container.ExecCreateResponse, error)
+	ContainerExecAttachFn  func(ctx context.Context, execID string, options container.ExecAttachOptions) (types.HijackedResponse, error)
+	ContainerExecInspectFn func(ctx context.Context, execID string) (container.ExecInspect, error)
 
-	NetworkInspectFn func(ctx context.Context, networkID string, options network.InspectOptions) (network.Inspect, error)
-	NetworkCreateFn  func(ctx context.Context, name string, options network.CreateOptions) (network.CreateResponse, error)
+	NetworkInspectFn    func(ctx context.Context, networkID string, options network.InspectOptions) (network.Inspect, error)
+	NetworkCreateFn     func(ctx context.Context, name string, options network.CreateOptions) (network.CreateResponse, error)
+	NetworkConnectFn    func(ctx context.Context, networkID, containerID string, config *network.EndpointSettings) error
+	NetworkDisconnectFn func(ctx context.Context, networkID, containerID string, force bool) error
 
 	VolumeCreateFn func(ctx context.Context, options volume.CreateOptions) (volume.Volume, error)
 	VolumeRemoveFn func(ctx context.Context, volumeID string, force bool) error
@@ -100,6 +110,16 @@ func (a *API) CopyToContainer(ctx context.Context, containerID, path string, con
 	return nil
 }
 
+// CopyFromContainer fakes reading a file/archive out of a container,
+// defaulting to "not found" since most tests don't need this path
+// populated (e.g. Caddy's local CA is absent by default).
+func (a *API) CopyFromContainer(ctx context.Context, containerID, srcPath string) (io.ReadCloser, container.PathStat, error) {
+	if a.CopyFromContainerFn != nil {
+		return a.CopyFromContainerFn(ctx, containerID, srcPath)
+	}
+	return nil, container.PathStat{}, os.ErrNotExist
+}
+
 // ContainerLogs fakes streaming a container's logs, defaulting to an empty
 // (already at EOF) stream.
 func (a *API) ContainerLogs(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error) {
@@ -107,6 +127,36 @@ func (a *API) ContainerLogs(ctx context.Context, containerID string, options con
 		return a.ContainerLogsFn(ctx, containerID, options)
 	}
 	return io.NopCloser(new(bytes.Buffer)), nil
+}
+
+// ContainerExecCreate fakes creating a container exec instance.
+func (a *API) ContainerExecCreate(ctx context.Context, containerID string, options container.ExecOptions) (container.ExecCreateResponse, error) {
+	if a.ContainerExecCreateFn != nil {
+		return a.ContainerExecCreateFn(ctx, containerID, options)
+	}
+	return container.ExecCreateResponse{ID: "exec-" + containerID}, nil
+}
+
+// ContainerExecAttach fakes attaching to a container exec stream.
+func (a *API) ContainerExecAttach(ctx context.Context, execID string, options container.ExecAttachOptions) (types.HijackedResponse, error) {
+	if a.ContainerExecAttachFn != nil {
+		return a.ContainerExecAttachFn(ctx, execID, options)
+	}
+	clientConn, serverConn := net.Pipe()
+	go func() {
+		w := stdcopy.NewStdWriter(serverConn, stdcopy.Stdout)
+		_, _ = w.Write([]byte("fake-headscale-api-key\n"))
+		_ = serverConn.Close()
+	}()
+	return types.NewHijackedResponse(clientConn, ""), nil
+}
+
+// ContainerExecInspect fakes inspecting a container exec instance.
+func (a *API) ContainerExecInspect(ctx context.Context, execID string) (container.ExecInspect, error) {
+	if a.ContainerExecInspectFn != nil {
+		return a.ContainerExecInspectFn(ctx, execID)
+	}
+	return container.ExecInspect{ExitCode: 0}, nil
 }
 
 // NetworkInspect fakes inspecting a network, defaulting to "already exists".
@@ -123,6 +173,22 @@ func (a *API) NetworkCreate(ctx context.Context, name string, options network.Cr
 		return a.NetworkCreateFn(ctx, name, options)
 	}
 	return network.CreateResponse{}, nil
+}
+
+// NetworkConnect fakes connecting a container to a network.
+func (a *API) NetworkConnect(ctx context.Context, networkID, containerID string, config *network.EndpointSettings) error {
+	if a.NetworkConnectFn != nil {
+		return a.NetworkConnectFn(ctx, networkID, containerID, config)
+	}
+	return nil
+}
+
+// NetworkDisconnect fakes disconnecting a container from a network.
+func (a *API) NetworkDisconnect(ctx context.Context, networkID, containerID string, force bool) error {
+	if a.NetworkDisconnectFn != nil {
+		return a.NetworkDisconnectFn(ctx, networkID, containerID, force)
+	}
+	return nil
 }
 
 // VolumeCreate fakes creating a volume.

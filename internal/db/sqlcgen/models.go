@@ -9,6 +9,15 @@ import (
 	"time"
 )
 
+type OidcClient struct {
+	ID               string
+	OrganizationID   string
+	ClientID         string
+	ClientSecretHash string
+	RedirectUris     string
+	CreatedAt        time.Time
+}
+
 type Organization struct {
 	ID        string
 	Subdomain string
@@ -34,4 +43,6 @@ type User struct {
 	AvatarUrl      string
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
+	EmailVerified  int64
+	LastLoginAt    sql.NullTime
 }

@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/peterbourgon/ff/v4"
@@ -37,12 +38,17 @@ func loadConfigAndLogger(configPath *string) (*config.Config, *slog.Logger, erro
 	return cfg, logger, nil
 }
 
-// baseDomain returns cfg.BaseDomain, or an error if it isn't set: it's
-// required by every organization subcommand that provisions or reports
-// on a subdomain.
+// baseDomain returns cfg.BaseDomain, or an error if it isn't set or is
+// "localhost": it's required by every organization subcommand that
+// provisions or reports on a subdomain, and "localhost" is rejected for the
+// same reason config.Config.Validate rejects it (see there for why).
 func baseDomain(cfg *config.Config) (string, error) {
 	if cfg.BaseDomain == "" {
 		return "", errors.New("base_domain must be set (e.g. via config.yaml or OWNSCALE_BASE_DOMAIN=example.com)")
+	}
+	if strings.EqualFold(cfg.BaseDomain, "localhost") {
+		return "", errors.New(`base_domain must not be "localhost" -- use a dedicated local dev domain instead ` +
+			`(e.g. "ownscale.test") with a wildcard entry in your host's /etc/hosts`)
 	}
 	return cfg.BaseDomain, nil
 }
@@ -92,7 +98,7 @@ func newOrgResources(configPath *string, withDB, withDocker bool) (_ *orgResourc
 	}
 
 	if withDocker {
-		ctl, err := dockerctl.New(cfg.DataDir, logger)
+		ctl, err := dockerctl.New(cfg.DataDir, cfg.CaddyLocalCerts != "", logger)
 		if err != nil {
 			return nil, cleanup, fmt.Errorf("docker init: %w", err)
 		}
@@ -145,7 +151,7 @@ func newOrganizationCreateCommand(parent *ff.FlagSet, configPath *string) *ff.Co
 			if err != nil {
 				return err
 			}
-			svc := orgs.NewService(res.queries, res.ctl, domain)
+			svc := orgs.NewService(res.queries, res.ctl, domain, res.cfg.Auth.OIDCProvider.Issuer)
 			return createOrganization(ctx, os.Stdout, svc, args[0])
 		},
 	}
@@ -209,7 +215,11 @@ func newOrganizationStartCommand(parent *ff.FlagSet, configPath *string) *ff.Com
 			if err != nil {
 				return err
 			}
-			return startOrganizations(ctx, os.Stdout, res.logger, res.queries, res.ctl)
+			domain, err := baseDomain(res.cfg)
+			if err != nil {
+				return err
+			}
+			return startOrganizations(ctx, os.Stdout, res.logger, res.queries, res.ctl, domain)
 		},
 	}
 }
@@ -308,7 +318,18 @@ func listOrganizations(ctx context.Context, out io.Writer, queries *db.TxQueries
 // policy didn't already handle it). It doesn't create or provision
 // anything new; organizations that no longer have containers (e.g. removed
 // out of band) are reported as errors but don't stop the rest from starting.
-func startOrganizations(ctx context.Context, out io.Writer, logger *slog.Logger, queries *db.TxQueries, ctl *dockerctl.Ctl) error {
+//
+// It also re-asserts Caddy's network alias for domain (see
+// Ctl.EnsureCaddyNetworkAlias): that alias is set imperatively via the
+// Docker API, so a host reboot or Caddy container recreation drops it even
+// though these headscale/headplane containers keep running (or come back
+// via their own restart policy), silently breaking their OIDC login until
+// it's restored.
+func startOrganizations(ctx context.Context, out io.Writer, logger *slog.Logger, queries *db.TxQueries, ctl *dockerctl.Ctl, domain string) error {
+	if err := ctl.EnsureCaddyNetworkAlias(ctx, domain); err != nil {
+		logger.Warn("ensure caddy network alias", "error", err)
+	}
+
 	organizations, err := queries.ListOrganizations(ctx)
 	if err != nil {
 		return fmt.Errorf("list organizations: %w", err)

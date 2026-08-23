@@ -1,0 +1,11 @@
+<script>
+(function () {
+  var link = document.querySelector('a.ownscale-login-link');
+  if (!link) return;
+  // The docs site lives at "docs.<base_domain>"; ownscale itself (login,
+  // admin panel, OIDC provider) is bound to the bare base domain, so strip
+  // the "docs." prefix to compute the login origin.
+  var baseDomain = window.location.hostname.replace(/^docs\./, '');
+  link.href = 'https://' + baseDomain + '/login';
+})();
+</script>

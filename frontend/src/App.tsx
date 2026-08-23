@@ -4,6 +4,7 @@ import Layout from './Layout'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Machines from './pages/Machines'
+import CreateOrganization from './pages/CreateOrganization'
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
   const { user, loading } = useAuth()
@@ -17,6 +18,27 @@ function RequireAuth({ children }: { children: React.ReactElement }) {
   if (!user) {
     return <Navigate to="/login" replace />
   }
+  if (!user.OrganizationID.Valid) {
+    return <Navigate to="/create-organization" replace />
+  }
+  return children
+}
+
+function RequireAuthNoOrg({ children }: { children: React.ReactElement }) {
+  const { user, loading } = useAuth()
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <span className="loading loading-spinner loading-lg"></span>
+      </div>
+    )
+  }
+  if (!user) {
+    return <Navigate to="/login" replace />
+  }
+  if (user.OrganizationID.Valid) {
+    return <Navigate to="/" replace />
+  }
   return children
 }
 
@@ -24,6 +46,14 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route
+        path="/create-organization"
+        element={
+          <RequireAuthNoOrg>
+            <CreateOrganization />
+          </RequireAuthNoOrg>
+        }
+      />
       <Route
         path="/"
         element={

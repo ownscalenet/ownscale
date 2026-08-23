@@ -29,6 +29,8 @@ func TestTLSAsk(t *testing.T) {
 		{"missing domain", "", http.StatusForbidden},
 		{"base domain", testBaseDomain, http.StatusOK},
 		{"admin subdomain", "admin." + testBaseDomain, http.StatusOK},
+		{"docs subdomain", "docs." + testBaseDomain, http.StatusOK},
+		{"dex subdomain", "dex." + testBaseDomain, http.StatusOK},
 		{"known org subdomain", "acme." + testBaseDomain, http.StatusOK},
 		{"unknown subdomain", "ghost." + testBaseDomain, http.StatusForbidden},
 		{"extra dot in subdomain", "a.b." + testBaseDomain, http.StatusForbidden},

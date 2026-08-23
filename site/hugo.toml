@@ -26,3 +26,10 @@ title = "ownscale Documentation"
     name = "GitHub"
     url = "https://github.com/ownscalenet/ownscale"
     weight = 10
+
+  [[menu.after]]
+    name = "Login"
+    url = "/login"
+    weight = 20
+    [menu.after.params]
+      class = "ownscale-login-link"

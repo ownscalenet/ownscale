@@ -1,15 +1,18 @@
 package auth
 
 import (
+	"encoding/pem"
 	"io"
 	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/google/uuid"
+	"github.com/markbates/goth"
 	"github.com/pressly/goose/v3"
 
 	dbpkg "github.com/ownscalenet/ownscale/internal/db"
@@ -52,7 +55,7 @@ func insertUser(t *testing.T, queries *sqlcgen.Queries) sqlcgen.User {
 	id := uuid.Must(uuid.NewV7()).String()
 	user, err := queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
 		ID:             id,
-		Provider:       "google",
+		Provider:       "oidc",
 		ProviderUserID: id,
 		Email:          id + "@example.com",
 		Name:           "Test User",
@@ -67,7 +70,7 @@ func insertUser(t *testing.T, queries *sqlcgen.Queries) sqlcgen.User {
 // setupSessions calls Setup once for the test binary so gothic.Store is
 // initialized; safe to call multiple times.
 func setupSessions() {
-	Setup("test-session-secret-at-least-32-bytes-long", "client-id", "client-secret", "http://localhost/auth/google/callback")
+	Setup("test-session-secret-at-least-32-bytes-long")
 }
 
 func TestWithUserContext(t *testing.T) {
@@ -219,5 +222,79 @@ func TestClearUserSessionInvalidatesSession(t *testing.T) {
 	}
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+// newTestOIDCServer spins up a real HTTPS test server (self-signed cert,
+// like Caddy's local CA in dev) serving a minimal OIDC discovery document,
+// so RegisterUpstreamOIDC's CA-trust wiring can be exercised end-to-end
+// against a real TLS handshake and a real HTTP GET, rather than a mock.
+func newTestOIDCServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	srv := httptest.NewUnstartedServer(mux)
+	srv.StartTLS()
+	t.Cleanup(srv.Close)
+
+	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"issuer": "` + srv.URL + `",
+			"authorization_endpoint": "` + srv.URL + `/auth",
+			"token_endpoint": "` + srv.URL + `/token",
+			"userinfo_endpoint": "` + srv.URL + `/userinfo"
+		}`))
+	})
+	return srv
+}
+
+func TestRegisterUpstreamOIDCTrustsExtraCACert(t *testing.T) {
+	srv := newTestOIDCServer(t)
+
+	caCertPath := filepath.Join(t.TempDir(), "root.crt")
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: srv.Certificate().Raw})
+	if err := os.WriteFile(caCertPath, pemBytes, 0o600); err != nil {
+		t.Fatalf("write CA cert: %v", err)
+	}
+
+	if err := RegisterUpstreamOIDC(srv.URL, "client-id", "client-secret", "https://example.com/auth/oidc/callback", caCertPath); err != nil {
+		t.Fatalf("RegisterUpstreamOIDC with trusted CA: %v", err)
+	}
+	if _, err := goth.GetProvider(UpstreamProviderName); err != nil {
+		t.Errorf("GetProvider(%q) after RegisterUpstreamOIDC: %v", UpstreamProviderName, err)
+	}
+}
+
+func TestRegisterUpstreamOIDCFailsWithoutCATrust(t *testing.T) {
+	srv := newTestOIDCServer(t)
+
+	// No extraCACertPath: discovery should fail its TLS handshake against
+	// this self-signed server, since the system trust store won't trust it.
+	if err := RegisterUpstreamOIDC(srv.URL, "client-id", "client-secret", "https://example.com/auth/oidc/callback", ""); err == nil {
+		t.Fatal("RegisterUpstreamOIDC without CA trust: want error, got nil")
+	}
+}
+
+func TestRegisterUpstreamOIDCIgnoresMissingCACertFile(t *testing.T) {
+	// A configured but nonexistent extraCACertPath (e.g. Caddy hasn't
+	// generated its local CA file yet) should behave like "" was passed --
+	// i.e. not error out on the missing file itself -- mirroring production,
+	// where the path is simply never configured. Plain HTTP (no TLS) here
+	// isolates that behavior from CA-trust/TLS concerns, covered above.
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"issuer": "` + srv.URL + `",
+			"authorization_endpoint": "` + srv.URL + `/auth",
+			"token_endpoint": "` + srv.URL + `/token",
+			"userinfo_endpoint": "` + srv.URL + `/userinfo"
+		}`))
+	})
+
+	if err := RegisterUpstreamOIDC(srv.URL, "client-id", "client-secret", "https://example.com/auth/oidc/callback", filepath.Join(t.TempDir(), "missing.crt")); err != nil {
+		t.Fatalf("RegisterUpstreamOIDC with missing CA cert file: %v", err)
 	}
 }

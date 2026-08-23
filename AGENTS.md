@@ -24,14 +24,24 @@ Usage pattern — give the function a named `err` return and defer the wrap
 at the top:
 
 ```go
-func (c *Ctl) MethodName(ctx context.Context, subdomain, baseDomain string) (_ string, err error) {
-	defer derrors.Wrap(&err, "c.MethodName(%q, %q)", subdomain, baseDomain)
+func (c *Ctl) MethodName(ctx context.Context, subdomain string) (_ string, err error) {
+	defer derrors.Wrap(&err, "c.MethodName(%q, %q)", subdomain)
 	...
 
-func PkgFunc(ctx context.Context, subdomain, baseDomain string) (_ string, err error) {
-	defer derrors.Wrap(&err, "PkgFunc(%q, %q)", subdomain, baseDomain)
+func PkgFunc(ctx context.Context, subdomain string) (_ string, err error) {
+	defer derrors.Wrap(&err, "PkgFunc(%q, %q)", subdomain)
     ---
 }
+```
+Do not put the whole type in the string argument of `derrors.Wrap`:
+
+```go
+package service
+func (c *Ctl) MethodName(ctx context.Context, subdomain string) (_ string, err error) {
+    // good
+	defer derrors.Wrap(&err, "c.MethodName(%q, %q)", subdomain)
+    // bad
+	defer derrors.Wrap(&err, "(*service.Ctl).MethodName(%q, %q)", subdomain)
 ```
 
 ## Other conventions

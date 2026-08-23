@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/ownscalenet/ownscale/internal/derrors"
 
@@ -52,6 +53,19 @@ type Config struct {
 	// works out of the box.
 	DataDir string `yaml:"data_dir" env:"OWNSCALE_DATA_DIR"`
 
+	// CaddyLocalCerts mirrors the CADDY_LOCAL_CERTS value passed to the
+	// caddy service in docker-compose.yml (see etc/caddy/Caddyfile). It
+	// should be non-empty (typically "local_certs") whenever Caddy is
+	// configured to issue its own internal, self-signed certificates
+	// instead of ACME/Let's Encrypt-issued ones (i.e. BASE_DOMAIN isn't a
+	// real, publicly resolvable domain). When non-empty, dockerctl copies
+	// Caddy's local CA into each new headscale container and treats that
+	// copy as mandatory, failing organization creation outright if it's
+	// missing, instead of silently creating a container that can't
+	// complete OIDC login later. When empty (production, real ACME cert),
+	// dockerctl skips that step entirely.
+	CaddyLocalCerts string `yaml:"caddy_local_certs" env:"OWNSCALE_CADDY_LOCAL_CERTS"`
+
 	Auth AuthConfig `yaml:"auth"`
 	Log  LogConfig  `yaml:"log"`
 }
@@ -68,19 +82,68 @@ type AuthConfig struct {
 	// SessionSecret signs the login session cookie. Required to run the server.
 	SessionSecret string `yaml:"session_secret" env:"OWNSCALE_AUTH_SESSION_SECRET"`
 
-	Google GoogleConfig `yaml:"google"`
+	// UpstreamOIDC configures the upstream OpenID Connect provider ownscale
+	// federates the initial admin panel login to (e.g. Google in
+	// production, or a local Dex instance for development). Not to be
+	// confused with OIDCProvider below: that's ownscale acting as its own
+	// (downstream) OIDC provider for organization containers, whereas this
+	// is ownscale acting as an OIDC *client* of some other, upstream IdP.
+	UpstreamOIDC UpstreamOIDCConfig `yaml:"upstream_oidc"`
+
+	// OIDCProvider configures ownscale's own OIDC provider, which
+	// downstream per-organization headscale/headplane containers trust
+	// (federated to UpstreamOIDC above for the initial login). See
+	// internal/auth/oidcprovider.
+	OIDCProvider OIDCProviderConfig `yaml:"oidc_provider"`
 }
 
-// GoogleConfig configures the Google OAuth 2.0 provider.
-type GoogleConfig struct {
-	// ClientID is the OAuth 2.0 client ID. Required to run the server.
-	ClientID string `yaml:"client_id" env:"OWNSCALE_AUTH_GOOGLE_CLIENT_ID"`
-	// ClientSecret is the OAuth 2.0 client secret. Required to run the server.
-	ClientSecret string `yaml:"client_secret" env:"OWNSCALE_AUTH_GOOGLE_CLIENT_SECRET"`
-	// CallbackURL must match the redirect URI configured on the OAuth
-	// client (e.g. "http://localhost:8080/auth/google/callback"). Required
+// UpstreamOIDCConfig configures the upstream OpenID Connect provider used
+// for the admin panel's own login (e.g. Google, or a local Dex instance for
+// development). ownscale acts as a standard OIDC relying party against it.
+type UpstreamOIDCConfig struct {
+	// Issuer is the upstream provider's issuer URL, used for OIDC discovery
+	// (".well-known/openid-configuration"), e.g. "https://accounts.google.com"
+	// or "https://dex.<base_domain>" for the bundled local-dev Dex instance.
+	// Required to run the server.
+	Issuer string `yaml:"issuer" env:"OWNSCALE_AUTH_UPSTREAM_OIDC_ISSUER"`
+	// ClientID is the OAuth 2.0 client ID registered with Issuer. Required
 	// to run the server.
-	CallbackURL string `yaml:"callback_url" env:"OWNSCALE_AUTH_GOOGLE_CALLBACK_URL"`
+	ClientID string `yaml:"client_id" env:"OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_ID"`
+	// ClientSecret is the OAuth 2.0 client secret registered with Issuer.
+	// Required to run the server.
+	ClientSecret string `yaml:"client_secret" env:"OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_SECRET"`
+	// CallbackURL must match the redirect URI registered with Issuer (e.g.
+	// "https://<base_domain>/auth/oidc/callback"). Required to run the
+	// server.
+	CallbackURL string `yaml:"callback_url" env:"OWNSCALE_AUTH_UPSTREAM_OIDC_CALLBACK_URL"`
+}
+
+// OIDCProviderConfig configures ownscale acting as an OpenID Connect
+// provider for downstream relying parties (each organization's headscale
+// and headplane containers). See internal/auth/oidcprovider.
+type OIDCProviderConfig struct {
+	// Issuer is the public base URL clients (and relying parties) use to
+	// reach ownscale's OIDC endpoints (e.g. "/.well-known/openid-configuration",
+	// "/oauth/authorize"). Must exactly match what's advertised in
+	// discovery and in issued tokens. Defaults to "https://<base_domain>"
+	// when unset (ownscale itself, i.e. the admin panel/login origin, is
+	// bound to the bare base domain by etc/caddy/Caddyfile).
+	Issuer string `yaml:"issuer" env:"OWNSCALE_AUTH_OIDC_PROVIDER_ISSUER"`
+
+	// SigningKeyPath is where the RSA private key used to sign issued ID
+	// tokens is stored, relative to DataDir unless absolute. Generated
+	// automatically on first startup if the file doesn't exist yet.
+	// Defaults to "oidc_signing_key.pem" (under DataDir).
+	SigningKeyPath string `yaml:"signing_key_path" env:"OWNSCALE_AUTH_OIDC_PROVIDER_SIGNING_KEY_PATH"`
+
+	// AccessTokenLifetime is how long issued OAuth access tokens are
+	// valid for, expressed as a Go duration string (e.g. "5m"). Defaults
+	// to "5m".
+	AccessTokenLifetime string `yaml:"access_token_lifetime" env:"OWNSCALE_AUTH_OIDC_PROVIDER_ACCESS_TOKEN_LIFETIME"`
+
+	// IDTokenLifetime is how long issued OIDC ID tokens are valid for,
+	// expressed as a Go duration string (e.g. "1h"). Defaults to "1h".
+	IDTokenLifetime string `yaml:"id_token_lifetime" env:"OWNSCALE_AUTH_OIDC_PROVIDER_ID_TOKEN_LIFETIME"`
 }
 
 func defaults() *Config {
@@ -90,6 +153,13 @@ func defaults() *Config {
 		Log: LogConfig{
 			Level:  "info",
 			Format: "json",
+		},
+		Auth: AuthConfig{
+			OIDCProvider: OIDCProviderConfig{
+				SigningKeyPath:      "oidc_signing_key.pem",
+				AccessTokenLifetime: "5m",
+				IDTokenLifetime:     "1h",
+			},
 		},
 	}
 }
@@ -138,6 +208,19 @@ func Load(path string) (_ *Config, err error) {
 		}
 		cfg.DataDir = abs
 	}
+
+	// The OIDC provider issuer defaults to "https://<base_domain>" (ownscale
+	// itself is bound to the bare base domain by etc/caddy/Caddyfile), which
+	// can only be computed once base_domain is known (i.e. after YAML/env
+	// have been applied).
+	if cfg.Auth.OIDCProvider.Issuer == "" && cfg.BaseDomain != "" {
+		cfg.Auth.OIDCProvider.Issuer = "https://" + cfg.BaseDomain
+	}
+	// SigningKeyPath is stored under DataDir unless already absolute.
+	if cfg.Auth.OIDCProvider.SigningKeyPath != "" && cfg.DataDir != "" && !filepath.IsAbs(cfg.Auth.OIDCProvider.SigningKeyPath) {
+		cfg.Auth.OIDCProvider.SigningKeyPath = filepath.Join(cfg.DataDir, cfg.Auth.OIDCProvider.SigningKeyPath)
+	}
+
 	return cfg, nil
 }
 
@@ -155,20 +238,42 @@ func (c *Config) Validate() (err error) {
 	if c.Auth.SessionSecret == "" {
 		missing = append(missing, "auth.session_secret")
 	}
-	if c.Auth.Google.ClientID == "" {
-		missing = append(missing, "auth.google.client_id")
+	if c.Auth.UpstreamOIDC.Issuer == "" {
+		missing = append(missing, "auth.upstream_oidc.issuer")
 	}
-	if c.Auth.Google.ClientSecret == "" {
-		missing = append(missing, "auth.google.client_secret")
+	if c.Auth.UpstreamOIDC.ClientID == "" {
+		missing = append(missing, "auth.upstream_oidc.client_id")
 	}
-	if c.Auth.Google.CallbackURL == "" {
-		missing = append(missing, "auth.google.callback_url")
+	if c.Auth.UpstreamOIDC.ClientSecret == "" {
+		missing = append(missing, "auth.upstream_oidc.client_secret")
+	}
+	if c.Auth.UpstreamOIDC.CallbackURL == "" {
+		missing = append(missing, "auth.upstream_oidc.callback_url")
+	}
+	if c.Auth.OIDCProvider.Issuer == "" {
+		missing = append(missing, "auth.oidc_provider.issuer")
+	}
+	if c.Auth.OIDCProvider.SigningKeyPath == "" {
+		missing = append(missing, "auth.oidc_provider.signing_key_path")
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required config values: %s", strings.Join(missing, ", "))
 	}
+	if strings.EqualFold(c.BaseDomain, "localhost") {
+		return fmt.Errorf(`base_domain must not be "localhost": it's a special-cased name that every container's ` +
+			`(and most OSes') resolver answers from a built-in loopback entry before ever consulting DNS, which ` +
+			`breaks Docker-network-alias-based routing between organization containers and Caddy. Use a dedicated ` +
+			`local dev domain instead (e.g. "ownscale.test") with a wildcard entry in your host's /etc/hosts, e.g.: ` +
+			`127.0.0.1 ownscale.test *.ownscale.test`)
+	}
 	if c.DataDir != "" && !filepath.IsAbs(c.DataDir) {
 		return fmt.Errorf("data_dir must resolve to an absolute path, got %q", c.DataDir)
+	}
+	if _, err := time.ParseDuration(c.Auth.OIDCProvider.AccessTokenLifetime); err != nil {
+		return fmt.Errorf("auth.oidc_provider.access_token_lifetime: %w", err)
+	}
+	if _, err := time.ParseDuration(c.Auth.OIDCProvider.IDTokenLifetime); err != nil {
+		return fmt.Errorf("auth.oidc_provider.id_token_lifetime: %w", err)
 	}
 	return nil
 }

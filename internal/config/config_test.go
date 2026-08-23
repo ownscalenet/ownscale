@@ -92,6 +92,7 @@ base_domain: example.com
 	t.Setenv("OWNSCALE_ADDR", ":7070")
 	t.Setenv("OWNSCALE_BASE_DOMAIN", "override.example.com")
 	t.Setenv("OWNSCALE_LOG_LEVEL", "warn")
+	t.Setenv("OWNSCALE_CADDY_LOCAL_CERTS", "local_certs")
 
 	cfg, err := Load("")
 	if err != nil {
@@ -106,6 +107,9 @@ base_domain: example.com
 	if cfg.Log.Level != "warn" {
 		t.Errorf("Log.Level = %q, want %q (env override of default)", cfg.Log.Level, "warn")
 	}
+	if cfg.CaddyLocalCerts != "local_certs" {
+		t.Errorf("CaddyLocalCerts = %q, want %q (env override)", cfg.CaddyLocalCerts, "local_certs")
+	}
 }
 
 func TestLoadMissingDefaultPathFallsBack(t *testing.T) {
@@ -118,6 +122,59 @@ func TestLoadMissingDefaultPathFallsBack(t *testing.T) {
 	}
 	if cfg.Addr != ":8080" {
 		t.Errorf("Addr = %q, want default %q", cfg.Addr, ":8080")
+	}
+}
+
+func TestLoadOIDCProviderDefaults(t *testing.T) {
+	dir := withDir(t)
+
+	yaml := `
+base_domain: example.com
+`
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if want := "https://example.com"; cfg.Auth.OIDCProvider.Issuer != want {
+		t.Errorf("Auth.OIDCProvider.Issuer = %q, want %q", cfg.Auth.OIDCProvider.Issuer, want)
+	}
+	wantKeyPath := filepath.Join(cfg.DataDir, "oidc_signing_key.pem")
+	if cfg.Auth.OIDCProvider.SigningKeyPath != wantKeyPath {
+		t.Errorf("Auth.OIDCProvider.SigningKeyPath = %q, want %q", cfg.Auth.OIDCProvider.SigningKeyPath, wantKeyPath)
+	}
+	if cfg.Auth.OIDCProvider.AccessTokenLifetime != "5m" {
+		t.Errorf("Auth.OIDCProvider.AccessTokenLifetime = %q, want %q", cfg.Auth.OIDCProvider.AccessTokenLifetime, "5m")
+	}
+	if cfg.Auth.OIDCProvider.IDTokenLifetime != "1h" {
+		t.Errorf("Auth.OIDCProvider.IDTokenLifetime = %q, want %q", cfg.Auth.OIDCProvider.IDTokenLifetime, "1h")
+	}
+}
+
+func TestLoadOIDCProviderIssuerExplicitOverride(t *testing.T) {
+	dir := withDir(t)
+
+	yaml := `
+base_domain: example.com
+auth:
+  oidc_provider:
+    issuer: "https://custom-issuer.example.org"
+`
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if want := "https://custom-issuer.example.org"; cfg.Auth.OIDCProvider.Issuer != want {
+		t.Errorf("Auth.OIDCProvider.Issuer = %q, want %q (explicit override preserved)", cfg.Auth.OIDCProvider.Issuer, want)
 	}
 }
 
@@ -158,9 +215,12 @@ func fullyPopulatedConfig() *Config {
 	cfg.BaseDomain = "example.com"
 	cfg.DataDir = "/abs/data"
 	cfg.Auth.SessionSecret = "secret"
-	cfg.Auth.Google.ClientID = "client-id"
-	cfg.Auth.Google.ClientSecret = "client-secret"
-	cfg.Auth.Google.CallbackURL = "https://example.com/callback"
+	cfg.Auth.UpstreamOIDC.Issuer = "https://accounts.google.com"
+	cfg.Auth.UpstreamOIDC.ClientID = "client-id"
+	cfg.Auth.UpstreamOIDC.ClientSecret = "client-secret"
+	cfg.Auth.UpstreamOIDC.CallbackURL = "https://example.com/callback"
+	cfg.Auth.OIDCProvider.Issuer = "https://auth.example.com"
+	cfg.Auth.OIDCProvider.SigningKeyPath = "/abs/data/oidc_signing_key.pem"
 	return cfg
 }
 
@@ -183,6 +243,20 @@ func TestValidate(t *testing.T) {
 		}
 	})
 
+	t.Run("base_domain localhost rejected", func(t *testing.T) {
+		for _, v := range []string{"localhost", "LOCALHOST", "LocalHost"} {
+			cfg := fullyPopulatedConfig()
+			cfg.BaseDomain = v
+			err := cfg.Validate()
+			if err == nil {
+				t.Fatalf("Validate: want error for base_domain %q, got nil", v)
+			}
+			if !strings.Contains(err.Error(), "localhost") {
+				t.Errorf("Validate error = %q, want it to mention %q", err.Error(), "localhost")
+			}
+		}
+	})
+
 	fields := []struct {
 		name   string
 		breakF func(*Config)
@@ -191,9 +265,12 @@ func TestValidate(t *testing.T) {
 		{"base_domain", func(c *Config) { c.BaseDomain = "" }, "base_domain"},
 		{"data_dir", func(c *Config) { c.DataDir = "" }, "data_dir"},
 		{"auth.session_secret", func(c *Config) { c.Auth.SessionSecret = "" }, "auth.session_secret"},
-		{"auth.google.client_id", func(c *Config) { c.Auth.Google.ClientID = "" }, "auth.google.client_id"},
-		{"auth.google.client_secret", func(c *Config) { c.Auth.Google.ClientSecret = "" }, "auth.google.client_secret"},
-		{"auth.google.callback_url", func(c *Config) { c.Auth.Google.CallbackURL = "" }, "auth.google.callback_url"},
+		{"auth.upstream_oidc.issuer", func(c *Config) { c.Auth.UpstreamOIDC.Issuer = "" }, "auth.upstream_oidc.issuer"},
+		{"auth.upstream_oidc.client_id", func(c *Config) { c.Auth.UpstreamOIDC.ClientID = "" }, "auth.upstream_oidc.client_id"},
+		{"auth.upstream_oidc.client_secret", func(c *Config) { c.Auth.UpstreamOIDC.ClientSecret = "" }, "auth.upstream_oidc.client_secret"},
+		{"auth.upstream_oidc.callback_url", func(c *Config) { c.Auth.UpstreamOIDC.CallbackURL = "" }, "auth.upstream_oidc.callback_url"},
+		{"auth.oidc_provider.issuer", func(c *Config) { c.Auth.OIDCProvider.Issuer = "" }, "auth.oidc_provider.issuer"},
+		{"auth.oidc_provider.signing_key_path", func(c *Config) { c.Auth.OIDCProvider.SigningKeyPath = "" }, "auth.oidc_provider.signing_key_path"},
 	}
 	for _, f := range fields {
 		t.Run("missing "+f.name, func(t *testing.T) {

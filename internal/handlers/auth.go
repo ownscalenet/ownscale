@@ -1,28 +1,66 @@
 package handlers
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/ownscalenet/ownscale/internal/auth"
+	"github.com/ownscalenet/ownscale/internal/auth/oidcprovider"
 	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/internal/orgs"
 
 	"github.com/google/uuid"
+	"github.com/markbates/goth"
 	"github.com/markbates/goth/gothic"
 )
 
 // BeginAuth kicks off the OAuth flow for the {provider} path segment.
 func (h *Handlers) BeginAuth(w http.ResponseWriter, r *http.Request) {
+	if next := r.URL.Query().Get("next"); next != "" {
+		sess, err := gothic.Store.Get(r, gothic.SessionName)
+		if err != nil {
+			h.serverError(w, err)
+			return
+		}
+		sess.Values["next"] = next
+		if err := sess.Save(r, w); err != nil {
+			h.serverError(w, err)
+			return
+		}
+	}
 	gothic.BeginAuthHandler(w, r)
 }
 
+// boolToInt64 converts a bool to SQLite's 0/1 integer representation, used
+// for the users.email_verified column (sqlc models it as int64 since
+// SQLite has no native boolean type).
+func boolToInt64(b bool) int64 {
+	if b {
+		return 1
+	}
+	return 0
+}
+
+// emailVerifiedFromGothUser extracts the upstream provider's "is this email
+// verified" claim from the raw provider response. Google's userinfo v2
+// endpoint (which goth's google provider uses) returns a "verified_email"
+// boolean; other providers may use "email_verified" instead, so both are
+// checked defensively.
+func emailVerifiedFromGothUser(gothUser goth.User) bool {
+	for _, key := range []string{"verified_email", "email_verified"} {
+		if v, ok := gothUser.RawData[key].(bool); ok {
+			return v
+		}
+	}
+	return false
+}
+
 // AuthCallback completes the OAuth flow, finds or creates the local user
-// record, auto-provisions a fresh organization for first-time logins, stores
-// the user id in the session, and redirects into the app (the SPA root,
-// which loads GET /api/session client-side).
+// record, stores the user id in the session, and redirects into the app
+// (the SPA root, which loads GET /api/session client-side). First-time
+// users without an organization yet are routed by the SPA itself to the
+// organization creation form (see CreateOrganization).
 func (h *Handlers) AuthCallback(w http.ResponseWriter, r *http.Request) {
 	gothUser, err := gothic.CompleteUserAuth(w, r)
 	if err != nil {
@@ -31,6 +69,7 @@ func (h *Handlers) AuthCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	ctx := r.Context()
+	emailVerified := emailVerifiedFromGothUser(gothUser)
 	user, err := h.queries.GetUserByProvider(ctx, sqlcgen.GetUserByProviderParams{
 		Provider:       gothUser.Provider,
 		ProviderUserID: gothUser.UserID,
@@ -44,6 +83,7 @@ func (h *Handlers) AuthCallback(w http.ResponseWriter, r *http.Request) {
 			Email:          gothUser.Email,
 			Name:           gothUser.Name,
 			AvatarUrl:      gothUser.AvatarURL,
+			EmailVerified:  boolToInt64(emailVerified),
 		})
 		if err != nil {
 			h.serverError(w, err)
@@ -55,28 +95,18 @@ func (h *Handlers) AuthCallback(w http.ResponseWriter, r *http.Request) {
 	default:
 		// Existing user: keep profile fields fresh.
 		if updErr := h.queries.UpdateUserProfile(ctx, sqlcgen.UpdateUserProfileParams{
-			Email:     gothUser.Email,
-			Name:      gothUser.Name,
-			AvatarUrl: gothUser.AvatarURL,
-			ID:        user.ID,
+			Email:         gothUser.Email,
+			Name:          gothUser.Name,
+			AvatarUrl:     gothUser.AvatarURL,
+			EmailVerified: boolToInt64(emailVerified),
+			ID:            user.ID,
 		}); updErr != nil {
 			h.logger.Error("update user profile", "error", updErr)
 		}
 	}
 
-	if !user.OrganizationID.Valid {
-		org, err := h.provisionOrganization(ctx)
-		if err != nil {
-			h.serverError(w, err)
-			return
-		}
-		if err := h.queries.SetUserOrganization(ctx, sqlcgen.SetUserOrganizationParams{
-			OrganizationID: sql.NullString{String: org.ID, Valid: true},
-			ID:             user.ID,
-		}); err != nil {
-			h.serverError(w, err)
-			return
-		}
+	if err := h.queries.TouchUserLastLogin(ctx, user.ID); err != nil {
+		h.logger.Error("touch user last login", "error", err)
 	}
 
 	if err := auth.StoreUserSession(w, r, user.ID); err != nil {
@@ -84,31 +114,28 @@ func (h *Handlers) AuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sess, err := gothic.Store.Get(r, gothic.SessionName)
+	if err != nil {
+		h.serverError(w, err)
+		return
+	}
+	next, _ := sess.Values["next"].(string)
+	delete(sess.Values, "next")
+	if err := sess.Save(r, w); err != nil {
+		h.serverError(w, err)
+		return
+	}
+	if nextID := oidcprovider.AuthRequestIDFromNext(next); nextID != "" && h.oidc != nil {
+		if err := h.oidc.AuthorizeAuthRequest(nextID, user.ID); err != nil {
+			h.serverError(w, err)
+			return
+		}
+	}
+	if strings.HasPrefix(next, "/") && !strings.HasPrefix(next, "//") {
+		http.Redirect(w, r, next, http.StatusSeeOther)
+		return
+	}
 	http.Redirect(w, r, "/", http.StatusSeeOther)
-}
-
-// provisionOrganization creates a brand-new organization with a random
-// subdomain (DB row + headscale container), retrying a couple of times on
-// the unlikely event of a subdomain collision.
-func (h *Handlers) provisionOrganization(ctx context.Context) (sqlcgen.Organization, error) {
-	if h.orgs == nil {
-		return sqlcgen.Organization{}, errors.New("organization auto-provisioning is not configured (BASE_DOMAIN/Docker unavailable)")
-	}
-
-	const maxAttempts = 3
-	var lastErr error
-	for range maxAttempts {
-		subdomain, err := orgs.RandomSubdomain()
-		if err != nil {
-			return sqlcgen.Organization{}, err
-		}
-		org, err := h.orgs.Create(ctx, subdomain)
-		if err == nil {
-			return org, nil
-		}
-		lastErr = err
-	}
-	return sqlcgen.Organization{}, lastErr
 }
 
 // Logout clears the session and returns to the login page. Kept as a plain

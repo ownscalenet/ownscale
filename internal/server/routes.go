@@ -17,7 +17,7 @@ import (
 // built frontend (SPA fallback to index.html for client-side routes); pass
 // http.NotFoundHandler() if the frontend hasn't been built. Every request is
 // logged via logger before being dispatched.
-func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.HandlerFunc, logger *slog.Logger, static http.Handler) http.Handler {
+func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.HandlerFunc, logger *slog.Logger, static http.Handler, oidcHandler http.Handler) http.Handler {
 	mux := http.NewServeMux()
 
 	mux.HandleFunc("GET /api/session", requireAuthAPI(h.Session))
@@ -33,6 +33,25 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	mux.HandleFunc("GET /auth/{provider}/callback", h.AuthCallback)
 	mux.HandleFunc("GET /auth/{provider}", h.BeginAuth)
 	mux.HandleFunc("GET /logout", h.Logout)
+
+	if oidcHandler != nil {
+		for _, path := range []string{
+			"/.well-known/openid-configuration",
+			"/authorize",
+			"/authorize/callback",
+			"/oauth/token",
+			"/oauth/introspect",
+			"/userinfo",
+			"/revoke",
+			"/end_session",
+			"/keys",
+			"/device_authorization",
+			"/healthz",
+			"/ready",
+		} {
+			mux.Handle(path, oidcHandler)
+		}
+	}
 
 	// SPA: serves static assets and falls back to index.html for
 	// client-side routes (/, /login, /machines, ...).

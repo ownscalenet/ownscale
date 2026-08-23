@@ -11,9 +11,9 @@ import (
 )
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (id, provider, provider_user_id, email, name, avatar_url)
-VALUES (?, ?, ?, ?, ?, ?)
-RETURNING id, organization_id, provider, provider_user_id, email, name, avatar_url, created_at, updated_at
+INSERT INTO users (id, provider, provider_user_id, email, name, avatar_url, email_verified)
+VALUES (?, ?, ?, ?, ?, ?, ?)
+RETURNING id, organization_id, provider, provider_user_id, email, name, avatar_url, created_at, updated_at, email_verified, last_login_at
 `
 
 type CreateUserParams struct {
@@ -23,6 +23,7 @@ type CreateUserParams struct {
 	Email          string
 	Name           string
 	AvatarUrl      string
+	EmailVerified  int64
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
@@ -33,6 +34,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		arg.Email,
 		arg.Name,
 		arg.AvatarUrl,
+		arg.EmailVerified,
 	)
 	var i User
 	err := row.Scan(
@@ -45,12 +47,14 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.AvatarUrl,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EmailVerified,
+		&i.LastLoginAt,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, organization_id, provider, provider_user_id, email, name, avatar_url, created_at, updated_at FROM users WHERE id = ?
+SELECT id, organization_id, provider, provider_user_id, email, name, avatar_url, created_at, updated_at, email_verified, last_login_at FROM users WHERE id = ?
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id string) (User, error) {
@@ -66,12 +70,14 @@ func (q *Queries) GetUserByID(ctx context.Context, id string) (User, error) {
 		&i.AvatarUrl,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EmailVerified,
+		&i.LastLoginAt,
 	)
 	return i, err
 }
 
 const getUserByProvider = `-- name: GetUserByProvider :one
-SELECT id, organization_id, provider, provider_user_id, email, name, avatar_url, created_at, updated_at FROM users WHERE provider = ? AND provider_user_id = ?
+SELECT id, organization_id, provider, provider_user_id, email, name, avatar_url, created_at, updated_at, email_verified, last_login_at FROM users WHERE provider = ? AND provider_user_id = ?
 `
 
 type GetUserByProviderParams struct {
@@ -92,6 +98,8 @@ func (q *Queries) GetUserByProvider(ctx context.Context, arg GetUserByProviderPa
 		&i.AvatarUrl,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.EmailVerified,
+		&i.LastLoginAt,
 	)
 	return i, err
 }
@@ -110,15 +118,25 @@ func (q *Queries) SetUserOrganization(ctx context.Context, arg SetUserOrganizati
 	return err
 }
 
+const touchUserLastLogin = `-- name: TouchUserLastLogin :exec
+UPDATE users SET last_login_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+func (q *Queries) TouchUserLastLogin(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, touchUserLastLogin, id)
+	return err
+}
+
 const updateUserProfile = `-- name: UpdateUserProfile :exec
-UPDATE users SET email = ?, name = ?, avatar_url = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+UPDATE users SET email = ?, name = ?, avatar_url = ?, email_verified = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
 `
 
 type UpdateUserProfileParams struct {
-	Email     string
-	Name      string
-	AvatarUrl string
-	ID        string
+	Email         string
+	Name          string
+	AvatarUrl     string
+	EmailVerified int64
+	ID            string
 }
 
 func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) error {
@@ -126,6 +144,7 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 		arg.Email,
 		arg.Name,
 		arg.AvatarUrl,
+		arg.EmailVerified,
 		arg.ID,
 	)
 	return err

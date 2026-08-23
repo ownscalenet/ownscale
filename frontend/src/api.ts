@@ -14,6 +14,12 @@ export interface User {
   UpdatedAt: string
 }
 
+export interface Organization {
+  ID: string
+  Subdomain: string
+  CreatedAt: string
+}
+
 export interface HeadscaleUser {
   id: string
   name: string
@@ -72,6 +78,13 @@ export function getSession() {
 
 export function logout() {
   return request<void>('/api/logout', { method: 'POST' })
+}
+
+export function createOrganization(subdomain: string) {
+  return request<{ organization: Organization }>('/api/organizations', {
+    method: 'POST',
+    body: JSON.stringify({ subdomain }),
+  })
 }
 
 export interface MachinesResponse {

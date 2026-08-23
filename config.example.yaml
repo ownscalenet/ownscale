@@ -5,8 +5,8 @@
 #
 # Every value here can also be set (or overridden) via an OWNSCALE_*
 # environment variable, e.g. OWNSCALE_BASE_DOMAIN, OWNSCALE_DATABASE_URL,
-# OWNSCALE_AUTH_GOOGLE_CLIENT_ID. Environment variables take precedence over
-# this file, which takes precedence over built-in defaults.
+# OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_ID. Environment variables take
+# precedence over this file, which takes precedence over built-in defaults.
 
 # Address the HTTP server listens on.
 addr: ":8080"
@@ -29,13 +29,40 @@ auth:
   # Random string used to sign the login session cookie. Required to run the server.
   session_secret: "changeme"
 
-  google:
-    # Google OAuth 2.0 client ID. Required to run the server.
+  upstream_oidc:
+    # Upstream OIDC provider's issuer URL, used for discovery
+    # (".well-known/openid-configuration"), e.g. "https://accounts.google.com"
+    # or "https://dex.<base_domain>" for the bundled local-dev Dex instance
+    # (see docker-compose.yml, etc/dex/config.yaml). Required to run the
+    # server.
+    issuer: ""
+    # OAuth 2.0 client ID registered with issuer. Required to run the server.
     client_id: ""
-    # Google OAuth 2.0 client secret. Required to run the server.
+    # OAuth 2.0 client secret registered with issuer. Required to run the server.
     client_secret: ""
-    # Must match the redirect URI configured on the Google OAuth client.
-    callback_url: "http://localhost:8080/auth/google/callback"
+    # Must match the redirect URI registered with issuer. In production
+    # this must be reachable at ownscale itself, which is bound to the
+    # bare base domain (e.g. "https://<base_domain>/auth/oidc/callback") --
+    # see etc/caddy/Caddyfile.
+    callback_url: "http://localhost:8080/auth/oidc/callback"
+
+  # OIDC provider configuration: ownscale itself acts as an OpenID Connect
+  # provider (federated to upstream_oidc above) that each organization's
+  # headscale/headplane containers trust for SSO. See
+  # internal/auth/oidcprovider.
+  oidc_provider:
+    # Public base URL for ownscale's OIDC endpoints (used in discovery and
+    # in issued tokens). Defaults to "https://<base_domain>" if unset
+    # (ownscale itself is bound to the bare base domain).
+    issuer: ""
+    # Path to the RSA private key used to sign issued ID tokens (relative
+    # to data_dir unless absolute). Auto-generated on first startup if
+    # missing. Defaults to "oidc_signing_key.pem" (under data_dir).
+    signing_key_path: "oidc_signing_key.pem"
+    # Lifetime of issued OAuth access tokens (Go duration string).
+    access_token_lifetime: "5m"
+    # Lifetime of issued OIDC ID tokens (Go duration string).
+    id_token_lifetime: "1h"
 
 log:
   # Minimum level to log: "debug", "info", "warn", or "error". Defaults to "info".

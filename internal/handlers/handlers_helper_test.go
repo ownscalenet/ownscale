@@ -56,7 +56,7 @@ func newTestQueries(t *testing.T) *dbpkg.TxQueries {
 // exercised without a real Docker daemon.
 func newTestCtl(t *testing.T, api *dockerfake.API) *dockerctl.Ctl {
 	t.Helper()
-	ctl, err := dockerctl.NewWithClient(api, t.TempDir(), discardLogger())
+	ctl, err := dockerctl.NewWithClient(api, t.TempDir(), false, discardLogger())
 	if err != nil {
 		t.Fatalf("dockerctl.NewWithClient: %v", err)
 	}
@@ -84,7 +84,7 @@ func newTestHandlers(t *testing.T, withOrgs bool) (*Handlers, *dbpkg.TxQueries) 
 		ctl = newTestCtl(t, noopDockerAPI())
 		baseDomain = testBaseDomain
 	}
-	return New(queries, ctl, baseDomain, discardLogger()), queries
+	return New(queries, ctl, baseDomain, nil, discardLogger()), queries
 }
 
 // insertUser inserts a user row directly and returns it.
@@ -93,7 +93,7 @@ func insertUser(t *testing.T, queries *dbpkg.TxQueries) sqlcgen.User {
 	id := uuid.Must(uuid.NewV7()).String()
 	user, err := queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
 		ID:             id,
-		Provider:       "google",
+		Provider:       "oidc",
 		ProviderUserID: id,
 		Email:          id + "@example.com",
 		Name:           "Test User",
@@ -105,7 +105,7 @@ func insertUser(t *testing.T, queries *dbpkg.TxQueries) sqlcgen.User {
 }
 
 func setupSessions() {
-	auth.Setup("test-session-secret-at-least-32-bytes-long", "client-id", "client-secret", "http://localhost/auth/google/callback")
+	auth.Setup("test-session-secret-at-least-32-bytes-long")
 }
 
 // authenticatedRequest returns req with a session cookie for user attached,

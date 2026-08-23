@@ -3,7 +3,6 @@ package handlers
 import (
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"testing"
 )
 
@@ -37,29 +36,5 @@ func TestAPILogout(t *testing.T) {
 
 	if rec.Code != http.StatusNoContent {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusNoContent)
-	}
-}
-
-func TestProvisionOrganizationNotConfigured(t *testing.T) {
-	h, _ := newTestHandlers(t, false)
-
-	_, err := h.provisionOrganization(t.Context())
-	if err == nil {
-		t.Fatal("provisionOrganization: want error when orgs is not configured, got nil")
-	}
-	if !strings.Contains(err.Error(), "not configured") {
-		t.Errorf("error = %q, want it to mention 'not configured'", err.Error())
-	}
-}
-
-func TestProvisionOrganizationSuccess(t *testing.T) {
-	h, _ := newTestHandlers(t, true)
-
-	org, err := h.provisionOrganization(t.Context())
-	if err != nil {
-		t.Fatalf("provisionOrganization: %v", err)
-	}
-	if org.Subdomain == "" {
-		t.Error("provisionOrganization: want a non-empty random subdomain")
 	}
 }
