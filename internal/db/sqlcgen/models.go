@@ -22,6 +22,7 @@ type Organization struct {
 	ID        string
 	Subdomain string
 	CreatedAt time.Time
+	Status    string
 }
 
 type Orgconfig struct {

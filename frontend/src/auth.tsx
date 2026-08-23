@@ -1,8 +1,9 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { ApiError, getSession, type User } from './api'
+import { ApiError, getSession, type Organization, type User } from './api'
 
 interface AuthState {
   user: User | null
+  organization: Organization | null
   loading: boolean
   error: string | null
   refresh: () => Promise<void>
@@ -12,6 +13,7 @@ const AuthContext = createContext<AuthState | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
+  const [organization, setOrganization] = useState<Organization | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -19,10 +21,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setLoading(true)
     setError(null)
     try {
-      const { user } = await getSession()
+      const { user, organization } = await getSession()
       setUser(user)
+      setOrganization(organization)
     } catch (err) {
       setUser(null)
+      setOrganization(null)
       if (!(err instanceof ApiError && err.status === 401)) {
         setError(err instanceof Error ? err.message : String(err))
       }
@@ -36,7 +40,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, loading, error, refresh }}>
+    <AuthContext.Provider value={{ user, organization, loading, error, refresh }}>
       {children}
     </AuthContext.Provider>
   )

@@ -145,7 +145,29 @@ func TestCreateOrganizationDockerFailure(t *testing.T) {
 	rec := httptest.NewRecorder()
 	h.CreateOrganization(rec, req)
 
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
+	// The DB insert (status "pending") happens inline and succeeds
+	// regardless of Docker; only the (deferred) provisioning step fails.
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusCreated, rec.Body.String())
+	}
+	org, err := queries.GetOrganizationBySubdomain(t.Context(), "acme")
+	if err != nil {
+		t.Fatalf("GetOrganizationBySubdomain: %v", err)
+	}
+	if org.Status != "pending" {
+		t.Fatalf("status = %q, want %q", org.Status, "pending")
+	}
+
+	// Simulate the background provisioner picking up the signal.
+	if err := h.orgs.Provision(t.Context(), org.ID); err == nil {
+		t.Fatal("Provision: want error from failing Docker call, got nil")
+	}
+
+	org, err = queries.GetOrganization(t.Context(), org.ID)
+	if err != nil {
+		t.Fatalf("GetOrganization: %v", err)
+	}
+	if org.Status != "failed" {
+		t.Errorf("status after failed provisioning = %q, want %q", org.Status, "failed")
 	}
 }

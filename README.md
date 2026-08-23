@@ -42,6 +42,15 @@ actual litestream config lives in `etc/litestream/litestream.yml`, which
 follows the same "static file + env var expansion" pattern as
 `etc/caddy/Caddyfile` — it's not generated from `config.yaml`.
 
+For local-only backups (no S3), set `LITESTREAM_REPLICA_URL` to
+`file:///var/lib/litestream/backups` — the only `file://` path docker-compose.yml
+persistently mounts for the litestream service (to
+`${OWNSCALE_DATA_DIR}/.litestream-backups` on the host). Any other `file://`
+destination only lives in the container's writable layer, gets wiped on every
+container recreation, and desyncs litestream's local retention from the
+(now-empty) destination, causing a permanent "shutdown sync failed" retry loop
+on restart.
+
 
 ## Single sign-on (via ownscale's own OIDC provider)
 

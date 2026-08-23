@@ -18,6 +18,7 @@ export interface Organization {
   ID: string
   Subdomain: string
   CreatedAt: string
+  Status: 'pending' | 'active' | 'failed'
 }
 
 export interface HeadscaleUser {
@@ -73,7 +74,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function getSession() {
-  return request<{ user: User }>('/api/session')
+  return request<{ user: User; organization: Organization | null }>('/api/session')
 }
 
 export function logout() {

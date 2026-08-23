@@ -38,6 +38,28 @@ import (
 	"github.com/ownscalenet/ownscale/internal/server"
 )
 
+// waitForOrganizationStatus polls orgID's status until it equals want or
+// timeout elapses, failing the test if it doesn't reach want in time. It's
+// used because provisioning now runs in the background instead of inline
+// in the CreateOrganization response (see handlers.CreateOrganization).
+func waitForOrganizationStatus(t *testing.T, queries *dbpkg.TxQueries, orgID, want string, timeout time.Duration) {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for {
+		org, err := queries.GetOrganization(t.Context(), orgID)
+		if err != nil {
+			t.Fatalf("GetOrganization: %v", err)
+		}
+		if org.Status == want {
+			return
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("organization status = %q after %s, want %q", org.Status, timeout, want)
+		}
+		time.Sleep(200 * time.Millisecond)
+	}
+}
+
 func requireDocker(t *testing.T) {
 	t.Helper()
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
@@ -90,7 +112,7 @@ func TestServerIntegration(t *testing.T) {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	queries := newTestQueries(t)
 
-	ctl, err := dockerctl.New(t.TempDir(), false, logger)
+	ctl, err := dockerctl.New(t.TempDir(), "", logger)
 	if err != nil {
 		t.Fatalf("dockerctl.New: %v", err)
 	}
@@ -108,6 +130,9 @@ func TestServerIntegration(t *testing.T) {
 	})
 
 	h := handlers.New(queries, ctl, baseDomain, nil, logger)
+	provisionerCtx, cancelProvisioner := context.WithCancel(context.Background())
+	t.Cleanup(cancelProvisioner)
+	h.StartProvisioner(provisionerCtx)
 	auth.Setup("test-session-secret-at-least-32-bytes-long")
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
 		return auth.RequireAuthAPI(queries.Queries, next)
@@ -172,6 +197,15 @@ func TestServerIntegration(t *testing.T) {
 		if body.Organization.Subdomain != subdomain {
 			t.Errorf("organization.subdomain = %q, want %q", body.Organization.Subdomain, subdomain)
 		}
+		if body.Organization.Status != "pending" {
+			t.Errorf("organization.status = %q, want %q (provisioning is now asynchronous)", body.Organization.Status, "pending")
+		}
+
+		// Provisioning happens in the background (see handlers.StartProvisioner
+		// above), signaled immediately rather than waiting for a poll tick, so
+		// this should become "active" quickly -- but still asynchronously, so
+		// poll for it instead of asserting on the immediate response.
+		waitForOrganizationStatus(t, queries, body.Organization.ID, "active", 15*time.Second)
 
 		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 		defer cancel()

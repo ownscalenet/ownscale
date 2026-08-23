@@ -116,6 +116,7 @@ func run() error {
 
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	h.StartProvisioner(ctx)
 
 	// Listen before RegisterUpstreamOIDC because that call needs the server to be up.
 	ln, err := net.Listen("tcp", cfg.Addr)

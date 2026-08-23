@@ -42,59 +42,107 @@ func (s *Service) BaseDomain() string {
 	return s.baseDomain
 }
 
-// Create provisions an organization: it inserts the organizations row and
-// starts the headscale container for subdomain via ctl, all within a
-// single transaction.
-func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organization, err error) {
-	defer derrors.Wrap(&err, "(*orgs.Service).Create(ctx, %q)", subdomain)
+// CreatePending inserts an organizations row (status "pending") for
+// subdomain and returns it. It deliberately does none of the Docker/network
+// work that used to happen inline in Create: creating an organization's
+// isolated Docker network is picked up by the host OS as a network change,
+// which causes browsers (notably Firefox) to drop in-flight requests --
+// including the very request creating the org. Keeping this fast and
+// DB-only lets callers (the web handler) return a response before that
+// network change happens, and hand the actual provisioning off to
+// Provision, run either synchronously (CLI) or from the background
+// Provisioner (web).
+func (s *Service) CreatePending(ctx context.Context, subdomain string) (_ sqlcgen.Organization, err error) {
+	defer derrors.Wrap(&err, "(*orgs.Service).CreatePending(ctx, %q)", subdomain)
 
 	if err := dockerctl.ValidateSubdomain(subdomain); err != nil {
 		return sqlcgen.Organization{}, err
 	}
 
-	var org sqlcgen.Organization
-	qtx, commit, rollback, err := s.queries.StartTx(ctx)
-	if err != nil {
-		return org, err
-	}
-	defer rollback() // safe, rollback becomes no-op if already comitted.
-
-	org, err = qtx.CreateOrganization(ctx, sqlcgen.CreateOrganizationParams{
+	org, err := s.queries.CreateOrganization(ctx, sqlcgen.CreateOrganizationParams{
 		ID:        uuid.Must(uuid.NewV7()).String(),
 		Subdomain: subdomain,
 	})
 	if err != nil {
 		return org, fmt.Errorf("create organization record (already exists?): %w", err)
 	}
+	return org, nil
+}
+
+// Provision does the actual work of standing up organization orgID: it
+// creates its OIDC client and its headscale/headplane container (via ctl),
+// then marks the organization "active". If any step fails, it marks the
+// organization "failed" (best-effort; the original error is still
+// returned) instead of leaving it stuck "pending" forever.
+func (s *Service) Provision(ctx context.Context, orgID string) (err error) {
+	defer derrors.Wrap(&err, "(*orgs.Service).Provision(ctx, %q)", orgID)
+
+	org, err := s.queries.GetOrganization(ctx, orgID)
+	if err != nil {
+		return fmt.Errorf("get organization: %w", err)
+	}
+	// Guards against duplicate Provision calls for the same organization
+	// (e.g. a duplicate Signal, or a signal racing a poll tick): once an
+	// organization is active (or has permanently failed), there's nothing
+	// left to do.
+	if org.Status != "pending" {
+		return nil
+	}
+
+	if err := s.provision(ctx, org); err != nil {
+		if _, statusErr := s.queries.UpdateOrganizationStatus(ctx, sqlcgen.UpdateOrganizationStatusParams{
+			ID:     orgID,
+			Status: "failed",
+		}); statusErr != nil {
+			return fmt.Errorf("%w (also failed to record failed status: %w)", err, statusErr)
+		}
+		return err
+	}
+
+	if _, err := s.queries.UpdateOrganizationStatus(ctx, sqlcgen.UpdateOrganizationStatusParams{
+		ID:     orgID,
+		Status: "active",
+	}); err != nil {
+		return fmt.Errorf("mark organization active: %w", err)
+	}
+	return nil
+}
+
+// provision creates org's OIDC client (within its own transaction) and its
+// headscale/headplane container via ctl. It's split out of Provision so
+// the latter can uniformly handle the success/failure status update
+// regardless of which step fails.
+func (s *Service) provision(ctx context.Context, org sqlcgen.Organization) error {
+	subdomain := org.Subdomain
 
 	clientID, err := randomHex(8)
 	if err != nil {
-		return org, err
+		return err
 	}
 	clientID = "os_" + subdomain + "_" + clientID
 	clientSecret, err := randomHex(32)
 	if err != nil {
-		return org, err
+		return err
 	}
 	clientSecretHash, err := bcrypt.GenerateFromPassword([]byte(clientSecret), bcrypt.DefaultCost)
 	if err != nil {
-		return org, err
+		return err
 	}
 	redirectURIsJSON, err := json.Marshal([]string{
 		"https://" + subdomain + "." + s.baseDomain + "/oidc/callback",
 		"https://" + subdomain + "." + s.baseDomain + "/admin/oidc/callback",
 	})
 	if err != nil {
-		return org, err
+		return err
 	}
-	if _, err := qtx.CreateOIDCClient(ctx, sqlcgen.CreateOIDCClientParams{
+	if _, err := s.queries.CreateOIDCClient(ctx, sqlcgen.CreateOIDCClientParams{
 		ID:               uuid.Must(uuid.NewV7()).String(),
 		OrganizationID:   org.ID,
 		ClientID:         clientID,
 		ClientSecretHash: string(clientSecretHash),
 		RedirectUris:     string(redirectURIsJSON),
 	}); err != nil {
-		return org, err
+		return err
 	}
 
 	if _, err := s.ctl.CreateOrganization(ctx, subdomain, s.baseDomain, dockerctl.OIDCClientCredentials{
@@ -102,10 +150,29 @@ func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organ
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
 	}); err != nil {
-		return org, fmt.Errorf("create container: %w", err)
+		return fmt.Errorf("create container: %w", err)
 	}
+	return nil
+}
 
-	return org, commit()
+// Create provisions an organization end-to-end: it inserts the
+// organizations row (CreatePending) and then synchronously runs the rest
+// of provisioning (Provision) before returning. It's used by callers that
+// want to block until provisioning is fully done or failed (e.g. the CLI),
+// as opposed to the web handler, which calls CreatePending and hands
+// Provision off to the background Provisioner instead.
+func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organization, err error) {
+	defer derrors.Wrap(&err, "(*orgs.Service).Create(ctx, %q)", subdomain)
+
+	org, err := s.CreatePending(ctx, subdomain)
+	if err != nil {
+		return org, err
+	}
+	if err := s.Provision(ctx, org.ID); err != nil {
+		return org, err
+	}
+	org.Status = "active"
+	return org, nil
 }
 
 func randomHex(n int) (_ string, err error) {

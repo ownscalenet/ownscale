@@ -24,7 +24,6 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 
@@ -45,7 +44,6 @@ const (
 
 func HSContainerName(subdomain string) string { return "hs-" + subdomain }
 func HPContainerName(subdomain string) string { return "hp-" + subdomain }
-func HPVolumeName(subdomain string) string    { return "hp-" + subdomain + "-data" }
 func HSExternalEndpoint(domain string) string { return "https://" + domain }
 
 // OrgNetworkName returns the name of the Docker network isolating a single
@@ -149,6 +147,14 @@ func (c *Ctl) localCAMount() (mount.Mount, bool) {
 // called, so there's no path-traversal concern.
 func (c *Ctl) headscaleHostDir(subdomain string) string {
 	return filepath.Join(c.dataDir, "headscale", subdomain)
+}
+
+// headplaneHostDir returns the host directory bind-mounted at
+// /var/lib/headplane in an organization's headplane container, mirroring
+// headscaleHostDir so headplane's database is discovered and replicated by
+// litestream's directory watcher the same way headscale's is.
+func (c *Ctl) headplaneHostDir(subdomain string) string {
+	return filepath.Join(c.dataDir, "headplane", subdomain)
 }
 
 func (c *Ctl) Close() (err error) {
@@ -412,8 +418,8 @@ headscale:
   api_key: "{{.HeadscaleAPIKey}}"
 
 oidc:
-  enabled: true
-  issuer: "{{.OIDCIssuer}}"
+  enabled: {{if .OIDCIssuer}}true{{else}}false{{end}}
+  issuer: "{{if .OIDCIssuer}}{{.OIDCIssuer}}{{else}}http://disabled.invalid{{end}}"
   token_endpoint_auth_method: "client_secret_basic"
   client_id: "{{.OIDCClientID}}"
   client_secret: "{{.OIDCClientSecret}}"
@@ -575,6 +581,70 @@ func (c *Ctl) bootstrapHeadscaleAPIKey(ctx context.Context, containerID string) 
 	return "", lastErr
 }
 
+// waitForHTTPServing execs into containerID repeatedly, using Node's own
+// HTTP client (Node is guaranteed present since this is used to probe
+// headplane, itself a Node app) to check whether something is actually
+// listening and responding at url. It retries with a fixed backoff for up
+// to ~10s and returns an error if nothing ever responds.
+//
+// A container reaching "started" doesn't mean the process inside has
+// finished booting and bound its listening socket yet -- for a Node app in
+// particular there can be a noticeable gap between "docker start" and the
+// server accepting connections. Without this, an organization could be
+// marked "active" (see orgs.Service.Provision) while headplane is still
+// starting up, so a user redirected there immediately after provisioning
+// would hit a connection error instead of the login page.
+func (c *Ctl) waitForHTTPServing(ctx context.Context, containerID, url string) (err error) {
+	defer derrors.Wrap(&err, "c.waitForHTTPServing(%q, %q)", containerID, url)
+
+	// Exit 0 if we get any HTTP response at all (status doesn't matter --
+	// we only care whether something is listening), exit 1 on any
+	// connection-level error (not listening yet, connection reset, ...).
+	probe := fmt.Sprintf(
+		"require('http').get(%q, res => { res.resume(); process.exit(0); }).on('error', () => process.exit(1));",
+		url,
+	)
+
+	const attempts = 20
+	const backoff = 500 * time.Millisecond
+
+	var lastErr error
+	for attempt := range attempts {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+
+		execResp, err := c.cli.ContainerExecCreate(ctx, containerID, container.ExecOptions{
+			AttachStdout: true,
+			AttachStderr: true,
+			Cmd:          []string{"node", "-e", probe},
+		})
+		if err != nil {
+			lastErr = err
+		} else if attachResp, err := c.cli.ContainerExecAttach(ctx, execResp.ID, container.ExecAttachOptions{}); err != nil {
+			lastErr = err
+		} else {
+			var stdout, stderr bytes.Buffer
+			_, readErr := stdcopy.StdCopy(&stdout, &stderr, attachResp.Reader)
+			attachResp.Close()
+			if readErr != nil {
+				lastErr = readErr
+			} else if inspectResp, inspectErr := c.cli.ContainerExecInspect(ctx, execResp.ID); inspectErr != nil {
+				lastErr = inspectErr
+			} else if inspectResp.ExitCode == 0 {
+				return nil
+			} else {
+				lastErr = fmt.Errorf("not serving yet: %s", strings.TrimSpace(stderr.String()))
+			}
+		}
+
+		if attempt < attempts-1 {
+			time.Sleep(backoff)
+		}
+	}
+	return lastErr
+}
+
 // CreateOrganization provisions and starts a headscale container serving
 // https://<subdomain>.<baseDomain>. It returns the container ID.
 func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain string, oidcCreds OIDCClientCredentials) (_ string, err error) {
@@ -675,13 +745,13 @@ func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain, hsCfg, hea
 		return fmt.Errorf("build headplane config: %w", err)
 	}
 
-	volName := HPVolumeName(subdomain)
-	if _, err := c.cli.VolumeCreate(ctx, volume.CreateOptions{Name: volName}); err != nil {
-		return fmt.Errorf("create volume: %w", err)
+	hostDir := c.headplaneHostDir(subdomain)
+	if err := os.MkdirAll(hostDir, 0o755); err != nil {
+		return fmt.Errorf("create data directory: %w", err)
 	}
 
 	mounts := []mount.Mount{
-		{Type: mount.TypeVolume, Source: volName, Target: "/var/lib/headplane"},
+		{Type: mount.TypeBind, Source: hostDir, Target: "/var/lib/headplane"},
 	}
 	if m, ok := c.localCAMount(); ok {
 		mounts = append(mounts, m)
@@ -744,14 +814,18 @@ func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain, hsCfg, hea
 		return fmt.Errorf("start container: %w", err)
 	}
 	go c.streamLogs(resp.ID, HPContainerName(subdomain))
+
+	if err := c.waitForHTTPServing(ctx, resp.ID, "http://localhost:3000/"); err != nil {
+		return fmt.Errorf("wait for headplane to start serving: %w", err)
+	}
 	return nil
 }
 
 // RemoveOrganization stops and removes the headscale and headplane
-// containers and their data (the headscale host directory under DataDir,
-// and headplane's Docker volume), and the organization's own isolated
-// Docker network (disconnecting Caddy from it first). Missing resources
-// are ignored so removal is idempotent.
+// containers and their data (the headscale and headplane host directories
+// under DataDir), and the organization's own isolated Docker network
+// (disconnecting Caddy from it first). Missing resources are ignored so
+// removal is idempotent.
 func (c *Ctl) RemoveOrganization(ctx context.Context, subdomain string) (err error) {
 	defer derrors.Wrap(&err, "c.RemoveOrganization(%q)", subdomain)
 
@@ -768,8 +842,8 @@ func (c *Ctl) RemoveOrganization(ctx context.Context, subdomain string) (err err
 	if err := c.cli.ContainerRemove(ctx, hpName, container.RemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
 		return fmt.Errorf("remove headplane container: %w", err)
 	}
-	if err := c.cli.VolumeRemove(ctx, HPVolumeName(subdomain), false); err != nil && !cerrdefs.IsNotFound(err) {
-		return fmt.Errorf("remove headplane volume: %w", err)
+	if err := os.RemoveAll(c.headplaneHostDir(subdomain)); err != nil {
+		return fmt.Errorf("remove headplane data directory: %w", err)
 	}
 
 	c.removeOrgNetwork(ctx, subdomain)

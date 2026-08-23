@@ -1,12 +1,10 @@
 package handlers
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/ownscalenet/ownscale/internal/auth"
 	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
@@ -18,22 +16,15 @@ type createOrganizationRequest struct {
 	Subdomain string `json:"subdomain"`
 }
 
-// createOrganizationTimeout bounds how long organization provisioning
-// (docker container creation, image pulls, network setup) is allowed to
-// run once started. It's applied to a context detached from the incoming
-// request (see CreateOrganization) so that a client disconnecting or
-// reloading mid-request doesn't cancel in-flight Docker operations and
-// leave the organization half-provisioned.
-const createOrganizationTimeout = 2 * time.Minute
-
-// CreateOrganization provisions a new organization (headscale + headplane
-// containers on subdomain.<base_domain>) for the calling user and returns
-// the created organization record as JSON. It is mounted behind
-// auth.RequireAuthAPI, so reaching this handler implies a user is present
-// in the request context; that user is attached to the new organization as
-// its owner. Since the current data model supports at most one
-// organization per user, a user who already has one gets a 409 Conflict
-// instead of a second, orphaned organization.
+// CreateOrganization inserts a new organization (status "pending") for the
+// calling user and returns it as JSON, handing off the actual provisioning
+// (headscale + headplane containers on subdomain.<base_domain>) to the
+// background provisioner. It is mounted behind auth.RequireAuthAPI, so
+// reaching this handler implies a user is present in the request context;
+// that user is attached to the new organization as its owner. Since the
+// current data model supports at most one organization per user, a user
+// who already has one gets a 409 Conflict instead of a second, orphaned
+// organization.
 func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 	if h.orgs == nil {
 		h.writeError(w, http.StatusServiceUnavailable, "organization provisioning is not configured (base_domain/Docker unavailable)")
@@ -62,33 +53,29 @@ func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Provisioning (Docker container creation, image pulls, network setup)
-	// can take longer than a client is willing to wait around for. Detach
-	// from the request's cancellation so a disconnecting/reloading client
-	// doesn't cancel in-flight Docker operations mid-way and leave the
-	// organization half-provisioned; still bound it with a timeout so a
-	// truly stuck operation doesn't run forever.
-	//
-	// Another problem with this request: when the org is created, a new network
-	// is instantiated. That even get's picked up by the OS, so firefox/chrome
-	// also pick it up. They see something about machine's network changes and
-	// they drop all in-progress requests.
-	ctx, cancel := context.WithTimeout(context.TODO(), createOrganizationTimeout)
-	defer cancel()
-
-	org, err := h.orgs.Create(ctx, subdomain)
+	// Only the fast DB insert (status "pending") happens inline here; the
+	// actual provisioning (Docker container creation, image pulls, network
+	// setup) is handed off to the background provisioner via Signal below.
+	// This request returning quickly, before any Docker network gets
+	// created, is exactly what avoids the problem described above: a new
+	// Docker network is picked up by the host OS as a network change, which
+	// makes Firefox (and other browsers) drop in-flight requests --
+	// including this one, if it were still running when that happened.
+	org, err := h.orgs.CreatePending(r.Context(), subdomain)
 	if err != nil {
 		h.serverError(w, err)
 		return
 	}
 
-	if err := h.queries.SetUserOrganization(ctx, sqlcgen.SetUserOrganizationParams{
+	if err := h.queries.SetUserOrganization(r.Context(), sqlcgen.SetUserOrganizationParams{
 		OrganizationID: sql.NullString{String: org.ID, Valid: true},
 		ID:             user.ID,
 	}); err != nil {
 		h.serverError(w, err)
 		return
 	}
+
+	h.provisioner.Signal(org.ID)
 
 	h.writeJSON(w, http.StatusCreated, map[string]any{"organization": org})
 }

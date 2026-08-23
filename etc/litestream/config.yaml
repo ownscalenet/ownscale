@@ -28,3 +28,16 @@ dbs:
       region: ${LITESTREAM_REGION}
       endpoint: ${LITESTREAM_ENDPOINT}
       sync-interval: ${LITESTREAM_SYNC_INTERVAL}
+
+  # Every organization's headplane database (hp_persist.db), one level
+  # down per subdomain -- same directory tree as above, but litestream
+  # requires a separate dbs entry per glob pattern.
+  - dir: ${OWNSCALE_DATA_DIR}
+    pattern: "*.db"
+    recursive: true
+    watch: true
+    replica:
+      url: ${LITESTREAM_REPLICA_URL}
+      region: ${LITESTREAM_REGION}
+      endpoint: ${LITESTREAM_ENDPOINT}
+      sync-interval: ${LITESTREAM_SYNC_INTERVAL}

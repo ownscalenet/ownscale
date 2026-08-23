@@ -8,6 +8,8 @@ import (
 	"bytes"
 	"context"
 	"log/slog"
+	"os"
+	"path/filepath"
 	"sync"
 	"testing"
 	"time"
@@ -53,7 +55,8 @@ func TestDockerctlIntegration(t *testing.T) {
 	var logBuf syncBuffer
 	logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
 
-	ctl, err := dockerctl.New(t.TempDir(), "", logger)
+	dataDir := t.TempDir()
+	ctl, err := dockerctl.New(dataDir, "", logger)
 	if err != nil {
 		t.Fatalf("dockerctl.New: %v", err)
 	}
@@ -183,7 +186,7 @@ func TestDockerctlIntegration(t *testing.T) {
 		}
 	})
 
-	t.Run("RemoveOrganization removes containers, volume and network", func(t *testing.T) {
+	t.Run("RemoveOrganization removes containers, host directories and network", func(t *testing.T) {
 		if err := ctl.RemoveOrganization(ctx, subdomain); err != nil {
 			t.Fatalf("RemoveOrganization: %v", err)
 		}
@@ -193,8 +196,13 @@ func TestDockerctlIntegration(t *testing.T) {
 				t.Errorf("ContainerInspect(%q) after RemoveOrganization: err = %v, want a not-found error", name, err)
 			}
 		}
-		if _, err := rawCli.VolumeInspect(ctx, dockerctl.HPVolumeName(subdomain)); !cerrdefs.IsNotFound(err) {
-			t.Errorf("VolumeInspect after RemoveOrganization: err = %v, want a not-found error", err)
+		for _, dir := range []string{
+			filepath.Join(dataDir, "headscale", subdomain),
+			filepath.Join(dataDir, "headplane", subdomain),
+		} {
+			if _, err := os.Stat(dir); !os.IsNotExist(err) {
+				t.Errorf("os.Stat(%q) after RemoveOrganization: err = %v, want a not-exist error", dir, err)
+			}
 		}
 		if _, err := rawCli.NetworkInspect(ctx, dockerctl.OrgNetworkName(subdomain), network.InspectOptions{}); !cerrdefs.IsNotFound(err) {
 			t.Errorf("NetworkInspect after RemoveOrganization: err = %v, want a not-found error", err)

@@ -149,7 +149,7 @@ func TestCreateOrganization(t *testing.T) {
 		}
 	})
 
-	t.Run("docker failure rolls back the DB row", func(t *testing.T) {
+	t.Run("docker failure marks the organization failed (row stays)", func(t *testing.T) {
 		_, queries := newTestDB(t)
 
 		wantErr := errors.New("docker exploded")
@@ -164,8 +164,12 @@ func TestCreateOrganization(t *testing.T) {
 			t.Fatalf("got err %v, want it to wrap %v", err, wantErr)
 		}
 
-		if _, err := queries.GetOrganizationBySubdomain(t.Context(), "acme"); !errors.Is(err, sql.ErrNoRows) {
-			t.Fatalf("expected no organization row after rollback, got err %v", err)
+		org, err := queries.GetOrganizationBySubdomain(t.Context(), "acme")
+		if err != nil {
+			t.Fatalf("GetOrganizationBySubdomain: expected the row to still exist, got err %v", err)
+		}
+		if org.Status != "failed" {
+			t.Errorf("status = %q, want %q", org.Status, "failed")
 		}
 	})
 

@@ -3,7 +3,7 @@ import { useAuth } from './auth'
 import { logout } from './api'
 
 export default function Layout() {
-  const { user, refresh } = useAuth()
+  const { user, organization, refresh } = useAuth()
 
   const handleLogout = async () => {
     await logout()
@@ -44,12 +44,35 @@ export default function Layout() {
                 Machines
               </NavLink>
             </li>
+            {organization && (
+              <li>
+                <a href={`https://${organization.Subdomain}.${window.location.host}/admin/oidc/start`}>
+                  Headplane
+                </a>
+              </li>
+            )}
           </ul>
           {user && (
             <div className="p-4 border-t border-base-200 mt-auto">
               <p className="text-sm font-medium truncate">{user.Name}</p>
-              <p className="text-xs text-base-content/60 truncate mb-2">{user.Email}</p>
-              <button type="button" className="btn btn-sm btn-outline w-full" onClick={handleLogout}>
+              <p className="text-xs text-base-content/60 truncate">{user.Email}</p>
+              {organization && (
+                <div className="mt-2 mb-2">
+                  <p className="text-xs text-base-content/60 truncate">{organization.Subdomain}</p>
+                  <span
+                    className={`badge badge-xs ${
+                      organization.Status === 'active'
+                        ? 'badge-success'
+                        : organization.Status === 'failed'
+                          ? 'badge-error'
+                          : 'badge-warning'
+                    }`}
+                  >
+                    {organization.Status}
+                  </span>
+                </div>
+              )}
+              <button type="button" className="btn btn-sm btn-outline w-full mt-2" onClick={handleLogout}>
                 Logout
               </button>
             </div>

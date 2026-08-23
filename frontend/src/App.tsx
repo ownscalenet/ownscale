@@ -7,7 +7,7 @@ import Machines from './pages/Machines'
 import CreateOrganization from './pages/CreateOrganization'
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
-  const { user, loading } = useAuth()
+  const { user, organization, loading } = useAuth()
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -18,14 +18,18 @@ function RequireAuth({ children }: { children: React.ReactElement }) {
   if (!user) {
     return <Navigate to="/login" replace />
   }
-  if (!user.OrganizationID.Valid) {
+  // A user whose organization isn't active yet (no org, still pending, or
+  // failed) belongs on the create-organization page: that's also where the
+  // "provisioning..." polling UI lives, so a pending org stays visible
+  // there even across a page refresh instead of bouncing into the app.
+  if (!user.OrganizationID.Valid || organization?.Status !== 'active') {
     return <Navigate to="/create-organization" replace />
   }
   return children
 }
 
 function RequireAuthNoOrg({ children }: { children: React.ReactElement }) {
-  const { user, loading } = useAuth()
+  const { user, organization, loading } = useAuth()
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -36,7 +40,7 @@ function RequireAuthNoOrg({ children }: { children: React.ReactElement }) {
   if (!user) {
     return <Navigate to="/login" replace />
   }
-  if (user.OrganizationID.Valid) {
+  if (user.OrganizationID.Valid && organization?.Status === 'active') {
     return <Navigate to="/" replace />
   }
   return children
