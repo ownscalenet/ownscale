@@ -59,6 +59,8 @@ func (c *Ctl) MethodName(ctx context.Context, subdomain string) (_ string, err e
   `go test ./...` (or `make build` / `make test`) all pass cleanly on
   `main` — run these after making backend changes.
 - make sure variables and functions are not exported when not needed
+- don't write excessively long comments. Just say why some code is the way it is
+  and don't mention older/removed approaches/designs of the code.
 
 ## Testing
 

@@ -14,6 +14,7 @@ import (
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types/container"
+	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/google/uuid"
 
@@ -52,7 +53,7 @@ func TestDockerctlIntegration(t *testing.T) {
 	var logBuf syncBuffer
 	logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
 
-	ctl, err := dockerctl.New(t.TempDir(), false, logger)
+	ctl, err := dockerctl.New(t.TempDir(), "", logger)
 	if err != nil {
 		t.Fatalf("dockerctl.New: %v", err)
 	}
@@ -61,9 +62,9 @@ func TestDockerctlIntegration(t *testing.T) {
 	const baseDomain = "it.test"
 	subdomain := randomSubdomain(t)
 
-	// Always attempt to remove the organization's containers/volume, even
-	// if an assertion below fails mid-test, so repeated runs don't leave
-	// orphaned containers on the host. The shared "os-net" network is
+	// Always attempt to remove the organization's containers/volume/network,
+	// even if an assertion below fails mid-test, so repeated runs don't
+	// leave orphaned resources on the host. The shared "os-net" network is
 	// intentionally never removed here: it may be in use by real,
 	// already-running organizations on this host (EnsureNetwork's
 	// idempotency is exercised below instead).
@@ -119,8 +120,11 @@ func TestDockerctlIntegration(t *testing.T) {
 			if info.Config.Labels["ownscale.subdomain"] != subdomain {
 				t.Errorf("container %q: ownscale.subdomain label = %q, want %q", name, info.Config.Labels["ownscale.subdomain"], subdomain)
 			}
-			if _, ok := info.NetworkSettings.Networks["os-net"]; !ok {
-				t.Errorf("container %q: not attached to the shared os-net network (networks=%+v)", name, info.NetworkSettings.Networks)
+			if _, ok := info.NetworkSettings.Networks[dockerctl.OrgNetworkName(subdomain)]; !ok {
+				t.Errorf("container %q: not attached to its own org network (networks=%+v)", name, info.NetworkSettings.Networks)
+			}
+			if _, ok := info.NetworkSettings.Networks["os-net"]; ok {
+				t.Errorf("container %q: attached to the shared os-net network, want it isolated to its own org network only", name)
 			}
 		}
 	})
@@ -179,7 +183,7 @@ func TestDockerctlIntegration(t *testing.T) {
 		}
 	})
 
-	t.Run("RemoveOrganization removes containers and volume", func(t *testing.T) {
+	t.Run("RemoveOrganization removes containers, volume and network", func(t *testing.T) {
 		if err := ctl.RemoveOrganization(ctx, subdomain); err != nil {
 			t.Fatalf("RemoveOrganization: %v", err)
 		}
@@ -191,6 +195,9 @@ func TestDockerctlIntegration(t *testing.T) {
 		}
 		if _, err := rawCli.VolumeInspect(ctx, dockerctl.HPVolumeName(subdomain)); !cerrdefs.IsNotFound(err) {
 			t.Errorf("VolumeInspect after RemoveOrganization: err = %v, want a not-found error", err)
+		}
+		if _, err := rawCli.NetworkInspect(ctx, dockerctl.OrgNetworkName(subdomain), network.InspectOptions{}); !cerrdefs.IsNotFound(err) {
+			t.Errorf("NetworkInspect after RemoveOrganization: err = %v, want a not-found error", err)
 		}
 	})
 }

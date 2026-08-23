@@ -48,6 +48,13 @@ func HPContainerName(subdomain string) string { return "hp-" + subdomain }
 func HPVolumeName(subdomain string) string    { return "hp-" + subdomain + "-data" }
 func HSExternalEndpoint(domain string) string { return "https://" + domain }
 
+// OrgNetworkName returns the name of the Docker network isolating a single
+// organization's headscale/headplane containers from every other
+// organization's. Each organization gets its own network (created lazily by
+// EnsureOrgNetwork), separate from the shared ownscaleNetwork used by the
+// core infra services (ownscale, dex, litestream, caddy).
+func OrgNetworkName(subdomain string) string { return "org-" + subdomain + "-net" }
+
 // OIDCClientCredentials are the per-organization relying-party credentials
 // templated into headscale and headplane.
 type OIDCClientCredentials struct {
@@ -153,15 +160,36 @@ func (c *Ctl) Close() (err error) {
 // EnsureNetwork creates the shared network if it does not exist.
 func (c *Ctl) EnsureNetwork(ctx context.Context) (err error) {
 	defer derrors.Wrap(&err, "c.EnsureNetwork(ctx)")
+	return c.ensureNetwork(ctx, ownscaleNetwork)
+}
 
-	_, err = c.cli.NetworkInspect(ctx, ownscaleNetwork, network.InspectOptions{})
+// EnsureOrgNetwork creates subdomain's isolated per-organization network if
+// it does not exist, and returns its name. Every organization gets its own
+// network (see OrgNetworkName), separate from the shared ownscaleNetwork,
+// so that organizations' headscale/headplane containers can't reach each
+// other over Docker's embedded network.
+func (c *Ctl) EnsureOrgNetwork(ctx context.Context, subdomain string) (_ string, err error) {
+	defer derrors.Wrap(&err, "c.EnsureOrgNetwork(%q)", subdomain)
+
+	name := OrgNetworkName(subdomain)
+	if err := c.ensureNetwork(ctx, name); err != nil {
+		return "", err
+	}
+	return name, nil
+}
+
+// ensureNetwork creates the Docker network named name if it does not already exist.
+func (c *Ctl) ensureNetwork(ctx context.Context, name string) (err error) {
+	defer derrors.Wrap(&err, "c.ensureNetwork(%q)", name)
+
+	_, err = c.cli.NetworkInspect(ctx, name, network.InspectOptions{})
 	if err == nil {
 		return nil
 	}
 	if !cerrdefs.IsNotFound(err) {
 		return err
 	}
-	_, err = c.cli.NetworkCreate(ctx, ownscaleNetwork, network.CreateOptions{})
+	_, err = c.cli.NetworkCreate(ctx, name, network.CreateOptions{})
 	return err
 }
 
@@ -185,6 +213,27 @@ func (c *Ctl) EnsureCaddyNetworkAlias(ctx context.Context, baseDomain string) (e
 		return fmt.Errorf("ensure network: %w", err)
 	}
 	return c.ensureCaddyNetworkAlias(ctx, ownscaleNetwork, baseDomain)
+}
+
+// EnsureCaddyNetworkAliasForOrg re-asserts baseDomain as a network alias
+// for the Caddy container on subdomain's own per-organization network (see
+// EnsureOrgNetwork and ensureCaddyNetworkAlias), so that subdomain's
+// headscale/headplane containers -- which live only on their own isolated
+// network, not the shared ownscaleNetwork -- can still resolve
+// https://{baseDomain} back to Caddy for OIDC discovery/token calls.
+//
+// Like EnsureCaddyNetworkAlias, it's exported so callers can reconcile this
+// on ownscale process startup (per organization) and not just when that
+// organization is first created, since the alias doesn't survive Caddy's
+// container being recreated.
+func (c *Ctl) EnsureCaddyNetworkAliasForOrg(ctx context.Context, subdomain, baseDomain string) (err error) {
+	defer derrors.Wrap(&err, "c.EnsureCaddyNetworkAliasForOrg(%q, %q)", subdomain, baseDomain)
+
+	netName, err := c.EnsureOrgNetwork(ctx, subdomain)
+	if err != nil {
+		return fmt.Errorf("ensure org network: %w", err)
+	}
+	return c.ensureCaddyNetworkAlias(ctx, netName, baseDomain)
 }
 
 // caddyComposeServiceLabel is the label Docker Compose sets on every
@@ -225,9 +274,9 @@ func (c *Ctl) findCaddyContainer(ctx context.Context) (_ string, err error) {
 // organization creation itself.
 //
 // This is deliberately written as a per-network operation (rather than
-// hardcoded to the shared ownscaleNetwork) so that it keeps working if/when
-// organizations move to their own isolated per-org networks: the caller
-// would simply pass that org's network name instead.
+// hardcoded to the shared ownscaleNetwork): EnsureCaddyNetworkAlias calls it
+// for ownscaleNetwork itself, while EnsureCaddyNetworkAliasForOrg calls it
+// for each organization's own isolated network.
 func (c *Ctl) ensureCaddyNetworkAlias(ctx context.Context, networkName, baseDomain string) (err error) {
 	defer derrors.Wrap(&err, "c.ensureCaddyNetworkAlias(%q, %q)", networkName, baseDomain)
 
@@ -534,12 +583,10 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 	if err := ValidateSubdomain(subdomain); err != nil {
 		return "", err
 	}
-	if err := c.EnsureNetwork(ctx); err != nil {
-		return "", fmt.Errorf("ensure network: %w", err)
-	}
-	if err := c.ensureCaddyNetworkAlias(ctx, ownscaleNetwork, baseDomain); err != nil {
+	if err := c.EnsureCaddyNetworkAliasForOrg(ctx, subdomain, baseDomain); err != nil {
 		return "", fmt.Errorf("ensure caddy network alias: %w", err)
 	}
+	orgNetwork := OrgNetworkName(subdomain)
 
 	domain := subdomain + "." + baseDomain
 	cfg, err := buildHSConfig(subdomain, domain, oidcCreds)
@@ -578,7 +625,7 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 		},
 		&network.NetworkingConfig{
 			EndpointsConfig: map[string]*network.EndpointSettings{
-				ownscaleNetwork: {},
+				orgNetwork: {},
 			},
 		},
 		nil,
@@ -615,7 +662,7 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 
 // createHeadplane provisions and starts the headplane container for an
 // organization, configured to talk to that organization's headscale
-// container over the shared Docker network.
+// container over the organization's own isolated Docker network.
 func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain, hsCfg, headscaleAPIKey string, oidcCreds OIDCClientCredentials) (err error) {
 	defer derrors.Wrap(&err, "c.createHeadplane(%q, %q)", subdomain, domain)
 
@@ -662,7 +709,7 @@ func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain, hsCfg, hea
 		},
 		&network.NetworkingConfig{
 			EndpointsConfig: map[string]*network.EndpointSettings{
-				ownscaleNetwork: {},
+				OrgNetworkName(subdomain): {},
 			},
 		},
 		nil,
@@ -702,8 +749,9 @@ func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain, hsCfg, hea
 
 // RemoveOrganization stops and removes the headscale and headplane
 // containers and their data (the headscale host directory under DataDir,
-// and headplane's Docker volume). Missing resources are ignored so removal
-// is idempotent.
+// and headplane's Docker volume), and the organization's own isolated
+// Docker network (disconnecting Caddy from it first). Missing resources
+// are ignored so removal is idempotent.
 func (c *Ctl) RemoveOrganization(ctx context.Context, subdomain string) (err error) {
 	defer derrors.Wrap(&err, "c.RemoveOrganization(%q)", subdomain)
 
@@ -723,7 +771,33 @@ func (c *Ctl) RemoveOrganization(ctx context.Context, subdomain string) (err err
 	if err := c.cli.VolumeRemove(ctx, HPVolumeName(subdomain), false); err != nil && !cerrdefs.IsNotFound(err) {
 		return fmt.Errorf("remove headplane volume: %w", err)
 	}
+
+	c.removeOrgNetwork(ctx, subdomain)
 	return nil
+}
+
+// removeOrgNetwork disconnects Caddy (if connected) from subdomain's
+// per-organization network and removes the network itself. It's
+// deliberately best-effort (failures are logged, not returned): by the
+// time it's called, RemoveOrganization has already deleted the
+// organization's containers and data, so a leftover network (or a failed
+// disconnect, e.g. because Caddy isn't running) is harmless clutter rather
+// than a correctness problem, and shouldn't fail organization removal.
+func (c *Ctl) removeOrgNetwork(ctx context.Context, subdomain string) {
+	netName := OrgNetworkName(subdomain)
+
+	caddyID, err := c.findCaddyContainer(ctx)
+	if err != nil {
+		c.logger.Warn("find caddy container for org network cleanup", "network", netName, "error", err)
+	} else if caddyID != "" {
+		if err := c.cli.NetworkDisconnect(ctx, netName, caddyID, true); err != nil && !cerrdefs.IsNotFound(err) {
+			c.logger.Warn("disconnect caddy from org network", "network", netName, "error", err)
+		}
+	}
+
+	if err := c.cli.NetworkRemove(ctx, netName); err != nil && !cerrdefs.IsNotFound(err) {
+		c.logger.Warn("remove org network", "network", netName, "error", err)
+	}
 }
 
 // StartOrganization starts the headscale and headplane containers for

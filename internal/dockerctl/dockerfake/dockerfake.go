@@ -44,6 +44,7 @@ type API struct {
 	NetworkCreateFn     func(ctx context.Context, name string, options network.CreateOptions) (network.CreateResponse, error)
 	NetworkConnectFn    func(ctx context.Context, networkID, containerID string, config *network.EndpointSettings) error
 	NetworkDisconnectFn func(ctx context.Context, networkID, containerID string, force bool) error
+	NetworkRemoveFn     func(ctx context.Context, networkID string) error
 
 	VolumeCreateFn func(ctx context.Context, options volume.CreateOptions) (volume.Volume, error)
 	VolumeRemoveFn func(ctx context.Context, volumeID string, force bool) error
@@ -187,6 +188,14 @@ func (a *API) NetworkConnect(ctx context.Context, networkID, containerID string,
 func (a *API) NetworkDisconnect(ctx context.Context, networkID, containerID string, force bool) error {
 	if a.NetworkDisconnectFn != nil {
 		return a.NetworkDisconnectFn(ctx, networkID, containerID, force)
+	}
+	return nil
+}
+
+// NetworkRemove fakes removing a network.
+func (a *API) NetworkRemove(ctx context.Context, networkID string) error {
+	if a.NetworkRemoveFn != nil {
+		return a.NetworkRemoveFn(ctx, networkID)
 	}
 	return nil
 }

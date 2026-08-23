@@ -4,6 +4,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"maps"
@@ -12,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/mount"
@@ -353,5 +355,234 @@ func TestCreateOrganizationSkipsLocalCAMountWhenNotConfigured(t *testing.T) {
 		if slices.ContainsFunc(mounts, func(m mount.Mount) bool { return m.Target == LocalCAMountTarget }) {
 			t.Fatalf("mounts = %+v, want no local CA mount when LocalCADir is unset", mounts)
 		}
+	}
+}
+
+// TestCreateOrganizationUsesPerOrgNetwork verifies that both the headscale
+// and headplane containers are created on the organization's own isolated
+// network (orgNetworkName), not the shared ownscaleNetwork.
+func TestCreateOrganizationUsesPerOrgNetwork(t *testing.T) {
+	var hsNetworks, hpNetworks map[string]*network.EndpointSettings
+	var caddyConnectedNetwork string
+	api := &dockerfake.API{
+		ContainerCreateFn: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+			switch containerName {
+			case HSContainerName("acme"):
+				hsNetworks = networkingConfig.EndpointsConfig
+			case HPContainerName("acme"):
+				hpNetworks = networkingConfig.EndpointsConfig
+			}
+			return container.CreateResponse{ID: containerName}, nil
+		},
+		ContainerListFn: func(ctx context.Context, options container.ListOptions) ([]container.Summary, error) {
+			return []container.Summary{{ID: "caddy-1"}}, nil
+		},
+		ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+			return container.InspectResponse{
+				ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running"}},
+				NetworkSettings:   &container.NetworkSettings{Networks: map[string]*network.EndpointSettings{}},
+			}, nil
+		},
+		NetworkConnectFn: func(ctx context.Context, networkID, containerID string, config *network.EndpointSettings) error {
+			caddyConnectedNetwork = networkID
+			return nil
+		},
+	}
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}); err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+
+	wantNetwork := OrgNetworkName("acme")
+	if _, ok := hsNetworks[wantNetwork]; !ok {
+		t.Fatalf("headscale networks = %+v, want it to include %q", hsNetworks, wantNetwork)
+	}
+	if _, ok := hsNetworks[ownscaleNetwork]; ok {
+		t.Fatalf("headscale networks = %+v, want it NOT to include the shared %q", hsNetworks, ownscaleNetwork)
+	}
+	if _, ok := hpNetworks[wantNetwork]; !ok {
+		t.Fatalf("headplane networks = %+v, want it to include %q", hpNetworks, wantNetwork)
+	}
+	if _, ok := hpNetworks[ownscaleNetwork]; ok {
+		t.Fatalf("headplane networks = %+v, want it NOT to include the shared %q", hpNetworks, ownscaleNetwork)
+	}
+	if caddyConnectedNetwork != wantNetwork {
+		t.Fatalf("caddy connected to network %q, want %q", caddyConnectedNetwork, wantNetwork)
+	}
+}
+
+func TestEnsureOrgNetworkCreatesIfMissing(t *testing.T) {
+	var inspected, created string
+	api := &dockerfake.API{
+		NetworkInspectFn: func(ctx context.Context, networkID string, options network.InspectOptions) (network.Inspect, error) {
+			inspected = networkID
+			return network.Inspect{}, cerrdefs.ErrNotFound
+		},
+		NetworkCreateFn: func(ctx context.Context, name string, options network.CreateOptions) (network.CreateResponse, error) {
+			created = name
+			return network.CreateResponse{}, nil
+		},
+	}
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	name, err := ctl.EnsureOrgNetwork(t.Context(), "acme")
+	if err != nil {
+		t.Fatalf("EnsureOrgNetwork: %v", err)
+	}
+	want := OrgNetworkName("acme")
+	if name != want {
+		t.Fatalf("EnsureOrgNetwork returned %q, want %q", name, want)
+	}
+	if inspected != want || created != want {
+		t.Fatalf("inspected=%q created=%q, want both %q", inspected, created, want)
+	}
+}
+
+func TestEnsureOrgNetworkNoopWhenAlreadyExists(t *testing.T) {
+	api := &dockerfake.API{
+		NetworkInspectFn: func(ctx context.Context, networkID string, options network.InspectOptions) (network.Inspect, error) {
+			return network.Inspect{}, nil
+		},
+		NetworkCreateFn: func(ctx context.Context, name string, options network.CreateOptions) (network.CreateResponse, error) {
+			t.Fatal("NetworkCreate: want no-op when network already exists")
+			return network.CreateResponse{}, nil
+		},
+	}
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	if _, err := ctl.EnsureOrgNetwork(t.Context(), "acme"); err != nil {
+		t.Fatalf("EnsureOrgNetwork: %v", err)
+	}
+}
+
+// TestEnsureCaddyNetworkAliasForOrg verifies it ensures the org's own
+// network exists and aliases Caddy on it, not the shared ownscaleNetwork.
+func TestEnsureCaddyNetworkAliasForOrg(t *testing.T) {
+	var connectedNetwork string
+	api := &dockerfake.API{
+		NetworkInspectFn: func(ctx context.Context, networkID string, options network.InspectOptions) (network.Inspect, error) {
+			return network.Inspect{}, cerrdefs.ErrNotFound
+		},
+		ContainerListFn: func(ctx context.Context, options container.ListOptions) ([]container.Summary, error) {
+			return []container.Summary{{ID: "caddy-1"}}, nil
+		},
+		ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+			return container.InspectResponse{
+				ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running"}},
+				NetworkSettings:   &container.NetworkSettings{Networks: map[string]*network.EndpointSettings{}},
+			}, nil
+		},
+		NetworkConnectFn: func(ctx context.Context, networkID, containerID string, config *network.EndpointSettings) error {
+			connectedNetwork = networkID
+			return nil
+		},
+	}
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	if err := ctl.EnsureCaddyNetworkAliasForOrg(t.Context(), "acme", "example.com"); err != nil {
+		t.Fatalf("EnsureCaddyNetworkAliasForOrg: %v", err)
+	}
+	if want := OrgNetworkName("acme"); connectedNetwork != want {
+		t.Fatalf("caddy connected to network %q, want %q", connectedNetwork, want)
+	}
+}
+
+// TestRemoveOrganizationCleansUpNetwork verifies RemoveOrganization
+// disconnects Caddy from the organization's network before removing it.
+func TestRemoveOrganizationCleansUpNetwork(t *testing.T) {
+	var disconnectedNetwork, disconnectedContainer string
+	var removedNetwork string
+	api := &dockerfake.API{
+		ContainerListFn: func(ctx context.Context, options container.ListOptions) ([]container.Summary, error) {
+			return []container.Summary{{ID: "caddy-1"}}, nil
+		},
+		NetworkDisconnectFn: func(ctx context.Context, networkID, containerID string, force bool) error {
+			disconnectedNetwork, disconnectedContainer = networkID, containerID
+			return nil
+		},
+		NetworkRemoveFn: func(ctx context.Context, networkID string) error {
+			removedNetwork = networkID
+			return nil
+		},
+	}
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	if err := ctl.RemoveOrganization(t.Context(), "acme"); err != nil {
+		t.Fatalf("RemoveOrganization: %v", err)
+	}
+
+	want := OrgNetworkName("acme")
+	if disconnectedNetwork != want || disconnectedContainer != "caddy-1" {
+		t.Fatalf("NetworkDisconnect(%q, %q), want (%q, %q)", disconnectedNetwork, disconnectedContainer, want, "caddy-1")
+	}
+	if removedNetwork != want {
+		t.Fatalf("NetworkRemove(%q), want (%q)", removedNetwork, want)
+	}
+}
+
+// TestRemoveOrganizationIgnoresMissingNetwork verifies RemoveOrganization
+// doesn't fail when the organization's network is already gone.
+func TestRemoveOrganizationIgnoresMissingNetwork(t *testing.T) {
+	api := &dockerfake.API{
+		ContainerListFn: func(ctx context.Context, options container.ListOptions) ([]container.Summary, error) {
+			return nil, nil
+		},
+		NetworkRemoveFn: func(ctx context.Context, networkID string) error {
+			return cerrdefs.ErrNotFound
+		},
+	}
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	if err := ctl.RemoveOrganization(t.Context(), "acme"); err != nil {
+		t.Fatalf("RemoveOrganization: want nil error when network already missing, got %v", err)
+	}
+}
+
+// TestRemoveOrganizationDoesNotFailWhenNetworkRemovalErrors verifies
+// RemoveOrganization is best-effort about network cleanup: an unexpected
+// NetworkRemove failure (e.g. stray endpoints still attached) is logged,
+// not returned, since the organization's containers/data are already gone.
+func TestRemoveOrganizationDoesNotFailWhenNetworkRemovalErrors(t *testing.T) {
+	api := &dockerfake.API{
+		ContainerListFn: func(ctx context.Context, options container.ListOptions) ([]container.Summary, error) {
+			return nil, nil
+		},
+		NetworkRemoveFn: func(ctx context.Context, networkID string) error {
+			return errors.New("network has active endpoints")
+		},
+	}
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	if err := ctl.RemoveOrganization(t.Context(), "acme"); err != nil {
+		t.Fatalf("RemoveOrganization: want nil error even when network removal fails, got %v", err)
 	}
 }

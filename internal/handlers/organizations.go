@@ -68,6 +68,11 @@ func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 	// doesn't cancel in-flight Docker operations mid-way and leave the
 	// organization half-provisioned; still bound it with a timeout so a
 	// truly stuck operation doesn't run forever.
+	//
+	// Another problem with this request: when the org is created, a new network
+	// is instantiated. That even get's picked up by the OS, so firefox/chrome
+	// also pick it up. They see something about machine's network changes and
+	// they drop all in-progress requests.
 	ctx, cancel := context.WithTimeout(context.TODO(), createOrganizationTimeout)
 	defer cancel()
 

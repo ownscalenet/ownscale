@@ -319,12 +319,13 @@ func listOrganizations(ctx context.Context, out io.Writer, queries *db.TxQueries
 // anything new; organizations that no longer have containers (e.g. removed
 // out of band) are reported as errors but don't stop the rest from starting.
 //
-// It also re-asserts Caddy's network alias for domain (see
-// Ctl.EnsureCaddyNetworkAlias): that alias is set imperatively via the
-// Docker API, so a host reboot or Caddy container recreation drops it even
-// though these headscale/headplane containers keep running (or come back
-// via their own restart policy), silently breaking their OIDC login until
-// it's restored.
+// It also re-asserts Caddy's network alias for domain, on the shared
+// network and on each organization's own isolated network (see
+// Ctl.EnsureCaddyNetworkAlias/EnsureCaddyNetworkAliasForOrg): those aliases
+// are set imperatively via the Docker API, so a host reboot or Caddy
+// container recreation drops them even though these headscale/headplane
+// containers keep running (or come back via their own restart policy),
+// silently breaking their OIDC login until they're restored.
 func startOrganizations(ctx context.Context, out io.Writer, logger *slog.Logger, queries *db.TxQueries, ctl *dockerctl.Ctl, domain string) error {
 	if err := ctl.EnsureCaddyNetworkAlias(ctx, domain); err != nil {
 		logger.Warn("ensure caddy network alias", "error", err)
@@ -341,6 +342,10 @@ func startOrganizations(ctx context.Context, out io.Writer, logger *slog.Logger,
 
 	var failed int
 	for _, org := range organizations {
+		if err := ctl.EnsureCaddyNetworkAliasForOrg(ctx, org.Subdomain, domain); err != nil {
+			logger.Warn("ensure caddy network alias for organization", "subdomain", org.Subdomain, "error", err)
+			failed++
+		}
 		if err := ctl.StartOrganization(ctx, org.Subdomain); err != nil {
 			logger.Error("start organization", "subdomain", org.Subdomain, "error", err)
 			failed++

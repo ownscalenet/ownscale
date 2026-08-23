@@ -71,7 +71,9 @@ mota:
 	docker compose exec ownscale ./osa organization create mota
 
 purge:
-	sudo rm -rf data
+	# rm all except data/local-ca
+	sudo rm -rf data/headscale
+	sudo rm -f data/*.*
 	docker ps -aq --filter "label=ownscale.organization=true" | xargs -r docker stop | xargs -r docker rm
 
 rm-orphans:
