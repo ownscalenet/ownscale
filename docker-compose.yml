@@ -68,6 +68,7 @@ services:
       # the volume must be writable
       - ${PWD}/data:${PWD}/data
       - ./etc/litestream/config.yaml:/etc/litestream/config.yaml:ro
+      - ${OWNSCALE_DATA_DIR}/.litestream-backups:/var/lib/litestream/backups
     networks:
       - os-net
     restart: unless-stopped
