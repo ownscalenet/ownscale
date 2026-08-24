@@ -83,9 +83,9 @@ services:
       CADDY_LOG_LEVEL: ${CADDY_LOG_LEVEL:-debug}
       CADDY_LOCAL_CERTS: ${CADDY_LOCAL_CERTS:-}
     ports:
-      - "0.0.0.0:80:80"
-      - "0.0.0.0:443:443"
-      - "0.0.0.0:443:443/udp"
+      - "${CADDY_LISTEN_IP:-0.0.0.0}:80:80"
+      - "${CADDY_LISTEN_IP:-0.0.0.0}:443:443"
+      - "${CADDY_LISTEN_IP:-0.0.0.0}:443:443/udp"
     volumes:
       - ./etc/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./etc/caddy/site:/srv/site:ro
