@@ -74,7 +74,7 @@ mota:
 
 purge:
 	# rm all except data/local-ca
-	sudo rm -rf data/headscale
+	sudo rm -rf data/headscale data/headplane
 	sudo rm -f data/*.*
 	docker ps -aq --filter "label=ownscale.organization=true" | xargs -r docker stop | xargs -r docker rm
 
@@ -106,7 +106,9 @@ load-cert:
 		echo "no Firefox profiles (cert9.db) found under ~/.mozilla/firefox, ~/snap/firefox, or ~/.var/app/org.mozilla.firefox"; \
 		exit 1; \
 	fi
-	@echo "done -- restart Firefox for the change to take effect"
+	sudo cp $(CERT) /usr/local/share/ca-certificates/ownscale-local-ca.crt
+	sudo update-ca-certificates
+	@echo "done -- firefox and os certs are updated to trust our local certificate"
 
 # Run the same checks as .github/workflows/ci.yml, for local sanity-checking
 # before pushing. Requires golangci-lint and govulncheck.

@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -176,6 +177,40 @@ func TestDockerctlIntegration(t *testing.T) {
 				t.Errorf("container %q: attached to the shared os-net network, want it isolated to its own org network only", name)
 			}
 		}
+
+		// Network Management requires the headscale config file to be a
+		// real, shared host file: verify both containers see identical
+		// content at headscaleConfigPath, backed by the same host file.
+		hostConfigPath := filepath.Join(dataDir, "headscale-config", subdomain, "config.yaml")
+		hostConfig, err := os.ReadFile(hostConfigPath)
+		if err != nil {
+			t.Fatalf("read shared config host file: %v", err)
+		}
+
+		for _, name := range []string{hsName, hpName} {
+			reader, _, err := rawCli.CopyFromContainer(ctx, name, "/etc/headscale/config.yaml")
+			if err != nil {
+				t.Fatalf("CopyFromContainer(%q, config.yaml): %v", name, err)
+			}
+			cfg, err := tarFileContents(reader, "config.yaml")
+			_ = reader.Close()
+			if err != nil {
+				t.Fatalf("read config.yaml from container %q: %v", name, err)
+			}
+			if cfg != string(hostConfig) {
+				t.Errorf("container %q: /etc/headscale/config.yaml doesn't match the shared host file", name)
+			}
+		}
+
+		hpInfo, err := rawCli.ContainerInspect(ctx, hpName)
+		if err != nil {
+			t.Fatalf("ContainerInspect(%q): %v", hpName, err)
+		}
+		if !slices.ContainsFunc(hpInfo.Mounts, func(m container.MountPoint) bool {
+			return m.Source == "/var/run/docker.sock" && m.Destination == "/var/run/docker.sock"
+		}) {
+			t.Errorf("headplane container mounts = %+v, want a bind mount of the Docker socket", hpInfo.Mounts)
+		}
 	})
 
 	t.Run("StreamAllLogs observes real log output", func(t *testing.T) {
@@ -245,6 +280,7 @@ func TestDockerctlIntegration(t *testing.T) {
 		for _, dir := range []string{
 			filepath.Join(dataDir, "headscale", subdomain),
 			filepath.Join(dataDir, "headplane", subdomain),
+			filepath.Join(dataDir, "headscale-config", subdomain),
 		} {
 			if _, err := os.Stat(dir); !os.IsNotExist(err) {
 				t.Errorf("os.Stat(%q) after RemoveOrganization: err = %v, want a not-exist error", dir, err)

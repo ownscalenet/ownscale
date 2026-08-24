@@ -16,6 +16,8 @@
 
 logging:
   type: json
+  level: warn
+  source: true
 
 dbs:
 

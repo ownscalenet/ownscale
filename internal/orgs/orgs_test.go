@@ -10,6 +10,7 @@ import (
 	"log/slog"
 	"maps"
 	"net"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -86,7 +87,8 @@ func TestServiceCreateCreatesOIDCClient(t *testing.T) {
 			return container.ExecInspect{ExitCode: 0}, nil
 		},
 	}
-	ctl, err := dockerctl.NewWithClient(api, t.TempDir(), "", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	dataDir := t.TempDir()
+	ctl, err := dockerctl.NewWithClient(api, dataDir, "", slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("dockerctl.NewWithClient: %v", err)
 	}
@@ -115,7 +117,11 @@ func TestServiceCreateCreatesOIDCClient(t *testing.T) {
 	if strings.Join(redirectURIs, ",") != strings.Join(wantRedirects, ",") {
 		t.Fatalf("redirect uris = %v, want %v", redirectURIs, wantRedirects)
 	}
-	hsCfg := copied[dockerctl.HSContainerName("acme")][strings.TrimPrefix("/etc/headscale/config.yaml", "/")]
+	hsCfgBytes, err := os.ReadFile(filepath.Join(dataDir, "headscale-config", "acme", "config.yaml"))
+	if err != nil {
+		t.Fatalf("read headscale config file: %v", err)
+	}
+	hsCfg := string(hsCfgBytes)
 	secretLine := findLine(hsCfg, `  client_secret: "`)
 	secret := strings.TrimSuffix(strings.TrimPrefix(secretLine, `  client_secret: "`), `"`)
 	if err := bcrypt.CompareHashAndPassword([]byte(clientRow.ClientSecretHash), []byte(secret)); err != nil {

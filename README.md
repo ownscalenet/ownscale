@@ -124,12 +124,27 @@ trusts its own configured `auth.upstream_oidc.issuer` (e.g. the bundled Dex
 instance): see `internal/auth.RegisterUpstreamOIDC`.
 
 ## Trust Caddy local dev certs
-1. Extract the root cert from the running container:
-docker cp <caddy-container>:/data/caddy/pki/authorities/local/root.crt ./caddy-root.crt
-2. Import into Firefox (Firefox uses its own NSS store, ignoring the OS trust store by default):
-• Go to  about:preferences#privacy  → scroll to Certificates → View Certificates
-• Authorities tab → Import → select  caddy-root.crt
-• Check "Trust this CA to identify websites"
+
+The pre-generated root CA cert lives at `${OWNSCALE_DATA_DIR}/local-ca/root.crt`
+on the host (see `internal/localca` and docker-compose.yml's `local-ca-init`
+service) -- no need to `docker cp` it out of a running container.
+
+### OS trust store (needed for CLI tools, e.g. `tailscale up`)
+
+Tools that use the OS/Go trust store (like the `tailscale` CLI, or `curl`
+without `-k`) won't trust an organization's `https://<subdomain>.<base_domain>`
+endpoint until this CA is installed system-wide. On Debian/Ubuntu:
+
+```bash
+sudo cp "$OWNSCALE_DATA_DIR/local-ca/root.crt" /usr/local/share/ca-certificates/ownscale-local-ca.crt
+sudo update-ca-certificates
+```
+
+### Firefox (uses its own NSS store, ignoring the OS trust store by default)
+
+1. Go to `about:preferences#privacy` → scroll to Certificates → View Certificates
+2. Authorities tab → Import → select `${OWNSCALE_DATA_DIR}/local-ca/root.crt`
+3. Check "Trust this CA to identify websites"
 
 Organization headscale/headplane containers trust this same local CA
 automatically: they mount the `caddy-data` volume read-only and, if Caddy's

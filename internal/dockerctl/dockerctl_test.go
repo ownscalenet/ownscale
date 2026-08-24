@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"maps"
 	"net"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -130,6 +132,27 @@ func TestBuildHPConfigIncludesOIDCAndAPIKey(t *testing.T) {
 	}
 }
 
+// TestBuildHPConfigEnablesDockerIntegration verifies that the rendered
+// Headplane config enables the Docker integration (Network Management)
+// and points it at the me.tale.headplane.target label headscale is
+// created with, and the Docker socket headplane's container gets
+// bind-mounted (see createHeadplane).
+func TestBuildHPConfigEnablesDockerIntegration(t *testing.T) {
+	cfg, err := buildHPConfig("acme", "acme.example.com", "cookie-secret", "headscale-api-key", OIDCClientCredentials{})
+	if err != nil {
+		t.Fatalf("buildHPConfig: %v", err)
+	}
+	for _, want := range []string{
+		"docker:\n    enabled: true",
+		`container_label: "me.tale.headplane.target=headscale"`,
+		`socket: "unix:///var/run/docker.sock"`,
+	} {
+		if !strings.Contains(cfg, want) {
+			t.Fatalf("config missing %q:\n%s", want, cfg)
+		}
+	}
+}
+
 func TestCreateOrganizationBootstrapsHeadscaleAPIKey(t *testing.T) {
 	copied := make(map[string]map[string]string)
 	api := &dockerfake.API{
@@ -181,8 +204,11 @@ func TestCreateOrganizationBootstrapsHeadscaleAPIKey(t *testing.T) {
 	if !strings.Contains(hpCfg, `api_key: "headscale-api-key"`) || !strings.Contains(hpCfg, `client_id: "client-id"`) {
 		t.Fatalf("unexpected headplane config:\n%s", hpCfg)
 	}
-	hsCfg := copied[HSContainerName("acme")][strings.TrimPrefix(headscaleConfigPath, "/")]
-	if !strings.Contains(hsCfg, `issuer: "https://auth.example.com"`) {
+	hsCfg, err := os.ReadFile(filepath.Join(ctl.headscaleConfigHostDir("acme"), "config.yaml"))
+	if err != nil {
+		t.Fatalf("read headscale config file: %v", err)
+	}
+	if !strings.Contains(string(hsCfg), `issuer: "https://auth.example.com"`) {
 		t.Fatalf("unexpected headscale config:\n%s", hsCfg)
 	}
 }
@@ -416,6 +442,130 @@ func TestCreateOrganizationSkipsLocalCAMountWhenNotConfigured(t *testing.T) {
 	}
 }
 
+// TestCreateOrganizationLabelsHeadscaleForHeadplaneDiscovery verifies the
+// headscale container gets the "me.tale.headplane.target=headscale" label,
+// which is the exact label Headplane's Docker integration looks for by
+// default (integration.docker.container_label) to find and restart it.
+func TestCreateOrganizationLabelsHeadscaleForHeadplaneDiscovery(t *testing.T) {
+	var hsLabels map[string]string
+	api := &dockerfake.API{
+		ContainerCreateFn: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+			if containerName == HSContainerName("acme") {
+				hsLabels = config.Labels
+			}
+			return container.CreateResponse{ID: containerName}, nil
+		},
+	}
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}); err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+
+	if got := hsLabels["me.tale.headplane.target"]; got != "headscale" {
+		t.Fatalf(`headscale labels = %+v, want "me.tale.headplane.target": "headscale"`, hsLabels)
+	}
+}
+
+// TestCreateOrganizationSharesHeadscaleConfigWithHeadplane verifies that
+// the headscale config file is bind-mounted (read-only) into the headscale
+// container and the exact same host file is bind-mounted (read-write) into
+// the headplane container, both at headscaleConfigPath -- this is what
+// lets Headplane's Network Management feature edit live headscale settings
+// and have headscale pick them up.
+func TestCreateOrganizationSharesHeadscaleConfigWithHeadplane(t *testing.T) {
+	var hsMounts, hpMounts []mount.Mount
+	api := &dockerfake.API{
+		ContainerCreateFn: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+			switch containerName {
+			case HSContainerName("acme"):
+				hsMounts = hostConfig.Mounts
+			case HPContainerName("acme"):
+				hpMounts = hostConfig.Mounts
+			}
+			return container.CreateResponse{ID: containerName}, nil
+		},
+	}
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{
+		Issuer: "https://example.com", ClientID: "id", ClientSecret: "secret",
+	}, config.DerpConfig{}); err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+
+	wantSource := filepath.Join(ctl.headscaleConfigHostDir("acme"), "config.yaml")
+
+	hsIdx := slices.IndexFunc(hsMounts, func(m mount.Mount) bool { return m.Target == headscaleConfigPath })
+	if hsIdx < 0 {
+		t.Fatalf("headscale mounts = %+v, want a bind mount at %q", hsMounts, headscaleConfigPath)
+	}
+	if hsMounts[hsIdx].Source != wantSource || !hsMounts[hsIdx].ReadOnly {
+		t.Fatalf("headscale config mount = %+v, want read-only bind mount of %q", hsMounts[hsIdx], wantSource)
+	}
+
+	hpIdx := slices.IndexFunc(hpMounts, func(m mount.Mount) bool { return m.Target == headscaleConfigPath })
+	if hpIdx < 0 {
+		t.Fatalf("headplane mounts = %+v, want a bind mount at %q", hpMounts, headscaleConfigPath)
+	}
+	if hpMounts[hpIdx].Source != wantSource || hpMounts[hpIdx].ReadOnly {
+		t.Fatalf("headplane config mount = %+v, want read-write bind mount of %q", hpMounts[hpIdx], wantSource)
+	}
+
+	content, err := os.ReadFile(wantSource)
+	if err != nil {
+		t.Fatalf("read shared config file: %v", err)
+	}
+	if !strings.Contains(string(content), `issuer: "https://example.com"`) {
+		t.Fatalf("shared config file content = %s, want it to contain the rendered headscale config", content)
+	}
+}
+
+// TestCreateOrganizationMountsDockerSocketIntoHeadplane verifies the
+// headplane container gets a read-only bind mount of the host Docker
+// socket, which it needs to restart the headscale container after Network
+// Management edits its config file.
+func TestCreateOrganizationMountsDockerSocketIntoHeadplane(t *testing.T) {
+	var hsMounts, hpMounts []mount.Mount
+	api := &dockerfake.API{
+		ContainerCreateFn: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+			switch containerName {
+			case HSContainerName("acme"):
+				hsMounts = hostConfig.Mounts
+			case HPContainerName("acme"):
+				hpMounts = hostConfig.Mounts
+			}
+			return container.CreateResponse{ID: containerName}, nil
+		},
+	}
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}); err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+
+	if !slices.ContainsFunc(hpMounts, func(m mount.Mount) bool {
+		return m.Type == mount.TypeBind && m.Source == "/var/run/docker.sock" && m.Target == "/var/run/docker.sock" && m.ReadOnly
+	}) {
+		t.Fatalf("headplane mounts = %+v, want a read-only bind mount of the Docker socket", hpMounts)
+	}
+	if slices.ContainsFunc(hsMounts, func(m mount.Mount) bool { return m.Source == "/var/run/docker.sock" }) {
+		t.Fatalf("headscale mounts = %+v, want no Docker socket mount", hsMounts)
+	}
+}
+
 // TestCreateOrganizationUsesPerOrgNetwork verifies that both the headscale
 // and headplane containers are created on the organization's own isolated
 // network (orgNetworkName), not the shared ownscaleNetwork.
@@ -596,6 +746,41 @@ func TestRemoveOrganizationCleansUpNetwork(t *testing.T) {
 	}
 	if removedNetwork != want {
 		t.Fatalf("NetworkRemove(%q), want (%q)", removedNetwork, want)
+	}
+}
+
+// TestRemoveOrganizationCleansUpConfigDir verifies RemoveOrganization also
+// removes the host directory holding the shared headscale config file
+// created by CreateOrganization (see headscaleConfigHostDir), so it
+// doesn't leak on disk after an organization is deleted.
+func TestRemoveOrganizationCleansUpConfigDir(t *testing.T) {
+	dataDir := t.TempDir()
+	api := &dockerfake.API{
+		ContainerCreateFn: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+			return container.CreateResponse{ID: containerName}, nil
+		},
+	}
+	ctl, err := NewWithClient(api, dataDir, "", discardLogger())
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}); err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+
+	configHostDir := ctl.headscaleConfigHostDir("acme")
+	if _, err := os.Stat(filepath.Join(configHostDir, "config.yaml")); err != nil {
+		t.Fatalf("config file should exist after CreateOrganization: %v", err)
+	}
+
+	if err := ctl.RemoveOrganization(t.Context(), "acme"); err != nil {
+		t.Fatalf("RemoveOrganization: %v", err)
+	}
+
+	if _, err := os.Stat(configHostDir); !os.IsNotExist(err) {
+		t.Fatalf("config directory = %v, want it removed by RemoveOrganization", err)
 	}
 }
 

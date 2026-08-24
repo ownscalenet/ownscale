@@ -34,7 +34,7 @@ import (
 
 const (
 	ownscaleNetwork     = "os-net"
-	Image               = "headscale/headscale:0.29.3"
+	Image               = "headscale/headscale:0.29.3-debug"
 	headplaneImage      = "ghcr.io/tale/headplane:0.7.0-shell"
 	headscaleConfigPath = "/etc/headscale/config.yaml"
 	headplaneConfigPath = "/etc/headplane/config.yaml"
@@ -157,6 +157,16 @@ func (c *Ctl) headscaleHostDir(subdomain string) string {
 // litestream's directory watcher the same way headscale's is.
 func (c *Ctl) headplaneHostDir(subdomain string) string {
 	return filepath.Join(c.dataDir, "headplane", subdomain)
+}
+
+// headscaleConfigHostDir returns the host directory for organization's
+// headscale config.yaml, bind-mounted at headscaleConfigPath
+// into both the headscale container (read-only) and the headplane
+// container (read-write) so Headplane's Network Management feature can edit
+// live headscale settings (DNS, MagicDNS, ACLs, ...) and have headscale
+// pick them up on restart.
+func (c *Ctl) headscaleConfigHostDir(subdomain string) string {
+	return filepath.Join(c.dataDir, "headscale-config", subdomain)
 }
 
 func (c *Ctl) Close() (err error) {
@@ -451,10 +461,10 @@ func buildHSConfig(subdomain, domain string, oidcCreds OIDCClientCredentials, de
 // headplane config for an organization; BaseURL must be the public
 // subdomain URL (without the /admin dashboard prefix), and headscale.url
 // points at the organization's own headscale container over the shared
-// Docker network. Advanced features (Docker/Kubernetes/proc integrations)
-// are left disabled since they'd require host access (Docker socket, shared
-// headscale config file) we don't grant per organization; login instead
-// uses a Headscale API key pasted into the Headplane UI ("Limited Mode").
+// Docker network. Docker integration is enabled to power Headplane's
+// Network Management feature (editing DNS/MagicDNS/ACL settings for the
+// Tailnet from the UI). CAUTION: this docker integrations relies on sharing the
+// docker socket.
 var configTemplateHP = template.Must(template.New("headplaneConfig").Parse(`server:
   host: "0.0.0.0"
   port: 3000
@@ -483,7 +493,9 @@ integration:
   agent:
     enabled: false
   docker:
-    enabled: false
+    enabled: true
+    container_label: "me.tale.headplane.target=headscale"
+    socket: "unix:///var/run/docker.sock"
   kubernetes:
     enabled: false
     validate_manifest: false
@@ -721,8 +733,20 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 		return "", fmt.Errorf("create data directory: %w", err)
 	}
 
+	configHostDir := c.headscaleConfigHostDir(subdomain)
+	if err := os.MkdirAll(configHostDir, 0o755); err != nil {
+		return "", fmt.Errorf("create config directory: %w", err)
+	}
+	configHostFile := filepath.Join(configHostDir, "config.yaml")
+	if err := os.WriteFile(configHostFile, []byte(cfg), 0o644); err != nil {
+		return "", fmt.Errorf("write config file: %w", err)
+	}
+
 	mounts := []mount.Mount{
 		{Type: mount.TypeBind, Source: hostDir, Target: "/var/lib/headscale"},
+		// Read-only: headscale only ever reads its own config; Headplane
+		// (given write access below) is what edits it.
+		{Type: mount.TypeBind, Source: configHostFile, Target: headscaleConfigPath, ReadOnly: true},
 	}
 	var env []string
 	if m, ok := c.localCAMount(); ok {
@@ -739,6 +763,10 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 				"ownscale.organization": "true",
 				"ownscale.subdomain":    subdomain,
 				"ownscale.domain":       domain,
+				// TODO: headplane restarting headscale based on this label
+				// is broken when there is more than one organization.
+				// For the time being, keep it as it is to test headplane functionality.
+				"me.tale.headplane.target": "headscale",
 			},
 		},
 		&container.HostConfig{
@@ -755,14 +783,6 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 	)
 	if err != nil {
 		return "", fmt.Errorf("create container: %w", err)
-	}
-
-	tarBuf, err := configTar(headscaleConfigPath, cfg)
-	if err != nil {
-		return "", fmt.Errorf("build config archive: %w", err)
-	}
-	if err := c.cli.CopyToContainer(ctx, resp.ID, "/", tarBuf, container.CopyToContainerOptions{}); err != nil {
-		return "", fmt.Errorf("copy config into container: %w", err)
 	}
 
 	if derpCfg.Enabled() {
@@ -789,7 +809,7 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 		return "", fmt.Errorf("bootstrap headscale api key: %w", err)
 	}
 
-	if err := c.createHeadplane(ctx, subdomain, domain, cfg, headscaleAPIKey, oidcCreds); err != nil {
+	if err := c.createHeadplane(ctx, subdomain, domain, headscaleAPIKey, oidcCreds); err != nil {
 		return "", fmt.Errorf("create headplane: %w", err)
 	}
 
@@ -799,7 +819,7 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 // createHeadplane provisions and starts the headplane container for an
 // organization, configured to talk to that organization's headscale
 // container over the organization's own isolated Docker network.
-func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain, hsCfg, headscaleAPIKey string, oidcCreds OIDCClientCredentials) (err error) {
+func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain, headscaleAPIKey string, oidcCreds OIDCClientCredentials) (err error) {
 	defer derrors.Wrap(&err, "c.createHeadplane(%q, %q)", subdomain, domain)
 
 	cookieSecret, err := randomCookieSecret()
@@ -815,9 +835,13 @@ func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain, hsCfg, hea
 	if err := os.MkdirAll(hostDir, 0o755); err != nil {
 		return fmt.Errorf("create data directory: %w", err)
 	}
+	// Written by CreateOrganization before this is called.
+	configHostFile := filepath.Join(c.headscaleConfigHostDir(subdomain), "config.yaml")
 
 	mounts := []mount.Mount{
 		{Type: mount.TypeBind, Source: hostDir, Target: "/var/lib/headplane"},
+		{Type: mount.TypeBind, Source: configHostFile, Target: headscaleConfigPath},
+		{Type: mount.TypeBind, Source: "/var/run/docker.sock", Target: "/var/run/docker.sock", ReadOnly: true},
 	}
 	if m, ok := c.localCAMount(); ok {
 		mounts = append(mounts, m)
@@ -862,19 +886,6 @@ func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain, hsCfg, hea
 	if err := c.cli.CopyToContainer(ctx, resp.ID, "/", tarBuf, container.CopyToContainerOptions{}); err != nil {
 		return fmt.Errorf("copy config into container: %w", err)
 	}
-	// Copy the headscale config to headplane too.
-	// It enables features in the UI:
-	// https://github.com/tale/headplane/blob/9375e18b55a20a230c83ec80ed2eef7d1bf37a21/config.example.yaml#L113-L117
-	// TODO: as it is, this is broken. headplane has a copy of the file in its
-	// own container and it is writable, but that's not the copy that headscale uses.
-	// Upon config change, headscale is restarted by headplane based on configured integration.
-	tarBuf, err = configTar(headscaleConfigPath, hsCfg)
-	if err != nil {
-		return fmt.Errorf("build config archive: %w", err)
-	}
-	if err := c.cli.CopyToContainer(ctx, resp.ID, "/", tarBuf, container.CopyToContainerOptions{}); err != nil {
-		return fmt.Errorf("copy config into container: %w", err)
-	}
 
 	if err := c.cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		return fmt.Errorf("start container: %w", err)
@@ -888,9 +899,10 @@ func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain, hsCfg, hea
 }
 
 // RemoveOrganization stops and removes the headscale and headplane
-// containers and their data (the headscale and headplane host directories
-// under DataDir), and the organization's own isolated Docker network
-// (disconnecting Caddy from it first). Missing resources are ignored so
+// containers and their data (the headscale, headplane and headscale-config
+// host directories under DataDir), and the organization's own isolated
+// Docker network (disconnecting Caddy from it first). Missing resources are
+// ignored so
 // removal is idempotent.
 func (c *Ctl) RemoveOrganization(ctx context.Context, subdomain string) (err error) {
 	defer derrors.Wrap(&err, "c.RemoveOrganization(%q)", subdomain)
@@ -902,6 +914,9 @@ func (c *Ctl) RemoveOrganization(ctx context.Context, subdomain string) (err err
 	}
 	if err := os.RemoveAll(c.headscaleHostDir(subdomain)); err != nil {
 		return fmt.Errorf("remove data directory: %w", err)
+	}
+	if err := os.RemoveAll(c.headscaleConfigHostDir(subdomain)); err != nil {
+		return fmt.Errorf("remove config directory: %w", err)
 	}
 
 	hpName := HPContainerName(subdomain)
