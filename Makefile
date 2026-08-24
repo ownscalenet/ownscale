@@ -58,6 +58,8 @@ docker-image:
 # Send the ownscale image and repo files to remote.
 archive: docker-image
 	docker save $(DOCKER_IMAGE) | ssh az 'docker load'
+	# delete existing go files
+	ssh az rm -rf ownscale/internal ownscale/cmd
 	tar czf - \
 		--exclude='.git' \
 		--exclude='config.yaml' \

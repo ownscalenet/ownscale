@@ -14,6 +14,9 @@
 # them to point at an S3-compatible backend (MinIO, Cloudflare R2, Backblaze
 # B2, etc).
 
+logging:
+  type: json
+
 dbs:
 
   # Every organization's headscale database, one level down per subdomain.
