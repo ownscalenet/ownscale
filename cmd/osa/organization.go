@@ -151,7 +151,7 @@ func newOrganizationCreateCommand(parent *ff.FlagSet, configPath *string) *ff.Co
 			if err != nil {
 				return err
 			}
-			svc := orgs.NewService(res.queries, res.ctl, domain, res.cfg.Auth.OIDCProvider.Issuer)
+			svc := orgs.NewService(res.queries, res.ctl, domain, res.cfg.Auth.OIDCProvider.Issuer, res.cfg.Derp)
 			return createOrganization(ctx, os.Stdout, svc, args[0])
 		},
 	}

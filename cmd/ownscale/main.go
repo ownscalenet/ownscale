@@ -105,7 +105,7 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("oidc provider: %w", err)
 	}
-	h := handlers.New(queries, ctl, cfg.BaseDomain, oidcStorage, logger)
+	h := handlers.New(queries, ctl, cfg.BaseDomain, oidcStorage, logger, cfg.Derp)
 
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
 		return auth.RequireAuthAPI(queries.Queries, next)

@@ -14,6 +14,7 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
 	"github.com/ownscalenet/ownscale/internal/auth"
+	"github.com/ownscalenet/ownscale/internal/config"
 	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/internal/dockerctl/dockerfake"
 )
@@ -137,7 +138,7 @@ func TestCreateOrganizationDockerFailure(t *testing.T) {
 	}
 	h, queries := newTestHandlers(t, false)
 	ctl := newTestCtl(t, api)
-	h = New(h.queries, ctl, testBaseDomain, nil, discardLogger())
+	h = New(h.queries, ctl, testBaseDomain, nil, discardLogger(), config.DerpConfig{})
 	user := insertUser(t, queries)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/organizations", strings.NewReader(`{"subdomain":"acme"}`))

@@ -1,0 +1,26 @@
+services:
+  derper:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: ownscale-derper:latest
+    command:
+      - "--hostname=${DERP_HOSTNAME:?set DERP_HOSTNAME to this server's public DNS name}"
+      - "--certmode=letsencrypt"
+      - "--certdir=/var/lib/derper/certs"
+      - "--a=:443"
+      - "--http-port=80"
+      - "--stun-port=3478"
+      - "--stun=true"
+      - "--acme-email=${DERP_ACME_EMAIL:-}"
+    ports:
+      - "${DERP_LISTEN_IP:-0.0.0.0}:80:80"
+      - "${DERP_LISTEN_IP:-0.0.0.0}:443:443"
+      - "${DERP_LISTEN_IP:-0.0.0.0}:3478:3478/udp"
+    volumes:
+      - derper-certs:/var/lib/derper/certs
+    restart: unless-stopped
+
+volumes:
+  derper-certs:
+    name: ownscale-derper-certs

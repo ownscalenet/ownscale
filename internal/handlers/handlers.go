@@ -8,6 +8,7 @@ import (
 
 	"github.com/ownscalenet/ownscale/internal/auth"
 	"github.com/ownscalenet/ownscale/internal/auth/oidcprovider"
+	"github.com/ownscalenet/ownscale/internal/config"
 	"github.com/ownscalenet/ownscale/internal/db"
 	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/internal/dockerctl"
@@ -28,8 +29,9 @@ type Handlers struct {
 // baseDomain is set) backs the orgs.Service used for organization creation
 // and the orgs.Provisioner that runs provisioning in the background;
 // otherwise provisioning-related handlers respond with 503 (see
-// CreateOrganization).
-func New(queries *db.TxQueries, ctl *dockerctl.Ctl, baseDomain string, oidc *oidcprovider.Storage, logger *slog.Logger) *Handlers {
+// CreateOrganization). derpCfg is forwarded to orgs.NewService (see its doc
+// comment); its zero value is a no-op.
+func New(queries *db.TxQueries, ctl *dockerctl.Ctl, baseDomain string, oidc *oidcprovider.Storage, logger *slog.Logger, derpCfg config.DerpConfig) *Handlers {
 	h := &Handlers{
 		queries:    queries,
 		baseDomain: baseDomain,
@@ -41,7 +43,7 @@ func New(queries *db.TxQueries, ctl *dockerctl.Ctl, baseDomain string, oidc *oid
 		if oidc != nil {
 			issuer = oidc.Issuer()
 		}
-		h.orgs = orgs.NewService(queries, ctl, baseDomain, issuer)
+		h.orgs = orgs.NewService(queries, ctl, baseDomain, issuer, derpCfg)
 		h.provisioner = orgs.NewProvisioner(h.orgs, logger, 0)
 	}
 	return h

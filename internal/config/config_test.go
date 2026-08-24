@@ -179,6 +179,98 @@ auth:
 	}
 }
 
+func TestLoadDerpUnsetIsNoop(t *testing.T) {
+	dir := withDir(t)
+
+	yaml := `
+base_domain: example.com
+`
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Derp.Enabled() {
+		t.Fatalf("Derp.Enabled() = true, want false when derp.hostname is unset")
+	}
+	if cfg.Derp != (DerpConfig{}) {
+		t.Errorf("Derp = %+v, want zero value when unset", cfg.Derp)
+	}
+}
+
+func TestLoadDerpFillsDefaultsWhenHostnameSet(t *testing.T) {
+	dir := withDir(t)
+
+	yaml := `
+base_domain: example.com
+derp:
+  hostname: derp.example.com
+`
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Derp.Enabled() {
+		t.Fatal("Derp.Enabled() = false, want true when derp.hostname is set")
+	}
+	want := DerpConfig{
+		Hostname:   "derp.example.com",
+		STUNPort:   3478,
+		RegionID:   900,
+		RegionCode: "custom",
+		RegionName: "Self-hosted DERP",
+	}
+	if cfg.Derp != want {
+		t.Errorf("Derp = %+v, want %+v", cfg.Derp, want)
+	}
+}
+
+func TestLoadDerpExplicitOverridesPreserved(t *testing.T) {
+	dir := withDir(t)
+
+	yaml := `
+base_domain: example.com
+derp:
+  hostname: derp.example.com
+  ipv4: "198.51.100.1"
+  ipv6: "2001:db8::1"
+  stun_port: 4000
+  region_id: 901
+  region_code: "myderp"
+  region_name: "My DERP"
+`
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	want := DerpConfig{
+		Hostname:   "derp.example.com",
+		IPv4:       "198.51.100.1",
+		IPv6:       "2001:db8::1",
+		STUNPort:   4000,
+		RegionID:   901,
+		RegionCode: "myderp",
+		RegionName: "My DERP",
+	}
+	if cfg.Derp != want {
+		t.Errorf("Derp = %+v, want %+v (explicit values preserved)", cfg.Derp, want)
+	}
+}
+
 func TestLoadExplicitMissingPathErrors(t *testing.T) {
 	withDir(t)
 	_, err := Load("/does/not/exist/config.yaml")

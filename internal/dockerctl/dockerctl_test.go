@@ -21,6 +21,7 @@ import (
 	"github.com/docker/docker/pkg/stdcopy"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
+	"github.com/ownscalenet/ownscale/internal/config"
 	"github.com/ownscalenet/ownscale/internal/dockerctl/dockerfake"
 	"github.com/ownscalenet/ownscale/internal/localca"
 )
@@ -34,7 +35,7 @@ func TestBuildHSConfigIncludesOIDC(t *testing.T) {
 		Issuer:       "https://auth.example.com",
 		ClientID:     "client-id",
 		ClientSecret: "client-secret",
-	})
+	}, config.DerpConfig{})
 	if err != nil {
 		t.Fatalf("buildHSConfig: %v", err)
 	}
@@ -43,9 +44,66 @@ func TestBuildHSConfigIncludesOIDC(t *testing.T) {
 		`client_id: "client-id"`,
 		`client_secret: "client-secret"`,
 		`method: S256`,
+		"https://controlplane.tailscale.com/derpmap/default",
 	} {
 		if !strings.Contains(cfg, want) {
 			t.Fatalf("config missing %q:\n%s", want, cfg)
+		}
+	}
+	if strings.Contains(cfg, "paths:") {
+		t.Fatalf("config should not reference a custom derp.paths when no DerpConfig is set:\n%s", cfg)
+	}
+}
+
+func TestBuildHSConfigWithCustomDerp(t *testing.T) {
+	cfg, err := buildHSConfig("acme", "acme.example.com", OIDCClientCredentials{}, config.DerpConfig{
+		Hostname:   "derp.example.com",
+		STUNPort:   3478,
+		RegionID:   900,
+		RegionCode: "custom",
+		RegionName: "Self-hosted DERP",
+	})
+	if err != nil {
+		t.Fatalf("buildHSConfig: %v", err)
+	}
+	for _, want := range []string{
+		"paths:",
+		derpConfigPath,
+		"urls: []",
+	} {
+		if !strings.Contains(cfg, want) {
+			t.Fatalf("config missing %q:\n%s", want, cfg)
+		}
+	}
+	if strings.Contains(cfg, "controlplane.tailscale.com") {
+		t.Fatalf("config should not reference Tailscale's public derp map when a custom DerpConfig is set:\n%s", cfg)
+	}
+}
+
+func TestBuildDerpConfig(t *testing.T) {
+	cfg, err := buildDerpConfig(config.DerpConfig{
+		Hostname:   "derp.example.com",
+		IPv4:       "198.51.100.1",
+		IPv6:       "2001:db8::1",
+		STUNPort:   3478,
+		RegionID:   900,
+		RegionCode: "custom",
+		RegionName: "Self-hosted DERP",
+	})
+	if err != nil {
+		t.Fatalf("buildDerpConfig: %v", err)
+	}
+	for _, want := range []string{
+		"regionid: 900",
+		"regioncode: custom",
+		"regionname: Self-hosted DERP",
+		"hostname: derp.example.com",
+		"ipv4: 198.51.100.1",
+		"ipv6: 2001:db8::1",
+		"stunport: 3478",
+	} {
+		if !strings.Contains(cfg, want) {
+			t.Fatalf("derp config missing %q:\n%s", want, cfg)
 		}
 	}
 }
@@ -115,7 +173,7 @@ func TestCreateOrganizationBootstrapsHeadscaleAPIKey(t *testing.T) {
 		Issuer:       "https://auth.example.com",
 		ClientID:     "client-id",
 		ClientSecret: "client-secret",
-	})
+	}, config.DerpConfig{})
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
@@ -303,7 +361,7 @@ func TestCreateOrganizationMountsLocalCADirAndSetsEnvWhenConfigured(t *testing.T
 
 	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{
 		Issuer: "https://example.com", ClientID: "id", ClientSecret: "secret",
-	}); err != nil {
+	}, config.DerpConfig{}); err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
 
@@ -347,7 +405,7 @@ func TestCreateOrganizationSkipsLocalCAMountWhenNotConfigured(t *testing.T) {
 
 	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{
 		Issuer: "https://example.com", ClientID: "id", ClientSecret: "secret",
-	}); err != nil {
+	}, config.DerpConfig{}); err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
 
@@ -394,7 +452,7 @@ func TestCreateOrganizationUsesPerOrgNetwork(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = ctl.Close() })
 
-	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}); err != nil {
+	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}); err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
 

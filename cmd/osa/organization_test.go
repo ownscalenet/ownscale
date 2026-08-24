@@ -131,7 +131,7 @@ func TestCreateOrganization(t *testing.T) {
 			},
 		})
 		var out strings.Builder
-		err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com", "https://auth.example.com"), "ab")
+		err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com", "https://auth.example.com", config.DerpConfig{}), "ab")
 		if err == nil {
 			t.Fatal("expected an error for an invalid (too short) subdomain")
 		}
@@ -143,7 +143,7 @@ func TestCreateOrganization(t *testing.T) {
 
 		ctl := newTestCtl(t, &dockerfake.API{})
 		var out strings.Builder
-		err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com", "https://auth.example.com"), "acme")
+		err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com", "https://auth.example.com", config.DerpConfig{}), "acme")
 		if err == nil {
 			t.Fatal("expected an error creating a duplicate subdomain")
 		}
@@ -159,7 +159,7 @@ func TestCreateOrganization(t *testing.T) {
 			},
 		})
 		var out strings.Builder
-		err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com", "https://auth.example.com"), "acme")
+		err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com", "https://auth.example.com", config.DerpConfig{}), "acme")
 		if err == nil || !strings.Contains(err.Error(), "docker exploded") {
 			t.Fatalf("got err %v, want it to wrap %v", err, wantErr)
 		}
@@ -178,7 +178,7 @@ func TestCreateOrganization(t *testing.T) {
 
 		ctl := newTestCtl(t, &dockerfake.API{})
 		var out strings.Builder
-		if err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com", "https://auth.example.com"), "acme"); err != nil {
+		if err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com", "https://auth.example.com", config.DerpConfig{}), "acme"); err != nil {
 			t.Fatalf("createOrganization: %v", err)
 		}
 

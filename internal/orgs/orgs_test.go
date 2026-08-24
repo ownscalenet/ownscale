@@ -23,6 +23,7 @@ import (
 	"github.com/pressly/goose/v3"
 	"golang.org/x/crypto/bcrypt"
 
+	"github.com/ownscalenet/ownscale/internal/config"
 	dbpkg "github.com/ownscalenet/ownscale/internal/db"
 	"github.com/ownscalenet/ownscale/internal/dockerctl"
 	"github.com/ownscalenet/ownscale/internal/dockerctl/dockerfake"
@@ -91,7 +92,7 @@ func TestServiceCreateCreatesOIDCClient(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = ctl.Close() })
 
-	svc := NewService(queries, ctl, "example.com", "https://auth.example.com")
+	svc := NewService(queries, ctl, "example.com", "https://auth.example.com", config.DerpConfig{})
 	org, err := svc.Create(t.Context(), "acme")
 	if err != nil {
 		t.Fatalf("Create: %v", err)

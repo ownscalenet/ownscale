@@ -31,6 +31,7 @@ type Config struct {
 
 	Auth AuthConfig `yaml:"auth"`
 	Log  LogConfig  `yaml:"log"`
+	Derp DerpConfig `yaml:"derp"`
 }
 
 // LogConfig configures the application's structured (slog) logger.
@@ -63,6 +64,39 @@ type OIDCProviderConfig struct {
 	AccessTokenLifetime string `yaml:"access_token_lifetime" env:"OWNSCALE_AUTH_OIDC_PROVIDER_ACCESS_TOKEN_LIFETIME"`
 	IDTokenLifetime     string `yaml:"id_token_lifetime" env:"OWNSCALE_AUTH_OIDC_PROVIDER_ID_TOKEN_LIFETIME"`
 }
+
+// DerpConfig points every organization's headscale container at a
+// self-hosted DERP relay (see deploy/derper) instead of Tailscale's public
+// one. Entirely optional: when Hostname is unset, headscale falls back to
+// Tailscale's default public DERP map, unchanged from before this config
+// section existed.
+type DerpConfig struct {
+	// Hostname is the DERP relay's public DNS name (e.g. "derp.example.com",
+	// matching deploy/derper's DERP_HOSTNAME). Required to enable a custom
+	// DERP map; leave empty to keep using Tailscale's public DERP servers.
+	Hostname string `yaml:"hostname" env:"OWNSCALE_DERP_HOSTNAME"`
+	// IPv4 is the DERP relay's public IPv4 address, recommended so clients
+	// don't need to rely on DNS to reach it.
+	IPv4 string `yaml:"ipv4" env:"OWNSCALE_DERP_IPV4"`
+	// IPv6 is the DERP relay's public IPv6 address (optional).
+	IPv6 string `yaml:"ipv6" env:"OWNSCALE_DERP_IPV6"`
+	// STUNPort is the UDP port the relay's STUN server listens on. Defaults
+	// to 3478 (matching deploy/derper's default) if unset.
+	STUNPort int `yaml:"stun_port" env:"OWNSCALE_DERP_STUN_PORT"`
+	// RegionID is an arbitrary, positive ID identifying this custom DERP
+	// region in headscale's DERP map. Defaults to 900 if unset (headscale's
+	// own derp-example.yaml convention for a first custom region).
+	RegionID int `yaml:"region_id" env:"OWNSCALE_DERP_REGION_ID"`
+	// RegionCode is a short, lowercase identifier for this region. Defaults
+	// to "custom" if unset.
+	RegionCode string `yaml:"region_code" env:"OWNSCALE_DERP_REGION_CODE"`
+	// RegionName is a human-readable label for this region. Defaults to
+	// "Self-hosted DERP" if unset.
+	RegionName string `yaml:"region_name" env:"OWNSCALE_DERP_REGION_NAME"`
+}
+
+// Enabled reports whether a self-hosted DERP relay is configured.
+func (d DerpConfig) Enabled() bool { return d.Hostname != "" }
 
 func defaults() *Config {
 	return &Config{
@@ -142,6 +176,22 @@ func Load(path string) (_ *Config, err error) {
 	// LocalCADir is stored under DataDir unless already absolute.
 	if cfg.LocalCADir != "" && cfg.DataDir != "" && !filepath.IsAbs(cfg.LocalCADir) {
 		cfg.LocalCADir = filepath.Join(cfg.DataDir, cfg.LocalCADir)
+	}
+	// Fill in DerpConfig defaults only when a custom relay is actually
+	// configured; an unset Hostname must stay a no-op (see DerpConfig.Enabled).
+	if cfg.Derp.Enabled() {
+		if cfg.Derp.STUNPort == 0 {
+			cfg.Derp.STUNPort = 3478
+		}
+		if cfg.Derp.RegionID == 0 {
+			cfg.Derp.RegionID = 900
+		}
+		if cfg.Derp.RegionCode == "" {
+			cfg.Derp.RegionCode = "custom"
+		}
+		if cfg.Derp.RegionName == "" {
+			cfg.Derp.RegionName = "Self-hosted DERP"
+		}
 	}
 
 	return cfg, nil

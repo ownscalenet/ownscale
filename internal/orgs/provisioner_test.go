@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
+	"github.com/ownscalenet/ownscale/internal/config"
 	"github.com/ownscalenet/ownscale/internal/dockerctl"
 	"github.com/ownscalenet/ownscale/internal/dockerctl/dockerfake"
 )
@@ -50,7 +51,7 @@ func newTestService(t *testing.T) *Service {
 		t.Fatalf("dockerctl.NewWithClient: %v", err)
 	}
 	t.Cleanup(func() { _ = ctl.Close() })
-	return NewService(queries, ctl, "example.com", "https://auth.example.com")
+	return NewService(queries, ctl, "example.com", "https://auth.example.com", config.DerpConfig{})
 }
 
 func TestProvisionerSignalProvisionsImmediately(t *testing.T) {

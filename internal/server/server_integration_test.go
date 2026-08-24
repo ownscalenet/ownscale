@@ -31,6 +31,7 @@ import (
 	"github.com/pressly/goose/v3"
 
 	"github.com/ownscalenet/ownscale/internal/auth"
+	"github.com/ownscalenet/ownscale/internal/config"
 	dbpkg "github.com/ownscalenet/ownscale/internal/db"
 	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/internal/dockerctl"
@@ -129,7 +130,7 @@ func TestServerIntegration(t *testing.T) {
 		}
 	})
 
-	h := handlers.New(queries, ctl, baseDomain, nil, logger)
+	h := handlers.New(queries, ctl, baseDomain, nil, logger, config.DerpConfig{})
 	provisionerCtx, cancelProvisioner := context.WithCancel(context.Background())
 	t.Cleanup(cancelProvisioner)
 	h.StartProvisioner(provisionerCtx)

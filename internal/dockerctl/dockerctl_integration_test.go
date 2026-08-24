@@ -5,11 +5,14 @@
 package dockerctl_test
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
+	"io"
 	"log/slog"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -20,8 +23,31 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/google/uuid"
 
+	"github.com/ownscalenet/ownscale/internal/config"
 	"github.com/ownscalenet/ownscale/internal/dockerctl"
 )
+
+// tarFileContents reads name's contents out of the tar stream r (as
+// returned by client.CopyFromContainer).
+func tarFileContents(r io.Reader, name string) (string, error) {
+	tr := tar.NewReader(r)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return "", os.ErrNotExist
+		}
+		if err != nil {
+			return "", err
+		}
+		if filepath.Base(hdr.Name) == name {
+			var buf bytes.Buffer
+			if _, err := io.Copy(&buf, tr); err != nil {
+				return "", err
+			}
+			return buf.String(), nil
+		}
+	}
+}
 
 // requireDocker skips the test if no Docker daemon is reachable, so the
 // suite degrades gracefully when run with the tag but without Docker available.
@@ -102,12 +128,32 @@ func TestDockerctlIntegration(t *testing.T) {
 		// issuer/network-alias wiring itself is covered by dockerfake-backed
 		// unit tests instead (TestEnsureCaddyNetworkAlias*,
 		// TestCreateOrganizationMountsCaddyDataVolumeAndSetsHeadplaneEnv).
-		if _, err := ctl.CreateOrganization(ctx, subdomain, baseDomain, dockerctl.OIDCClientCredentials{}); err != nil {
+		derpCfg := config.DerpConfig{
+			Hostname:   "derp.it.test",
+			STUNPort:   3478,
+			RegionID:   900,
+			RegionCode: "custom",
+			RegionName: "Self-hosted DERP",
+		}
+		if _, err := ctl.CreateOrganization(ctx, subdomain, baseDomain, dockerctl.OIDCClientCredentials{}, derpCfg); err != nil {
 			t.Fatalf("CreateOrganization: %v", err)
 		}
 
 		hsName := dockerctl.HSContainerName(subdomain)
 		hpName := dockerctl.HPContainerName(subdomain)
+
+		reader, _, err := rawCli.CopyFromContainer(ctx, hsName, "/etc/headscale/derp.yaml")
+		if err != nil {
+			t.Fatalf("CopyFromContainer(derp.yaml): %v", err)
+		}
+		derpYAML, err := tarFileContents(reader, "derp.yaml")
+		_ = reader.Close()
+		if err != nil {
+			t.Fatalf("read derp.yaml from container: %v", err)
+		}
+		if !strings.Contains(derpYAML, "derp.it.test") {
+			t.Fatalf("derp.yaml in headscale container = %q, want it to reference the configured hostname", derpYAML)
+		}
 
 		for _, name := range []string{hsName, hpName} {
 			info, err := rawCli.ContainerInspect(ctx, name)

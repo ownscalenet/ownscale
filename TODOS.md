@@ -1,6 +1,5 @@
 - Make an azure blob storage and hook it up in litestream for "prod"
 - Check if abs can have automatic regular snapshots/backups
-- Set up a container for a derp server and have it loaded for each organization.
 - Check if litestream container logs can be changed from text to json
 - dockerfile user and permissions
 - check how .env and config.yaml can be collapsed into one

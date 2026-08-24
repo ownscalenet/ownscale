@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/ownscalenet/ownscale/internal/config"
 	"github.com/ownscalenet/ownscale/internal/db"
 	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/internal/derrors"
@@ -28,12 +29,16 @@ type Service struct {
 	ctl        *dockerctl.Ctl
 	baseDomain string
 	issuer     string
+	derpCfg    config.DerpConfig
 }
 
 // NewService builds a Service backed by queries and ctl, provisioning
-// organizations under baseDomain.
-func NewService(queries *db.TxQueries, ctl *dockerctl.Ctl, baseDomain, issuer string) *Service {
-	return &Service{queries: queries, ctl: ctl, baseDomain: baseDomain, issuer: issuer}
+// organizations under baseDomain. derpCfg configures a self-hosted DERP
+// relay for every organization's headscale container (see
+// config.DerpConfig); its zero value keeps using Tailscale's public DERP
+// map, unchanged from before this parameter existed.
+func NewService(queries *db.TxQueries, ctl *dockerctl.Ctl, baseDomain, issuer string, derpCfg config.DerpConfig) *Service {
+	return &Service{queries: queries, ctl: ctl, baseDomain: baseDomain, issuer: issuer, derpCfg: derpCfg}
 }
 
 // BaseDomain returns the domain organizations are provisioned under (e.g.
@@ -149,7 +154,7 @@ func (s *Service) provision(ctx context.Context, org sqlcgen.Organization) error
 		Issuer:       s.issuer,
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
-	}); err != nil {
+	}, s.derpCfg); err != nil {
 		return fmt.Errorf("create container: %w", err)
 	}
 	return nil

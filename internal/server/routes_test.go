@@ -14,6 +14,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/ownscalenet/ownscale/internal/auth"
+	"github.com/ownscalenet/ownscale/internal/config"
 	dbpkg "github.com/ownscalenet/ownscale/internal/db"
 	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/internal/handlers"
@@ -53,7 +54,7 @@ func newTestQueries(t *testing.T) *dbpkg.TxQueries {
 func newTestMux(t *testing.T) http.Handler {
 	t.Helper()
 	queries := newTestQueries(t)
-	h := handlers.New(queries, nil, "", nil, discardLogger())
+	h := handlers.New(queries, nil, "", nil, discardLogger(), config.DerpConfig{})
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
 		return auth.RequireAuthAPI(queries.Queries, next)
 	}
@@ -96,7 +97,7 @@ func TestNewMuxTLSAskUnauthenticated(t *testing.T) {
 
 func TestNewMuxUnmatchedPathFallsBackToStatic(t *testing.T) {
 	queries := newTestQueries(t)
-	h := handlers.New(queries, nil, "", nil, discardLogger())
+	h := handlers.New(queries, nil, "", nil, discardLogger(), config.DerpConfig{})
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
 		return auth.RequireAuthAPI(queries.Queries, next)
 	}
@@ -122,7 +123,7 @@ func TestNewMuxUnmatchedPathFallsBackToStatic(t *testing.T) {
 
 func TestNewMuxAuthenticatedSession(t *testing.T) {
 	queries := newTestQueries(t)
-	h := handlers.New(queries, nil, "", nil, discardLogger())
+	h := handlers.New(queries, nil, "", nil, discardLogger(), config.DerpConfig{})
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
 		return auth.RequireAuthAPI(queries.Queries, next)
 	}

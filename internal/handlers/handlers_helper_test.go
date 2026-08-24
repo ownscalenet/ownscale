@@ -12,6 +12,7 @@ import (
 	"github.com/pressly/goose/v3"
 
 	"github.com/ownscalenet/ownscale/internal/auth"
+	"github.com/ownscalenet/ownscale/internal/config"
 	dbpkg "github.com/ownscalenet/ownscale/internal/db"
 	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/internal/dockerctl"
@@ -84,7 +85,7 @@ func newTestHandlers(t *testing.T, withOrgs bool) (*Handlers, *dbpkg.TxQueries) 
 		ctl = newTestCtl(t, noopDockerAPI())
 		baseDomain = testBaseDomain
 	}
-	return New(queries, ctl, baseDomain, nil, discardLogger()), queries
+	return New(queries, ctl, baseDomain, nil, discardLogger(), config.DerpConfig{}), queries
 }
 
 // insertUser inserts a user row directly and returns it.

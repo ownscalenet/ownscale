@@ -74,3 +74,23 @@ log:
   level: "info"
   # Log output encoding: "json" or "text". Defaults to "json".
   format: "json"
+
+# Derp config for organizations, get's embedded into headscale containers.
+# Optional: leave "hostname" empty (the default) to keep using
+# Tailscale's public DERP map, unchanged.
+derp:
+  # Public DNS name of the DERP relay (matches deploy/derper's
+  # DERP_HOSTNAME), e.g. "derp.ownscale.net". Required to enable this feature.
+  hostname: ""
+  # Public IPv4/IPv6 address of the DERP relay. Recommended so clients don't
+  # need to rely on DNS to reach it, but not required.
+  ipv4: ""
+  ipv6: ""
+  # UDP port the relay's STUN server listens on. Defaults to 3478.
+  stun_port: 3478
+  # Arbitrary identifiers for this custom DERP region in headscale's DERP
+  # map. Defaults shown below; only matter if you're also using a custom
+  # derp-map file of your own outside of ownscale's management.
+  region_id: 900
+  region_code: "custom"
+  region_name: "Ownscale DERP"

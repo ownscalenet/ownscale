@@ -27,6 +27,7 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 
+	"github.com/ownscalenet/ownscale/internal/config"
 	"github.com/ownscalenet/ownscale/internal/derrors"
 	"github.com/ownscalenet/ownscale/internal/localca"
 )
@@ -37,6 +38,7 @@ const (
 	headplaneImage      = "ghcr.io/tale/headplane:0.7.0-shell"
 	headscaleConfigPath = "/etc/headscale/config.yaml"
 	headplaneConfigPath = "/etc/headplane/config.yaml"
+	derpConfigPath      = "/etc/headscale/derp.yaml"
 
 	// Caddy self-signed CA is mounted here for organization containers.
 	LocalCAMountTarget = "/etc/ownscale-local-ca"
@@ -323,6 +325,11 @@ func (c *Ctl) ensureCaddyNetworkAlias(ctx context.Context, networkName, baseDoma
 }
 
 // headscale config for an organization; ServerURL must match the public subdomain.
+// The "derp" block is filled in by buildHSConfig depending on whether a
+// custom DERP relay (config.DerpConfig) is configured: either today's default
+// (Tailscale's public DERP map, no embedded server), or a custom derp.paths
+// entry pointing at the rendered derp.yaml (see configTemplateDerp), with
+// the public map disabled.
 var configTemplateHS = template.Must(template.New("headscaleConfig").Parse(`server_url: https://{{.ServerURL}}
 listen_addr: 0.0.0.0:8080
 metrics_listen_addr: 127.0.0.1:9090
@@ -336,8 +343,14 @@ prefixes:
   allocation: sequential
 
 derp:
+{{- if .HasCustomDerp}}
+  paths:
+    - {{.DerpConfigPath}}
+  urls: []
+{{- else}}
   urls:
     - https://controlplane.tailscale.com/derpmap/default
+{{- end}}
   auto_update_enabled: true
   update_frequency: 3h
   server:
@@ -373,8 +386,43 @@ oidc:
     method: S256
 `))
 
+// custom DERP map for an organization, in headscale's own format (see
+// https://github.com/juanfont/headscale/blob/main/derp-example.yaml),
+// describing the single self-hosted relay from deploy/derper.
+var configTemplateDerp = template.Must(template.New("derpConfig").Parse(`regions:
+  {{.RegionID}}:
+    regionid: {{.RegionID}}
+    regioncode: {{.RegionCode}}
+    regionname: {{.RegionName}}
+    nodes:
+      - name: {{.RegionCode}}a
+        regionid: {{.RegionID}}
+        hostname: {{.Hostname}}
+        {{- if .IPv4}}
+        ipv4: {{.IPv4}}
+        {{- end}}
+        {{- if .IPv6}}
+        ipv6: {{.IPv6}}
+        {{- end}}
+        stunport: {{.STUNPort}}
+        stunonly: false
+        derpport: 0
+`))
+
+// buildDerpConfig renders the custom derp.yaml content for an organization
+// from derpCfg. Only called when derpCfg.Enabled().
+func buildDerpConfig(derpCfg config.DerpConfig) (_ string, err error) {
+	defer derrors.Wrap(&err, "buildDerpConfig(%q)", derpCfg.Hostname)
+
+	var buf bytes.Buffer
+	if err := configTemplateDerp.Execute(&buf, derpCfg); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
 // buildHSConfig renders the headscale config.yaml content for an organization.
-func buildHSConfig(subdomain, domain string, oidcCreds OIDCClientCredentials) (_ string, err error) {
+func buildHSConfig(subdomain, domain string, oidcCreds OIDCClientCredentials, derpCfg config.DerpConfig) (_ string, err error) {
 	defer derrors.Wrap(&err, "buildHSConfig(%q, %q)", subdomain, domain)
 
 	var buf bytes.Buffer
@@ -384,12 +432,16 @@ func buildHSConfig(subdomain, domain string, oidcCreds OIDCClientCredentials) (_
 		OIDCIssuer       string
 		OIDCClientID     string
 		OIDCClientSecret string
+		HasCustomDerp    bool
+		DerpConfigPath   string
 	}{
 		Subdomain:        subdomain,
 		ServerURL:        domain,
 		OIDCIssuer:       oidcCreds.Issuer,
 		OIDCClientID:     oidcCreds.ClientID,
 		OIDCClientSecret: oidcCreds.ClientSecret,
+		HasCustomDerp:    derpCfg.Enabled(),
+		DerpConfigPath:   derpConfigPath,
 	}); err != nil {
 		return "", err
 	}
@@ -647,7 +699,7 @@ func (c *Ctl) waitForHTTPServing(ctx context.Context, containerID, url string) (
 
 // CreateOrganization provisions and starts a headscale container serving
 // https://<subdomain>.<baseDomain>. It returns the container ID.
-func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain string, oidcCreds OIDCClientCredentials) (_ string, err error) {
+func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain string, oidcCreds OIDCClientCredentials, derpCfg config.DerpConfig) (_ string, err error) {
 	defer derrors.Wrap(&err, "c.CreateOrganization(%q, %q)", subdomain, baseDomain)
 
 	if err := ValidateSubdomain(subdomain); err != nil {
@@ -659,7 +711,7 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 	orgNetwork := OrgNetworkName(subdomain)
 
 	domain := subdomain + "." + baseDomain
-	cfg, err := buildHSConfig(subdomain, domain, oidcCreds)
+	cfg, err := buildHSConfig(subdomain, domain, oidcCreds, derpCfg)
 	if err != nil {
 		return "", fmt.Errorf("build config: %w", err)
 	}
@@ -711,6 +763,20 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 	}
 	if err := c.cli.CopyToContainer(ctx, resp.ID, "/", tarBuf, container.CopyToContainerOptions{}); err != nil {
 		return "", fmt.Errorf("copy config into container: %w", err)
+	}
+
+	if derpCfg.Enabled() {
+		derpYAML, err := buildDerpConfig(derpCfg)
+		if err != nil {
+			return "", fmt.Errorf("build derp config: %w", err)
+		}
+		derpTarBuf, err := configTar(derpConfigPath, derpYAML)
+		if err != nil {
+			return "", fmt.Errorf("build derp config archive: %w", err)
+		}
+		if err := c.cli.CopyToContainer(ctx, resp.ID, "/", derpTarBuf, container.CopyToContainerOptions{}); err != nil {
+			return "", fmt.Errorf("copy derp config into container: %w", err)
+		}
 	}
 
 	if err := c.cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
@@ -947,6 +1013,7 @@ var reservedSubdomains = map[string]bool{
 	"auth":  true,
 	"docs":  true,
 	"www":   true,
+	"derp":  true,
 }
 
 // ValidateSubdomain checks that s is a valid single DNS label and not one of
