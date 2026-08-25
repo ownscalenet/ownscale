@@ -4,7 +4,185 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/ownscalenet/ownscale/internal/auth"
+
+	"github.com/markbates/goth"
+	"github.com/markbates/goth/gothic"
 )
+
+// newTestOIDCServer spins up a minimal OIDC discovery server so
+// auth.RegisterUpstreamOIDC (and therefore gothic.BeginAuthHandler) has a
+// real "oidc" provider to work with in BeginAuth tests.
+func newTestOIDCServer(t *testing.T) *httptest.Server {
+	t.Helper()
+	mux := http.NewServeMux()
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+
+	mux.HandleFunc("/.well-known/openid-configuration", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{
+			"issuer": "` + srv.URL + `",
+			"authorization_endpoint": "` + srv.URL + `/auth",
+			"token_endpoint": "` + srv.URL + `/token",
+			"userinfo_endpoint": "` + srv.URL + `/userinfo"
+		}`))
+	})
+	return srv
+}
+
+// registerTestOIDCProvider registers a real "oidc" goth provider (backed by
+// a fake discovery server) so gothic.BeginAuthHandler has something to
+// redirect to.
+func registerTestOIDCProvider(t *testing.T) {
+	t.Helper()
+	srv := newTestOIDCServer(t)
+	if err := auth.RegisterUpstreamOIDC(srv.URL, "client-id", "client-secret", "https://example.com/auth/oidc/callback"); err != nil {
+		t.Fatalf("RegisterUpstreamOIDC: %v", err)
+	}
+}
+
+// TestBeginAuthSetsNextCookie verifies that BeginAuth stores the "next"
+// redirect target in a dedicated cookie (rather than gothic's own session,
+// which gets clobbered -- see nextCookieName's doc comment) and that the
+// cookie survives even after gothic.BeginAuthHandler does its own
+// session read/write.
+func TestBeginAuthSetsNextCookie(t *testing.T) {
+	setupSessions()
+	registerTestOIDCProvider(t)
+	h, _ := newTestHandlers(t, false)
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/oidc?next="+"%2Finvite%2Ftesttoken", nil)
+	req.SetPathValue("provider", "oidc")
+	rec := httptest.NewRecorder()
+
+	h.BeginAuth(rec, req)
+
+	if rec.Code != http.StatusTemporaryRedirect {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusTemporaryRedirect)
+	}
+
+	var found *http.Cookie
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == nextCookieName {
+			found = c
+		}
+	}
+	if found == nil {
+		t.Fatalf("expected a %q cookie to be set, cookies: %+v", nextCookieName, rec.Result().Cookies())
+	}
+	if found.Value != "/invite/testtoken" {
+		t.Errorf("%s cookie value = %q, want %q", nextCookieName, found.Value, "/invite/testtoken")
+	}
+	if !found.HttpOnly || !found.Secure {
+		t.Errorf("%s cookie should be HttpOnly and Secure, got %+v", nextCookieName, found)
+	}
+}
+
+// TestBeginAuthNoNextParam verifies no next cookie is set when the query
+// string doesn't include one, so we don't leak a stale empty cookie.
+func TestBeginAuthNoNextParam(t *testing.T) {
+	setupSessions()
+	registerTestOIDCProvider(t)
+	h, _ := newTestHandlers(t, false)
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/oidc", nil)
+	req.SetPathValue("provider", "oidc")
+	rec := httptest.NewRecorder()
+
+	h.BeginAuth(rec, req)
+
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == nextCookieName {
+			t.Errorf("did not expect a %q cookie without a next param, got %+v", nextCookieName, c)
+		}
+	}
+}
+
+// TestAuthCallbackRedirectsToNextCookie verifies that AuthCallback reads
+// the redirect target from the dedicated next cookie set by BeginAuth
+// (rather than gothic's session, which is what caused the original bug:
+// gothic.BeginAuthHandler clobbers a "next" value stored in its own
+// session before it runs) and redirects there instead of falling back to
+// "/". This directly reproduces the invite-accept flow: an unauthenticated
+// visitor hits /invite/<token>, gets redirected through /login?next=... ->
+// /auth/oidc?next=... -> the IdP -> back to this callback, and should land
+// on /invite/<token> again, not /.
+func TestAuthCallbackRedirectsToNextCookie(t *testing.T) {
+	setupSessions()
+	h, queries := newTestHandlers(t, false)
+	user := insertUser(t, queries)
+
+	orig := gothic.CompleteUserAuth
+	t.Cleanup(func() { gothic.CompleteUserAuth = orig })
+	gothic.CompleteUserAuth = func(w http.ResponseWriter, r *http.Request) (goth.User, error) {
+		return goth.User{
+			Provider:  "oidc",
+			UserID:    user.ProviderUserID,
+			Email:     user.Email,
+			Name:      user.Name,
+			AvatarURL: user.AvatarUrl,
+		}, nil
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/oidc/callback", nil)
+	req.AddCookie(&http.Cookie{Name: nextCookieName, Value: "/invite/testtoken"})
+	rec := httptest.NewRecorder()
+
+	h.AuthCallback(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusSeeOther)
+	}
+	if loc := rec.Header().Get("Location"); loc != "/invite/testtoken" {
+		t.Errorf("Location = %q, want %q (this is the bug: it must not fall back to /)", loc, "/invite/testtoken")
+	}
+
+	// The cookie must be cleared (single-use) once consumed.
+	var cleared bool
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == nextCookieName && c.MaxAge < 0 {
+			cleared = true
+		}
+	}
+	if !cleared {
+		t.Errorf("expected %q cookie to be cleared after AuthCallback consumes it", nextCookieName)
+	}
+}
+
+// TestAuthCallbackNoNextCookieFallsBackToRoot verifies the ordinary case
+// (no next cookie present, e.g. a plain login with no redirect target)
+// still falls back to "/".
+func TestAuthCallbackNoNextCookieFallsBackToRoot(t *testing.T) {
+	setupSessions()
+	h, queries := newTestHandlers(t, false)
+	user := insertUser(t, queries)
+
+	orig := gothic.CompleteUserAuth
+	t.Cleanup(func() { gothic.CompleteUserAuth = orig })
+	gothic.CompleteUserAuth = func(w http.ResponseWriter, r *http.Request) (goth.User, error) {
+		return goth.User{
+			Provider:  "oidc",
+			UserID:    user.ProviderUserID,
+			Email:     user.Email,
+			Name:      user.Name,
+			AvatarURL: user.AvatarUrl,
+		}, nil
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/oidc/callback", nil)
+	rec := httptest.NewRecorder()
+
+	h.AuthCallback(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusSeeOther)
+	}
+	if loc := rec.Header().Get("Location"); loc != "/" {
+		t.Errorf("Location = %q, want %q", loc, "/")
+	}
+}
 
 func TestLogout(t *testing.T) {
 	h, queries := newTestHandlers(t, false)

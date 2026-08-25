@@ -126,6 +126,43 @@ func (c *Client) ListUsers(ctx context.Context) (_ []User, err error) {
 	return users, nil
 }
 
+// CreateUser creates a new headscale user named name.
+func (c *Client) CreateUser(ctx context.Context, name string) (_ User, err error) {
+	defer derrors.Wrap(&err, "c.CreateUser(%q)", name)
+
+	params := headscale_service.NewHeadscaleServiceCreateUserParams().
+		WithContext(ctx).
+		WithBody(&models.V1CreateUserRequest{Name: name})
+	resp, err := c.api.HeadscaleService.HeadscaleServiceCreateUser(params)
+	if err != nil {
+		return User{}, err
+	}
+	return toUser(resp.Payload.User), nil
+}
+
+// RenameUser renames the headscale user identified by id to newName.
+func (c *Client) RenameUser(ctx context.Context, id, newName string) (err error) {
+	defer derrors.Wrap(&err, "c.RenameUser(%q, %q)", id, newName)
+
+	params := headscale_service.NewHeadscaleServiceRenameUserParams().
+		WithContext(ctx).
+		WithOldID(id).
+		WithNewName(newName)
+	_, err = c.api.HeadscaleService.HeadscaleServiceRenameUser(params)
+	return err
+}
+
+// DeleteUser permanently removes the headscale user identified by id.
+func (c *Client) DeleteUser(ctx context.Context, id string) (err error) {
+	defer derrors.Wrap(&err, "c.DeleteUser(%q)", id)
+
+	params := headscale_service.NewHeadscaleServiceDeleteUserParams().
+		WithContext(ctx).
+		WithID(id)
+	_, err = c.api.HeadscaleService.HeadscaleServiceDeleteUser(params)
+	return err
+}
+
 // RenameNode sets nodeID's display name (givenName) to name.
 func (c *Client) RenameNode(ctx context.Context, nodeID, name string) (err error) {
 	defer derrors.Wrap(&err, "c.RenameNode(%q, %q)", nodeID, name)

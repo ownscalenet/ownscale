@@ -57,7 +57,26 @@ func newFakeHeadscaleServer(t *testing.T) (*httptest.Server, *headscaleclient.Cl
 	mux.HandleFunc("/api/v1/user", func(w http.ResponseWriter, r *http.Request) {
 		requests = append(requests, r)
 		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost {
+			fmt.Fprint(w, `{"user":{"id":"3","name":"new-user"}}`)
+			return
+		}
 		fmt.Fprint(w, `{"users":[{"id":"1","name":"alice"},{"id":"2","name":"bob"}]}`)
+	})
+	mux.HandleFunc("/api/v1/user/1/rename/", func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"user":{"id":"1"}}`)
+	})
+	mux.HandleFunc("/api/v1/user/1", func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{}`)
+	})
+	mux.HandleFunc("/api/v1/user/3", func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{}`)
 	})
 	mux.HandleFunc("/api/v1/node/1/rename/", func(w http.ResponseWriter, r *http.Request) {
 		requests = append(requests, r)

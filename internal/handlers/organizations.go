@@ -67,8 +67,9 @@ func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.queries.SetUserOrganization(r.Context(), sqlcgen.SetUserOrganizationParams{
+	if err := h.queries.SetUserOrganizationAndRole(r.Context(), sqlcgen.SetUserOrganizationAndRoleParams{
 		OrganizationID: sql.NullString{String: org.ID, Valid: true},
+		Role:           RoleOwner,
 		ID:             user.ID,
 	}); err != nil {
 		h.serverError(w, err)

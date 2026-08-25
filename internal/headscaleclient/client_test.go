@@ -54,7 +54,25 @@ func newTestServer(t *testing.T, wantToken string) (*httptest.Server, *[]*http.R
 	mux.HandleFunc("/api/v1/user", func(w http.ResponseWriter, r *http.Request) {
 		record(r)
 		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost {
+			fmt.Fprint(w, `{"user":{"id":"3","name":"created-user","displayName":"","email":"","createdAt":"2024-01-01T00:00:00Z"}}`)
+			return
+		}
 		fmt.Fprint(w, `{"users":[{"id":"1","name":"alice","displayName":"Alice","email":"alice@example.com","createdAt":"2024-01-01T00:00:00Z"}]}`)
+	})
+	mux.HandleFunc("/api/v1/user/1/rename/", func(w http.ResponseWriter, r *http.Request) {
+		record(r)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"user":{"id":"1"}}`)
+	})
+	mux.HandleFunc("/api/v1/user/1", func(w http.ResponseWriter, r *http.Request) {
+		record(r)
+		if r.Method != http.MethodDelete {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{}`)
 	})
 	mux.HandleFunc("/api/v1/node/1/rename/", func(w http.ResponseWriter, r *http.Request) {
 		record(r)
@@ -161,6 +179,49 @@ func TestClientRenameNode(t *testing.T) {
 	last := (*reqs)[len(*reqs)-1]
 	if !strings.HasSuffix(last.URL.Path, "/rename/new-name") {
 		t.Errorf("unexpected request path: %s", last.URL.Path)
+	}
+}
+
+func TestClientCreateUser(t *testing.T) {
+	c, srv, reqs := newTestClient(t)
+	defer srv.Close()
+
+	user, err := c.CreateUser(context.Background(), "created-user")
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	if user.Name != "created-user" {
+		t.Errorf("unexpected user: %+v", user)
+	}
+	last := (*reqs)[len(*reqs)-1]
+	if last.Method != http.MethodPost || last.URL.Path != "/api/v1/user" {
+		t.Errorf("unexpected request: %s %s", last.Method, last.URL.Path)
+	}
+}
+
+func TestClientRenameUser(t *testing.T) {
+	c, srv, reqs := newTestClient(t)
+	defer srv.Close()
+
+	if err := c.RenameUser(context.Background(), "1", "new-name"); err != nil {
+		t.Fatalf("RenameUser: %v", err)
+	}
+	last := (*reqs)[len(*reqs)-1]
+	if !strings.HasSuffix(last.URL.Path, "/rename/new-name") {
+		t.Errorf("unexpected request path: %s", last.URL.Path)
+	}
+}
+
+func TestClientDeleteUser(t *testing.T) {
+	c, srv, reqs := newTestClient(t)
+	defer srv.Close()
+
+	if err := c.DeleteUser(context.Background(), "1"); err != nil {
+		t.Fatalf("DeleteUser: %v", err)
+	}
+	last := (*reqs)[len(*reqs)-1]
+	if last.Method != http.MethodDelete || last.URL.Path != "/api/v1/user/1" {
+		t.Errorf("unexpected request: %s %s", last.Method, last.URL.Path)
 	}
 }
 

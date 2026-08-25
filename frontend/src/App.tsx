@@ -4,7 +4,9 @@ import Layout from './Layout'
 import Login from './pages/Login'
 import Dashboard from './pages/Dashboard'
 import Machines from './pages/Machines'
+import Users from './pages/Users'
 import CreateOrganization from './pages/CreateOrganization'
+import AcceptInvite from './pages/AcceptInvite'
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
   const { user, organization, loading } = useAuth()
@@ -50,6 +52,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/invite/:token" element={<AcceptInvite />} />
       <Route
         path="/create-organization"
         element={
@@ -68,6 +71,7 @@ function AppRoutes() {
       >
         <Route index element={<Dashboard />} />
         <Route path="machines" element={<Machines />} />
+        <Route path="users" element={<Users />} />
       </Route>
     </Routes>
   )

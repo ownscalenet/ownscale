@@ -44,6 +44,11 @@ export default function Layout() {
                 Machines
               </NavLink>
             </li>
+            <li>
+              <NavLink to="/users" className={({ isActive }) => (isActive ? 'active' : '')}>
+                Users
+              </NavLink>
+            </li>
             {organization && (
               <li>
                 <a href={`https://${organization.Subdomain}.${window.location.host}/admin/oidc/start`}>

@@ -15,19 +15,33 @@ import (
 	"github.com/markbates/goth/gothic"
 )
 
+// nextCookieName is a short-lived, single-purpose cookie used to remember
+// where to redirect the user after OAuth login completes. It is
+// intentionally kept separate from gothic's own session cookie: gothic's
+// BeginAuthHandler re-reads/re-saves its session from the original request
+// as part of starting the provider auth (see GetAuthURL/StoreInSession in
+// goth/gothic), which would silently clobber a "next" value stored in that
+// same session by BeginAuth just beforehand, since the incoming request
+// object never reflects Set-Cookie headers written earlier in the same
+// response.
+const nextCookieName = "ownscale_next"
+
+// nextCookieMaxAge is deliberately short: the cookie only needs to survive
+// the redirect to the upstream IdP and back.
+const nextCookieMaxAge = 10 * 60 // 10 minutes, in seconds
+
 // BeginAuth kicks off the OAuth flow for the {provider} path segment.
 func (h *Handlers) BeginAuth(w http.ResponseWriter, r *http.Request) {
 	if next := r.URL.Query().Get("next"); next != "" {
-		sess, err := gothic.Store.Get(r, gothic.SessionName)
-		if err != nil {
-			h.serverError(w, err)
-			return
-		}
-		sess.Values["next"] = next
-		if err := sess.Save(r, w); err != nil {
-			h.serverError(w, err)
-			return
-		}
+		http.SetCookie(w, &http.Cookie{
+			Name:     nextCookieName,
+			Value:    next,
+			Path:     "/",
+			MaxAge:   nextCookieMaxAge,
+			HttpOnly: true,
+			Secure:   true,
+			SameSite: http.SameSiteNoneMode,
+		})
 	}
 	gothic.BeginAuthHandler(w, r)
 }
@@ -114,17 +128,19 @@ func (h *Handlers) AuthCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	sess, err := gothic.Store.Get(r, gothic.SessionName)
-	if err != nil {
-		h.serverError(w, err)
-		return
+	var next string
+	if c, err := r.Cookie(nextCookieName); err == nil {
+		next = c.Value
 	}
-	next, _ := sess.Values["next"].(string)
-	delete(sess.Values, "next")
-	if err := sess.Save(r, w); err != nil {
-		h.serverError(w, err)
-		return
-	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     nextCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteNoneMode,
+	})
 	if nextID := oidcprovider.AuthRequestIDFromNext(next); nextID != "" && h.oidc != nil {
 		if err := h.oidc.AuthorizeAuthRequest(nextID, user.ID); err != nil {
 			h.serverError(w, err)

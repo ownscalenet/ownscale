@@ -10,10 +10,21 @@ import (
 	"database/sql"
 )
 
+const countOwnersInOrganization = `-- name: CountOwnersInOrganization :one
+SELECT COUNT(*) FROM users WHERE organization_id = ? AND role = 'owner'
+`
+
+func (q *Queries) CountOwnersInOrganization(ctx context.Context, organizationID sql.NullString) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countOwnersInOrganization, organizationID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (id, provider, provider_user_id, email, name, avatar_url, email_verified)
 VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, organization_id, provider, provider_user_id, email, name, avatar_url, created_at, updated_at, email_verified, last_login_at
+RETURNING id, organization_id, provider, provider_user_id, email, name, avatar_url, created_at, updated_at, email_verified, last_login_at, role, headscale_user_id
 `
 
 type CreateUserParams struct {
@@ -49,12 +60,14 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.UpdatedAt,
 		&i.EmailVerified,
 		&i.LastLoginAt,
+		&i.Role,
+		&i.HeadscaleUserID,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, organization_id, provider, provider_user_id, email, name, avatar_url, created_at, updated_at, email_verified, last_login_at FROM users WHERE id = ?
+SELECT id, organization_id, provider, provider_user_id, email, name, avatar_url, created_at, updated_at, email_verified, last_login_at, role, headscale_user_id FROM users WHERE id = ?
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id string) (User, error) {
@@ -72,12 +85,14 @@ func (q *Queries) GetUserByID(ctx context.Context, id string) (User, error) {
 		&i.UpdatedAt,
 		&i.EmailVerified,
 		&i.LastLoginAt,
+		&i.Role,
+		&i.HeadscaleUserID,
 	)
 	return i, err
 }
 
 const getUserByProvider = `-- name: GetUserByProvider :one
-SELECT id, organization_id, provider, provider_user_id, email, name, avatar_url, created_at, updated_at, email_verified, last_login_at FROM users WHERE provider = ? AND provider_user_id = ?
+SELECT id, organization_id, provider, provider_user_id, email, name, avatar_url, created_at, updated_at, email_verified, last_login_at, role, headscale_user_id FROM users WHERE provider = ? AND provider_user_id = ?
 `
 
 type GetUserByProviderParams struct {
@@ -100,8 +115,74 @@ func (q *Queries) GetUserByProvider(ctx context.Context, arg GetUserByProviderPa
 		&i.UpdatedAt,
 		&i.EmailVerified,
 		&i.LastLoginAt,
+		&i.Role,
+		&i.HeadscaleUserID,
 	)
 	return i, err
+}
+
+const linkUserHeadscaleUser = `-- name: LinkUserHeadscaleUser :exec
+UPDATE users SET headscale_user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+type LinkUserHeadscaleUserParams struct {
+	HeadscaleUserID sql.NullString
+	ID              string
+}
+
+func (q *Queries) LinkUserHeadscaleUser(ctx context.Context, arg LinkUserHeadscaleUserParams) error {
+	_, err := q.db.ExecContext(ctx, linkUserHeadscaleUser, arg.HeadscaleUserID, arg.ID)
+	return err
+}
+
+const listUsersByOrganization = `-- name: ListUsersByOrganization :many
+SELECT id, organization_id, provider, provider_user_id, email, name, avatar_url, created_at, updated_at, email_verified, last_login_at, role, headscale_user_id FROM users WHERE organization_id = ? ORDER BY created_at
+`
+
+func (q *Queries) ListUsersByOrganization(ctx context.Context, organizationID sql.NullString) ([]User, error) {
+	rows, err := q.db.QueryContext(ctx, listUsersByOrganization, organizationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []User
+	for rows.Next() {
+		var i User
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.Provider,
+			&i.ProviderUserID,
+			&i.Email,
+			&i.Name,
+			&i.AvatarUrl,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.EmailVerified,
+			&i.LastLoginAt,
+			&i.Role,
+			&i.HeadscaleUserID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const removeUserFromOrganization = `-- name: RemoveUserFromOrganization :exec
+UPDATE users SET organization_id = NULL, role = 'member', headscale_user_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+func (q *Queries) RemoveUserFromOrganization(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, removeUserFromOrganization, id)
+	return err
 }
 
 const setUserOrganization = `-- name: SetUserOrganization :exec
@@ -118,12 +199,36 @@ func (q *Queries) SetUserOrganization(ctx context.Context, arg SetUserOrganizati
 	return err
 }
 
+const setUserOrganizationAndRole = `-- name: SetUserOrganizationAndRole :exec
+UPDATE users SET organization_id = ?, role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+type SetUserOrganizationAndRoleParams struct {
+	OrganizationID sql.NullString
+	Role           string
+	ID             string
+}
+
+func (q *Queries) SetUserOrganizationAndRole(ctx context.Context, arg SetUserOrganizationAndRoleParams) error {
+	_, err := q.db.ExecContext(ctx, setUserOrganizationAndRole, arg.OrganizationID, arg.Role, arg.ID)
+	return err
+}
+
 const touchUserLastLogin = `-- name: TouchUserLastLogin :exec
 UPDATE users SET last_login_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?
 `
 
 func (q *Queries) TouchUserLastLogin(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, touchUserLastLogin, id)
+	return err
+}
+
+const unlinkUserHeadscaleUser = `-- name: UnlinkUserHeadscaleUser :exec
+UPDATE users SET headscale_user_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+func (q *Queries) UnlinkUserHeadscaleUser(ctx context.Context, id string) error {
+	_, err := q.db.ExecContext(ctx, unlinkUserHeadscaleUser, id)
 	return err
 }
 
@@ -147,5 +252,19 @@ func (q *Queries) UpdateUserProfile(ctx context.Context, arg UpdateUserProfilePa
 		arg.EmailVerified,
 		arg.ID,
 	)
+	return err
+}
+
+const updateUserRole = `-- name: UpdateUserRole :exec
+UPDATE users SET role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+`
+
+type UpdateUserRoleParams struct {
+	Role string
+	ID   string
+}
+
+func (q *Queries) UpdateUserRole(ctx context.Context, arg UpdateUserRoleParams) error {
+	_, err := q.db.ExecContext(ctx, updateUserRole, arg.Role, arg.ID)
 	return err
 }

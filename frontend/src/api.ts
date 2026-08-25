@@ -12,6 +12,8 @@ export interface User {
   AvatarUrl: string
   CreatedAt: string
   UpdatedAt: string
+  Role: string
+  HeadscaleUserID: { String: string; Valid: boolean }
 }
 
 export interface Organization {
@@ -130,4 +132,123 @@ export function expireMachine(id: string) {
 
 export function deleteMachine(id: string) {
   return request<{ ok: boolean }>(`/api/machines/${id}`, { method: 'DELETE' })
+}
+
+// Roles mirror headplane's set for UI parity; only owner/admin are
+// actually enforced server-side (see internal/handlers/roles.go).
+export const ROLES = ['owner', 'admin', 'network_admin', 'it_admin', 'auditor', 'member'] as const
+export type Role = (typeof ROLES)[number]
+
+export interface Member {
+  id: string
+  name: string
+  email: string
+  role: Role
+  headscaleUserId: string | null
+  headscaleUserName?: string
+}
+
+export interface MembersResponse {
+  members: Member[]
+  canManage: boolean
+  callerId: string
+  callerRole: Role
+}
+
+export function listMembers() {
+  return request<MembersResponse>('/api/members')
+}
+
+export function updateMemberRole(id: string, role: Role) {
+  return request<{ ok: boolean }>(`/api/members/${id}/role`, {
+    method: 'POST',
+    body: JSON.stringify({ role }),
+  })
+}
+
+export function linkMember(id: string, headscaleUserId: string) {
+  return request<{ ok: boolean }>(`/api/members/${id}/link`, {
+    method: 'POST',
+    body: JSON.stringify({ headscaleUserId }),
+  })
+}
+
+export function unlinkMember(id: string) {
+  return request<{ ok: boolean }>(`/api/members/${id}/unlink`, { method: 'POST' })
+}
+
+export function removeMember(id: string) {
+  return request<{ ok: boolean }>(`/api/members/${id}`, { method: 'DELETE' })
+}
+
+export function transferOwnership(memberId: string) {
+  return request<{ ok: boolean }>('/api/members/transfer-ownership', {
+    method: 'POST',
+    body: JSON.stringify({ memberId }),
+  })
+}
+
+export interface HeadscaleUsersResponse {
+  notConfigured?: boolean
+  users: HeadscaleUser[]
+}
+
+export function listHeadscaleUsers() {
+  return request<HeadscaleUsersResponse>('/api/headscale-users')
+}
+
+export function createHeadscaleUser(name: string) {
+  return request<{ user: HeadscaleUser }>('/api/headscale-users', {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  })
+}
+
+export function renameHeadscaleUser(id: string, name: string) {
+  return request<{ ok: boolean }>(`/api/headscale-users/${id}/rename`, {
+    method: 'POST',
+    body: JSON.stringify({ name }),
+  })
+}
+
+export function deleteHeadscaleUser(id: string) {
+  return request<{ ok: boolean }>(`/api/headscale-users/${id}`, { method: 'DELETE' })
+}
+
+export interface Invite {
+  id: string
+  email: string | null
+  role: Role
+  token: string
+  createdAt: string
+  expiresAt: string
+}
+
+export function listInvites() {
+  return request<{ invites: Invite[] }>('/api/invites')
+}
+
+export function createInvite(email: string, role: Role) {
+  return request<{ invite: Invite }>('/api/invites', {
+    method: 'POST',
+    body: JSON.stringify({ email, role }),
+  })
+}
+
+export function deleteInvite(id: string) {
+  return request<{ ok: boolean }>(`/api/invites/${id}`, { method: 'DELETE' })
+}
+
+export interface InvitePreview {
+  valid: boolean
+  organizationName: string
+  role: Role
+}
+
+export function getInvitePreview(token: string) {
+  return request<InvitePreview>(`/api/invites/${token}`)
+}
+
+export function acceptInvite(token: string) {
+  return request<{ organization: Organization }>(`/api/invites/${token}/accept`, { method: 'POST' })
 }

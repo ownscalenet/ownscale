@@ -9,6 +9,19 @@ import (
 	"time"
 )
 
+type Invite struct {
+	ID               string
+	OrganizationID   string
+	Email            sql.NullString
+	Role             string
+	Token            string
+	CreatedBy        string
+	CreatedAt        time.Time
+	ExpiresAt        time.Time
+	AcceptedAt       sql.NullTime
+	AcceptedByUserID sql.NullString
+}
+
 type OidcClient struct {
 	ID               string
 	OrganizationID   string
@@ -35,15 +48,17 @@ type Orgconfig struct {
 }
 
 type User struct {
-	ID             string
-	OrganizationID sql.NullString
-	Provider       string
-	ProviderUserID string
-	Email          string
-	Name           string
-	AvatarUrl      string
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
-	EmailVerified  int64
-	LastLoginAt    sql.NullTime
+	ID              string
+	OrganizationID  sql.NullString
+	Provider        string
+	ProviderUserID  string
+	Email           string
+	Name            string
+	AvatarUrl       string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	EmailVerified   int64
+	LastLoginAt     sql.NullTime
+	Role            string
+	HeadscaleUserID sql.NullString
 }
