@@ -95,7 +95,7 @@ func New(host, apiKey string) *Client {
 // ListNodes returns every node (machine) registered on this organization's
 // tailnet.
 func (c *Client) ListNodes(ctx context.Context) (_ []Node, err error) {
-	defer derrors.Wrap(&err, "(*headscaleclient.Client).ListNodes(ctx)")
+	defer derrors.Wrap(&err, "c.ListNodes()")
 
 	params := headscale_service.NewHeadscaleServiceListNodesParams().WithContext(ctx)
 	resp, err := c.api.HeadscaleService.HeadscaleServiceListNodes(params)
@@ -112,7 +112,7 @@ func (c *Client) ListNodes(ctx context.Context) (_ []Node, err error) {
 // ListUsers returns every user known to this organization's headscale
 // instance (the set of possible node owners).
 func (c *Client) ListUsers(ctx context.Context) (_ []User, err error) {
-	defer derrors.Wrap(&err, "(*headscaleclient.Client).ListUsers(ctx)")
+	defer derrors.Wrap(&err, "c.ListUsers()")
 
 	params := headscale_service.NewHeadscaleServiceListUsersParams().WithContext(ctx)
 	resp, err := c.api.HeadscaleService.HeadscaleServiceListUsers(params)
@@ -128,7 +128,7 @@ func (c *Client) ListUsers(ctx context.Context) (_ []User, err error) {
 
 // RenameNode sets nodeID's display name (givenName) to name.
 func (c *Client) RenameNode(ctx context.Context, nodeID, name string) (err error) {
-	defer derrors.Wrap(&err, "(*headscaleclient.Client).RenameNode(ctx, %q, %q)", nodeID, name)
+	defer derrors.Wrap(&err, "c.RenameNode(%q, %q)", nodeID, name)
 
 	params := headscale_service.NewHeadscaleServiceRenameNodeParams().
 		WithContext(ctx).
@@ -140,7 +140,7 @@ func (c *Client) RenameNode(ctx context.Context, nodeID, name string) (err error
 
 // SetTags replaces nodeID's ACL tags with tags.
 func (c *Client) SetTags(ctx context.Context, nodeID string, tags []string) (err error) {
-	defer derrors.Wrap(&err, "(*headscaleclient.Client).SetTags(ctx, %q, %v)", nodeID, tags)
+	defer derrors.Wrap(&err, "c.SetTags(%q, %v)", nodeID, tags)
 
 	params := headscale_service.NewHeadscaleServiceSetTagsParams().
 		WithContext(ctx).
@@ -153,7 +153,7 @@ func (c *Client) SetTags(ctx context.Context, nodeID string, tags []string) (err
 // SetApprovedRoutes replaces the set of subnet/exit routes nodeID is
 // approved to serve.
 func (c *Client) SetApprovedRoutes(ctx context.Context, nodeID string, routes []string) (err error) {
-	defer derrors.Wrap(&err, "(*headscaleclient.Client).SetApprovedRoutes(ctx, %q, %v)", nodeID, routes)
+	defer derrors.Wrap(&err, "c.SetApprovedRoutes(%q, %v)", nodeID, routes)
 
 	params := headscale_service.NewHeadscaleServiceSetApprovedRoutesParams().
 		WithContext(ctx).
@@ -166,7 +166,7 @@ func (c *Client) SetApprovedRoutes(ctx context.Context, nodeID string, routes []
 // ExpireNode immediately expires nodeID's current session, forcing it to
 // re-authenticate.
 func (c *Client) ExpireNode(ctx context.Context, nodeID string) (err error) {
-	defer derrors.Wrap(&err, "(*headscaleclient.Client).ExpireNode(ctx, %q)", nodeID)
+	defer derrors.Wrap(&err, "c.ExpireNode(%q)", nodeID)
 
 	params := headscale_service.NewHeadscaleServiceExpireNodeParams().
 		WithContext(ctx).
@@ -177,7 +177,7 @@ func (c *Client) ExpireNode(ctx context.Context, nodeID string) (err error) {
 
 // DeleteNode permanently removes nodeID from the tailnet.
 func (c *Client) DeleteNode(ctx context.Context, nodeID string) (err error) {
-	defer derrors.Wrap(&err, "(*headscaleclient.Client).DeleteNode(ctx, %q)", nodeID)
+	defer derrors.Wrap(&err, "c.DeleteNode(%q)", nodeID)
 
 	params := headscale_service.NewHeadscaleServiceDeleteNodeParams().
 		WithContext(ctx).

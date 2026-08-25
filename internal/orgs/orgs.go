@@ -58,7 +58,7 @@ func (s *Service) BaseDomain() string {
 // Provision, run either synchronously (CLI) or from the background
 // Provisioner (web).
 func (s *Service) CreatePending(ctx context.Context, subdomain string) (_ sqlcgen.Organization, err error) {
-	defer derrors.Wrap(&err, "(*orgs.Service).CreatePending(ctx, %q)", subdomain)
+	defer derrors.Wrap(&err, "s.CreatePending(%q)", subdomain)
 
 	if err := dockerctl.ValidateSubdomain(subdomain); err != nil {
 		return sqlcgen.Organization{}, err
@@ -80,7 +80,7 @@ func (s *Service) CreatePending(ctx context.Context, subdomain string) (_ sqlcge
 // organization "failed" (best-effort; the original error is still
 // returned) instead of leaving it stuck "pending" forever.
 func (s *Service) Provision(ctx context.Context, orgID string) (err error) {
-	defer derrors.Wrap(&err, "(*orgs.Service).Provision(ctx, %q)", orgID)
+	defer derrors.Wrap(&err, "s.Provision(%q)", orgID)
 
 	org, err := s.queries.GetOrganization(ctx, orgID)
 	if err != nil {
@@ -167,7 +167,7 @@ func (s *Service) provision(ctx context.Context, org sqlcgen.Organization) error
 // as opposed to the web handler, which calls CreatePending and hands
 // Provision off to the background Provisioner instead.
 func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organization, err error) {
-	defer derrors.Wrap(&err, "(*orgs.Service).Create(ctx, %q)", subdomain)
+	defer derrors.Wrap(&err, "s.Create(%q)", subdomain)
 
 	org, err := s.CreatePending(ctx, subdomain)
 	if err != nil {

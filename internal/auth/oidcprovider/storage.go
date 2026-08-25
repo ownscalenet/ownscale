@@ -73,7 +73,7 @@ func (s *Storage) SetLoginURL(loginURL func(string) string) {
 
 // AuthorizeAuthRequest marks a pending auth request as completed for userID.
 func (s *Storage) AuthorizeAuthRequest(id, userID string) (err error) {
-	defer derrors.Wrap(&err, "(*oidcprovider.Storage).AuthorizeAuthRequest(%q, %q)", id, userID)
+	defer derrors.Wrap(&err, "s.AuthorizeAuthRequest(%q, %q)", id, userID)
 
 	s.lock.Lock()
 	defer s.lock.Unlock()

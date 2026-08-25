@@ -199,7 +199,7 @@ func Load(path string) (_ *Config, err error) {
 
 // Validate checks that the fields required to run the HTTP server are set.
 func (c *Config) Validate() (err error) {
-	defer derrors.Wrap(&err, "config.(*Config).Validate()")
+	defer derrors.Wrap(&err, "c.Validate()")
 
 	var missing []string
 	if c.BaseDomain == "" {

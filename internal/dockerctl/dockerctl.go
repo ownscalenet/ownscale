@@ -177,7 +177,7 @@ func (c *Ctl) Close() (err error) {
 
 // EnsureNetwork creates the shared network if it does not exist.
 func (c *Ctl) EnsureNetwork(ctx context.Context) (err error) {
-	defer derrors.Wrap(&err, "c.EnsureNetwork(ctx)")
+	defer derrors.Wrap(&err, "c.EnsureNetwork()")
 	return c.ensureNetwork(ctx, ownscaleNetwork)
 }
 
@@ -290,7 +290,7 @@ func (c *Ctl) findContainerByLabel(ctx context.Context, label string) (_ string,
 // via its Compose service label), or "" if none is found (e.g. Caddy isn't
 // running, or this deployment doesn't use the bundled docker-compose.yml).
 func (c *Ctl) findCaddyContainer(ctx context.Context) (_ string, err error) {
-	defer derrors.Wrap(&err, "c.findCaddyContainer(ctx)")
+	defer derrors.Wrap(&err, "c.findCaddyContainer()")
 	return c.findContainerByLabel(ctx, caddyComposeServiceLabel)
 }
 
@@ -299,7 +299,7 @@ func (c *Ctl) findCaddyContainer(ctx context.Context) (_ string, err error) {
 // (e.g. running outside the bundled docker-compose.yml, such as in tests
 // or a bare `go run`).
 func (c *Ctl) findOwnscaleContainer(ctx context.Context) (_ string, err error) {
-	defer derrors.Wrap(&err, "c.findOwnscaleContainer(ctx)")
+	defer derrors.Wrap(&err, "c.findOwnscaleContainer()")
 	return c.findContainerByLabel(ctx, ownscaleComposeServiceLabel)
 }
 

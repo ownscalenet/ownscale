@@ -50,7 +50,7 @@ func hsContainerName(subdomain string) string {
 // the ownscale container itself is joined to subdomain's Docker network
 // (see dockerctl.EnsureOwnscaleNetworkForOrg).
 func (r *Registry) Client(ctx context.Context, subdomain string) (_ *Client, err error) {
-	defer derrors.Wrap(&err, "(*headscaleclient.Registry).Client(ctx, %q)", subdomain)
+	defer derrors.Wrap(&err, "r.Client(%q)", subdomain)
 
 	if c, ok := r.cached(subdomain); ok {
 		return c, nil
