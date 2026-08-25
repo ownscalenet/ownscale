@@ -4,8 +4,8 @@ import {
   deleteMachine,
   expireMachine,
   listMachines,
-  moveMachine,
   renameMachine,
+  setMachineRoutes,
   setMachineTags,
   type HeadscaleUser,
   type Machine,
@@ -16,7 +16,7 @@ function isExpired(m: Machine): boolean {
 }
 
 function tags(m: Machine): string[] {
-  return [...(m.forcedTags ?? []), ...(m.validTags ?? [])]
+  return m.tags ?? []
 }
 
 function statusLabel(m: Machine): string {
@@ -113,9 +113,9 @@ export default function Machines() {
       {notConfigured ? (
         <div className="alert alert-warning">
           <span>
-            Headscale is not configured. Set <code className="font-mono">HEADSCALE_URL</code> and{' '}
-            <code className="font-mono">HEADSCALE_API_KEY</code> and restart. Create a key with{' '}
-            <code className="font-mono">headscale apikeys create</code>.
+            Headscale isn&rsquo;t reachable for this organization yet. This can happen while the
+            organization is still provisioning, or if its headscale container isn&rsquo;t running
+            &mdash; try again in a moment, or check the organization&rsquo;s status.
           </span>
         </div>
       ) : (
@@ -189,7 +189,7 @@ export default function Machines() {
                     </thead>
                     <tbody>
                       {machines.map((m) => (
-                        <MachineRow key={m.id} machine={m} users={users} onChange={load} />
+                        <MachineRow key={m.id} machine={m} onChange={load} />
                       ))}
                     </tbody>
                   </table>
@@ -209,21 +209,20 @@ export default function Machines() {
 
 function MachineRow({
   machine: m,
-  users,
   onChange,
 }: {
   machine: Machine
-  users: HeadscaleUser[]
   onChange: () => void
 }) {
   const renameRef = useRef<HTMLDialogElement>(null)
   const tagsRef = useRef<HTMLDialogElement>(null)
-  const ownerRef = useRef<HTMLDialogElement>(null)
+  const routesRef = useRef<HTMLDialogElement>(null)
   const [name, setName] = useState(m.givenName)
   const [tagsInput, setTagsInput] = useState(tags(m).join(', '))
-  const [ownerId, setOwnerId] = useState(m.user?.id ?? '')
+  const [selectedRoutes, setSelectedRoutes] = useState<string[]>(m.approvedRoutes ?? [])
   const [busy, setBusy] = useState(false)
   const expired = isExpired(m)
+  const availableRoutes = m.availableRoutes ?? []
 
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true)
@@ -285,8 +284,8 @@ function MachineRow({
               </button>
             </li>
             <li>
-              <button type="button" onClick={() => ownerRef.current?.showModal()}>
-                Change owner
+              <button type="button" onClick={() => routesRef.current?.showModal()}>
+                Edit route settings
               </button>
             </li>
             <li className="border-t border-base-200 mt-1 pt-1">
@@ -391,32 +390,44 @@ function MachineRow({
           </form>
         </dialog>
 
-        <dialog ref={ownerRef} className="modal">
+        <dialog ref={routesRef} className="modal">
           <div className="modal-box text-left">
-            <h3 className="text-lg font-bold mb-4">Change owner of {m.givenName}</h3>
+            <h3 className="text-lg font-bold mb-4">Edit route settings of {m.givenName}</h3>
             <form
               className="space-y-4"
               onSubmit={(e) => {
                 e.preventDefault()
-                void run(() => moveMachine(m.id, ownerId)).then(() => ownerRef.current?.close())
+                void run(() => setMachineRoutes(m.id, selectedRoutes)).then(() => routesRef.current?.close())
               }}
             >
-              <select
-                className="select select-bordered w-full"
-                value={ownerId}
-                onChange={(e) => setOwnerId(e.target.value)}
-              >
-                {users.map((u) => (
-                  <option key={u.id} value={u.id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
+              {availableRoutes.length > 0 ? (
+                <ul className="space-y-2">
+                  {availableRoutes.map((route) => (
+                    <li key={route} className="form-control">
+                      <label className="label cursor-pointer justify-start gap-3">
+                        <input
+                          type="checkbox"
+                          className="checkbox checkbox-sm"
+                          checked={selectedRoutes.includes(route)}
+                          onChange={(e) => {
+                            setSelectedRoutes((prev) =>
+                              e.target.checked ? [...prev, route] : prev.filter((r) => r !== route),
+                            )
+                          }}
+                        />
+                        <span className="font-mono text-sm">{route}</span>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="text-sm opacity-60">This machine hasn&rsquo;t advertised any routes.</p>
+              )}
               <div className="modal-action">
-                <button type="submit" className="btn btn-primary" disabled={busy}>
-                  Change owner
+                <button type="submit" className="btn btn-primary" disabled={busy || availableRoutes.length === 0}>
+                  Save
                 </button>
-                <button type="button" className="btn btn-ghost" onClick={() => ownerRef.current?.close()}>
+                <button type="button" className="btn btn-ghost" onClick={() => routesRef.current?.close()}>
                   Cancel
                 </button>
               </div>

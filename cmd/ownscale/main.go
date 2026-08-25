@@ -96,6 +96,13 @@ func run() error {
 				if err := ctl.EnsureCaddyNetworkAliasForOrg(ctx, org.Subdomain, cfg.BaseDomain); err != nil {
 					logger.Warn("ensure caddy network alias for organization", "subdomain", org.Subdomain, "error", err)
 				}
+				// Likewise, ownscale's own membership in each organization's
+				// network (needed to reach hs-<subdomain>:8080 directly for
+				// the Machines tab) is set imperatively too, so it must be
+				// reconciled the same way.
+				if err := ctl.EnsureOwnscaleNetworkForOrg(ctx, org.Subdomain); err != nil {
+					logger.Warn("ensure ownscale network join for organization", "subdomain", org.Subdomain, "error", err)
+				}
 			}
 		}
 	}

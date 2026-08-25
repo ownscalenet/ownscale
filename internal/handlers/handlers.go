@@ -12,6 +12,7 @@ import (
 	"github.com/ownscalenet/ownscale/internal/db"
 	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/internal/dockerctl"
+	"github.com/ownscalenet/ownscale/internal/headscaleclient"
 	"github.com/ownscalenet/ownscale/internal/orgs"
 )
 
@@ -19,9 +20,18 @@ type Handlers struct {
 	queries     *db.TxQueries
 	orgs        *orgs.Service     // nil if organization provisioning isn't configured (no ctl/base_domain)
 	provisioner *orgs.Provisioner // nil under the same conditions as orgs
+	hs          machinesRegistry  // nil under the same conditions as orgs
 	baseDomain  string
 	oidc        *oidcprovider.Storage
 	logger      *slog.Logger
+}
+
+// machinesRegistry is the narrow interface machines.go needs from a
+// *headscaleclient.Registry -- letting tests substitute a fake that
+// returns a client pointed at an httptest.Server instead of a real
+// hs-<subdomain>:8080 Docker container.
+type machinesRegistry interface {
+	Client(ctx context.Context, subdomain string) (*headscaleclient.Client, error)
 }
 
 // New builds the Handlers. queries serves reads/writes outside the
@@ -29,8 +39,11 @@ type Handlers struct {
 // baseDomain is set) backs the orgs.Service used for organization creation
 // and the orgs.Provisioner that runs provisioning in the background;
 // otherwise provisioning-related handlers respond with 503 (see
-// CreateOrganization). derpCfg is forwarded to orgs.NewService (see its doc
-// comment); its zero value is a no-op.
+// CreateOrganization). It also backs a headscaleclient.Registry (see
+// machines.go), used to reach each organization's headscale container; a
+// registry backed by a nil ctl reports "not configured" instead of erroring.
+// derpCfg is forwarded to orgs.NewService (see its doc comment); its zero
+// value is a no-op.
 func New(queries *db.TxQueries, ctl *dockerctl.Ctl, baseDomain string, oidc *oidcprovider.Storage, logger *slog.Logger, derpCfg config.DerpConfig) *Handlers {
 	h := &Handlers{
 		queries:    queries,
@@ -45,6 +58,7 @@ func New(queries *db.TxQueries, ctl *dockerctl.Ctl, baseDomain string, oidc *oid
 		}
 		h.orgs = orgs.NewService(queries, ctl, baseDomain, issuer, derpCfg)
 		h.provisioner = orgs.NewProvisioner(h.orgs, logger, 0)
+		h.hs = headscaleclient.NewRegistry(ctl)
 	}
 	return h
 }

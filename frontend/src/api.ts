@@ -42,10 +42,9 @@ export interface Machine {
   createdAt: string
   registerMethod: string
   online: boolean
-  forcedTags: string[] | null
-  validTags: string[] | null
-  invalidTags: string[] | null
+  tags: string[] | null
   approvedRoutes: string[] | null
+  availableRoutes: string[] | null
   subnetRoutes: string[] | null
 }
 
@@ -118,10 +117,10 @@ export function setMachineTags(id: string, tags: string[]) {
   })
 }
 
-export function moveMachine(id: string, userId: string) {
-  return request<{ ok: boolean }>(`/api/machines/${id}/user`, {
+export function setMachineRoutes(id: string, routes: string[]) {
+  return request<{ ok: boolean }>(`/api/machines/${id}/routes`, {
     method: 'POST',
-    body: JSON.stringify({ userId }),
+    body: JSON.stringify({ routes }),
   })
 }
 

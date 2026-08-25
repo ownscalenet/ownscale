@@ -1,0 +1,247 @@
+// Package headscaleclient is a small, ergonomic wrapper around the
+// OpenAPI-generated headscale client in ./hscodegen (see that package's
+// README-style comment for how it's regenerated). It exposes exactly the
+// operations the /api/machines handlers need, translating the generated
+// (protobuf-shaped) types into plain structs whose JSON tags match
+// frontend/src/api.ts's Machine/HeadscaleUser shapes, so handlers can
+// encode the results straight through.
+package headscaleclient
+
+import (
+	"context"
+	"net/http"
+	"time"
+
+	httptransport "github.com/go-openapi/runtime/client"
+	"github.com/go-openapi/strfmt"
+
+	"github.com/ownscalenet/ownscale/internal/derrors"
+	hsclient "github.com/ownscalenet/ownscale/internal/headscaleclient/hscodegen/client"
+	"github.com/ownscalenet/ownscale/internal/headscaleclient/hscodegen/client/headscale_service"
+	"github.com/ownscalenet/ownscale/internal/headscaleclient/hscodegen/models"
+)
+
+// User is a headscale user (the owner of one or more Nodes), matching
+// frontend/src/api.ts's HeadscaleUser interface field-for-field.
+type User struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	DisplayName string `json:"displayName"`
+	Email       string `json:"email"`
+	CreatedAt   string `json:"createdAt"`
+}
+
+// Node is a headscale node -- a "machine" in the ownscale admin UI --
+// matching frontend/src/api.ts's Machine interface field-for-field. Note
+// headscale dropped the old ForcedTags/ValidTags/InvalidTags split in
+// favor of a single Tags list (see hscodegen/models.V1Node's doc comment).
+type Node struct {
+	ID              string   `json:"id"`
+	MachineKey      string   `json:"machineKey"`
+	NodeKey         string   `json:"nodeKey"`
+	IPAddresses     []string `json:"ipAddresses"`
+	Name            string   `json:"name"`
+	GivenName       string   `json:"givenName"`
+	User            *User    `json:"user"`
+	LastSeen        *string  `json:"lastSeen"`
+	Expiry          *string  `json:"expiry"`
+	CreatedAt       string   `json:"createdAt"`
+	RegisterMethod  string   `json:"registerMethod"`
+	Online          bool     `json:"online"`
+	Tags            []string `json:"tags"`
+	ApprovedRoutes  []string `json:"approvedRoutes"`
+	AvailableRoutes []string `json:"availableRoutes"`
+	SubnetRoutes    []string `json:"subnetRoutes"`
+}
+
+// Client talks to a single organization's headscale container's
+// management API (see New and Registry, which mints and caches one Client
+// per organization).
+type Client struct {
+	api *hsclient.Headscale
+}
+
+// authRoundTripper injects a static bearer token into every request. This
+// is needed because headscale's published OpenAPI spec doesn't declare a
+// security scheme (so the generated client takes no AuthInfo parameter),
+// even though every management endpoint requires
+// "Authorization: Bearer <api key>" in practice.
+type authRoundTripper struct {
+	apiKey string
+	next   http.RoundTripper
+}
+
+func (rt authRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	req = req.Clone(req.Context())
+	req.Header.Set("Authorization", "Bearer "+rt.apiKey)
+	return rt.next.RoundTrip(req)
+}
+
+// New builds a Client that talks to the headscale management API at host
+// (a "host:port" reachable from the ownscale container, e.g.
+// "hs-acme:8080" -- see dockerctl.HSContainerName and
+// EnsureOwnscaleNetworkForOrg for why that's reachable at all),
+// authenticating every request with apiKey.
+func New(host, apiKey string) *Client {
+	transport := httptransport.New(host, "/", []string{"http"})
+	next := transport.Transport
+	if next == nil {
+		next = http.DefaultTransport
+	}
+	transport.Transport = authRoundTripper{apiKey: apiKey, next: next}
+	return &Client{api: hsclient.New(transport, strfmt.Default)}
+}
+
+// ListNodes returns every node (machine) registered on this organization's
+// tailnet.
+func (c *Client) ListNodes(ctx context.Context) (_ []Node, err error) {
+	defer derrors.Wrap(&err, "(*headscaleclient.Client).ListNodes(ctx)")
+
+	params := headscale_service.NewHeadscaleServiceListNodesParams().WithContext(ctx)
+	resp, err := c.api.HeadscaleService.HeadscaleServiceListNodes(params)
+	if err != nil {
+		return nil, err
+	}
+	nodes := make([]Node, 0, len(resp.Payload.Nodes))
+	for _, n := range resp.Payload.Nodes {
+		nodes = append(nodes, toNode(n))
+	}
+	return nodes, nil
+}
+
+// ListUsers returns every user known to this organization's headscale
+// instance (the set of possible node owners).
+func (c *Client) ListUsers(ctx context.Context) (_ []User, err error) {
+	defer derrors.Wrap(&err, "(*headscaleclient.Client).ListUsers(ctx)")
+
+	params := headscale_service.NewHeadscaleServiceListUsersParams().WithContext(ctx)
+	resp, err := c.api.HeadscaleService.HeadscaleServiceListUsers(params)
+	if err != nil {
+		return nil, err
+	}
+	users := make([]User, 0, len(resp.Payload.Users))
+	for _, u := range resp.Payload.Users {
+		users = append(users, toUser(u))
+	}
+	return users, nil
+}
+
+// RenameNode sets nodeID's display name (givenName) to name.
+func (c *Client) RenameNode(ctx context.Context, nodeID, name string) (err error) {
+	defer derrors.Wrap(&err, "(*headscaleclient.Client).RenameNode(ctx, %q, %q)", nodeID, name)
+
+	params := headscale_service.NewHeadscaleServiceRenameNodeParams().
+		WithContext(ctx).
+		WithNodeID(nodeID).
+		WithNewName(name)
+	_, err = c.api.HeadscaleService.HeadscaleServiceRenameNode(params)
+	return err
+}
+
+// SetTags replaces nodeID's ACL tags with tags.
+func (c *Client) SetTags(ctx context.Context, nodeID string, tags []string) (err error) {
+	defer derrors.Wrap(&err, "(*headscaleclient.Client).SetTags(ctx, %q, %v)", nodeID, tags)
+
+	params := headscale_service.NewHeadscaleServiceSetTagsParams().
+		WithContext(ctx).
+		WithNodeID(nodeID).
+		WithBody(&models.HeadscaleServiceSetTagsBody{Tags: tags})
+	_, err = c.api.HeadscaleService.HeadscaleServiceSetTags(params)
+	return err
+}
+
+// SetApprovedRoutes replaces the set of subnet/exit routes nodeID is
+// approved to serve.
+func (c *Client) SetApprovedRoutes(ctx context.Context, nodeID string, routes []string) (err error) {
+	defer derrors.Wrap(&err, "(*headscaleclient.Client).SetApprovedRoutes(ctx, %q, %v)", nodeID, routes)
+
+	params := headscale_service.NewHeadscaleServiceSetApprovedRoutesParams().
+		WithContext(ctx).
+		WithNodeID(nodeID).
+		WithBody(&models.HeadscaleServiceSetApprovedRoutesBody{Routes: routes})
+	_, err = c.api.HeadscaleService.HeadscaleServiceSetApprovedRoutes(params)
+	return err
+}
+
+// ExpireNode immediately expires nodeID's current session, forcing it to
+// re-authenticate.
+func (c *Client) ExpireNode(ctx context.Context, nodeID string) (err error) {
+	defer derrors.Wrap(&err, "(*headscaleclient.Client).ExpireNode(ctx, %q)", nodeID)
+
+	params := headscale_service.NewHeadscaleServiceExpireNodeParams().
+		WithContext(ctx).
+		WithNodeID(nodeID)
+	_, err = c.api.HeadscaleService.HeadscaleServiceExpireNode(params)
+	return err
+}
+
+// DeleteNode permanently removes nodeID from the tailnet.
+func (c *Client) DeleteNode(ctx context.Context, nodeID string) (err error) {
+	defer derrors.Wrap(&err, "(*headscaleclient.Client).DeleteNode(ctx, %q)", nodeID)
+
+	params := headscale_service.NewHeadscaleServiceDeleteNodeParams().
+		WithContext(ctx).
+		WithNodeID(nodeID)
+	_, err = c.api.HeadscaleService.HeadscaleServiceDeleteNode(params)
+	return err
+}
+
+// toNode converts a generated V1Node into the plain Node shape handlers
+// serve as JSON.
+func toNode(n *models.V1Node) Node {
+	if n == nil {
+		return Node{}
+	}
+	node := Node{
+		ID:              n.ID,
+		MachineKey:      n.MachineKey,
+		NodeKey:         n.NodeKey,
+		IPAddresses:     n.IPAddresses,
+		Name:            n.Name,
+		GivenName:       n.GivenName,
+		CreatedAt:       dateTimeString(n.CreatedAt),
+		Online:          n.Online,
+		Tags:            n.Tags,
+		ApprovedRoutes:  n.ApprovedRoutes,
+		AvailableRoutes: n.AvailableRoutes,
+		SubnetRoutes:    n.SubnetRoutes,
+	}
+	if n.RegisterMethod != nil {
+		node.RegisterMethod = string(*n.RegisterMethod)
+	}
+	if n.User != nil {
+		u := toUser(n.User)
+		node.User = &u
+	}
+	if lastSeen := dateTimeString(n.LastSeen); lastSeen != "" {
+		node.LastSeen = &lastSeen
+	}
+	if expiry := dateTimeString(n.Expiry); expiry != "" {
+		node.Expiry = &expiry
+	}
+	return node
+}
+
+// toUser converts a generated V1User into the plain User shape handlers
+// serve as JSON.
+func toUser(u *models.V1User) User {
+	if u == nil {
+		return User{}
+	}
+	return User{
+		ID:          u.ID,
+		Name:        u.Name,
+		DisplayName: u.DisplayName,
+		Email:       u.Email,
+		CreatedAt:   dateTimeString(u.CreatedAt),
+	}
+}
+
+// dateTimeString formats dt as RFC3339, or "" if it's the zero value.
+func dateTimeString(dt strfmt.DateTime) string {
+	t := time.Time(dt)
+	if t.IsZero() {
+		return ""
+	}
+	return t.Format(time.RFC3339)
+}

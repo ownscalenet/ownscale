@@ -25,6 +25,13 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 
 	mux.HandleFunc("POST /api/organizations", requireAuthAPI(h.CreateOrganization))
 
+	mux.HandleFunc("GET /api/machines", requireAuthAPI(h.ListMachines))
+	mux.HandleFunc("POST /api/machines/{id}/rename", requireAuthAPI(h.RenameMachine))
+	mux.HandleFunc("POST /api/machines/{id}/tags", requireAuthAPI(h.SetMachineTags))
+	mux.HandleFunc("POST /api/machines/{id}/routes", requireAuthAPI(h.SetMachineRoutes))
+	mux.HandleFunc("POST /api/machines/{id}/expire", requireAuthAPI(h.ExpireMachine))
+	mux.HandleFunc("DELETE /api/machines/{id}", requireAuthAPI(h.DeleteMachine))
+
 	// Caddy's on-demand TLS "ask" endpoint; unauthenticated (checked by
 	// TLSAsk itself against known organizations/subdomains).
 	mux.HandleFunc("GET /api/tls-ask", h.TLSAsk)

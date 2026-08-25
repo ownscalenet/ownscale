@@ -260,14 +260,22 @@ func (c *Ctl) EnsureCaddyNetworkAliasForOrg(ctx context.Context, subdomain, base
 // Compose project name) to reliably find the Caddy container.
 const caddyComposeServiceLabel = "com.docker.compose.service=caddy"
 
-// findCaddyContainer returns the ID of the running Caddy container (found
-// via its Compose service label), or "" if none is found (e.g. Caddy isn't
-// running, or this deployment doesn't use the bundled docker-compose.yml).
-func (c *Ctl) findCaddyContainer(ctx context.Context) (_ string, err error) {
-	defer derrors.Wrap(&err, "c.findCaddyContainer(ctx)")
+// ownscaleComposeServiceLabel is the label Docker Compose sets on the
+// ownscale container itself (the "ownscale:" service in docker-compose.yml).
+// Used the same way as caddyComposeServiceLabel, to find ownscale's own
+// container ID by label instead of a name that varies by Compose project.
+const ownscaleComposeServiceLabel = "com.docker.compose.service=ownscale"
+
+// findContainerByLabel returns the ID of the running container matching
+// label (a Docker filter of the form "key=value"), or "" if none is found.
+// It's shared by findCaddyContainer and findOwnscaleContainer, which each
+// look for a single, specific infra container by its Compose service label
+// rather than a name that varies by Compose project.
+func (c *Ctl) findContainerByLabel(ctx context.Context, label string) (_ string, err error) {
+	defer derrors.Wrap(&err, "c.findContainerByLabel(%q)", label)
 
 	containers, err := c.cli.ContainerList(ctx, container.ListOptions{
-		Filters: filters.NewArgs(filters.Arg("label", caddyComposeServiceLabel)),
+		Filters: filters.NewArgs(filters.Arg("label", label)),
 	})
 	if err != nil {
 		return "", err
@@ -276,6 +284,75 @@ func (c *Ctl) findCaddyContainer(ctx context.Context) (_ string, err error) {
 		return "", nil
 	}
 	return containers[0].ID, nil
+}
+
+// findCaddyContainer returns the ID of the running Caddy container (found
+// via its Compose service label), or "" if none is found (e.g. Caddy isn't
+// running, or this deployment doesn't use the bundled docker-compose.yml).
+func (c *Ctl) findCaddyContainer(ctx context.Context) (_ string, err error) {
+	defer derrors.Wrap(&err, "c.findCaddyContainer(ctx)")
+	return c.findContainerByLabel(ctx, caddyComposeServiceLabel)
+}
+
+// findOwnscaleContainer returns the ID of the running ownscale container
+// itself (found via its Compose service label), or "" if none is found
+// (e.g. running outside the bundled docker-compose.yml, such as in tests
+// or a bare `go run`).
+func (c *Ctl) findOwnscaleContainer(ctx context.Context) (_ string, err error) {
+	defer derrors.Wrap(&err, "c.findOwnscaleContainer(ctx)")
+	return c.findContainerByLabel(ctx, ownscaleComposeServiceLabel)
+}
+
+// EnsureOwnscaleNetworkForOrg connects the ownscale container itself (found
+// via its Compose service label) to subdomain's own per-organization
+// network, if it isn't already connected. Unlike ensureCaddyNetworkAlias,
+// no alias is needed: ownscale only ever needs to resolve the organization's
+// headscale container by its plain Docker container name
+// (HSContainerName(subdomain)), which Docker's embedded per-network DNS
+// already provides to any container joined to that network.
+//
+// This is what lets the Go backend (internal/headscaleclient) call
+// http://hs-<subdomain>:8080 directly to manage that organization's nodes,
+// the same way Caddy reaches it to proxy https://<subdomain>.<baseDomain>.
+//
+// It's idempotent, and exported so callers can reconcile this on ownscale
+// process startup (per organization), not just when that organization is
+// first created -- mirroring EnsureCaddyNetworkAliasForOrg. If the ownscale
+// container isn't found (e.g. running outside docker-compose, as in most
+// tests), this logs a warning and returns nil rather than failing
+// organization creation: it only means the org's Machines tab can't reach
+// headscale, not that the organization itself failed to provision.
+func (c *Ctl) EnsureOwnscaleNetworkForOrg(ctx context.Context, subdomain string) (err error) {
+	defer derrors.Wrap(&err, "c.EnsureOwnscaleNetworkForOrg(%q)", subdomain)
+
+	netName, err := c.EnsureOrgNetwork(ctx, subdomain)
+	if err != nil {
+		return fmt.Errorf("ensure org network: %w", err)
+	}
+
+	ownscaleID, err := c.findOwnscaleContainer(ctx)
+	if err != nil {
+		return err
+	}
+	if ownscaleID == "" {
+		c.logger.Warn("ownscale container not found; skipping org network join (Machines tab won't reach headscale for this org)", "network", netName)
+		return nil
+	}
+
+	inspected, err := c.cli.ContainerInspect(ctx, ownscaleID)
+	if err != nil {
+		return err
+	}
+	if inspected.NetworkSettings != nil {
+		if _, connected := inspected.NetworkSettings.Networks[netName]; connected {
+			return nil // already connected
+		}
+	}
+
+	if err := c.cli.NetworkConnect(ctx, netName, ownscaleID, nil); err != nil {
+		return fmt.Errorf("connect ownscale to %s: %w", netName, err)
+	}
+	return nil
 }
 
 // ensureCaddyNetworkAlias makes sure the Caddy container (found via its
@@ -594,8 +671,17 @@ func configTar(path, content string) (_ *bytes.Buffer, err error) {
 	return &buf, nil
 }
 
-func (c *Ctl) bootstrapHeadscaleAPIKey(ctx context.Context, containerID string) (_ string, err error) {
-	defer derrors.Wrap(&err, "c.bootstrapHeadscaleAPIKey(%q)", containerID)
+// MintHeadscaleAPIKey execs `headscale apikeys create` inside the headscale
+// container identified by containerNameOrID (Docker's exec-create endpoint
+// accepts either a container name or its ID, so this works both right after
+// CreateOrganization creates a container -- passing its fresh ID, before it
+// necessarily has a name-based DNS entry anywhere relevant -- and later,
+// against an already-running organization, by passing HSContainerName(subdomain)).
+// Every call mints a brand new, independent, long-lived (10 year) API key;
+// headscale supports any number of valid keys at once, so minting another
+// one doesn't invalidate keys already handed out (e.g. to headplane).
+func (c *Ctl) MintHeadscaleAPIKey(ctx context.Context, containerNameOrID string) (_ string, err error) {
+	defer derrors.Wrap(&err, "c.MintHeadscaleAPIKey(%q)", containerNameOrID)
 
 	var lastErr error
 	for attempt := range 5 {
@@ -604,7 +690,7 @@ func (c *Ctl) bootstrapHeadscaleAPIKey(ctx context.Context, containerID string) 
 		// multiplexing headers (rather than raw bytes), which corrupts the
 		// API key. Tty:false makes stdcopy demuxing mandatory instead of
 		// version-dependent, so we always decode it explicitly.
-		execResp, err := c.cli.ContainerExecCreate(ctx, containerID, container.ExecOptions{
+		execResp, err := c.cli.ContainerExecCreate(ctx, containerNameOrID, container.ExecOptions{
 			AttachStdout: true,
 			AttachStderr: true,
 			Cmd:          []string{"headscale", "apikeys", "create", "--expiration", "87600h"},
@@ -720,6 +806,9 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 	if err := c.EnsureCaddyNetworkAliasForOrg(ctx, subdomain, baseDomain); err != nil {
 		return "", fmt.Errorf("ensure caddy network alias: %w", err)
 	}
+	if err := c.EnsureOwnscaleNetworkForOrg(ctx, subdomain); err != nil {
+		return "", fmt.Errorf("ensure ownscale network join: %w", err)
+	}
 	orgNetwork := OrgNetworkName(subdomain)
 
 	domain := subdomain + "." + baseDomain
@@ -804,7 +893,7 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 	}
 	go c.streamLogs(resp.ID, HSContainerName(subdomain))
 
-	headscaleAPIKey, err := c.bootstrapHeadscaleAPIKey(ctx, resp.ID)
+	headscaleAPIKey, err := c.MintHeadscaleAPIKey(ctx, resp.ID)
 	if err != nil {
 		return "", fmt.Errorf("bootstrap headscale api key: %w", err)
 	}
@@ -931,13 +1020,14 @@ func (c *Ctl) RemoveOrganization(ctx context.Context, subdomain string) (err err
 	return nil
 }
 
-// removeOrgNetwork disconnects Caddy (if connected) from subdomain's
-// per-organization network and removes the network itself. It's
-// deliberately best-effort (failures are logged, not returned): by the
-// time it's called, RemoveOrganization has already deleted the
-// organization's containers and data, so a leftover network (or a failed
-// disconnect, e.g. because Caddy isn't running) is harmless clutter rather
-// than a correctness problem, and shouldn't fail organization removal.
+// removeOrgNetwork disconnects Caddy and the ownscale container (if
+// connected) from subdomain's per-organization network and removes the
+// network itself. It's deliberately best-effort (failures are logged, not
+// returned): by the time it's called, RemoveOrganization has already
+// deleted the organization's containers and data, so a leftover network
+// (or a failed disconnect, e.g. because Caddy/ownscale isn't running) is
+// harmless clutter rather than a correctness problem, and shouldn't fail
+// organization removal.
 func (c *Ctl) removeOrgNetwork(ctx context.Context, subdomain string) {
 	netName := OrgNetworkName(subdomain)
 
@@ -947,6 +1037,15 @@ func (c *Ctl) removeOrgNetwork(ctx context.Context, subdomain string) {
 	} else if caddyID != "" {
 		if err := c.cli.NetworkDisconnect(ctx, netName, caddyID, true); err != nil && !cerrdefs.IsNotFound(err) {
 			c.logger.Warn("disconnect caddy from org network", "network", netName, "error", err)
+		}
+	}
+
+	ownscaleID, err := c.findOwnscaleContainer(ctx)
+	if err != nil {
+		c.logger.Warn("find ownscale container for org network cleanup", "network", netName, "error", err)
+	} else if ownscaleID != "" {
+		if err := c.cli.NetworkDisconnect(ctx, netName, ownscaleID, true); err != nil && !cerrdefs.IsNotFound(err) {
+			c.logger.Warn("disconnect ownscale from org network", "network", netName, "error", err)
 		}
 	}
 

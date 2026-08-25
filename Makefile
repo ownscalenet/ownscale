@@ -28,6 +28,15 @@ docs:
 	rm -rf etc/caddy/site
 	hugo --source site --destination ../etc/caddy/site --minify
 
+# Regenerate the headscale API client in internal/headscaleclient/hscodegen
+# from the vendored OpenAPI spec (headscale.swagger.json). The generated
+# code is committed to the repo (same convention as internal/db/sqlcgen),
+# so re-run this and commit the result whenever the spec is bumped to a
+# new headscale version.
+generate-headscale-client:
+	rm -rf internal/headscaleclient/hscodegen/client internal/headscaleclient/hscodegen/models
+	cd internal/headscaleclient/hscodegen && go run github.com/go-swagger/go-swagger/cmd/swagger@latest generate client -f headscale.swagger.json -A headscale --skip-validation
+
 # Usage: make migration up | make migration status
 migration:
 	go run ./cmd/osa --config config.yaml migrate $(filter-out migration,$(MAKECMDGOALS))

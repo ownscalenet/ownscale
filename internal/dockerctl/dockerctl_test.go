@@ -829,3 +829,231 @@ func TestRemoveOrganizationDoesNotFailWhenNetworkRemovalErrors(t *testing.T) {
 		t.Fatalf("RemoveOrganization: want nil error even when network removal fails, got %v", err)
 	}
 }
+
+// TestEnsureOwnscaleNetworkForOrgNoContainerFound verifies it's a no-op
+// (not an error) when the ownscale container itself can't be found (e.g.
+// running outside docker-compose, as in most tests).
+func TestEnsureOwnscaleNetworkForOrgNoContainerFound(t *testing.T) {
+	api := &dockerfake.API{}
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	if err := ctl.EnsureOwnscaleNetworkForOrg(t.Context(), "acme"); err != nil {
+		t.Fatalf("EnsureOwnscaleNetworkForOrg: want nil error when ownscale isn't found, got %v", err)
+	}
+}
+
+// TestEnsureOwnscaleNetworkForOrgConnectsWhenNotAttached verifies it
+// creates the org's network (if missing) and connects the ownscale
+// container to it, without an alias (unlike Caddy's).
+func TestEnsureOwnscaleNetworkForOrgConnectsWhenNotAttached(t *testing.T) {
+	var connectedNetwork, connectedContainer string
+	var connectedConfig *network.EndpointSettings
+	api := &dockerfake.API{
+		NetworkInspectFn: func(ctx context.Context, networkID string, options network.InspectOptions) (network.Inspect, error) {
+			return network.Inspect{}, cerrdefs.ErrNotFound
+		},
+		NetworkCreateFn: func(ctx context.Context, name string, options network.CreateOptions) (network.CreateResponse, error) {
+			return network.CreateResponse{ID: name}, nil
+		},
+		ContainerListFn: func(ctx context.Context, options container.ListOptions) ([]container.Summary, error) {
+			if !options.Filters.ExactMatch("label", ownscaleComposeServiceLabel) {
+				return nil, nil
+			}
+			return []container.Summary{{ID: "ownscale-1"}}, nil
+		},
+		ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+			return container.InspectResponse{
+				ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running"}},
+				NetworkSettings:   &container.NetworkSettings{Networks: map[string]*network.EndpointSettings{}},
+			}, nil
+		},
+		NetworkConnectFn: func(ctx context.Context, networkID, containerID string, config *network.EndpointSettings) error {
+			connectedNetwork, connectedContainer, connectedConfig = networkID, containerID, config
+			return nil
+		},
+	}
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	if err := ctl.EnsureOwnscaleNetworkForOrg(t.Context(), "acme"); err != nil {
+		t.Fatalf("EnsureOwnscaleNetworkForOrg: %v", err)
+	}
+	if want := OrgNetworkName("acme"); connectedNetwork != want || connectedContainer != "ownscale-1" {
+		t.Fatalf("NetworkConnect(%q, %q), want (%q, %q)", connectedNetwork, connectedContainer, want, "ownscale-1")
+	}
+	if connectedConfig != nil && len(connectedConfig.Aliases) != 0 {
+		t.Fatalf("NetworkConnect aliases = %v, want none (ownscale doesn't need a DNS alias)", connectedConfig.Aliases)
+	}
+}
+
+// TestEnsureOwnscaleNetworkForOrgNoopWhenAlreadyConnected verifies it
+// doesn't reconnect (and doesn't disconnect first) when ownscale is
+// already a member of the org's network.
+func TestEnsureOwnscaleNetworkForOrgNoopWhenAlreadyConnected(t *testing.T) {
+	netName := OrgNetworkName("acme")
+	api := &dockerfake.API{
+		NetworkInspectFn: func(ctx context.Context, networkID string, options network.InspectOptions) (network.Inspect, error) {
+			return network.Inspect{ID: netName}, nil
+		},
+		ContainerListFn: func(ctx context.Context, options container.ListOptions) ([]container.Summary, error) {
+			return []container.Summary{{ID: "ownscale-1"}}, nil
+		},
+		ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+			return container.InspectResponse{
+				ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running"}},
+				NetworkSettings: &container.NetworkSettings{Networks: map[string]*network.EndpointSettings{
+					netName: {},
+				}},
+			}, nil
+		},
+		NetworkConnectFn: func(ctx context.Context, networkID, containerID string, config *network.EndpointSettings) error {
+			t.Fatal("NetworkConnect: want no reconnect when ownscale is already on the network")
+			return nil
+		},
+		NetworkDisconnectFn: func(ctx context.Context, networkID, containerID string, force bool) error {
+			t.Fatal("NetworkDisconnect: want no disconnect when ownscale is already on the network")
+			return nil
+		},
+	}
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	if err := ctl.EnsureOwnscaleNetworkForOrg(t.Context(), "acme"); err != nil {
+		t.Fatalf("EnsureOwnscaleNetworkForOrg: %v", err)
+	}
+}
+
+// TestCreateOrganizationJoinsOwnscaleToOrgNetwork verifies CreateOrganization
+// connects the ownscale container itself to the new organization's network
+// (needed for internal/headscaleclient to reach hs-<subdomain> directly),
+// in addition to aliasing Caddy on it.
+func TestCreateOrganizationJoinsOwnscaleToOrgNetwork(t *testing.T) {
+	var ownscaleConnected bool
+	api := &dockerfake.API{
+		ContainerCreateFn: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+			return container.CreateResponse{ID: containerName}, nil
+		},
+		ContainerListFn: func(ctx context.Context, options container.ListOptions) ([]container.Summary, error) {
+			if options.Filters.ExactMatch("label", ownscaleComposeServiceLabel) {
+				return []container.Summary{{ID: "ownscale-1"}}, nil
+			}
+			return nil, nil
+		},
+		ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+			return container.InspectResponse{
+				ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running"}},
+				NetworkSettings:   &container.NetworkSettings{Networks: map[string]*network.EndpointSettings{}},
+			}, nil
+		},
+		NetworkConnectFn: func(ctx context.Context, networkID, containerID string, config *network.EndpointSettings) error {
+			if containerID == "ownscale-1" {
+				ownscaleConnected = true
+			}
+			return nil
+		},
+	}
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}); err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+	if !ownscaleConnected {
+		t.Fatal("CreateOrganization did not connect the ownscale container to the org network")
+	}
+}
+
+// TestRemoveOrganizationDisconnectsOwnscaleFromNetwork verifies
+// RemoveOrganization disconnects the ownscale container (in addition to
+// Caddy) from the organization's network before removing it.
+func TestRemoveOrganizationDisconnectsOwnscaleFromNetwork(t *testing.T) {
+	var disconnectedContainers []string
+	api := &dockerfake.API{
+		ContainerListFn: func(ctx context.Context, options container.ListOptions) ([]container.Summary, error) {
+			if options.Filters.ExactMatch("label", ownscaleComposeServiceLabel) {
+				return []container.Summary{{ID: "ownscale-1"}}, nil
+			}
+			if options.Filters.ExactMatch("label", caddyComposeServiceLabel) {
+				return []container.Summary{{ID: "caddy-1"}}, nil
+			}
+			return nil, nil
+		},
+		NetworkDisconnectFn: func(ctx context.Context, networkID, containerID string, force bool) error {
+			disconnectedContainers = append(disconnectedContainers, containerID)
+			return nil
+		},
+		NetworkRemoveFn: func(ctx context.Context, networkID string) error {
+			return nil
+		},
+	}
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	if err := ctl.RemoveOrganization(t.Context(), "acme"); err != nil {
+		t.Fatalf("RemoveOrganization: %v", err)
+	}
+	if !slices.Contains(disconnectedContainers, "ownscale-1") {
+		t.Fatalf("disconnected containers = %v, want it to contain %q", disconnectedContainers, "ownscale-1")
+	}
+	if !slices.Contains(disconnectedContainers, "caddy-1") {
+		t.Fatalf("disconnected containers = %v, want it to contain %q", disconnectedContainers, "caddy-1")
+	}
+}
+
+// TestMintHeadscaleAPIKeyByContainerName verifies MintHeadscaleAPIKey works
+// when passed a container name (not just a freshly created container ID),
+// since Registry mints ownscale's own key against an already-running
+// organization's container, identified only by HSContainerName(subdomain).
+func TestMintHeadscaleAPIKeyByContainerName(t *testing.T) {
+	var execContainer string
+	api := &dockerfake.API{
+		ContainerExecCreateFn: func(ctx context.Context, containerID string, options container.ExecOptions) (container.ExecCreateResponse, error) {
+			execContainer = containerID
+			return container.ExecCreateResponse{ID: "exec-1"}, nil
+		},
+		ContainerExecAttachFn: func(ctx context.Context, execID string, options container.ExecAttachOptions) (types.HijackedResponse, error) {
+			clientConn, serverConn := net.Pipe()
+			go func() {
+				w := stdcopy.NewStdWriter(serverConn, stdcopy.Stdout)
+				_, _ = w.Write([]byte("ownscale-own-api-key\n"))
+				_ = serverConn.Close()
+			}()
+			return types.NewHijackedResponse(clientConn, ""), nil
+		},
+		ContainerExecInspectFn: func(ctx context.Context, execID string) (container.ExecInspect, error) {
+			return container.ExecInspect{ExitCode: 0}, nil
+		},
+	}
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	key, err := ctl.MintHeadscaleAPIKey(t.Context(), HSContainerName("acme"))
+	if err != nil {
+		t.Fatalf("MintHeadscaleAPIKey: %v", err)
+	}
+	if key != "ownscale-own-api-key" {
+		t.Fatalf("key = %q, want %q", key, "ownscale-own-api-key")
+	}
+	if execContainer != HSContainerName("acme") {
+		t.Fatalf("exec container = %q, want %q", execContainer, HSContainerName("acme"))
+	}
+}
