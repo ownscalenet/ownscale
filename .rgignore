@@ -1,0 +1,19 @@
+# ripgrep-specific ignore rules (in addition to .gitignore, which rg
+# respects by default). This trims noisy/generated content from `rg`
+# results without changing what git tracks.
+
+node_modules/
+
+# Minified/compiled JS bundles (e.g. vendored under etc/caddy/site/).
+*.min.js
+*.min.css
+*.min.js.map
+*.min.css.map
+
+# Hugo build artifacts for the site/ docs module.
+/site/public/
+/site/resources/_gen/
+
+# Generated Go client code (regenerate via sqlc/codegen, don't hand-edit
+# or grep through for editing purposes).
+headscaleclient/hscodegen/
