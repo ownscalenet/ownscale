@@ -38,3 +38,9 @@ UPDATE users SET organization_id = NULL, role = 'member', headscale_user_id = NU
 
 -- name: CountOwnersInOrganization :one
 SELECT COUNT(*) FROM users WHERE organization_id = ? AND role = 'owner';
+
+-- name: ListUsersWithOrganization :many
+SELECT users.*, organizations.subdomain AS org_subdomain
+FROM users
+LEFT JOIN organizations ON users.organization_id = organizations.id
+ORDER BY organizations.subdomain, users.email;

@@ -28,6 +28,7 @@ func main() {
 	}
 	rootCmd.Subcommands = append(rootCmd.Subcommands,
 		newOrganizationCommand(rootFlags, configPath),
+		newUserCommand(rootFlags, configPath),
 		newMigrateCommand(rootFlags, configPath),
 		newGenLocalCACommand(rootFlags, configPath),
 	)

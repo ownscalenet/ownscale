@@ -8,6 +8,7 @@ package sqlcgen
 import (
 	"context"
 	"database/sql"
+	"time"
 )
 
 const countOwnersInOrganization = `-- name: CountOwnersInOrganization :one
@@ -162,6 +163,68 @@ func (q *Queries) ListUsersByOrganization(ctx context.Context, organizationID sq
 			&i.LastLoginAt,
 			&i.Role,
 			&i.HeadscaleUserID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listUsersWithOrganization = `-- name: ListUsersWithOrganization :many
+SELECT users.id, users.organization_id, users.provider, users.provider_user_id, users.email, users.name, users.avatar_url, users.created_at, users.updated_at, users.email_verified, users.last_login_at, users.role, users.headscale_user_id, organizations.subdomain AS org_subdomain
+FROM users
+LEFT JOIN organizations ON users.organization_id = organizations.id
+ORDER BY organizations.subdomain, users.email
+`
+
+type ListUsersWithOrganizationRow struct {
+	ID              string
+	OrganizationID  sql.NullString
+	Provider        string
+	ProviderUserID  string
+	Email           string
+	Name            string
+	AvatarUrl       string
+	CreatedAt       time.Time
+	UpdatedAt       time.Time
+	EmailVerified   int64
+	LastLoginAt     sql.NullTime
+	Role            string
+	HeadscaleUserID sql.NullString
+	OrgSubdomain    sql.NullString
+}
+
+func (q *Queries) ListUsersWithOrganization(ctx context.Context) ([]ListUsersWithOrganizationRow, error) {
+	rows, err := q.db.QueryContext(ctx, listUsersWithOrganization)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListUsersWithOrganizationRow
+	for rows.Next() {
+		var i ListUsersWithOrganizationRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.OrganizationID,
+			&i.Provider,
+			&i.ProviderUserID,
+			&i.Email,
+			&i.Name,
+			&i.AvatarUrl,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.EmailVerified,
+			&i.LastLoginAt,
+			&i.Role,
+			&i.HeadscaleUserID,
+			&i.OrgSubdomain,
 		); err != nil {
 			return nil, err
 		}
