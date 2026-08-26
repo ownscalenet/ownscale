@@ -8,17 +8,14 @@
 
 DOCKER_IMAGE := ownscale:latest
 
-build: frontend backend osa
+build: frontend backend
 
 frontend:
 	npm --prefix frontend ci
 	npm --prefix frontend run build
 
-backend:
-	go build -o bin/ownscale ./cmd/ownscale
-
 osa:
-	go build -o bin/osa ./cmd/osa
+	docker compose exec ownscale ./osa $(filter-out osa,$(MAKECMDGOALS))
 
 # Build the site/ Hugo module (hugo-book theme) into etc/caddy/site, which
 # Caddy serves at {$BASE_DOMAIN}. The generated output is committed to the
@@ -43,6 +40,11 @@ migration:
 
 up down status:
 	@:
+
+ifneq (,$(filter osa,$(MAKECMDGOALS)))
+%:
+	@:
+endif
 
 run:
 	go run ./cmd/ownscale
@@ -78,8 +80,6 @@ archive: docker-image
 		--exclude='bin' \
 		-C .. $(notdir $(CURDIR)) \
 		| ssh az 'mkdir -p ownscale && tar -xzf - -C ownscale --strip-components=1'
-mota:
-	docker compose exec ownscale ./osa organization create mota
 
 purge:
 	# rm all except data/local-ca
