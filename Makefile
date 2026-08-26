@@ -66,7 +66,7 @@ docker-image:
 # ghetto deploy script
 # Send the ownscale image and repo files to remote.
 archive: docker-image
-	docker save $(DOCKER_IMAGE) | ssh az 'docker load'
+	docker save $(DOCKER_IMAGE) | gzip | ssh az 'gzip -d | docker load'
 	# delete existing go files
 	ssh az rm -rf ownscale/internal ownscale/cmd
 	tar czf - \
@@ -83,7 +83,7 @@ mota:
 
 purge:
 	# rm all except data/local-ca
-	sudo rm -rf data/headscale data/headplane
+	sudo rm -rf data/headscale data/headplane data/.litestream-backups data/.ownscale.sqlite-litestream
 	sudo rm -f data/*.*
 	docker ps -aq --filter "label=ownscale.organization=true" | xargs -r docker stop | xargs -r docker rm
 
