@@ -28,12 +28,12 @@ import (
 func loadConfigAndLogger(configPath *string) (*config.Config, *slog.Logger, error) {
 	cfg, err := config.Load(*configPath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("load config: %w", err)
+		return nil, nil, err
 	}
 
 	logger, err := logging.New(cfg.Log)
 	if err != nil {
-		return nil, nil, fmt.Errorf("build logger: %w", err)
+		return nil, nil, err
 	}
 	return cfg, logger, nil
 }
@@ -91,7 +91,7 @@ func newOrgResources(configPath *string, withDB, withDocker bool) (_ *orgResourc
 	if withDB {
 		pool, err := db.Connect(cfg.Database())
 		if err != nil {
-			return nil, cleanup, fmt.Errorf("db connect: %w", err)
+			return nil, cleanup, err
 		}
 		closers = append(closers, pool.Close)
 		res.queries = db.New(pool, logger)
@@ -100,7 +100,7 @@ func newOrgResources(configPath *string, withDB, withDocker bool) (_ *orgResourc
 	if withDocker {
 		ctl, err := dockerctl.New(cfg.DataDir, cfg.LocalCADir, logger)
 		if err != nil {
-			return nil, cleanup, fmt.Errorf("docker init: %w", err)
+			return nil, cleanup, err
 		}
 		closers = append(closers, ctl.Close)
 		res.ctl = ctl
@@ -251,11 +251,11 @@ func newOrganizationStopCommand(parent *ff.FlagSet, configPath *string) *ff.Comm
 // writing a confirmation to out.
 func createOrganization(ctx context.Context, out io.Writer, svc *orgs.Service, subdomain string) error {
 	if err := dockerctl.ValidateSubdomain(subdomain); err != nil {
-		return fmt.Errorf("validate subdomain: %w", err)
+		return err
 	}
 
 	if _, err := svc.Create(ctx, subdomain); err != nil {
-		return fmt.Errorf("create organization: %w", err)
+		return err
 	}
 
 	domain := svc.BaseDomain()
@@ -276,7 +276,7 @@ func deleteOrganization(ctx context.Context, out io.Writer, queries *db.TxQuerie
 	}
 
 	if err := ctl.RemoveOrganization(ctx, subdomain); err != nil {
-		return fmt.Errorf("remove container: %w", err)
+		return err
 	}
 	if err := queries.DeleteOrganization(ctx, org.ID); err != nil {
 		return fmt.Errorf("delete organization record: %w", err)
@@ -366,7 +366,7 @@ func startOrganizations(ctx context.Context, out io.Writer, logger *slog.Logger,
 // containers are meant to keep running across ownscale restarts/deploys.
 func stopOrganizations(ctx context.Context, out io.Writer, ctl *dockerctl.Ctl, timeout time.Duration) error {
 	if err := ctl.StopAll(ctx, timeout); err != nil {
-		return fmt.Errorf("stop organizations: %w", err)
+		return err
 	}
 	_, _ = fmt.Fprintln(out, "stopped all organization containers")
 	return nil

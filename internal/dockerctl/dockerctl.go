@@ -228,7 +228,7 @@ func (c *Ctl) EnsureCaddyNetworkAlias(ctx context.Context, baseDomain string) (e
 	defer derrors.Wrap(&err, "c.EnsureCaddyNetworkAlias(%q)", baseDomain)
 
 	if err := c.EnsureNetwork(ctx); err != nil {
-		return fmt.Errorf("ensure network: %w", err)
+		return err
 	}
 	return c.ensureCaddyNetworkAlias(ctx, ownscaleNetwork, baseDomain)
 }
@@ -249,7 +249,7 @@ func (c *Ctl) EnsureCaddyNetworkAliasForOrg(ctx context.Context, subdomain, base
 
 	netName, err := c.EnsureOrgNetwork(ctx, subdomain)
 	if err != nil {
-		return fmt.Errorf("ensure org network: %w", err)
+		return err
 	}
 	return c.ensureCaddyNetworkAlias(ctx, netName, baseDomain)
 }
@@ -327,7 +327,7 @@ func (c *Ctl) EnsureOwnscaleNetworkForOrg(ctx context.Context, subdomain string)
 
 	netName, err := c.EnsureOrgNetwork(ctx, subdomain)
 	if err != nil {
-		return fmt.Errorf("ensure org network: %w", err)
+		return err
 	}
 
 	ownscaleID, err := c.findOwnscaleContainer(ctx)
@@ -804,17 +804,17 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 		return "", err
 	}
 	if err := c.EnsureCaddyNetworkAliasForOrg(ctx, subdomain, baseDomain); err != nil {
-		return "", fmt.Errorf("ensure caddy network alias: %w", err)
+		return "", err
 	}
 	if err := c.EnsureOwnscaleNetworkForOrg(ctx, subdomain); err != nil {
-		return "", fmt.Errorf("ensure ownscale network join: %w", err)
+		return "", err
 	}
 	orgNetwork := OrgNetworkName(subdomain)
 
 	domain := subdomain + "." + baseDomain
 	cfg, err := buildHSConfig(subdomain, domain, oidcCreds, derpCfg)
 	if err != nil {
-		return "", fmt.Errorf("build config: %w", err)
+		return "", err
 	}
 
 	hostDir := c.headscaleHostDir(subdomain)
@@ -877,11 +877,11 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 	if derpCfg.Enabled() {
 		derpYAML, err := buildDerpConfig(derpCfg)
 		if err != nil {
-			return "", fmt.Errorf("build derp config: %w", err)
+			return "", err
 		}
 		derpTarBuf, err := configTar(derpConfigPath, derpYAML)
 		if err != nil {
-			return "", fmt.Errorf("build derp config archive: %w", err)
+			return "", err
 		}
 		if err := c.cli.CopyToContainer(ctx, resp.ID, "/", derpTarBuf, container.CopyToContainerOptions{}); err != nil {
 			return "", fmt.Errorf("copy derp config into container: %w", err)
@@ -895,11 +895,11 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 
 	headscaleAPIKey, err := c.MintHeadscaleAPIKey(ctx, resp.ID)
 	if err != nil {
-		return "", fmt.Errorf("bootstrap headscale api key: %w", err)
+		return "", err
 	}
 
 	if err := c.createHeadplane(ctx, subdomain, domain, headscaleAPIKey, oidcCreds); err != nil {
-		return "", fmt.Errorf("create headplane: %w", err)
+		return "", err
 	}
 
 	return resp.ID, nil
@@ -917,7 +917,7 @@ func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain, headscaleA
 	}
 	cfg, err := buildHPConfig(subdomain, domain, cookieSecret, headscaleAPIKey, oidcCreds)
 	if err != nil {
-		return fmt.Errorf("build headplane config: %w", err)
+		return err
 	}
 
 	hostDir := c.headplaneHostDir(subdomain)
@@ -970,7 +970,7 @@ func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain, headscaleA
 
 	tarBuf, err := configTar(headplaneConfigPath, cfg)
 	if err != nil {
-		return fmt.Errorf("build config archive: %w", err)
+		return err
 	}
 	if err := c.cli.CopyToContainer(ctx, resp.ID, "/", tarBuf, container.CopyToContainerOptions{}); err != nil {
 		return fmt.Errorf("copy config into container: %w", err)
@@ -982,7 +982,7 @@ func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain, headscaleA
 	go c.streamLogs(resp.ID, HPContainerName(subdomain))
 
 	if err := c.waitForHTTPServing(ctx, resp.ID, "http://localhost:3000/"); err != nil {
-		return fmt.Errorf("wait for headplane to start serving: %w", err)
+		return err
 	}
 	return nil
 }

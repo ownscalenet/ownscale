@@ -155,7 +155,7 @@ func (s *Service) provision(ctx context.Context, org sqlcgen.Organization) error
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
 	}, s.derpCfg); err != nil {
-		return fmt.Errorf("create container: %w", err)
+		return err
 	}
 	return nil
 }

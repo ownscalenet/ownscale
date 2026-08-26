@@ -44,7 +44,7 @@ func newGooseProvider(configPath *string) (*goose.Provider, *slog.Logger, error)
 
 	pool, err := db.Connect(cfg.Database())
 	if err != nil {
-		return nil, nil, fmt.Errorf("db connect: %w", err)
+		return nil, nil, err
 	}
 
 	migrationsFS, err := fs.Sub(db.MigrationsFS, "migrations")

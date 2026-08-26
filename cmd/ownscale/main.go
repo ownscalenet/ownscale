@@ -47,26 +47,26 @@ func run() error {
 
 	cfg, err := config.Load(configPath)
 	if err != nil {
-		return fmt.Errorf("load config: %w", err)
+		return err
 	}
 	if err := cfg.Validate(); err != nil {
-		return fmt.Errorf("validate config: %w", err)
+		return err
 	}
 
 	logger, err := logging.New(cfg.Log)
 	if err != nil {
-		return fmt.Errorf("build logger: %w", err)
+		return err
 	}
 
 	pool, err := db.Connect(cfg.Database())
 	if err != nil {
-		return fmt.Errorf("db connect: %w", err)
+		return err
 	}
 	defer pool.Close()
 
 	ctl, err := dockerctl.New(cfg.DataDir, cfg.LocalCADir, logger)
 	if err != nil {
-		return fmt.Errorf("docker init: %w", err)
+		return err
 	}
 	defer ctl.Close()
 	ctx := context.Background()
@@ -110,7 +110,7 @@ func run() error {
 	auth.Setup(cfg.Auth.SessionSecret)
 	provider, oidcStorage, err := oidcprovider.New(cfg, queries.Queries)
 	if err != nil {
-		return fmt.Errorf("oidc provider: %w", err)
+		return err
 	}
 	h := handlers.New(queries, ctl, cfg.BaseDomain, oidcStorage, logger, cfg.Derp)
 

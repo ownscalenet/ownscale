@@ -37,7 +37,7 @@ func newGenLocalCACommand(rootFlags *ff.FlagSet, configPath *string) *ff.Command
 			}
 			if generated && caddyDataDir != "" {
 				if err := localca.ResetCaddyState(caddyDataDir); err != nil {
-					return fmt.Errorf("reset stale Caddy PKI state: %w", err)
+					return err
 				}
 				fmt.Printf("generated a new local CA at %s; reset Caddy's cached PKI state under %s\n", cfg.LocalCADir, caddyDataDir)
 				return nil
