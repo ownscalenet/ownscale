@@ -567,18 +567,10 @@ oidc:
   scope: "openid email profile offline_access"
 
 integration:
-  agent:
-    enabled: false
   docker:
     enabled: true
-    container_label: "me.tale.headplane.target=headscale"
+    container_name: "{{.HSContainerName}}"
     socket: "unix:///var/run/docker.sock"
-  kubernetes:
-    enabled: false
-    validate_manifest: false
-    pod_name: "unused"
-  proc:
-    enabled: false
 `))
 
 // buildHPConfig renders the headplane config.yaml content for an
@@ -852,10 +844,6 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 				"ownscale.organization": "true",
 				"ownscale.subdomain":    subdomain,
 				"ownscale.domain":       domain,
-				// TODO: headplane restarting headscale based on this label
-				// is broken when there is more than one organization.
-				// For the time being, keep it as it is to test headplane functionality.
-				"me.tale.headplane.target": "headscale",
 			},
 		},
 		&container.HostConfig{
@@ -981,7 +969,8 @@ func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain, headscaleA
 	}
 	go c.streamLogs(resp.ID, HPContainerName(subdomain))
 
-	if err := c.waitForHTTPServing(ctx, resp.ID, "http://localhost:3000/"); err != nil {
+	// Headplane only serves at /admin.
+	if err := c.waitForHTTPServing(ctx, resp.ID, "http://localhost:3000/admin/"); err != nil {
 		return err
 	}
 	return nil

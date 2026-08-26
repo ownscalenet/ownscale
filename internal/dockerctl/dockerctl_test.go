@@ -134,9 +134,7 @@ func TestBuildHPConfigIncludesOIDCAndAPIKey(t *testing.T) {
 
 // TestBuildHPConfigEnablesDockerIntegration verifies that the rendered
 // Headplane config enables the Docker integration (Network Management)
-// and points it at the me.tale.headplane.target label headscale is
-// created with, and the Docker socket headplane's container gets
-// bind-mounted (see createHeadplane).
+// and points it at this org's own headscale container by name.
 func TestBuildHPConfigEnablesDockerIntegration(t *testing.T) {
 	cfg, err := buildHPConfig("acme", "acme.example.com", "cookie-secret", "headscale-api-key", OIDCClientCredentials{})
 	if err != nil {
@@ -144,7 +142,7 @@ func TestBuildHPConfigEnablesDockerIntegration(t *testing.T) {
 	}
 	for _, want := range []string{
 		"docker:\n    enabled: true",
-		`container_label: "me.tale.headplane.target=headscale"`,
+		`container_name: "hs-acme"`,
 		`socket: "unix:///var/run/docker.sock"`,
 	} {
 		if !strings.Contains(cfg, want) {
@@ -439,35 +437,6 @@ func TestCreateOrganizationSkipsLocalCAMountWhenNotConfigured(t *testing.T) {
 		if slices.ContainsFunc(mounts, func(m mount.Mount) bool { return m.Target == LocalCAMountTarget }) {
 			t.Fatalf("mounts = %+v, want no local CA mount when LocalCADir is unset", mounts)
 		}
-	}
-}
-
-// TestCreateOrganizationLabelsHeadscaleForHeadplaneDiscovery verifies the
-// headscale container gets the "me.tale.headplane.target=headscale" label,
-// which is the exact label Headplane's Docker integration looks for by
-// default (integration.docker.container_label) to find and restart it.
-func TestCreateOrganizationLabelsHeadscaleForHeadplaneDiscovery(t *testing.T) {
-	var hsLabels map[string]string
-	api := &dockerfake.API{
-		ContainerCreateFn: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
-			if containerName == HSContainerName("acme") {
-				hsLabels = config.Labels
-			}
-			return container.CreateResponse{ID: containerName}, nil
-		},
-	}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
-	t.Cleanup(func() { _ = ctl.Close() })
-
-	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}); err != nil {
-		t.Fatalf("CreateOrganization: %v", err)
-	}
-
-	if got := hsLabels["me.tale.headplane.target"]; got != "headscale" {
-		t.Fatalf(`headscale labels = %+v, want "me.tale.headplane.target": "headscale"`, hsLabels)
 	}
 }
 
