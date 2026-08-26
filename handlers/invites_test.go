@@ -10,7 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
 
 func TestCreateInviteRequiresManager(t *testing.T) {

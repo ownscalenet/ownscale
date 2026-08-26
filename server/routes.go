@@ -8,7 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 
-	"github.com/ownscalenet/ownscale/internal/handlers"
+	"github.com/ownscalenet/ownscale/handlers"
 )
 
 // NewMux builds the admin panel's http.ServeMux. requireAuthAPI wraps an

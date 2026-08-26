@@ -24,10 +24,10 @@ import (
 	"github.com/pressly/goose/v3"
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/ownscalenet/ownscale/internal/config"
-	dbpkg "github.com/ownscalenet/ownscale/internal/db"
-	"github.com/ownscalenet/ownscale/internal/dockerctl"
-	"github.com/ownscalenet/ownscale/internal/dockerctl/dockerfake"
+	"github.com/ownscalenet/ownscale/config"
+	dbpkg "github.com/ownscalenet/ownscale/db"
+	"github.com/ownscalenet/ownscale/dockerctl"
+	"github.com/ownscalenet/ownscale/dockerctl/dockerfake"
 )
 
 func newTestQueries(t *testing.T) *dbpkg.TxQueries {

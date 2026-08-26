@@ -14,11 +14,11 @@ import (
 
 	"github.com/peterbourgon/ff/v4"
 
-	"github.com/ownscalenet/ownscale/internal/config"
-	"github.com/ownscalenet/ownscale/internal/db"
-	"github.com/ownscalenet/ownscale/internal/dockerctl"
-	"github.com/ownscalenet/ownscale/internal/logging"
-	"github.com/ownscalenet/ownscale/internal/orgs"
+	"github.com/ownscalenet/ownscale/config"
+	"github.com/ownscalenet/ownscale/db"
+	"github.com/ownscalenet/ownscale/dockerctl"
+	"github.com/ownscalenet/ownscale/logging"
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 // loadConfigAndLogger reads the config file at *configPath (or the

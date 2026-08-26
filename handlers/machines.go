@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ownscalenet/ownscale/internal/auth"
-	"github.com/ownscalenet/ownscale/internal/headscaleclient"
+	"github.com/ownscalenet/ownscale/auth"
+	"github.com/ownscalenet/ownscale/headscaleclient"
 )
 
 // resolveMachinesClient returns the calling user's organization's

@@ -27,9 +27,9 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
 
-	"github.com/ownscalenet/ownscale/internal/config"
-	"github.com/ownscalenet/ownscale/internal/derrors"
-	"github.com/ownscalenet/ownscale/internal/localca"
+	"github.com/ownscalenet/ownscale/config"
+	"github.com/ownscalenet/ownscale/derrors"
+	"github.com/ownscalenet/ownscale/localca"
 )
 
 const (

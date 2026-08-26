@@ -8,8 +8,8 @@ import (
 	"os"
 	"strings"
 
-	"github.com/ownscalenet/ownscale/internal/config"
-	"github.com/ownscalenet/ownscale/internal/derrors"
+	"github.com/ownscalenet/ownscale/config"
+	"github.com/ownscalenet/ownscale/derrors"
 )
 
 func New(cfg config.LogConfig) (_ *slog.Logger, err error) {

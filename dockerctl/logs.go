@@ -11,7 +11,7 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/pkg/stdcopy"
 
-	"github.com/ownscalenet/ownscale/internal/derrors"
+	"github.com/ownscalenet/ownscale/derrors"
 )
 
 // streamLogs follows containerID's stdout/stderr (as "docker logs -f"

@@ -13,7 +13,7 @@ import (
 
 	jose "github.com/go-jose/go-jose/v4"
 
-	"github.com/ownscalenet/ownscale/internal/derrors"
+	"github.com/ownscalenet/ownscale/derrors"
 )
 
 // LoadOrGenerateSigningKey loads an RSA private key from path, or generates and

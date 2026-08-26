@@ -10,9 +10,9 @@ import (
 
 	"github.com/markbates/goth/gothic"
 
-	"github.com/ownscalenet/ownscale/internal/config"
-	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/internal/derrors"
+	"github.com/ownscalenet/ownscale/config"
+	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/derrors"
 	"github.com/zitadel/oidc/v3/pkg/oidc"
 	"github.com/zitadel/oidc/v3/pkg/op"
 )

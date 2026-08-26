@@ -6,7 +6,7 @@ import (
 
 	"github.com/peterbourgon/ff/v4"
 
-	"github.com/ownscalenet/ownscale/internal/localca"
+	"github.com/ownscalenet/ownscale/localca"
 )
 
 // Generate a self-signed CA for local development, to have https on a domain

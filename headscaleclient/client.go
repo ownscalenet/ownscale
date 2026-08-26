@@ -15,10 +15,10 @@ import (
 	httptransport "github.com/go-openapi/runtime/client"
 	"github.com/go-openapi/strfmt"
 
-	"github.com/ownscalenet/ownscale/internal/derrors"
-	hsclient "github.com/ownscalenet/ownscale/internal/headscaleclient/hscodegen/client"
-	"github.com/ownscalenet/ownscale/internal/headscaleclient/hscodegen/client/headscale_service"
-	"github.com/ownscalenet/ownscale/internal/headscaleclient/hscodegen/models"
+	"github.com/ownscalenet/ownscale/derrors"
+	hsclient "github.com/ownscalenet/ownscale/headscaleclient/hscodegen/client"
+	"github.com/ownscalenet/ownscale/headscaleclient/hscodegen/client/headscale_service"
+	"github.com/ownscalenet/ownscale/headscaleclient/hscodegen/models"
 )
 
 // User is a headscale user (the owner of one or more Nodes), matching

@@ -6,7 +6,7 @@ import (
 	"log/slog"
 	"time"
 
-	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
 
 // loggingDBTX wraps a sqlcgen.DBTX (either a *sql.DB or a *sql.Tx), logging

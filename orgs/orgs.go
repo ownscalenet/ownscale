@@ -10,11 +10,11 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/ownscalenet/ownscale/internal/config"
-	"github.com/ownscalenet/ownscale/internal/db"
-	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/internal/derrors"
-	"github.com/ownscalenet/ownscale/internal/dockerctl"
+	"github.com/ownscalenet/ownscale/config"
+	"github.com/ownscalenet/ownscale/db"
+	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/derrors"
+	"github.com/ownscalenet/ownscale/dockerctl"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"

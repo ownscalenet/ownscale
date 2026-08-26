@@ -18,12 +18,12 @@ import (
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pressly/goose/v3"
 
-	"github.com/ownscalenet/ownscale/internal/config"
-	dbpkg "github.com/ownscalenet/ownscale/internal/db"
-	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/internal/dockerctl"
-	"github.com/ownscalenet/ownscale/internal/dockerctl/dockerfake"
-	"github.com/ownscalenet/ownscale/internal/orgs"
+	"github.com/ownscalenet/ownscale/config"
+	dbpkg "github.com/ownscalenet/ownscale/db"
+	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/dockerctl"
+	"github.com/ownscalenet/ownscale/dockerctl/dockerfake"
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 // newTestDB opens a temp-file SQLite database and applies the real embedded

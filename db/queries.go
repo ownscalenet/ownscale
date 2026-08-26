@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
 
 // TxQueries is like *sqlcgen.Queries, but it has transaction and logging of executed queries.

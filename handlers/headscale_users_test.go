@@ -7,8 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	dbpkg "github.com/ownscalenet/ownscale/internal/db"
-	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
+	dbpkg "github.com/ownscalenet/ownscale/db"
+	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
 
 // activeOrgUserWithRole is like activeOrgUser but sets the user's role

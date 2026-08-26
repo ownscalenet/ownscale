@@ -6,12 +6,12 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ownscalenet/ownscale/internal/derrors"
+	"github.com/ownscalenet/ownscale/derrors"
 
 	_ "modernc.org/sqlite"
 )
 
-// MigrationsFS embeds the SQL migration files (internal/db/migrations),
+// MigrationsFS embeds the SQL migration files (db/migrations),
 // rooted one level above the migrations themselves.
 //
 //go:embed migrations/*.sql

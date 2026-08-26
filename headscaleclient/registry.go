@@ -4,7 +4,7 @@ import (
 	"context"
 	"sync"
 
-	"github.com/ownscalenet/ownscale/internal/derrors"
+	"github.com/ownscalenet/ownscale/derrors"
 )
 
 // KeyMinter mints a fresh, independent headscale API key for the

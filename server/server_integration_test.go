@@ -30,13 +30,13 @@ import (
 	"github.com/google/uuid"
 	"github.com/pressly/goose/v3"
 
-	"github.com/ownscalenet/ownscale/internal/auth"
-	"github.com/ownscalenet/ownscale/internal/config"
-	dbpkg "github.com/ownscalenet/ownscale/internal/db"
-	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/internal/dockerctl"
-	"github.com/ownscalenet/ownscale/internal/handlers"
-	"github.com/ownscalenet/ownscale/internal/server"
+	"github.com/ownscalenet/ownscale/auth"
+	"github.com/ownscalenet/ownscale/config"
+	dbpkg "github.com/ownscalenet/ownscale/db"
+	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/dockerctl"
+	"github.com/ownscalenet/ownscale/handlers"
+	"github.com/ownscalenet/ownscale/server"
 )
 
 // waitForOrganizationStatus polls orgID's status until it equals want or

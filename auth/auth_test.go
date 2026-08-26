@@ -13,8 +13,8 @@ import (
 	"github.com/markbates/goth"
 	"github.com/pressly/goose/v3"
 
-	dbpkg "github.com/ownscalenet/ownscale/internal/db"
-	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
+	dbpkg "github.com/ownscalenet/ownscale/db"
+	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
 
 // newTestQueries opens a temp-file SQLite database and applies the real

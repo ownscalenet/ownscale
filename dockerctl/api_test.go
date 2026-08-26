@@ -1,8 +1,8 @@
 package dockerctl_test
 
 import (
-	"github.com/ownscalenet/ownscale/internal/dockerctl"
-	"github.com/ownscalenet/ownscale/internal/dockerctl/dockerfake"
+	"github.com/ownscalenet/ownscale/dockerctl"
+	"github.com/ownscalenet/ownscale/dockerctl/dockerfake"
 )
 
 // Static assertion that dockerfake.API satisfies dockerctl.API. It lives

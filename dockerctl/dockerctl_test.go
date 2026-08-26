@@ -23,9 +23,9 @@ import (
 	"github.com/docker/docker/pkg/stdcopy"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
-	"github.com/ownscalenet/ownscale/internal/config"
-	"github.com/ownscalenet/ownscale/internal/dockerctl/dockerfake"
-	"github.com/ownscalenet/ownscale/internal/localca"
+	"github.com/ownscalenet/ownscale/config"
+	"github.com/ownscalenet/ownscale/dockerctl/dockerfake"
+	"github.com/ownscalenet/ownscale/localca"
 )
 
 func discardLogger() *slog.Logger {

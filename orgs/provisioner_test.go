@@ -15,9 +15,9 @@ import (
 	"github.com/google/uuid"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 
-	"github.com/ownscalenet/ownscale/internal/config"
-	"github.com/ownscalenet/ownscale/internal/dockerctl"
-	"github.com/ownscalenet/ownscale/internal/dockerctl/dockerfake"
+	"github.com/ownscalenet/ownscale/config"
+	"github.com/ownscalenet/ownscale/dockerctl"
+	"github.com/ownscalenet/ownscale/dockerctl/dockerfake"
 )
 
 // newTestService builds a Service backed by a temporary sqlite DB (see

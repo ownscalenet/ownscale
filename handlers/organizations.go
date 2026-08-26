@@ -6,9 +6,9 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ownscalenet/ownscale/internal/auth"
-	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/internal/dockerctl"
+	"github.com/ownscalenet/ownscale/auth"
+	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/dockerctl"
 )
 
 // createOrganizationRequest is the POST /api/organizations request body.

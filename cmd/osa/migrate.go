@@ -9,7 +9,7 @@ import (
 	"github.com/peterbourgon/ff/v4"
 	"github.com/pressly/goose/v3"
 
-	"github.com/ownscalenet/ownscale/internal/db"
+	"github.com/ownscalenet/ownscale/db"
 )
 
 // newMigrateCommand builds the "migrate" subcommand group (up/down/status),

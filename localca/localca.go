@@ -28,7 +28,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/ownscalenet/ownscale/internal/derrors"
+	"github.com/ownscalenet/ownscale/derrors"
 )
 
 // RootCertFileName and RootKeyFileName are the fixed file names

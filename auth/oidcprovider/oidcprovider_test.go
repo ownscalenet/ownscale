@@ -18,8 +18,8 @@ import (
 	"github.com/pressly/goose/v3"
 	"golang.org/x/crypto/bcrypt"
 
-	dbpkg "github.com/ownscalenet/ownscale/internal/db"
-	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
+	dbpkg "github.com/ownscalenet/ownscale/db"
+	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/zitadel/oidc/v3/pkg/oidc"
 )
 

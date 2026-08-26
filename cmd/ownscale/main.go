@@ -13,15 +13,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/ownscalenet/ownscale/internal/auth"
-	"github.com/ownscalenet/ownscale/internal/auth/oidcprovider"
-	"github.com/ownscalenet/ownscale/internal/config"
-	"github.com/ownscalenet/ownscale/internal/db"
-	"github.com/ownscalenet/ownscale/internal/dockerctl"
-	"github.com/ownscalenet/ownscale/internal/handlers"
-	"github.com/ownscalenet/ownscale/internal/logging"
-	"github.com/ownscalenet/ownscale/internal/server"
-	"github.com/ownscalenet/ownscale/internal/webui"
+	"github.com/ownscalenet/ownscale/auth"
+	"github.com/ownscalenet/ownscale/auth/oidcprovider"
+	"github.com/ownscalenet/ownscale/config"
+	"github.com/ownscalenet/ownscale/db"
+	"github.com/ownscalenet/ownscale/dockerctl"
+	"github.com/ownscalenet/ownscale/handlers"
+	"github.com/ownscalenet/ownscale/logging"
+	"github.com/ownscalenet/ownscale/server"
+	"github.com/ownscalenet/ownscale/webui"
 )
 
 // shutdownTimeout bounds how long we wait for in-flight requests to finish

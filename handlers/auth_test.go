@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ownscalenet/ownscale/internal/auth"
+	"github.com/ownscalenet/ownscale/auth"
 
 	"github.com/markbates/goth"
 	"github.com/markbates/goth/gothic"

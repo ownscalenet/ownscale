@@ -11,7 +11,7 @@ import (
 	"github.com/go-openapi/runtime"
 	cr "github.com/go-openapi/runtime/client"
 	"github.com/go-openapi/strfmt"
-	"github.com/ownscalenet/ownscale/internal/headscaleclient/hscodegen/models"
+	"github.com/ownscalenet/ownscale/headscaleclient/hscodegen/models"
 )
 
 // NewHeadscaleServiceCreatePreAuthKeyParams creates a new HeadscaleServiceCreatePreAuthKeyParams object,

@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ownscalenet/ownscale/internal/derrors"
+	"github.com/ownscalenet/ownscale/derrors"
 
 	"github.com/caarlos0/env/v11"
 	"gopkg.in/yaml.v3"

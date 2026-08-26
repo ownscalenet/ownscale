@@ -6,8 +6,8 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/internal/derrors"
+	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/derrors"
 
 	"github.com/markbates/goth/gothic"
 )

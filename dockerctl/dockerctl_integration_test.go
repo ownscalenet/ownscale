@@ -24,8 +24,8 @@ import (
 	"github.com/docker/docker/client"
 	"github.com/google/uuid"
 
-	"github.com/ownscalenet/ownscale/internal/config"
-	"github.com/ownscalenet/ownscale/internal/dockerctl"
+	"github.com/ownscalenet/ownscale/config"
+	"github.com/ownscalenet/ownscale/dockerctl"
 )
 
 // tarFileContents reads name's contents out of the tar stream r (as

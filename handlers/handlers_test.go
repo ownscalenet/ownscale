@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ownscalenet/ownscale/internal/auth"
+	"github.com/ownscalenet/ownscale/auth"
 )
 
 func TestSessionAuthenticated(t *testing.T) {

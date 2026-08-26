@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/ownscalenet/ownscale/internal/auth"
-	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/auth"
+	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
 
 // member is the JSON shape of an org member returned by ListMembers,

@@ -3,7 +3,7 @@ package auth
 import (
 	"context"
 
-	"github.com/ownscalenet/ownscale/internal/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
 
 type contextKey int
