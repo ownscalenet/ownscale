@@ -9,7 +9,7 @@ export default defineConfig({
   build: {
     // Build straight into the Go module's embed directory so `go build`
     // (via go:embed) picks up the latest frontend build. See ../Makefile.
-    outDir: path.resolve(import.meta.dirname, '../internal/webui/dist'),
+    outDir: path.resolve(import.meta.dirname, '../webui/dist'),
     emptyOutDir: true,
   },
   server: {

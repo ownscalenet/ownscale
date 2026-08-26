@@ -16,7 +16,7 @@ operation.
 ownscale federates login to a configurable upstream OIDC provider (Google,
 Okta, a self-hosted Dex instance, etc. -- see `auth.upstream_oidc` in
 `config.yaml`) and exposes its own OIDC provider at the bare base domain
-(`https://<base-domain>`, where the admin panel and login also live) for
+(`https://<base-domain>`, where the Ownscale console and login also live) for
 each organization's Headscale and Headplane containers. This documentation
 site itself lives at `docs.<base-domain>`. You sign in with the upstream
 provider once, then downstream admin surfaces can reuse that ownscale

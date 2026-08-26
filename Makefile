@@ -1,8 +1,8 @@
 # Build the ownscale binary. The frontend (frontend/) is a React + Vite
-# app that builds directly into internal/webui/dist, which is embedded into
-# the Go binary via go:embed. internal/webui/dist is committed to the repo
+# app that builds directly into webui/dist, which is embedded into
+# the Go binary via go:embed. webui/dist is committed to the repo
 # (go:embed needs real files at Go build time), so run `make frontend`
-# whenever frontend/ changes and commit the updated internal/webui/dist.
+# whenever frontend/ changes and commit the updated webui/dist.
 
 .PHONY: build frontend backend osa test test-integration coverage migration archive docker-image rm-orphans purge ci docs load-cert
 
@@ -25,14 +25,14 @@ docs:
 	rm -rf etc/caddy/site
 	hugo --source site --destination ../etc/caddy/site --minify
 
-# Regenerate the headscale API client in internal/headscaleclient/hscodegen
+# Regenerate the headscale API client in headscaleclient/hscodegen
 # from the vendored OpenAPI spec (headscale.swagger.json). The generated
-# code is committed to the repo (same convention as internal/db/sqlcgen),
+# code is committed to the repo (same convention as db/sqlcgen),
 # so re-run this and commit the result whenever the spec is bumped to a
 # new headscale version.
 generate-headscale-client:
-	rm -rf internal/headscaleclient/hscodegen/client internal/headscaleclient/hscodegen/models
-	cd internal/headscaleclient/hscodegen && go run github.com/go-swagger/go-swagger/cmd/swagger@latest generate client -f headscale.swagger.json -A headscale --skip-validation
+	rm -rf headscaleclient/hscodegen/client headscaleclient/hscodegen/models
+	cd headscaleclient/hscodegen && go run github.com/go-swagger/go-swagger/cmd/swagger@latest generate client -f headscale.swagger.json -A headscale --skip-validation
 
 # Usage: make migration up | make migration status
 migration:

@@ -55,7 +55,7 @@ func (a *authRequest) GetACR() string { return "" }
 func (a *authRequest) GetAMR() []string {
 	if a.done {
 		// Non-standard value: the user authenticated via ownscale's
-		// upstream OIDC login (see internal/auth), whatever the actual
+		// upstream OIDC login (see auth), whatever the actual
 		// upstream IdP (Google, Dex, ...) is configured to be.
 		return []string{"oidc"}
 	}

@@ -228,7 +228,7 @@ func TestClearUserSessionInvalidatesSession(t *testing.T) {
 // end-to-end against a real HTTP GET. Plain HTTP (rather than TLS) is fine
 // here: trust-store behavior is no longer RegisterUpstreamOIDC's concern
 // (see its doc comment) -- that's established at the OS level, ahead of
-// time, via LocalCADir/SSL_CERT_DIR (see internal/localca and
+// time, via LocalCADir/SSL_CERT_DIR (see localca and
 // docker-compose.yml).
 func newTestOIDCServer(t *testing.T) *httptest.Server {
 	t.Helper()

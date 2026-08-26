@@ -16,7 +16,7 @@ addr: ":8080"
 # and to use the "osa organization delete/list" CLI subcommands.
 base_domain: "example.com"
 
-# Directory under which all SQLite-backed state lives: this admin panel's
+# Directory under which all SQLite-backed state lives: this Ownscale console's
 # own database (see "database" below, unless overridden) plus a
 # "headscale/<subdomain>" subdirectory bind-mounted into each
 # organization's headscale container. Defaults to "data" (relative to the
@@ -54,7 +54,7 @@ auth:
   # OIDC provider configuration: ownscale itself acts as an OpenID Connect
   # provider (federated to upstream_oidc above) that each organization's
   # headscale/headplane containers trust for SSO. See
-  # internal/auth/oidcprovider.
+  # auth/oidcprovider.
   oidc_provider:
     # Public base URL for ownscale's OIDC endpoints (used in discovery and
     # in issued tokens). Defaults to "https://<base_domain>" if unset

@@ -1,5 +1,5 @@
 {
-	# Ask the admin panel before issuing a certificate for a subdomain.
+	# Ask the Ownscale console before issuing a certificate for a subdomain.
 	on_demand_tls {
 		ask http://ownscale:8080/api/tls-ask
 	}
@@ -17,7 +17,7 @@
 	# Sign every "internal"/local cert (i.e. whatever CADDY_LOCAL_CERTS
 	# above actually triggers) from a pre-generated root CA instead of one
 	# Caddy generates itself on first use -- see docker-compose.yml's
-	# "local-ca-init" service and internal/localca, which idempotently
+	# "local-ca-init" service and localca, which idempotently
 	# generate this exact cert/key pair ahead of time, in every
 	# environment. That lets every other container (ownscale itself,
 	# headscale, headplane) trust a single, always-already-existing file
@@ -51,7 +51,7 @@ docs.{$BASE_DOMAIN} {
 }
 
 # Local-dev OIDC provider (dexidp/dex, see docker-compose.yml) that
-# ownscale federates its own login to (see internal/auth,
+# ownscale federates its own login to (see auth,
 # auth.upstream_oidc.issuer in config.yaml). Exposing it through Caddy
 # under its own subdomain means the browser-facing authorization endpoint
 # and ownscale's server-to-server discovery/token/userinfo calls all hit

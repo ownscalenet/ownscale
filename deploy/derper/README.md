@@ -3,7 +3,7 @@
 [DERP](https://tailscale.com/kb/1232/derp-servers) is a fallback relay
 Tailscale/headscale nodes use when a direct peer-to-peer connection can't be
 established. By default, every organization's headscale container (see
-`internal/dockerctl`) uses Tailscale's own public DERP relay map. This
+`dockerctl`) uses Tailscale's own public DERP relay map. This
 directory lets you run your own instead, and have every organization's
 headscale point at it (see `derp:` in `config.example.yaml`).
 

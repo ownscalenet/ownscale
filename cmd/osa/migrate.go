@@ -13,7 +13,7 @@ import (
 )
 
 // newMigrateCommand builds the "migrate" subcommand group (up/down/status),
-// which applies schema migrations (embedded from internal/db/migrations)
+// which applies schema migrations (embedded from db/migrations)
 // against the sqlite database configured in config.yaml, using goose as a
 // library. It mirrors what used to be the standalone cmd/migrate binary.
 func newMigrateCommand(rootFlags *ff.FlagSet, configPath *string) *ff.Command {

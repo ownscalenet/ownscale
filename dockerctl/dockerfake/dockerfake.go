@@ -1,6 +1,6 @@
 // Package dockerfake provides a fake implementation of dockerctl.API for
 // use in tests, so dockerctl.Ctl (and its callers, e.g. cmd/osa and
-// internal/orgs) can be exercised without a real Docker daemon.
+// orgs) can be exercised without a real Docker daemon.
 package dockerfake
 
 import (

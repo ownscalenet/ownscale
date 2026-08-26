@@ -88,7 +88,7 @@ type Ctl struct {
 	cancel context.CancelFunc
 
 	// localCADir mirrors Config.LocalCADir: the host directory containing
-	// the pre-generated local development root CA (see internal/localca),
+	// the pre-generated local development root CA (see localca),
 	// bind-mounted read-only at LocalCAMountTarget into every organization
 	// container. Empty means "don't mount anything" -- e.g. if the config
 	// value was cleared entirely, though in practice it always defaults to
@@ -102,7 +102,7 @@ type Ctl struct {
 // Docker API when creating each organization's headscale container (see
 // headscaleHostDir and CreateOrganization), and that source is resolved by
 // the Docker daemon, not by this process's own filesystem view (see
-// Config.DataDir's doc comment in internal/config for why that matters).
+// Config.DataDir's doc comment in config for why that matters).
 // localCADir should be Config.LocalCADir.
 func New(dataDir, localCADir string, logger *slog.Logger) (_ *Ctl, err error) {
 	defer derrors.Wrap(&err, "dockerctl.New(%q)", dataDir)
@@ -116,7 +116,7 @@ func New(dataDir, localCADir string, logger *slog.Logger) (_ *Ctl, err error) {
 
 // NewWithClient creates a controller backed by an arbitrary API
 // implementation. It's exposed primarily so tests can inject a fake (see
-// internal/dockerctl/dockerfake) without a real Docker daemon; production
+// dockerctl/dockerfake) without a real Docker daemon; production
 // code should use New.
 func NewWithClient(cli API, dataDir, localCADir string, logger *slog.Logger) (_ *Ctl, err error) {
 	defer derrors.Wrap(&err, "dockerctl.NewWithClient(dataDir=%q)", dataDir)
@@ -311,7 +311,7 @@ func (c *Ctl) findOwnscaleContainer(ctx context.Context) (_ string, err error) {
 // (HSContainerName(subdomain)), which Docker's embedded per-network DNS
 // already provides to any container joined to that network.
 //
-// This is what lets the Go backend (internal/headscaleclient) call
+// This is what lets the Go backend (headscaleclient) call
 // http://hs-<subdomain>:8080 directly to manage that organization's nodes,
 // the same way Caddy reaches it to proxy https://<subdomain>.<baseDomain>.
 //
@@ -1106,7 +1106,7 @@ var subdomainRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
 
 // reservedSubdomains are single DNS labels that organizations may not use,
 // because they're reserved for fixed, non-organization Caddy site blocks:
-// the ownscale app itself (admin panel, login, OIDC provider) is bound to
+// the ownscale app itself (Ownscale console, login, OIDC provider) is bound to
 // the bare base domain, "docs" serves the documentation site, and "admin"/
 // "auth" are kept reserved defensively even though they aren't currently
 // bound to their own Caddy site blocks, to avoid confusion with the app's

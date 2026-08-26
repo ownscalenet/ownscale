@@ -904,7 +904,7 @@ func TestEnsureOwnscaleNetworkForOrgNoopWhenAlreadyConnected(t *testing.T) {
 
 // TestCreateOrganizationJoinsOwnscaleToOrgNetwork verifies CreateOrganization
 // connects the ownscale container itself to the new organization's network
-// (needed for internal/headscaleclient to reach hs-<subdomain> directly),
+// (needed for headscaleclient to reach hs-<subdomain> directly),
 // in addition to aliasing Caddy on it.
 func TestCreateOrganizationJoinsOwnscaleToOrgNetwork(t *testing.T) {
 	var ownscaleConnected bool

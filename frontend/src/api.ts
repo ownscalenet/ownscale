@@ -1,4 +1,4 @@
-// api client: thin wrapper around fetch() for the admin panel's JSON API.
+// api client: thin wrapper around fetch() for the Ownscale console's JSON API.
 // All calls are same-origin and rely on the session cookie set by the
 // server-driven OAuth flow (see /auth/{provider}).
 
@@ -135,7 +135,7 @@ export function deleteMachine(id: string) {
 }
 
 // Roles mirror headplane's set for UI parity; only owner/admin are
-// actually enforced server-side (see internal/handlers/roles.go).
+// actually enforced server-side (see handlers/roles.go).
 export const ROLES = ['owner', 'admin', 'network_admin', 'it_admin', 'auditor', 'member'] as const
 export type Role = (typeof ROLES)[number]
 

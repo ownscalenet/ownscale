@@ -22,7 +22,7 @@ import (
 
 // Service provisions organizations against a fixed set of queries, Docker
 // controller, and base domain. It's shared by the CLI (cmd/osa) and the web
-// server (internal/handlers) so both wire it up once instead of threading
+// server (handlers) so both wire it up once instead of threading
 // the same dependencies through every call site.
 type Service struct {
 	queries    *db.TxQueries

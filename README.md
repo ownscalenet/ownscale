@@ -2,7 +2,7 @@
 
 ```sh
 cp config.example.yaml config.yaml   # edit base_domain, auth.*, database, etc.
-make build              # builds frontend/ into internal/webui/dist, then `go build`
+make build              # builds frontend/ into webui/dist, then `go build`
 ./bin/ownscale --config config.yaml   # start server on :8080
 ```
 
@@ -54,14 +54,14 @@ on restart.
 
 ## Single sign-on (via ownscale's own OIDC provider)
 
-Sign in at `https://<base_domain>/login` (ownscale — admin panel, login,
+Sign in at `https://<base_domain>/login` (ownscale — Ownscale console, login,
 and OIDC provider — is bound to the bare base domain; the documentation
 site lives at `https://docs.<base_domain>`). ownscale federates the initial
 login to a configurable upstream OIDC provider (`auth.upstream_oidc` in
 `config.yaml`) — any standard OIDC issuer works: Google, Okta, Dex, etc. —
 then acts as its own OIDC provider so each organization's Headscale and
 Headplane containers trust it as a relying party: one upstream login
-covers the admin panel and every organization's tailnet/Headplane
+covers the Ownscale console and every organization's tailnet/Headplane
 dashboard. See `site/content/docs/getting-started.md` for details.
 
 For local dev, `docker-compose.yml` bundles a
@@ -121,12 +121,12 @@ it doesn't, rather than silently starting a container that would later fail
 OIDC login with a confusing TLS trust error. When unset (production), that
 copy step is skipped entirely. It similarly changes how ownscale itself
 trusts its own configured `auth.upstream_oidc.issuer` (e.g. the bundled Dex
-instance): see `internal/auth.RegisterUpstreamOIDC`.
+instance): see `auth.RegisterUpstreamOIDC`.
 
 ## Trust Caddy local dev certs
 
 The pre-generated root CA cert lives at `${OWNSCALE_DATA_DIR}/local-ca/root.crt`
-on the host (see `internal/localca` and docker-compose.yml's `local-ca-init`
+on the host (see `localca` and docker-compose.yml's `local-ca-init`
 service) -- no need to `docker cp` it out of a running container.
 
 ### OS trust store (needed for CLI tools, e.g. `tailscale up`)
@@ -150,7 +150,7 @@ Organization headscale/headplane containers trust this same local CA
 automatically: they mount the `caddy-data` volume read-only and, if Caddy's
 local CA is present there, headscale gets it appended to its system CA
 bundle and headplane gets `NODE_EXTRA_CA_CERTS` pointed at it. The
-`ownscale` service itself does the same (see `internal/auth.go`), so it can
+`ownscale` service itself does the same (see `auth.go`), so it can
 trust its own upstream OIDC provider (e.g. the bundled Dex instance) when
 that's also proxied through Caddy under a non-public `BASE_DOMAIN`. This
 only matters for a non-public `BASE_DOMAIN` (e.g. `ownscale.test`), where

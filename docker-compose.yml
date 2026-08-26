@@ -1,6 +1,6 @@
 services:
   # One-shot: idempotently generates the local development root CA (see
-  # internal/localca) that Caddy signs all its local certs from (see
+  # localca) that Caddy signs all its local certs from (see
   # etc/caddy/Caddyfile's "pki" block), under ${OWNSCALE_DATA_DIR}/local-ca.
   # Present (and harmless/unused) when using a real domain.
   local-ca-init:
@@ -95,7 +95,7 @@ services:
     networks:
       os-net:
         # Docker-network alias for Dex's own subdomain; see
-        # internal/dockerctl.EnsureCaddyNetworkAlias) since it's a fixed,
+        # dockerctl.EnsureCaddyNetworkAlias) since it's a fixed,
         # always-needed. Without this, the ownscale service's
         # outbound HTTPS calls to its configured auth.upstream_oidc.issuer
         # (https://dex.${BASE_DOMAIN} by default) would have nowhere to

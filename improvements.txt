@@ -8,7 +8,7 @@ Structural
 3.  Handlers  leaks internals —  h.Queries()  /  h.Logger()  exist only so  server.NewMux  can wire middleware. Pass logger and an auth middleware into  NewMux  explicitly instead. Also  handlers.New  returns an  error  it never produces.
 4.  Handlers  holds both  pool  and  queries  and calls  orgs.Create(ctx, h.pool, h.ctl, h.baseDomain, ..., h.logger) . Prefer an injected  orgs.Service  (struct with pool/ctl/baseDomain/logger, method  Create(ctx, subdomain) ) — collapses the 6-arg function and lets handlers be tested with a fake service.
 5.  main()  ordering +  os.Exit  skips defers —  cfg.Validate()  runs after  db.Connect  (which creates dirs/files). And  defer pool.Close()  never runs because later failures call  os.Exit(1) . Standard fix:  func main() { if err := run(); err != nil {...} } , validate immediately after  Load .
-6. Duplicated bootstrap —  cmd/ownscale  and  cmd/osa 's  newOrgResources  both build config→logger→db→docker. Extract to a shared  internal/app  builder; one place to fake.
+6. Duplicated bootstrap —  cmd/ownscale  and  cmd/osa 's  newOrgResources  both build config→logger→db→docker. Extract to a shared  app  builder; one place to fake.
 7.  dockerctl.go  is 512 lines mixing validation, YAML templates, tar building, and container lifecycle — split into  subdomain.go ,  config.go ,  tar.go ,  ctl.go .
 
 Testability

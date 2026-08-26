@@ -21,7 +21,7 @@ export default function Layout() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
             </svg>
           </label>
-          <span className="text-lg font-bold px-2">Admin Panel</span>
+          <span className="text-lg font-bold px-2">Ownscale console</span>
         </div>
 
         <main className="p-6 flex-1">
@@ -32,7 +32,7 @@ export default function Layout() {
       <div className="drawer-side">
         <label htmlFor="sidebar-drawer" aria-label="close sidebar" className="drawer-overlay"></label>
         <aside className="bg-base-100 min-h-full w-64">
-          <div className="p-4 text-xl font-bold border-b border-base-200">Admin Panel</div>
+          <div className="p-4 text-xl font-bold border-b border-base-200">Ownscale console</div>
           <ul className="menu p-4 w-full">
             <li>
               <NavLink to="/" end className={({ isActive }) => (isActive ? 'active' : '')}>
