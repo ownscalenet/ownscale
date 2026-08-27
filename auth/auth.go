@@ -9,7 +9,9 @@ import (
 	"github.com/gorilla/sessions"
 	"github.com/markbates/goth"
 	"github.com/markbates/goth/gothic"
+	"github.com/markbates/goth/providers/google"
 	"github.com/markbates/goth/providers/openidConnect"
+	"github.com/ownscalenet/ownscale/derrors"
 )
 
 // SessionUserKey is the session value holding the authenticated user's id.
@@ -20,6 +22,7 @@ const SessionMaxAge = 30 * 24 * 60 * 60 // 30 days, in seconds
 // UpstreamProviderName is the goth provider name.
 // It's what appears in the browser-facing routes ("/auth/oidc", "/auth/oidc/callback")
 const UpstreamProviderName = "oidc"
+const GoogleProviderName = "google"
 
 // Setup configures gothic's cookie-backed session store, keyed by
 // sessionSecret. It must be called once at startup, before any auth routes
@@ -33,12 +36,22 @@ func Setup(sessionSecret string) {
 }
 
 func RegisterUpstreamOIDC(issuer, clientID, clientSecret, callbackURL string) (err error) {
+	defer derrors.Wrap(&err, "auth.RegisterUpstreamOIDC(%s)", clientID)
 	discoveryURL := strings.TrimSuffix(issuer, "/") + "/.well-known/openid-configuration"
 	provider, err := openidConnect.New(clientID, clientSecret, callbackURL, discoveryURL, "openid", "email", "profile")
 	if err != nil {
 		return fmt.Errorf("build upstream OIDC provider %q: %w", issuer, err)
 	}
 	provider.SetName(UpstreamProviderName)
+
+	goth.UseProviders(provider)
+	return nil
+}
+
+func RegisterGoogle(clientID, clientSecret, callbackURL string) (err error) {
+	defer derrors.Wrap(&err, "auth.RegisterGoogle(%s)", clientID)
+	provider := google.New(clientID, clientSecret, callbackURL, "email", "profile")
+	provider.SetName(GoogleProviderName)
 
 	goth.UseProviders(provider)
 	return nil

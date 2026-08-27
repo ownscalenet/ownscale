@@ -258,3 +258,12 @@ func TestRegisterUpstreamOIDC(t *testing.T) {
 		t.Errorf("GetProvider(%q) after RegisterUpstreamOIDC: %v", UpstreamProviderName, err)
 	}
 }
+
+func TestRegisterGoogle(t *testing.T) {
+	if err := RegisterGoogle("client-id", "client-secret", "https://example.com/auth/google/callback"); err != nil {
+		t.Fatalf("RegisterGoogle: %v", err)
+	}
+	if _, err := goth.GetProvider(GoogleProviderName); err != nil {
+		t.Errorf("GetProvider(%q) after RegisterGoogle: %v", GoogleProviderName, err)
+	}
+}

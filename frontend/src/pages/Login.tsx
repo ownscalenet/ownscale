@@ -11,7 +11,9 @@ function isSafeRelativeNext(next: string | null): next is string {
 export default function Login() {
   const { user, loading } = useAuth();
   const next = new URLSearchParams(window.location.search).get("next");
-  const href = `/auth/oidc${next ? `?next=${encodeURIComponent(next)}` : ""}`;
+  const nextParam = next ? `?next=${encodeURIComponent(next)}` : "";
+  const href = `/auth/oidc${nextParam}`;
+  const googleHref = `/auth/google${nextParam}`;
   const alreadyAuthed = !loading && !!user;
 
   // `next` may point at a backend-only route such as
@@ -42,9 +44,14 @@ export default function Login() {
         <div className="max-w-md">
           <h1 className="text-3xl font-bold mb-2">Ownscale console</h1>
           <p className="mb-6 text-base-content/70">Sign in to continue.</p>
-          <a href={href} className="btn btn-primary">
-            Sign in with SSO
-          </a>
+          <div className="flex flex-col gap-2">
+            <a href={href} className="btn btn-primary">
+              Sign in with SSO
+            </a>
+            <a href={googleHref} className="btn btn-outline">
+              Sign in with Google
+            </a>
+          </div>
         </div>
       </div>
     </div>

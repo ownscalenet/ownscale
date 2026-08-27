@@ -51,6 +51,21 @@ auth:
     # see etc/caddy/Caddyfile.
     callback_url: "http://localhost:8080/auth/oidc/callback"
 
+  # Optional: enables a direct "Sign in with Google" button on the login
+  # page (in addition to the "Sign in with SSO" button above, which is
+  # backed by upstream_oidc and could itself point at Google's OIDC
+  # issuer). Leave client_id empty (the default) to skip this.
+  # To create an OAuth 2.0 client ID:
+  # https://console.cloud.google.com/apis/credentials.
+  google:
+    # OAuth 2.0 client ID registered with Google. Leave empty to disable.
+    client_id: ""
+    # OAuth 2.0 client secret registered with Google.
+    client_secret: ""
+    # Must match an authorized redirect URI registered with the client, e.g.
+    # "https://<base_domain>/auth/google/callback".
+    callback_url: "http://localhost:8080/auth/google/callback"
+
   # OIDC provider configuration: ownscale itself acts as an OpenID Connect
   # provider (federated to upstream_oidc above) that each organization's
   # headscale/headplane containers trust for SSO. See

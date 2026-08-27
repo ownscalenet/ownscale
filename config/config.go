@@ -45,6 +45,7 @@ type LogConfig struct {
 type AuthConfig struct {
 	SessionSecret string             `yaml:"session_secret" env:"OWNSCALE_AUTH_SESSION_SECRET"`
 	UpstreamOIDC  UpstreamOIDCConfig `yaml:"upstream_oidc"`
+	Google        GoogleConfig       `yaml:"google"`
 	OIDCProvider  OIDCProviderConfig `yaml:"oidc_provider"`
 }
 
@@ -57,6 +58,15 @@ type UpstreamOIDCConfig struct {
 	ClientSecret string `yaml:"client_secret" env:"OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_SECRET"`
 	CallbackURL  string `yaml:"callback_url" env:"OWNSCALE_AUTH_UPSTREAM_OIDC_CALLBACK_URL"`
 }
+
+type GoogleConfig struct {
+	// Leave ClientID empty to disable Google login.
+	ClientID     string `yaml:"client_id" env:"OWNSCALE_AUTH_GOOGLE_CLIENT_ID"`
+	ClientSecret string `yaml:"client_secret" env:"OWNSCALE_AUTH_GOOGLE_CLIENT_SECRET"`
+	CallbackURL  string `yaml:"callback_url" env:"OWNSCALE_AUTH_GOOGLE_CALLBACK_URL"`
+}
+
+func (g GoogleConfig) Enabled() bool { return g.ClientID != "" }
 
 type OIDCProviderConfig struct {
 	Issuer              string `yaml:"issuer" env:"OWNSCALE_AUTH_OIDC_PROVIDER_ISSUER"`

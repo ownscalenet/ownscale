@@ -136,8 +136,20 @@ func run() error {
 		serveErr <- srv.Serve(ln)
 	}()
 
-	if err := auth.RegisterUpstreamOIDC(cfg.Auth.UpstreamOIDC.Issuer, cfg.Auth.UpstreamOIDC.ClientID, cfg.Auth.UpstreamOIDC.ClientSecret, cfg.Auth.UpstreamOIDC.CallbackURL); err != nil {
-		return fmt.Errorf("register upstream OIDC provider: %w", err)
+	if err := auth.RegisterUpstreamOIDC(
+		cfg.Auth.UpstreamOIDC.Issuer,
+		cfg.Auth.UpstreamOIDC.ClientID,
+		cfg.Auth.UpstreamOIDC.ClientSecret,
+		cfg.Auth.UpstreamOIDC.CallbackURL); err != nil {
+		return err
+	}
+	if cfg.Auth.Google.Enabled() {
+		if err := auth.RegisterGoogle(
+			cfg.Auth.Google.ClientID,
+			cfg.Auth.Google.ClientSecret,
+			cfg.Auth.Google.CallbackURL); err != nil {
+			return err
+		}
 	}
 
 	select {
