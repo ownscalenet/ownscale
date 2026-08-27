@@ -150,11 +150,21 @@ func (s *Service) provision(ctx context.Context, org sqlcgen.Organization) error
 		return err
 	}
 
+	if _, err := s.queries.CreateOrgConfig(ctx, sqlcgen.CreateOrgConfigParams{
+		ID:             uuid.Must(uuid.NewV7()).String(),
+		OrganizationID: org.ID,
+		ContainerType:  ACLContainerType,
+		Path:           dockerctl.PolicyConfigPath,
+		Content:        dockerctl.DefaultACLPolicy,
+	}); err != nil {
+		return err
+	}
+
 	if _, err := s.ctl.CreateOrganization(ctx, subdomain, s.baseDomain, dockerctl.OIDCClientCredentials{
 		Issuer:       s.issuer,
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
-	}, s.derpCfg); err != nil {
+	}, s.derpCfg, dockerctl.DefaultACLPolicy); err != nil {
 		return err
 	}
 	return nil

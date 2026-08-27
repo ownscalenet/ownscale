@@ -252,3 +252,27 @@ export function getInvitePreview(token: string) {
 export function acceptInvite(token: string) {
   return request<{ organization: Organization }>(`/api/invites/${token}/accept`, { method: 'POST' })
 }
+
+export interface AccessControlResponse {
+  notConfigured?: boolean
+  content: string
+  canManage: boolean
+}
+
+export function getAccessControlPolicy() {
+  return request<AccessControlResponse>('/api/access-control')
+}
+
+export function updateAccessControlPolicy(content: string) {
+  return request<{ ok: boolean }>('/api/access-control', {
+    method: 'PUT',
+    body: JSON.stringify({ content }),
+  })
+}
+
+export function formatAccessControlPolicy(content: string) {
+  return request<{ content: string }>('/api/access-control/format', {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  })
+}

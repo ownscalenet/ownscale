@@ -88,7 +88,7 @@ func TestListUsers(t *testing.T) {
 		// The orphaned user's organization column should show "-" since
 		// it has no organization_id.
 		orphanLine := ""
-		for _, line := range strings.Split(got, "\n") {
+		for line := range strings.SplitSeq(got, "\n") {
 			if strings.Contains(line, "orphan@example.test") {
 				orphanLine = line
 			}

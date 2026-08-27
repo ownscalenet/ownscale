@@ -20,6 +20,7 @@ require (
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/peterbourgon/ff/v4 v4.0.0-beta.1
 	github.com/pressly/goose/v3 v3.27.3
+	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f
 	github.com/zitadel/oidc/v3 v3.49.2
 	golang.org/x/crypto v0.55.0
 	gopkg.in/yaml.v3 v3.0.1

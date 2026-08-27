@@ -30,6 +30,7 @@ type API struct {
 	ContainerCreateFn      func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error)
 	ContainerStartFn       func(ctx context.Context, containerID string, options container.StartOptions) error
 	ContainerStopFn        func(ctx context.Context, containerID string, options container.StopOptions) error
+	ContainerRestartFn     func(ctx context.Context, containerID string, options container.StopOptions) error
 	ContainerRemoveFn      func(ctx context.Context, containerID string, options container.RemoveOptions) error
 	ContainerInspectFn     func(ctx context.Context, containerID string) (container.InspectResponse, error)
 	ContainerListFn        func(ctx context.Context, options container.ListOptions) ([]container.Summary, error)
@@ -73,6 +74,14 @@ func (a *API) ContainerStart(ctx context.Context, containerID string, options co
 func (a *API) ContainerStop(ctx context.Context, containerID string, options container.StopOptions) error {
 	if a.ContainerStopFn != nil {
 		return a.ContainerStopFn(ctx, containerID, options)
+	}
+	return nil
+}
+
+// ContainerRestart fakes restarting a container.
+func (a *API) ContainerRestart(ctx context.Context, containerID string, options container.StopOptions) error {
+	if a.ContainerRestartFn != nil {
+		return a.ContainerRestartFn(ctx, containerID, options)
 	}
 	return nil
 }

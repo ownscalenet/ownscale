@@ -42,3 +42,64 @@ func (q *Queries) CreateOrgConfig(ctx context.Context, arg CreateOrgConfigParams
 	)
 	return i, err
 }
+
+const getOrgConfig = `-- name: GetOrgConfig :one
+SELECT id, organization_id, container_type, path, content, created_at FROM orgconfigs
+WHERE organization_id = ? AND container_type = ? AND path = ?
+`
+
+type GetOrgConfigParams struct {
+	OrganizationID string
+	ContainerType  string
+	Path           string
+}
+
+func (q *Queries) GetOrgConfig(ctx context.Context, arg GetOrgConfigParams) (Orgconfig, error) {
+	row := q.db.QueryRowContext(ctx, getOrgConfig, arg.OrganizationID, arg.ContainerType, arg.Path)
+	var i Orgconfig
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.ContainerType,
+		&i.Path,
+		&i.Content,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const upsertOrgConfig = `-- name: UpsertOrgConfig :one
+INSERT INTO orgconfigs (id, organization_id, container_type, path, content)
+VALUES (?, ?, ?, ?, ?)
+ON CONFLICT(organization_id, container_type, path)
+DO UPDATE SET content = excluded.content
+RETURNING id, organization_id, container_type, path, content, created_at
+`
+
+type UpsertOrgConfigParams struct {
+	ID             string
+	OrganizationID string
+	ContainerType  string
+	Path           string
+	Content        string
+}
+
+func (q *Queries) UpsertOrgConfig(ctx context.Context, arg UpsertOrgConfigParams) (Orgconfig, error) {
+	row := q.db.QueryRowContext(ctx, upsertOrgConfig,
+		arg.ID,
+		arg.OrganizationID,
+		arg.ContainerType,
+		arg.Path,
+		arg.Content,
+	)
+	var i Orgconfig
+	err := row.Scan(
+		&i.ID,
+		&i.OrganizationID,
+		&i.ContainerType,
+		&i.Path,
+		&i.Content,
+		&i.CreatedAt,
+	)
+	return i, err
+}

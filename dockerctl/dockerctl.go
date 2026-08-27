@@ -39,6 +39,7 @@ const (
 	headscaleConfigPath = "/etc/headscale/config.yaml"
 	headplaneConfigPath = "/etc/headplane/config.yaml"
 	derpConfigPath      = "/etc/headscale/derp.yaml"
+	PolicyConfigPath    = "/etc/headscale/acl.hujson"
 
 	// Caddy self-signed CA is mounted here for organization containers.
 	LocalCAMountTarget = "/etc/ownscale-local-ca"
@@ -463,6 +464,10 @@ dns:
 unix_socket: /var/run/headscale/headscale.sock
 unix_socket_permission: "0770"
 
+policy:
+  mode: file
+  path: {{.PolicyConfigPath}}
+
 oidc:
   issuer: "{{.OIDCIssuer}}"
   client_id: "{{.OIDCClientID}}"
@@ -472,6 +477,24 @@ oidc:
     enabled: true
     method: S256
 `))
+
+// DefaultACLPolicy is the HuJSON access control policy every organization
+// starts with: a single accept-all rule allowing every node to reach every
+// other node on every port. This deliberately matches headscale's
+// no-policy-configured behavior (unrestricted tailnet access) so enabling
+// the policy file doesn't change behavior for existing/new organizations
+// until an admin edits it from the Access Control page.
+const DefaultACLPolicy = `{
+	// See https://headscale.net/stable/ref/acls/ for the full HuJSON syntax.
+	"acls": [
+		{
+			"action": "accept",
+			"src": ["*"],
+			"dst": ["*:*"],
+		},
+	],
+}
+`
 
 // custom DERP map for an organization, in headscale's own format (see
 // https://github.com/juanfont/headscale/blob/main/derp-example.yaml),
@@ -521,6 +544,7 @@ func buildHSConfig(subdomain, domain string, oidcCreds OIDCClientCredentials, de
 		OIDCClientSecret string
 		HasCustomDerp    bool
 		DerpConfigPath   string
+		PolicyConfigPath string
 	}{
 		Subdomain:        subdomain,
 		ServerURL:        domain,
@@ -529,6 +553,7 @@ func buildHSConfig(subdomain, domain string, oidcCreds OIDCClientCredentials, de
 		OIDCClientSecret: oidcCreds.ClientSecret,
 		HasCustomDerp:    derpCfg.Enabled(),
 		DerpConfigPath:   derpConfigPath,
+		PolicyConfigPath: PolicyConfigPath,
 	}); err != nil {
 		return "", err
 	}
@@ -788,8 +813,10 @@ func (c *Ctl) waitForHTTPServing(ctx context.Context, containerID, url string) (
 }
 
 // CreateOrganization provisions and starts a headscale container serving
-// https://<subdomain>.<baseDomain>. It returns the container ID.
-func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain string, oidcCreds OIDCClientCredentials, derpCfg config.DerpConfig) (_ string, err error) {
+// https://<subdomain>.<baseDomain>. aclPolicy is the HuJSON access control
+// policy content to upload at policyConfigPath (see DefaultACLPolicy for
+// the value new organizations start with). It returns the container ID.
+func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain string, oidcCreds OIDCClientCredentials, derpCfg config.DerpConfig, aclPolicy string) (_ string, err error) {
 	defer derrors.Wrap(&err, "c.CreateOrganization(%q, %q)", subdomain, baseDomain)
 
 	if err := ValidateSubdomain(subdomain); err != nil {
@@ -874,6 +901,18 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 		if err := c.cli.CopyToContainer(ctx, resp.ID, "/", derpTarBuf, container.CopyToContainerOptions{}); err != nil {
 			return "", fmt.Errorf("copy derp config into container: %w", err)
 		}
+	}
+
+	// aclPolicy is uploaded straight into the container's filesystem via
+	// the Docker API (not bind-mounted): the only way it ever changes is
+	// another such upload from ownscale itself (see WriteACLPolicy),
+	// keeping the file's source of truth firmly in the orgconfigs table.
+	policyTarBuf, err := configTar(PolicyConfigPath, aclPolicy)
+	if err != nil {
+		return "", err
+	}
+	if err := c.cli.CopyToContainer(ctx, resp.ID, "/", policyTarBuf, container.CopyToContainerOptions{}); err != nil {
+		return "", fmt.Errorf("copy acl policy into container: %w", err)
 	}
 
 	if err := c.cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
@@ -1060,6 +1099,37 @@ func (c *Ctl) StartOrganization(ctx context.Context, subdomain string) (err erro
 		return fmt.Errorf("start headplane container: %w", err)
 	}
 	go c.streamLogs(HPContainerName(subdomain), HPContainerName(subdomain))
+	return nil
+}
+
+// WriteACLPolicy uploads content (a HuJSON access control policy) into
+// subdomain's running headscale container at policyConfigPath via the
+// Docker API's CopyToContainer, overwriting whatever policy file is
+// already there. It does not restart the container -- call
+// RestartHeadscale afterwards so headscale actually reloads the new
+// policy (headscale only reads its policy file at startup).
+func (c *Ctl) WriteACLPolicy(ctx context.Context, subdomain, content string) (err error) {
+	defer derrors.Wrap(&err, "c.WriteACLPolicy(%q)", subdomain)
+
+	tarBuf, err := configTar(PolicyConfigPath, content)
+	if err != nil {
+		return err
+	}
+	if err := c.cli.CopyToContainer(ctx, HSContainerName(subdomain), "/", tarBuf, container.CopyToContainerOptions{}); err != nil {
+		return fmt.Errorf("copy acl policy into container: %w", err)
+	}
+	return nil
+}
+
+// RestartHeadscale restarts subdomain's headscale container via the Docker
+// API, so it picks up a newly uploaded ACL policy (or any other on-disk
+// config change). Headplane, running on its own container, is unaffected.
+func (c *Ctl) RestartHeadscale(ctx context.Context, subdomain string) (err error) {
+	defer derrors.Wrap(&err, "c.RestartHeadscale(%q)", subdomain)
+
+	if err := c.cli.ContainerRestart(ctx, HSContainerName(subdomain), container.StopOptions{}); err != nil {
+		return fmt.Errorf("restart container: %w", err)
+	}
 	return nil
 }
 

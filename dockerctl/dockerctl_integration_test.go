@@ -136,7 +136,7 @@ func TestDockerctlIntegration(t *testing.T) {
 			RegionCode: "custom",
 			RegionName: "Self-hosted DERP",
 		}
-		if _, err := ctl.CreateOrganization(ctx, subdomain, baseDomain, dockerctl.OIDCClientCredentials{}, derpCfg); err != nil {
+		if _, err := ctl.CreateOrganization(ctx, subdomain, baseDomain, dockerctl.OIDCClientCredentials{}, derpCfg, dockerctl.DefaultACLPolicy); err != nil {
 			t.Fatalf("CreateOrganization: %v", err)
 		}
 

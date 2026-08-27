@@ -194,7 +194,7 @@ func TestCreateOrganizationBootstrapsHeadscaleAPIKey(t *testing.T) {
 		Issuer:       "https://auth.example.com",
 		ClientID:     "client-id",
 		ClientSecret: "client-secret",
-	}, config.DerpConfig{})
+	}, config.DerpConfig{}, DefaultACLPolicy)
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
@@ -385,7 +385,7 @@ func TestCreateOrganizationMountsLocalCADirAndSetsEnvWhenConfigured(t *testing.T
 
 	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{
 		Issuer: "https://example.com", ClientID: "id", ClientSecret: "secret",
-	}, config.DerpConfig{}); err != nil {
+	}, config.DerpConfig{}, DefaultACLPolicy); err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
 
@@ -429,7 +429,7 @@ func TestCreateOrganizationSkipsLocalCAMountWhenNotConfigured(t *testing.T) {
 
 	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{
 		Issuer: "https://example.com", ClientID: "id", ClientSecret: "secret",
-	}, config.DerpConfig{}); err != nil {
+	}, config.DerpConfig{}, DefaultACLPolicy); err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
 
@@ -467,7 +467,7 @@ func TestCreateOrganizationSharesHeadscaleConfigWithHeadplane(t *testing.T) {
 
 	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{
 		Issuer: "https://example.com", ClientID: "id", ClientSecret: "secret",
-	}, config.DerpConfig{}); err != nil {
+	}, config.DerpConfig{}, DefaultACLPolicy); err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
 
@@ -521,7 +521,7 @@ func TestCreateOrganizationMountsDockerSocketIntoHeadplane(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = ctl.Close() })
 
-	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}); err != nil {
+	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}, DefaultACLPolicy); err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
 
@@ -571,7 +571,7 @@ func TestCreateOrganizationUsesPerOrgNetwork(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = ctl.Close() })
 
-	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}); err != nil {
+	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}, DefaultACLPolicy); err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
 
@@ -735,7 +735,7 @@ func TestRemoveOrganizationCleansUpConfigDir(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = ctl.Close() })
 
-	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}); err != nil {
+	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}, DefaultACLPolicy); err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
 
@@ -937,7 +937,7 @@ func TestCreateOrganizationJoinsOwnscaleToOrgNetwork(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = ctl.Close() })
 
-	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}); err != nil {
+	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}, DefaultACLPolicy); err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
 	if !ownscaleConnected {
@@ -1024,5 +1024,124 @@ func TestMintHeadscaleAPIKeyByContainerName(t *testing.T) {
 	}
 	if execContainer != HSContainerName("acme") {
 		t.Fatalf("exec container = %q, want %q", execContainer, HSContainerName("acme"))
+	}
+}
+
+// TestBuildHSConfigIncludesPolicy verifies the rendered headscale config
+// points headscale at the uploaded ACL policy file in "file" mode.
+func TestBuildHSConfigIncludesPolicy(t *testing.T) {
+	cfg, err := buildHSConfig("acme", "acme.example.com", OIDCClientCredentials{}, config.DerpConfig{})
+	if err != nil {
+		t.Fatalf("buildHSConfig: %v", err)
+	}
+	for _, want := range []string{
+		"policy:\n  mode: file\n  path: " + PolicyConfigPath,
+	} {
+		if !strings.Contains(cfg, want) {
+			t.Fatalf("config missing %q:\n%s", want, cfg)
+		}
+	}
+}
+
+// TestCreateOrganizationUploadsACLPolicy verifies CreateOrganization
+// uploads the given ACL policy content into the headscale container's
+// filesystem (not a bind mount) at PolicyConfigPath.
+func TestCreateOrganizationUploadsACLPolicy(t *testing.T) {
+	copied := make(map[string]map[string]string)
+	api := &dockerfake.API{
+		ContainerCreateFn: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+			return container.CreateResponse{ID: containerName}, nil
+		},
+		CopyToContainerFn: func(ctx context.Context, containerID, path string, content io.Reader, options container.CopyToContainerOptions) error {
+			files, err := tarContents(content)
+			if err != nil {
+				return err
+			}
+			if copied[containerID] == nil {
+				copied[containerID] = make(map[string]string)
+			}
+			maps.Copy(copied[containerID], files)
+			return nil
+		},
+	}
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	wantPolicy := `{"acls":[{"action":"accept","src":["*"],"dst":["*:*"]}]}`
+	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}, wantPolicy); err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+
+	got := copied[HSContainerName("acme")][strings.TrimPrefix(PolicyConfigPath, "/")]
+	if got != wantPolicy {
+		t.Fatalf("uploaded acl policy = %q, want %q", got, wantPolicy)
+	}
+
+	// No bind mount for the policy file: it must only reach the container
+	// via CopyToContainer, source-of-truth stays in the DB, not the host fs.
+	if _, err := os.Stat(filepath.Join(ctl.headscaleConfigHostDir("acme"), "acl.hujson")); err == nil {
+		t.Fatalf("acl.hujson unexpectedly written to host config dir")
+	}
+}
+
+// TestWriteACLPolicyUploadsToRunningContainer verifies WriteACLPolicy
+// re-uploads content into the (already running) headscale container by
+// name, without requiring a fresh container ID.
+func TestWriteACLPolicyUploadsToRunningContainer(t *testing.T) {
+	var gotContainerID string
+	var gotContent string
+	api := &dockerfake.API{
+		CopyToContainerFn: func(ctx context.Context, containerID, path string, content io.Reader, options container.CopyToContainerOptions) error {
+			files, err := tarContents(content)
+			if err != nil {
+				return err
+			}
+			gotContainerID = containerID
+			gotContent = files[strings.TrimPrefix(PolicyConfigPath, "/")]
+			return nil
+		},
+	}
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	newPolicy := `{"acls":[]}`
+	if err := ctl.WriteACLPolicy(t.Context(), "acme", newPolicy); err != nil {
+		t.Fatalf("WriteACLPolicy: %v", err)
+	}
+	if gotContainerID != HSContainerName("acme") {
+		t.Fatalf("container = %q, want %q", gotContainerID, HSContainerName("acme"))
+	}
+	if gotContent != newPolicy {
+		t.Fatalf("content = %q, want %q", gotContent, newPolicy)
+	}
+}
+
+// TestRestartHeadscaleRestartsTheRightContainer verifies RestartHeadscale
+// restarts only the org's headscale container (not headplane).
+func TestRestartHeadscaleRestartsTheRightContainer(t *testing.T) {
+	var restarted string
+	api := &dockerfake.API{
+		ContainerRestartFn: func(ctx context.Context, containerID string, options container.StopOptions) error {
+			restarted = containerID
+			return nil
+		},
+	}
+	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	if err := ctl.RestartHeadscale(t.Context(), "acme"); err != nil {
+		t.Fatalf("RestartHeadscale: %v", err)
+	}
+	if restarted != HSContainerName("acme") {
+		t.Fatalf("restarted = %q, want %q", restarted, HSContainerName("acme"))
 	}
 }
