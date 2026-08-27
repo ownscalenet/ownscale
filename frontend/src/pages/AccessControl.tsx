@@ -208,14 +208,16 @@ export default function AccessControl() {
               <div className="flex items-center justify-between mb-2">
                 <h2 className="card-title">Policy file (acl.hujson)</h2>
                 <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    className="btn btn-ghost btn-sm"
-                    disabled={!dirty}
-                    onClick={() => diffRef.current?.showModal()}
-                  >
-                    View diff
-                  </button>
+                {canManage && (
+                    <button
+                        type="button"
+                        className="btn btn-ghost btn-sm"
+                        disabled={!dirty}
+                        onClick={() => diffRef.current?.showModal()}
+                      >
+                        View diff
+                      </button>
+                  )}
                   {canManage && (
                     <button
                       type="button"

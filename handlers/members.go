@@ -9,16 +9,15 @@ import (
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
 
-// member is the JSON shape of an org member returned by ListMembers,
-// merging the ownscale user row with its linked headscale user's display
-// name (if any and if resolvable).
+// member is the JSON shape of an org member returned by ListMembers. The
+// member's linked headscale user (see ListMembers' auto-linking) is an
+// internal implementation detail and deliberately not exposed here --
+// headscale users aren't a concept end-users should need to know about.
 type member struct {
-	ID                string  `json:"id"`
-	Name              string  `json:"name"`
-	Email             string  `json:"email"`
-	Role              string  `json:"role"`
-	HeadscaleUserID   *string `json:"headscaleUserId"`
-	HeadscaleUserName *string `json:"headscaleUserName,omitempty"`
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+	Role  string `json:"role"`
 }
 
 // callerAndOrg resolves the authenticated caller's *sqlcgen.User and their
@@ -37,27 +36,20 @@ func (h *Handlers) callerAndOrg(w http.ResponseWriter, r *http.Request) (caller 
 	return user, user.OrganizationID.String, true
 }
 
-// toMember converts u (already known to belong to the caller's
-// organization) into its JSON representation, resolving its linked
-// headscale user's display name from hsUsers (a nil-safe id->name lookup
-// built by the caller; may be empty if headscale isn't reachable).
-func toMember(u sqlcgen.User, hsUsers map[string]string) member {
-	m := member{ID: u.ID, Name: u.Name, Email: u.Email, Role: u.Role}
-	if u.HeadscaleUserID.Valid {
-		id := u.HeadscaleUserID.String
-		m.HeadscaleUserID = &id
-		if name, ok := hsUsers[id]; ok {
-			m.HeadscaleUserName = &name
-		}
-	}
-	return m
+// toMember converts u into its JSON representation.
+func toMember(u sqlcgen.User) member {
+	return member{ID: u.ID, Name: u.Name, Email: u.Email, Role: u.Role}
 }
 
 // ListMembers handles GET /api/members. It returns every member of the
 // caller's organization, plus whether the caller can manage members
-// (owner/admin), merging in each member's linked headscale user's display
-// name when headscale is reachable for the organization (best-effort: if
-// it isn't, headscaleUserName is simply omitted).
+// (owner/admin). Members aren't linked to a headscale user by hand: any
+// member who isn't linked yet is automatically matched, by email, against
+// the organization's headscale users (populated by headscale's own OIDC
+// login when someone runs `tailscale up`) and the link is persisted --
+// best-effort, since headscale may not be reachable yet or no match may
+// exist. The link itself stays purely an internal bookkeeping detail (see
+// the member struct) so headscale users are never surfaced to end-users.
 func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 	caller, orgID, ok := h.callerAndOrg(w, r)
 	if !ok {
@@ -70,18 +62,39 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	hsUsers := map[string]string{}
 	if client, notConfigured, err := h.resolveMachinesClient(r); err == nil && !notConfigured {
-		if list, err := client.ListUsers(r.Context()); err == nil {
-			for _, u := range list {
-				hsUsers[u.ID] = u.Name
+		if hsUsers, err := client.ListUsers(r.Context()); err == nil {
+			byEmail := map[string]string{}
+			for _, u := range hsUsers {
+				if u.Email != "" {
+					byEmail[strings.ToLower(u.Email)] = u.ID
+				}
+			}
+			for i, u := range users {
+				if u.HeadscaleUserID.Valid || u.Email == "" {
+					continue
+				}
+				hsID, matched := byEmail[strings.ToLower(u.Email)]
+				if !matched {
+					continue
+				}
+				if err := h.queries.LinkUserHeadscaleUser(r.Context(), sqlcgen.LinkUserHeadscaleUserParams{
+					HeadscaleUserID: sql.NullString{String: hsID, Valid: true},
+					ID:              u.ID,
+				}); err != nil {
+					// Best-effort: e.g. a unique-constraint conflict if
+					// another member is already linked to this headscale
+					// user. Leave this member unlinked and move on.
+					continue
+				}
+				users[i].HeadscaleUserID = sql.NullString{String: hsID, Valid: true}
 			}
 		}
 	}
 
 	members := make([]member, 0, len(users))
 	for _, u := range users {
-		members = append(members, toMember(u, hsUsers))
+		members = append(members, toMember(u))
 	}
 
 	h.writeJSON(w, http.StatusOK, map[string]any{
@@ -140,72 +153,6 @@ func (h *Handlers) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.queries.UpdateUserRole(r.Context(), sqlcgen.UpdateUserRoleParams{Role: req.Role, ID: target.ID}); err != nil {
-		h.serverError(w, err)
-		return
-	}
-	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-}
-
-// LinkMember handles POST /api/members/{id}/link. A manager (owner/admin)
-// may link any member; a member may only link themselves. The headscale
-// user ID is not validated against headscale itself (it's just an opaque
-// foreign key here) -- the frontend only offers IDs from the org's actual
-// headscale user list, and the partial unique index on
-// (organization_id, headscale_user_id) prevents linking the same headscale
-// user to two members.
-func (h *Handlers) LinkMember(w http.ResponseWriter, r *http.Request) {
-	caller, orgID, ok := h.callerAndOrg(w, r)
-	if !ok {
-		return
-	}
-	target, ok := h.targetMember(w, r, orgID)
-	if !ok {
-		return
-	}
-	if !isManager(caller.Role) && caller.ID != target.ID {
-		h.writeError(w, http.StatusForbidden, "you can only link your own account")
-		return
-	}
-	var req struct {
-		HeadscaleUserID string `json:"headscaleUserId"`
-	}
-	if !h.decodeJSONBody(w, r, &req) {
-		return
-	}
-	if strings.TrimSpace(req.HeadscaleUserID) == "" {
-		h.writeError(w, http.StatusBadRequest, "headscaleUserId is required")
-		return
-	}
-	if err := h.queries.LinkUserHeadscaleUser(r.Context(), sqlcgen.LinkUserHeadscaleUserParams{
-		HeadscaleUserID: sql.NullString{String: req.HeadscaleUserID, Valid: true},
-		ID:              target.ID,
-	}); err != nil {
-		if isUniqueConstraintErr(err) {
-			h.writeError(w, http.StatusConflict, "that headscale user is already linked to another member")
-			return
-		}
-		h.serverError(w, err)
-		return
-	}
-	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-}
-
-// UnlinkMember handles POST /api/members/{id}/unlink, under the same
-// manager-or-self permission rule as LinkMember.
-func (h *Handlers) UnlinkMember(w http.ResponseWriter, r *http.Request) {
-	caller, orgID, ok := h.callerAndOrg(w, r)
-	if !ok {
-		return
-	}
-	target, ok := h.targetMember(w, r, orgID)
-	if !ok {
-		return
-	}
-	if !isManager(caller.Role) && caller.ID != target.ID {
-		h.writeError(w, http.StatusForbidden, "you can only unlink your own account")
-		return
-	}
-	if err := h.queries.UnlinkUserHeadscaleUser(r.Context(), target.ID); err != nil {
 		h.serverError(w, err)
 		return
 	}
@@ -279,11 +226,4 @@ func (h *Handlers) TransferOwnership(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-}
-
-// isUniqueConstraintErr reports whether err looks like a SQLite unique
-// constraint violation (e.g. from the partial unique index on
-// (organization_id, headscale_user_id)).
-func isUniqueConstraintErr(err error) bool {
-	return err != nil && strings.Contains(err.Error(), "UNIQUE constraint failed")
 }

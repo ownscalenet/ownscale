@@ -61,7 +61,7 @@ func newFakeHeadscaleServer(t *testing.T) (*httptest.Server, *headscaleclient.Cl
 			fmt.Fprint(w, `{"user":{"id":"3","name":"new-user"}}`)
 			return
 		}
-		fmt.Fprint(w, `{"users":[{"id":"1","name":"alice"},{"id":"2","name":"bob"}]}`)
+		fmt.Fprint(w, `{"users":[{"id":"1","name":"alice","email":"alice@example.com"},{"id":"2","name":"bob","email":"bob@example.com"}]}`)
 	})
 	mux.HandleFunc("/api/v1/user/1/rename/", func(w http.ResponseWriter, r *http.Request) {
 		requests = append(requests, r)

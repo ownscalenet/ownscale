@@ -149,69 +149,86 @@ func TestUpdateMemberRoleRejectsOwnerTransitions(t *testing.T) {
 	}
 }
 
-func TestLinkAndUnlinkMemberSelf(t *testing.T) {
-	h, queries, users := newMembersTestHandlers(t, RoleMember)
-	selfMember := users[0]
+func TestListMembersAutoLinksByEmail(t *testing.T) {
+	h, queries, users := newMembersTestHandlers(t, RoleOwner, RoleMember)
+	owner, target := users[0], users[1]
 
-	body := strings.NewReader(`{"headscaleUserId":"hs-1"}`)
-	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodPost, "/api/members/x/link", body), selfMember), "id", selfMember.ID)
+	// Give the member the email the fake headscale server's "alice" user
+	// carries (see newFakeHeadscaleServer in machines_test.go), so
+	// ListMembers' auto-link-by-email logic finds a match.
+	if err := queries.UpdateUserProfile(t.Context(), sqlcgen.UpdateUserProfileParams{
+		Email:         "alice@example.com",
+		Name:          target.Name,
+		AvatarUrl:     target.AvatarUrl,
+		EmailVerified: target.EmailVerified,
+		ID:            target.ID,
+	}); err != nil {
+		t.Fatalf("UpdateUserProfile: %v", err)
+	}
+
+	_, client, _ := newFakeHeadscaleServer(t)
+	h.hs = &fakeMachinesRegistry{client: client}
+
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/members", nil), owner)
 	rec := httptest.NewRecorder()
-	h.LinkMember(rec, req)
+	h.ListMembers(rec, req)
 	if rec.Code != http.StatusOK {
-		t.Fatalf("link: status = %d, want 200: %s", rec.Code, rec.Body)
-	}
-	got, err := queries.GetUserByID(t.Context(), selfMember.ID)
-	if err != nil {
-		t.Fatalf("GetUserByID: %v", err)
-	}
-	if !got.HeadscaleUserID.Valid || got.HeadscaleUserID.String != "hs-1" {
-		t.Errorf("headscaleUserId = %+v, want hs-1", got.HeadscaleUserID)
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
 	}
 
-	req2 := withPathValue(withTestUser(httptest.NewRequest(http.MethodPost, "/api/members/x/unlink", nil), selfMember), "id", selfMember.ID)
-	rec2 := httptest.NewRecorder()
-	h.UnlinkMember(rec2, req2)
-	if rec2.Code != http.StatusOK {
-		t.Fatalf("unlink: status = %d, want 200: %s", rec2.Code, rec2.Body)
-	}
-	got2, err := queries.GetUserByID(t.Context(), selfMember.ID)
+	got, err := queries.GetUserByID(t.Context(), target.ID)
 	if err != nil {
 		t.Fatalf("GetUserByID: %v", err)
 	}
-	if got2.HeadscaleUserID.Valid {
-		t.Errorf("expected headscaleUserId to be cleared, got %+v", got2.HeadscaleUserID)
+	if !got.HeadscaleUserID.Valid || got.HeadscaleUserID.String != "1" {
+		t.Errorf("headscaleUserId = %+v, want linked to headscale user 1 (alice)", got.HeadscaleUserID)
+	}
+
+	// The link is purely internal bookkeeping -- the JSON response must
+	// not surface it.
+	if strings.Contains(rec.Body.String(), "headscaleUserId") {
+		t.Errorf("response leaks headscaleUserId: %s", rec.Body)
 	}
 }
 
-func TestLinkMemberForbiddenForOthers(t *testing.T) {
-	h, _, users := newMembersTestHandlers(t, RoleMember, RoleMember)
-	caller, other := users[0], users[1]
+func TestListMembersDoesNotRelinkAlreadyLinkedMember(t *testing.T) {
+	h, queries, users := newMembersTestHandlers(t, RoleOwner, RoleMember)
+	owner, target := users[0], users[1]
 
-	body := strings.NewReader(`{"headscaleUserId":"hs-1"}`)
-	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodPost, "/api/members/x/link", body), caller), "id", other.ID)
+	if err := queries.UpdateUserProfile(t.Context(), sqlcgen.UpdateUserProfileParams{
+		Email:         "alice@example.com",
+		Name:          target.Name,
+		AvatarUrl:     target.AvatarUrl,
+		EmailVerified: target.EmailVerified,
+		ID:            target.ID,
+	}); err != nil {
+		t.Fatalf("UpdateUserProfile: %v", err)
+	}
+	// Pre-link to a different headscale user than the one email-matching
+	// would pick ("1"/alice) -- ListMembers must leave this alone.
+	if err := queries.LinkUserHeadscaleUser(t.Context(), sqlcgen.LinkUserHeadscaleUserParams{
+		HeadscaleUserID: sql.NullString{String: "2", Valid: true},
+		ID:              target.ID,
+	}); err != nil {
+		t.Fatalf("LinkUserHeadscaleUser: %v", err)
+	}
+
+	_, client, _ := newFakeHeadscaleServer(t)
+	h.hs = &fakeMachinesRegistry{client: client}
+
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/members", nil), owner)
 	rec := httptest.NewRecorder()
-	h.LinkMember(rec, req)
-	if rec.Code != http.StatusForbidden {
-		t.Fatalf("status = %d, want 403: %s", rec.Code, rec.Body)
+	h.ListMembers(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
 	}
-}
 
-func TestLinkMemberRejectsDuplicateHeadscaleUser(t *testing.T) {
-	h, _, users := newMembersTestHandlers(t, RoleOwner, RoleMember, RoleMember)
-	owner, first, second := users[0], users[1], users[2]
-
-	link := func(caller, target sqlcgen.User) int {
-		body := strings.NewReader(`{"headscaleUserId":"hs-1"}`)
-		req := withPathValue(withTestUser(httptest.NewRequest(http.MethodPost, "/api/members/x/link", body), caller), "id", target.ID)
-		rec := httptest.NewRecorder()
-		h.LinkMember(rec, req)
-		return rec.Code
+	got, err := queries.GetUserByID(t.Context(), target.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID: %v", err)
 	}
-	if code := link(owner, first); code != http.StatusOK {
-		t.Fatalf("first link: status = %d, want 200", code)
-	}
-	if code := link(owner, second); code != http.StatusConflict {
-		t.Fatalf("second link: status = %d, want 409", code)
+	if got.HeadscaleUserID.String != "2" {
+		t.Errorf("headscaleUserId = %+v, want unchanged at 2", got.HeadscaleUserID)
 	}
 }
 

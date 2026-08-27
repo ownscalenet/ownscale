@@ -144,8 +144,6 @@ export interface Member {
   name: string
   email: string
   role: Role
-  headscaleUserId: string | null
-  headscaleUserName?: string
 }
 
 export interface MembersResponse {
@@ -166,17 +164,6 @@ export function updateMemberRole(id: string, role: Role) {
   })
 }
 
-export function linkMember(id: string, headscaleUserId: string) {
-  return request<{ ok: boolean }>(`/api/members/${id}/link`, {
-    method: 'POST',
-    body: JSON.stringify({ headscaleUserId }),
-  })
-}
-
-export function unlinkMember(id: string) {
-  return request<{ ok: boolean }>(`/api/members/${id}/unlink`, { method: 'POST' })
-}
-
 export function removeMember(id: string) {
   return request<{ ok: boolean }>(`/api/members/${id}`, { method: 'DELETE' })
 }
@@ -186,33 +173,6 @@ export function transferOwnership(memberId: string) {
     method: 'POST',
     body: JSON.stringify({ memberId }),
   })
-}
-
-export interface HeadscaleUsersResponse {
-  notConfigured?: boolean
-  users: HeadscaleUser[]
-}
-
-export function listHeadscaleUsers() {
-  return request<HeadscaleUsersResponse>('/api/headscale-users')
-}
-
-export function createHeadscaleUser(name: string) {
-  return request<{ user: HeadscaleUser }>('/api/headscale-users', {
-    method: 'POST',
-    body: JSON.stringify({ name }),
-  })
-}
-
-export function renameHeadscaleUser(id: string, name: string) {
-  return request<{ ok: boolean }>(`/api/headscale-users/${id}/rename`, {
-    method: 'POST',
-    body: JSON.stringify({ name }),
-  })
-}
-
-export function deleteHeadscaleUser(id: string) {
-  return request<{ ok: boolean }>(`/api/headscale-users/${id}`, { method: 'DELETE' })
 }
 
 export interface Invite {
