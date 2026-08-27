@@ -4,7 +4,7 @@
 # (go:embed needs real files at Go build time), so run `make frontend`
 # whenever frontend/ changes and commit the updated webui/dist.
 
-.PHONY: build frontend backend osa test test-integration coverage migration archive docker-image rm-orphans purge ci docs load-cert
+.PHONY: build frontend backend osa test test-integration coverage migration archive docker-image rm-orphans purge ci docs load-cert e2e
 
 DOCKER_IMAGE := ownscale:latest
 
@@ -54,6 +54,15 @@ test:
 
 test-integration:
 	go test -tags=integration ./...
+
+# Run the Playwright e2e suite (e2e/) against a real local docker-compose
+# stack (ownscale + dex + caddy) and a real, freshly-migrated SQLite
+# database -- see e2e/README.md for prerequisites. Resets local dev data
+# in data/ (see e2e/lib/stack.ts); don't run this against data you care about.
+e2e:
+	npm --prefix e2e ci
+	npm --prefix e2e exec playwright install --with-deps chromium
+	npm --prefix e2e test
 
 BROWSER := firefox
 coverage:
