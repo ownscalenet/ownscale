@@ -14,6 +14,7 @@ export default function Login() {
   const nextParam = next ? `?next=${encodeURIComponent(next)}` : "";
   const href = `/auth/oidc${nextParam}`;
   const googleHref = `/auth/google${nextParam}`;
+  const microsoftHref = `/auth/microsoft${nextParam}`;
   const alreadyAuthed = !loading && !!user;
 
   // `next` may point at a backend-only route such as
@@ -50,6 +51,9 @@ export default function Login() {
             </a>
             <a href={googleHref} className="btn btn-outline">
               Sign in with Google
+            </a>
+            <a href={microsoftHref} className="btn btn-outline">
+              Sign in with Microsoft
             </a>
           </div>
         </div>

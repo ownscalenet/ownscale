@@ -10,6 +10,7 @@ import (
 	"github.com/markbates/goth"
 	"github.com/markbates/goth/gothic"
 	"github.com/markbates/goth/providers/google"
+	"github.com/markbates/goth/providers/microsoftonline"
 	"github.com/markbates/goth/providers/openidConnect"
 	"github.com/ownscalenet/ownscale/derrors"
 )
@@ -23,6 +24,7 @@ const SessionMaxAge = 30 * 24 * 60 * 60 // 30 days, in seconds
 // It's what appears in the browser-facing routes ("/auth/oidc", "/auth/oidc/callback")
 const UpstreamProviderName = "oidc"
 const GoogleProviderName = "google"
+const MicrosoftProviderName = "microsoft"
 
 // Setup configures gothic's cookie-backed session store, keyed by
 // sessionSecret. It must be called once at startup, before any auth routes
@@ -52,6 +54,15 @@ func RegisterGoogle(clientID, clientSecret, callbackURL string) (err error) {
 	defer derrors.Wrap(&err, "auth.RegisterGoogle(%s)", clientID)
 	provider := google.New(clientID, clientSecret, callbackURL, "email", "profile")
 	provider.SetName(GoogleProviderName)
+
+	goth.UseProviders(provider)
+	return nil
+}
+
+func RegisterMicrosoft(clientID, clientSecret, callbackURL string) (err error) {
+	defer derrors.Wrap(&err, "auth.RegisterMicrosoft(%s)", clientID)
+	provider := microsoftonline.New(clientID, clientSecret, callbackURL)
+	provider.SetName(MicrosoftProviderName)
 
 	goth.UseProviders(provider)
 	return nil

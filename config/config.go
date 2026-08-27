@@ -46,6 +46,7 @@ type AuthConfig struct {
 	SessionSecret string             `yaml:"session_secret" env:"OWNSCALE_AUTH_SESSION_SECRET"`
 	UpstreamOIDC  UpstreamOIDCConfig `yaml:"upstream_oidc"`
 	Google        GoogleConfig       `yaml:"google"`
+	Microsoft     MicrosoftConfig    `yaml:"microsoft"`
 	OIDCProvider  OIDCProviderConfig `yaml:"oidc_provider"`
 }
 
@@ -67,6 +68,19 @@ type GoogleConfig struct {
 }
 
 func (g GoogleConfig) Enabled() bool { return g.ClientID != "" }
+
+// MicrosoftConfig configures a direct "Sign in with Microsoft" button on
+// the login page, using goth's microsoftonline provider (multi-tenant:
+// supports both personal Microsoft accounts and work/school Azure AD
+// accounts). Entirely optional, like GoogleConfig.
+type MicrosoftConfig struct {
+	// Leave ClientID empty to disable Microsoft login.
+	ClientID     string `yaml:"client_id" env:"OWNSCALE_AUTH_MICROSOFT_CLIENT_ID"`
+	ClientSecret string `yaml:"client_secret" env:"OWNSCALE_AUTH_MICROSOFT_CLIENT_SECRET"`
+	CallbackURL  string `yaml:"callback_url" env:"OWNSCALE_AUTH_MICROSOFT_CALLBACK_URL"`
+}
+
+func (m MicrosoftConfig) Enabled() bool { return m.ClientID != "" }
 
 type OIDCProviderConfig struct {
 	Issuer              string `yaml:"issuer" env:"OWNSCALE_AUTH_OIDC_PROVIDER_ISSUER"`

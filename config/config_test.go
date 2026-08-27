@@ -235,6 +235,62 @@ auth:
 	}
 }
 
+func TestLoadMicrosoftUnsetIsDisabled(t *testing.T) {
+	dir := withDir(t)
+
+	yaml := `
+base_domain: example.com
+`
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.Auth.Microsoft.Enabled() {
+		t.Fatalf("Auth.Microsoft.Enabled() = true, want false when auth.microsoft.client_id is unset")
+	}
+	if cfg.Auth.Microsoft != (MicrosoftConfig{}) {
+		t.Errorf("Auth.Microsoft = %+v, want zero value when unset", cfg.Auth.Microsoft)
+	}
+}
+
+func TestLoadMicrosoftConfigured(t *testing.T) {
+	dir := withDir(t)
+
+	yaml := `
+base_domain: example.com
+auth:
+  microsoft:
+    client_id: "microsoft-client-id"
+    client_secret: "microsoft-client-secret"
+    callback_url: "https://example.com/auth/microsoft/callback"
+`
+	path := filepath.Join(dir, "config.yaml")
+	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.Auth.Microsoft.Enabled() {
+		t.Fatal("Auth.Microsoft.Enabled() = false, want true when auth.microsoft.client_id is set")
+	}
+	want := MicrosoftConfig{
+		ClientID:     "microsoft-client-id",
+		ClientSecret: "microsoft-client-secret",
+		CallbackURL:  "https://example.com/auth/microsoft/callback",
+	}
+	if cfg.Auth.Microsoft != want {
+		t.Errorf("Auth.Microsoft = %+v, want %+v", cfg.Auth.Microsoft, want)
+	}
+}
+
 func TestLoadDerpUnsetIsNoop(t *testing.T) {
 	dir := withDir(t)
 

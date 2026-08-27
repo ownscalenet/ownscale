@@ -58,13 +58,21 @@ auth:
   # To create an OAuth 2.0 client ID:
   # https://console.cloud.google.com/apis/credentials.
   google:
-    # OAuth 2.0 client ID registered with Google. Leave empty to disable.
+    # Leave empty to disable.
     client_id: ""
-    # OAuth 2.0 client secret registered with Google.
     client_secret: ""
-    # Must match an authorized redirect URI registered with the client, e.g.
-    # "https://<base_domain>/auth/google/callback".
     callback_url: "http://localhost:8080/auth/google/callback"
+
+  # Optional: enables a direct "Sign in with Microsoft" button on the login
+  # page (multi-tenant: works with both personal Microsoft accounts and
+  # work/school Azure AD accounts). Register an app at
+  # https://portal.azure.com (Azure Active Directory > App registrations)
+  # to get a client_id; it's shown directly on the app's Overview page.
+  microsoft:
+    # Leave empty to disable.
+    client_id: ""
+    client_secret: ""
+    callback_url: "http://localhost:8080/auth/microsoft/callback"
 
   # OIDC provider configuration: ownscale itself acts as an OpenID Connect
   # provider (federated to upstream_oidc above) that each organization's

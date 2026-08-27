@@ -267,3 +267,12 @@ func TestRegisterGoogle(t *testing.T) {
 		t.Errorf("GetProvider(%q) after RegisterGoogle: %v", GoogleProviderName, err)
 	}
 }
+
+func TestRegisterMicrosoft(t *testing.T) {
+	if err := RegisterMicrosoft("client-id", "client-secret", "https://example.com/auth/microsoft/callback"); err != nil {
+		t.Fatalf("RegisterMicrosoft: %v", err)
+	}
+	if _, err := goth.GetProvider(MicrosoftProviderName); err != nil {
+		t.Errorf("GetProvider(%q) after RegisterMicrosoft: %v", MicrosoftProviderName, err)
+	}
+}

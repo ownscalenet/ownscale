@@ -151,6 +151,14 @@ func run() error {
 			return err
 		}
 	}
+	if cfg.Auth.Microsoft.Enabled() {
+		if err := auth.RegisterMicrosoft(
+			cfg.Auth.Microsoft.ClientID,
+			cfg.Auth.Microsoft.ClientSecret,
+			cfg.Auth.Microsoft.CallbackURL); err != nil {
+			return err
+		}
+	}
 
 	select {
 	case err := <-serveErr:
