@@ -9,9 +9,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/google/uuid"
 	"github.com/markbates/goth"
 	"github.com/pressly/goose/v3"
+	"github.com/rs/xid"
 
 	dbpkg "github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
@@ -50,7 +50,7 @@ func newTestQueries(t *testing.T) *sqlcgen.Queries {
 // insertUser inserts a user row directly and returns it.
 func insertUser(t *testing.T, queries *sqlcgen.Queries) sqlcgen.User {
 	t.Helper()
-	id := uuid.Must(uuid.NewV7()).String()
+	id := xid.New().String()
 	user, err := queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
 		ID:             id,
 		Provider:       "oidc",

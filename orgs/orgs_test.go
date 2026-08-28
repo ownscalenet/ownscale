@@ -19,9 +19,9 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/pkg/stdcopy"
-	"github.com/google/uuid"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pressly/goose/v3"
+	"github.com/rs/xid"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/ownscalenet/ownscale/config"
@@ -72,7 +72,7 @@ func TestServiceCreateCreatesOIDCClient(t *testing.T) {
 			return nil
 		},
 		ContainerExecCreateFn: func(ctx context.Context, containerID string, options container.ExecOptions) (container.ExecCreateResponse, error) {
-			return container.ExecCreateResponse{ID: uuid.Must(uuid.NewV7()).String()}, nil
+			return container.ExecCreateResponse{ID: xid.New().String()}, nil
 		},
 		ContainerExecAttachFn: func(ctx context.Context, execID string, options container.ExecAttachOptions) (types.HijackedResponse, error) {
 			clientConn, serverConn := net.Pipe()

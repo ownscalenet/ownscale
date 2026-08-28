@@ -14,12 +14,12 @@ require (
 	github.com/go-openapi/swag/jsonutils v0.29.1
 	github.com/go-openapi/swag/typeutils v0.29.1
 	github.com/go-openapi/validate v0.26.3
-	github.com/google/uuid v1.6.0
 	github.com/gorilla/sessions v1.4.0
 	github.com/markbates/goth v1.82.0
 	github.com/opencontainers/image-spec v1.1.1
 	github.com/peterbourgon/ff/v4 v4.0.0-beta.1
 	github.com/pressly/goose/v3 v3.27.3
+	github.com/rs/xid v1.6.0
 	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f
 	github.com/zitadel/oidc/v3 v3.49.2
 	golang.org/x/crypto v0.55.0
@@ -69,6 +69,7 @@ require (
 	github.com/golang-jwt/jwt/v4 v4.5.2 // indirect
 	github.com/golang-sql/civil v0.0.0-20220223132316-b832511892a9 // indirect
 	github.com/golang-sql/sqlexp v0.1.0 // indirect
+	github.com/google/uuid v1.6.0 // indirect
 	github.com/gorilla/mux v1.7.4 // indirect
 	github.com/gorilla/securecookie v1.1.2 // indirect
 	github.com/jackc/pgpassfile v1.0.0 // indirect

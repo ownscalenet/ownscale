@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/uuid"
+	"github.com/rs/xid"
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
@@ -19,7 +19,7 @@ import (
 func insertUser(t *testing.T, queries *sqlcgen.Queries, ctx context.Context, email string) sqlcgen.User {
 	t.Helper()
 	user, err := queries.CreateUser(ctx, sqlcgen.CreateUserParams{
-		ID:             uuid.Must(uuid.NewV7()).String(),
+		ID:             xid.New().String(),
 		Provider:       "google",
 		ProviderUserID: email,
 		Email:          email,

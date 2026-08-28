@@ -9,7 +9,7 @@ import (
 	"time"
 
 	jose "github.com/go-jose/go-jose/v4"
-	"github.com/google/uuid"
+	"github.com/rs/xid"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
@@ -126,7 +126,7 @@ func (s *Storage) CreateAuthRequest(ctx context.Context, authReq *oidc.AuthReque
 	}
 
 	req := newAuthRequest(authReq, userID)
-	req.ID = uuid.NewString()
+	req.ID = xid.New().String()
 
 	s.lock.Lock()
 	defer s.lock.Unlock()
@@ -176,7 +176,7 @@ func (s *Storage) DeleteAuthRequest(ctx context.Context, id string) error {
 func (s *Storage) CreateAccessToken(ctx context.Context, request op.TokenRequest) (string, time.Time, error) {
 	applicationID, _, _ := getTokenInfoFromRequest(request)
 	tok := &token{
-		ID:            uuid.NewString(),
+		ID:            xid.New().String(),
 		ApplicationID: applicationID,
 		Subject:       request.GetSubject(),
 		Audience:      append([]string(nil), request.GetAudience()...),
@@ -191,8 +191,8 @@ func (s *Storage) CreateAccessToken(ctx context.Context, request op.TokenRequest
 
 func (s *Storage) CreateAccessAndRefreshTokens(ctx context.Context, request op.TokenRequest, currentRefreshToken string) (accessTokenID string, newRefreshToken string, expiration time.Time, err error) {
 	applicationID, authTime, amr := getTokenInfoFromRequest(request)
-	newRefreshToken = uuid.NewString()
-	accessTokenID = uuid.NewString()
+	newRefreshToken = xid.New().String()
+	accessTokenID = xid.New().String()
 	expiration = time.Now().Add(s.accessTokenLifetime)
 	accessToken := &token{
 		ID:             accessTokenID,

@@ -10,9 +10,9 @@ import (
 	"github.com/ownscalenet/ownscale/auth/oidcprovider"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 
-	"github.com/google/uuid"
 	"github.com/markbates/goth"
 	"github.com/markbates/goth/gothic"
+	"github.com/rs/xid"
 )
 
 // nextCookieName is a short-lived, single-purpose cookie used to remember
@@ -87,7 +87,7 @@ func (h *Handlers) AuthCallback(w http.ResponseWriter, r *http.Request) {
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		user, err = h.queries.CreateUser(ctx, sqlcgen.CreateUserParams{
-			ID:             uuid.Must(uuid.NewV7()).String(),
+			ID:             xid.New().String(),
 			Provider:       gothUser.Provider,
 			ProviderUserID: gothUser.UserID,
 			Email:          gothUser.Email,

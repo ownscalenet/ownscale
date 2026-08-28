@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/rs/xid"
 
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
@@ -93,7 +93,7 @@ func (h *Handlers) CreateInvite(w http.ResponseWriter, r *http.Request) {
 	}
 
 	inv, err := h.queries.CreateInvite(r.Context(), sqlcgen.CreateInviteParams{
-		ID:             uuid.Must(uuid.NewV7()).String(),
+		ID:             xid.New().String(),
 		OrganizationID: orgID,
 		Email:          email,
 		Role:           req.Role,

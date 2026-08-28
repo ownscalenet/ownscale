@@ -5,7 +5,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/google/uuid"
+	"github.com/rs/xid"
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
@@ -15,7 +15,7 @@ func TestTLSAsk(t *testing.T) {
 	h.baseDomain = testBaseDomain
 
 	if _, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
-		ID:        uuid.Must(uuid.NewV7()).String(),
+		ID:        xid.New().String(),
 		Subdomain: "acme",
 	}); err != nil {
 		t.Fatalf("CreateOrganization: %v", err)

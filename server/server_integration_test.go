@@ -27,8 +27,8 @@ import (
 	"time"
 
 	"github.com/docker/docker/client"
-	"github.com/google/uuid"
 	"github.com/pressly/goose/v3"
+	"github.com/rs/xid"
 
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/config"
@@ -120,7 +120,7 @@ func TestServerIntegration(t *testing.T) {
 	t.Cleanup(func() { _ = ctl.Close() })
 
 	const baseDomain = "srvit.test"
-	subdomain := "srv" + uuid.Must(uuid.NewV7()).String()[:8]
+	subdomain := "srv" + xid.New().String()[:8]
 	t.Cleanup(func() {
 		// Must be t.Context() because t.Context() is already cancelled.
 		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
@@ -145,7 +145,7 @@ func TestServerIntegration(t *testing.T) {
 
 	// Seed a user and mint its session cookie directly, bypassing the
 	// real OAuth redirect flow.
-	id := uuid.Must(uuid.NewV7()).String()
+	id := xid.New().String()
 	user, err := queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
 		ID:             id,
 		Provider:       "oidc",

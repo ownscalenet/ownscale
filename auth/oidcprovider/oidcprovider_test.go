@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/pressly/goose/v3"
+	"github.com/rs/xid"
 	"golang.org/x/crypto/bcrypt"
 
 	dbpkg "github.com/ownscalenet/ownscale/db"
@@ -62,7 +62,7 @@ func testStorage(t *testing.T) (*Storage, *sqlcgen.Queries) {
 
 func insertTestUser(t *testing.T, queries *sqlcgen.Queries) sqlcgen.User {
 	t.Helper()
-	id := uuid.Must(uuid.NewV7()).String()
+	id := xid.New().String()
 	user, err := queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
 		ID:             id,
 		Provider:       "oidc",
@@ -93,7 +93,7 @@ func insertTestClient(t *testing.T, queries *sqlcgen.Queries, orgID string) (sql
 		t.Fatalf("Marshal redirect uris: %v", err)
 	}
 	client, err := queries.CreateOIDCClient(t.Context(), sqlcgen.CreateOIDCClientParams{
-		ID:               uuid.Must(uuid.NewV7()).String(),
+		ID:               xid.New().String(),
 		OrganizationID:   orgID,
 		ClientID:         "client-id",
 		ClientSecretHash: string(hash),
@@ -108,7 +108,7 @@ func insertTestClient(t *testing.T, queries *sqlcgen.Queries, orgID string) (sql
 func insertTestOrg(t *testing.T, queries *sqlcgen.Queries) sqlcgen.Organization {
 	t.Helper()
 	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
-		ID:        uuid.Must(uuid.NewV7()).String(),
+		ID:        xid.New().String(),
 		Subdomain: "acme",
 	})
 	if err != nil {

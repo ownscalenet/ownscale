@@ -18,7 +18,7 @@ import (
 	"github.com/ownscalenet/ownscale/dockerctl"
 	"github.com/ownscalenet/ownscale/dockerctl/dockerfake"
 
-	"github.com/google/uuid"
+	"github.com/rs/xid"
 )
 
 func discardLogger() *slog.Logger {
@@ -91,7 +91,7 @@ func newTestHandlers(t *testing.T, withOrgs bool) (*Handlers, *dbpkg.TxQueries) 
 // insertUser inserts a user row directly and returns it.
 func insertUser(t *testing.T, queries *dbpkg.TxQueries) sqlcgen.User {
 	t.Helper()
-	id := uuid.Must(uuid.NewV7()).String()
+	id := xid.New().String()
 	user, err := queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
 		ID:             id,
 		Provider:       "oidc",

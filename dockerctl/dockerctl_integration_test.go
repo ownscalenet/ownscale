@@ -22,7 +22,7 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
-	"github.com/google/uuid"
+	"github.com/rs/xid"
 
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/dockerctl"
@@ -72,7 +72,7 @@ func requireDocker(t *testing.T) *client.Client {
 // this test run, so repeated/parallel runs never collide on container names.
 func randomSubdomain(t *testing.T) string {
 	t.Helper()
-	id := uuid.Must(uuid.NewV7()).String()
+	id := xid.New().String()
 	return "it" + id[:8]
 }
 

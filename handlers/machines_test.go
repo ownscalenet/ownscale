@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/uuid"
+	"github.com/rs/xid"
 
 	"github.com/ownscalenet/ownscale/config"
 	dbpkg "github.com/ownscalenet/ownscale/db"
@@ -141,7 +141,7 @@ func activeOrgUser(t *testing.T, h *Handlers, queries *dbpkg.TxQueries) (sqlcgen
 	t.Helper()
 	user := insertUser(t, queries)
 
-	orgID := uuid.Must(uuid.NewV7()).String()
+	orgID := xid.New().String()
 	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{ID: orgID, Subdomain: "acme"})
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/google/uuid"
+	"github.com/rs/xid"
 
 	"github.com/ownscalenet/ownscale/config"
 	dbpkg "github.com/ownscalenet/ownscale/db"
@@ -24,7 +24,7 @@ func newMembersTestHandlers(t *testing.T, roles ...string) (*Handlers, *dbpkg.Tx
 	queries := newTestQueries(t)
 	h := New(queries, nil, "", nil, discardLogger(), config.DerpConfig{})
 
-	orgID := uuid.Must(uuid.NewV7()).String()
+	orgID := xid.New().String()
 	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{ID: orgID, Subdomain: "acme"})
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)

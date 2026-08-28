@@ -14,9 +14,9 @@ import (
 
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
-	"github.com/google/uuid"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pressly/goose/v3"
+	"github.com/rs/xid"
 
 	"github.com/ownscalenet/ownscale/config"
 	dbpkg "github.com/ownscalenet/ownscale/db"
@@ -67,7 +67,7 @@ func discardLogger() *slog.Logger {
 func insertOrg(t *testing.T, queries *dbpkg.TxQueries, subdomain string) sqlcgen.Organization {
 	t.Helper()
 	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
-		ID:        uuid.Must(uuid.NewV7()).String(),
+		ID:        xid.New().String(),
 		Subdomain: subdomain,
 	})
 	if err != nil {

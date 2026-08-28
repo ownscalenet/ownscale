@@ -11,7 +11,7 @@ import (
 
 	"github.com/pressly/goose/v3"
 
-	"github.com/google/uuid"
+	"github.com/rs/xid"
 
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/config"
@@ -130,7 +130,7 @@ func TestNewMuxAuthenticatedSession(t *testing.T) {
 	mux := NewMux(h, requireAuthAPI, discardLogger(), http.NotFoundHandler(), nil)
 
 	auth.Setup("test-session-secret-at-least-32-bytes-long")
-	id := uuid.Must(uuid.NewV7()).String()
+	id := xid.New().String()
 	user, err := queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
 		ID:             id,
 		Provider:       "oidc",

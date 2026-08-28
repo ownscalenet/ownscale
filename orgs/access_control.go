@@ -5,7 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 
-	"github.com/google/uuid"
+	"github.com/rs/xid"
 	"github.com/tailscale/hujson"
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
@@ -55,7 +55,7 @@ func (s *Service) SetACLPolicy(ctx context.Context, orgID, subdomain, content st
 	}
 
 	if _, err := s.queries.UpsertOrgConfig(ctx, sqlcgen.UpsertOrgConfigParams{
-		ID:             uuid.Must(uuid.NewV7()).String(),
+		ID:             xid.New().String(),
 		OrganizationID: orgID,
 		ContainerType:  ACLContainerType,
 		Path:           dockerctl.PolicyConfigPath,

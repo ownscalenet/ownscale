@@ -12,8 +12,8 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/pkg/stdcopy"
-	"github.com/google/uuid"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"github.com/rs/xid"
 
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/dockerctl"
@@ -31,7 +31,7 @@ func newTestService(t *testing.T) *Service {
 			return container.CreateResponse{ID: containerName}, nil
 		},
 		ContainerExecCreateFn: func(ctx context.Context, containerID string, options container.ExecOptions) (container.ExecCreateResponse, error) {
-			return container.ExecCreateResponse{ID: uuid.Must(uuid.NewV7()).String()}, nil
+			return container.ExecCreateResponse{ID: xid.New().String()}, nil
 		},
 		ContainerExecAttachFn: func(ctx context.Context, execID string, options container.ExecAttachOptions) (types.HijackedResponse, error) {
 			clientConn, serverConn := net.Pipe()

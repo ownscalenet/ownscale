@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
+	"github.com/rs/xid"
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
@@ -81,7 +81,7 @@ func TestGetInvitePreview(t *testing.T) {
 	owner := users[0]
 
 	inv, err := queries.CreateInvite(t.Context(), sqlcgen.CreateInviteParams{
-		ID:             uuid.Must(uuid.NewV7()).String(),
+		ID:             xid.New().String(),
 		OrganizationID: owner.OrganizationID.String,
 		Role:           RoleMember,
 		Token:          "test-token",
@@ -115,7 +115,7 @@ func TestGetInvitePreviewExpired(t *testing.T) {
 	owner := users[0]
 
 	inv, err := queries.CreateInvite(t.Context(), sqlcgen.CreateInviteParams{
-		ID:             uuid.Must(uuid.NewV7()).String(),
+		ID:             xid.New().String(),
 		OrganizationID: owner.OrganizationID.String,
 		Role:           RoleMember,
 		Token:          "expired-token",
@@ -146,7 +146,7 @@ func TestAcceptInvite(t *testing.T) {
 	owner := users[0]
 
 	inv, err := queries.CreateInvite(t.Context(), sqlcgen.CreateInviteParams{
-		ID:             uuid.Must(uuid.NewV7()).String(),
+		ID:             xid.New().String(),
 		OrganizationID: owner.OrganizationID.String,
 		Role:           RoleMember,
 		Token:          "accept-token",
@@ -201,7 +201,7 @@ func TestAcceptInviteRejectsExpired(t *testing.T) {
 	owner := users[0]
 
 	inv, err := queries.CreateInvite(t.Context(), sqlcgen.CreateInviteParams{
-		ID:             uuid.Must(uuid.NewV7()).String(),
+		ID:             xid.New().String(),
 		OrganizationID: owner.OrganizationID.String,
 		Role:           RoleMember,
 		Token:          "expired-accept",
@@ -227,7 +227,7 @@ func TestDeleteInvite(t *testing.T) {
 	owner := users[0]
 
 	inv, err := queries.CreateInvite(t.Context(), sqlcgen.CreateInviteParams{
-		ID:             uuid.Must(uuid.NewV7()).String(),
+		ID:             xid.New().String(),
 		OrganizationID: owner.OrganizationID.String,
 		Role:           RoleMember,
 		Token:          "delete-me",

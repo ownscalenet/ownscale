@@ -16,7 +16,7 @@ import (
 	"github.com/ownscalenet/ownscale/derrors"
 	"github.com/ownscalenet/ownscale/dockerctl"
 
-	"github.com/google/uuid"
+	"github.com/rs/xid"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -65,7 +65,7 @@ func (s *Service) CreatePending(ctx context.Context, subdomain string) (_ sqlcge
 	}
 
 	org, err := s.queries.CreateOrganization(ctx, sqlcgen.CreateOrganizationParams{
-		ID:        uuid.Must(uuid.NewV7()).String(),
+		ID:        xid.New().String(),
 		Subdomain: subdomain,
 	})
 	if err != nil {
@@ -141,7 +141,7 @@ func (s *Service) provision(ctx context.Context, org sqlcgen.Organization) error
 		return err
 	}
 	if _, err := s.queries.CreateOIDCClient(ctx, sqlcgen.CreateOIDCClientParams{
-		ID:               uuid.Must(uuid.NewV7()).String(),
+		ID:               xid.New().String(),
 		OrganizationID:   org.ID,
 		ClientID:         clientID,
 		ClientSecretHash: string(clientSecretHash),
@@ -151,7 +151,7 @@ func (s *Service) provision(ctx context.Context, org sqlcgen.Organization) error
 	}
 
 	if _, err := s.queries.CreateOrgConfig(ctx, sqlcgen.CreateOrgConfigParams{
-		ID:             uuid.Must(uuid.NewV7()).String(),
+		ID:             xid.New().String(),
 		OrganizationID: org.ID,
 		ContainerType:  ACLContainerType,
 		Path:           dockerctl.PolicyConfigPath,
