@@ -56,11 +56,7 @@ func boolToInt64(b bool) int64 {
 	return 0
 }
 
-// emailVerifiedFromGothUser extracts the upstream provider's "is this email
-// verified" claim from the raw provider response. Google's userinfo v2
-// endpoint (which goth's google provider uses) returns a "verified_email"
-// boolean; other providers may use "email_verified" instead, so both are
-// checked defensively.
+// This only works for google, not microsoft.
 func emailVerifiedFromGothUser(gothUser goth.User) bool {
 	for _, key := range []string{"verified_email", "email_verified"} {
 		if v, ok := gothUser.RawData[key].(bool); ok {

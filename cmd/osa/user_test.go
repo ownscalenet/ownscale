@@ -76,9 +76,9 @@ func TestListUsers(t *testing.T) {
 		got := out.String()
 
 		for _, want := range []string{
-			"EMAIL", "ORGANIZATION", "ROLE", "PROVIDER", "HEADSCALE", "LAST LOGIN",
-			"owner@acme.test", "acme", "owner", "google", "yes",
-			"orphan@example.test", "no",
+			"ID", "EMAIL", "ORGANIZATION", "ROLE", "PROVIDER", "HEADSCALEID", "LAST LOGIN",
+			orgUser.ID, "owner@acme.test", "acme", "owner", "google", "1",
+			"orphan@example.test",
 		} {
 			if !strings.Contains(got, want) {
 				t.Errorf("listUsers output = %q, want it to contain %q", got, want)

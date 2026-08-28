@@ -64,23 +64,23 @@ func listUsers(ctx context.Context, out io.Writer, queries *db.TxQueries) error 
 		return nil
 	}
 
-	_, _ = fmt.Fprintf(out, "%-30s %-20s %-15s %-10s %-10s %-9s %-20s %s\n",
-		"EMAIL", "NAME", "ORGANIZATION", "ROLE", "PROVIDER", "HEADSCALE", "CREATED", "LAST LOGIN")
+	_, _ = fmt.Fprintf(out, "%-38s %-30s %-15s %-10s %-10s %-12s %-20s %s\n",
+		"ID", "EMAIL", "ORGANIZATION", "ROLE", "PROVIDER", "HEADSCALEID", "CREATED", "LAST LOGIN")
 	for _, u := range users {
 		org := "-"
 		if u.OrgSubdomain.Valid {
 			org = u.OrgSubdomain.String
 		}
-		headscale := "no"
+		headscaleID := "-"
 		if u.HeadscaleUserID.Valid {
-			headscale = "yes"
+			headscaleID = u.HeadscaleUserID.String
 		}
 		lastLogin := "-"
 		if u.LastLoginAt.Valid {
 			lastLogin = u.LastLoginAt.Time.Format("2006-01-02 15:04:05")
 		}
-		_, _ = fmt.Fprintf(out, "%-30s %-20s %-15s %-10s %-10s %-9s %-20s %s\n",
-			u.Email, u.Name, org, u.Role, u.Provider, headscale,
+		_, _ = fmt.Fprintf(out, "%-38s %-30s %-15s %-10s %-10s %-12s %-20s %s\n",
+			u.ID, u.Email, org, u.Role, u.Provider, headscaleID,
 			u.CreatedAt.Format("2006-01-02 15:04:05"), lastLogin)
 	}
 	return nil
