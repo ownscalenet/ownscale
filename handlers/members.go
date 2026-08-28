@@ -3,7 +3,6 @@ package handlers
 import (
 	"database/sql"
 	"net/http"
-	"strings"
 
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
@@ -43,13 +42,7 @@ func toMember(u sqlcgen.User) member {
 
 // ListMembers handles GET /api/members. It returns every member of the
 // caller's organization, plus whether the caller can manage members
-// (owner/admin). Members aren't linked to a headscale user by hand: any
-// member who isn't linked yet is automatically matched, by email, against
-// the organization's headscale users (populated by headscale's own OIDC
-// login when someone runs `tailscale up`) and the link is persisted --
-// best-effort, since headscale may not be reachable yet or no match may
-// exist. The link itself stays purely an internal bookkeeping detail (see
-// the member struct) so headscale users are never surfaced to end-users.
+// (owner/admin).
 func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 	caller, orgID, ok := h.callerAndOrg(w, r)
 	if !ok {
@@ -63,32 +56,20 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if client, notConfigured, err := h.resolveMachinesClient(r); err == nil && !notConfigured {
-		if hsUsers, err := client.ListUsers(r.Context()); err == nil {
-			byEmail := map[string]string{}
-			for _, u := range hsUsers {
-				if u.Email != "" {
-					byEmail[strings.ToLower(u.Email)] = u.ID
-				}
+		claimed := claimedHeadscaleUserIDs(users)
+		for i, u := range users {
+			if u.HeadscaleUserID.Valid {
+				continue
 			}
-			for i, u := range users {
-				if u.HeadscaleUserID.Valid || u.Email == "" {
-					continue
-				}
-				hsID, matched := byEmail[strings.ToLower(u.Email)]
-				if !matched {
-					continue
-				}
-				if err := h.queries.LinkUserHeadscaleUser(r.Context(), sqlcgen.LinkUserHeadscaleUserParams{
-					HeadscaleUserID: sql.NullString{String: hsID, Valid: true},
-					ID:              u.ID,
-				}); err != nil {
-					// Best-effort: e.g. a unique-constraint conflict if
-					// another member is already linked to this headscale
-					// user. Leave this member unlinked and move on.
-					continue
-				}
-				users[i].HeadscaleUserID = sql.NullString{String: hsID, Valid: true}
+			hsID, err := h.ensureHeadscaleUser(r.Context(), client, u, claimed)
+			if err != nil {
+				// Best-effort: e.g. headscale rejected the create call, or
+				// a unique-constraint conflict racing another request.
+				// Leave this member unlinked and move on.
+				continue
 			}
+			users[i].HeadscaleUserID = sql.NullString{String: hsID, Valid: true}
+			claimed[hsID] = true
 		}
 	}
 

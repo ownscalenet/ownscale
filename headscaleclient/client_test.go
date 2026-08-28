@@ -56,7 +56,19 @@ func newTestServer(t *testing.T, wantToken string) (*httptest.Server, *[]*http.R
 		record(r)
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodPost {
-			fmt.Fprint(w, `{"user":{"id":"3","name":"created-user","displayName":"","email":"","createdAt":"2024-01-01T00:00:00Z"}}`)
+			raw, _ := io.ReadAll(r.Body)
+			r.Body = io.NopCloser(bytes.NewReader(raw))
+			body := CreateUserParams{}
+			_ = json.Unmarshal(raw, &body)
+			resp := map[string]any{"user": map[string]any{
+				"id":          "3",
+				"name":        body.Name,
+				"displayName": body.DisplayName,
+				"email":       body.Email,
+				"pictureUrl":  body.PictureURL,
+				"createdAt":   "2024-01-01T00:00:00Z",
+			}}
+			_ = json.NewEncoder(w).Encode(resp)
 			return
 		}
 		fmt.Fprint(w, `{"users":[{"id":"1","name":"alice","displayName":"Alice","email":"alice@example.com","createdAt":"2024-01-01T00:00:00Z"}]}`)
@@ -163,7 +175,7 @@ func TestClientListNodes(t *testing.T) {
 	c, srv, _ := newTestClient(t)
 	defer srv.Close()
 
-	nodes, err := c.ListNodes(context.Background())
+	nodes, err := c.ListNodes(t.Context())
 	if err != nil {
 		t.Fatalf("ListNodes: %v", err)
 	}
@@ -195,7 +207,7 @@ func TestClientListUsers(t *testing.T) {
 	c, srv, _ := newTestClient(t)
 	defer srv.Close()
 
-	users, err := c.ListUsers(context.Background())
+	users, err := c.ListUsers(t.Context())
 	if err != nil {
 		t.Fatalf("ListUsers: %v", err)
 	}
@@ -208,7 +220,7 @@ func TestClientRenameNode(t *testing.T) {
 	c, srv, reqs := newTestClient(t)
 	defer srv.Close()
 
-	if err := c.RenameNode(context.Background(), "1", "new-name"); err != nil {
+	if err := c.RenameNode(t.Context(), "1", "new-name"); err != nil {
 		t.Fatalf("RenameNode: %v", err)
 	}
 	last := (*reqs)[len(*reqs)-1]
@@ -221,16 +233,29 @@ func TestClientCreateUser(t *testing.T) {
 	c, srv, reqs := newTestClient(t)
 	defer srv.Close()
 
-	user, err := c.CreateUser(context.Background(), "created-user")
+	user, err := c.CreateUser(t.Context(), CreateUserParams{
+		Name:        "created-user",
+		Email:       "created-user@example.com",
+		DisplayName: "Created User",
+		PictureURL:  "https://example.com/avatar.png",
+	})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	if user.Name != "created-user" {
+	if user.Name != "created-user" || user.Email != "created-user@example.com" || user.DisplayName != "Created User" {
 		t.Errorf("unexpected user: %+v", user)
 	}
 	last := (*reqs)[len(*reqs)-1]
 	if last.Method != http.MethodPost || last.URL.Path != "/api/v1/user" {
 		t.Errorf("unexpected request: %s %s", last.Method, last.URL.Path)
+	}
+	body := CreateUserParams{}
+	if err := json.NewDecoder(last.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.Name != "created-user" || body.Email != "created-user@example.com" ||
+		body.DisplayName != "Created User" || body.PictureURL != "https://example.com/avatar.png" {
+		t.Errorf("unexpected request body: %+v", body)
 	}
 }
 
@@ -238,7 +263,7 @@ func TestClientRenameUser(t *testing.T) {
 	c, srv, reqs := newTestClient(t)
 	defer srv.Close()
 
-	if err := c.RenameUser(context.Background(), "1", "new-name"); err != nil {
+	if err := c.RenameUser(t.Context(), "1", "new-name"); err != nil {
 		t.Fatalf("RenameUser: %v", err)
 	}
 	last := (*reqs)[len(*reqs)-1]
@@ -251,7 +276,7 @@ func TestClientDeleteUser(t *testing.T) {
 	c, srv, reqs := newTestClient(t)
 	defer srv.Close()
 
-	if err := c.DeleteUser(context.Background(), "1"); err != nil {
+	if err := c.DeleteUser(t.Context(), "1"); err != nil {
 		t.Fatalf("DeleteUser: %v", err)
 	}
 	last := (*reqs)[len(*reqs)-1]
@@ -264,7 +289,7 @@ func TestClientSetTags(t *testing.T) {
 	c, srv, reqs := newTestClient(t)
 	defer srv.Close()
 
-	if err := c.SetTags(context.Background(), "1", []string{"tag:a", "tag:b"}); err != nil {
+	if err := c.SetTags(t.Context(), "1", []string{"tag:a", "tag:b"}); err != nil {
 		t.Fatalf("SetTags: %v", err)
 	}
 	last := (*reqs)[len(*reqs)-1]
@@ -283,7 +308,7 @@ func TestClientSetApprovedRoutes(t *testing.T) {
 	c, srv, reqs := newTestClient(t)
 	defer srv.Close()
 
-	if err := c.SetApprovedRoutes(context.Background(), "1", []string{"10.0.0.0/24"}); err != nil {
+	if err := c.SetApprovedRoutes(t.Context(), "1", []string{"10.0.0.0/24"}); err != nil {
 		t.Fatalf("SetApprovedRoutes: %v", err)
 	}
 	last := (*reqs)[len(*reqs)-1]
@@ -296,7 +321,7 @@ func TestClientExpireNode(t *testing.T) {
 	c, srv, _ := newTestClient(t)
 	defer srv.Close()
 
-	if err := c.ExpireNode(context.Background(), "1"); err != nil {
+	if err := c.ExpireNode(t.Context(), "1"); err != nil {
 		t.Fatalf("ExpireNode: %v", err)
 	}
 }
@@ -305,7 +330,7 @@ func TestClientDeleteNode(t *testing.T) {
 	c, srv, reqs := newTestClient(t)
 	defer srv.Close()
 
-	if err := c.DeleteNode(context.Background(), "1"); err != nil {
+	if err := c.DeleteNode(t.Context(), "1"); err != nil {
 		t.Fatalf("DeleteNode: %v", err)
 	}
 	last := (*reqs)[len(*reqs)-1]
@@ -318,7 +343,7 @@ func TestClientListPreAuthKeys(t *testing.T) {
 	c, srv, _ := newTestClient(t)
 	defer srv.Close()
 
-	keys, err := c.ListPreAuthKeys(context.Background())
+	keys, err := c.ListPreAuthKeys(t.Context())
 	if err != nil {
 		t.Fatalf("ListPreAuthKeys: %v", err)
 	}
@@ -341,7 +366,7 @@ func TestClientCreatePreAuthKey(t *testing.T) {
 	c, srv, reqs := newTestClient(t)
 	defer srv.Close()
 
-	key, err := c.CreatePreAuthKey(context.Background(), CreatePreAuthKeyParams{
+	key, err := c.CreatePreAuthKey(t.Context(), CreatePreAuthKeyParams{
 		UserID:     "1",
 		Reusable:   true,
 		Expiration: time.Now().Add(90 * 24 * time.Hour),
@@ -374,7 +399,7 @@ func TestClientExpirePreAuthKey(t *testing.T) {
 	c, srv, reqs := newTestClient(t)
 	defer srv.Close()
 
-	if err := c.ExpirePreAuthKey(context.Background(), "1"); err != nil {
+	if err := c.ExpirePreAuthKey(t.Context(), "1"); err != nil {
 		t.Fatalf("ExpirePreAuthKey: %v", err)
 	}
 	last := (*reqs)[len(*reqs)-1]
@@ -397,7 +422,7 @@ func TestClientAuthFailureSurfacesAsError(t *testing.T) {
 	defer srv.Close()
 
 	c := New(strings.TrimPrefix(srv.URL, "http://"), "wrong-key")
-	_, err := c.ListNodes(context.Background())
+	_, err := c.ListNodes(t.Context())
 	if err == nil {
 		t.Fatal("expected an error for a bad API key, got nil")
 	}
@@ -426,11 +451,11 @@ func TestRegistryMintsOnceAndCaches(t *testing.T) {
 	minter := &fakeMinter{key: "minted-key"}
 	r := NewRegistry(minter)
 
-	c1, err := r.Client(context.Background(), "acme")
+	c1, err := r.Client(t.Context(), "acme")
 	if err != nil {
 		t.Fatalf("Client: %v", err)
 	}
-	c2, err := r.Client(context.Background(), "acme")
+	c2, err := r.Client(t.Context(), "acme")
 	if err != nil {
 		t.Fatalf("Client (second call): %v", err)
 	}
@@ -446,7 +471,7 @@ func TestRegistryPropagatesMintError(t *testing.T) {
 	wantErr := errors.New("container not running")
 	r := NewRegistry(&fakeMinter{err: wantErr})
 
-	_, err := r.Client(context.Background(), "acme")
+	_, err := r.Client(t.Context(), "acme")
 	if err == nil || !errors.Is(err, wantErr) {
 		t.Fatalf("Client err = %v, want wrapping of %v", err, wantErr)
 	}
@@ -456,11 +481,11 @@ func TestRegistryDifferentSubdomainsGetDifferentClients(t *testing.T) {
 	minter := &fakeMinter{key: "minted-key"}
 	r := NewRegistry(minter)
 
-	c1, err := r.Client(context.Background(), "acme")
+	c1, err := r.Client(t.Context(), "acme")
 	if err != nil {
 		t.Fatalf("Client(acme): %v", err)
 	}
-	c2, err := r.Client(context.Background(), "widgets")
+	c2, err := r.Client(t.Context(), "widgets")
 	if err != nil {
 		t.Fatalf("Client(widgets): %v", err)
 	}

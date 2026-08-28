@@ -123,7 +123,26 @@ func (h *Handlers) Session(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		org = &o
+		h.ensureCallerHeadscaleUser(r, user, o)
 	}
 
 	h.writeJSON(w, http.StatusOK, map[string]any{"user": user, "organization": org})
+}
+
+func (h *Handlers) ensureCallerHeadscaleUser(r *http.Request, user *sqlcgen.User, org sqlcgen.Organization) {
+	if user.HeadscaleUserID.Valid || org.Status != "active" {
+		return
+	}
+	client, notConfigured, err := h.resolveMachinesClient(r)
+	if err != nil || notConfigured {
+		return
+	}
+	members, err := h.queries.ListUsersByOrganization(r.Context(), user.OrganizationID)
+	if err != nil {
+		h.logger.Warn("list organization members for headscale user linking", "error", err)
+		return
+	}
+	if _, err := h.ensureHeadscaleUser(r.Context(), client, *user, claimedHeadscaleUserIDs(members)); err != nil {
+		h.logger.Warn("ensure headscale user", "user_id", user.ID, "error", err)
+	}
 }

@@ -190,7 +190,7 @@ func TestCreateOrganizationBootstrapsHeadscaleAPIKey(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = ctl.Close() })
 
-	_, err = ctl.CreateOrganization(context.Background(), "acme", "example.com", OIDCClientCredentials{
+	_, err = ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{
 		Issuer:       "https://auth.example.com",
 		ClientID:     "client-id",
 		ClientSecret: "client-secret",

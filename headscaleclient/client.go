@@ -152,14 +152,25 @@ func (c *Client) ListUsers(ctx context.Context) (_ []User, err error) {
 	return users, nil
 }
 
-// CreateUser creates a new headscale user named name.
-func (c *Client) CreateUser(ctx context.Context, name string) (_ User, err error) {
-	defer derrors.Wrap(&err, "c.CreateUser(%q)", name)
+type CreateUserParams struct {
+	Name        string `json:"name"`
+	Email       string `json:"email"`
+	DisplayName string `json:"displayName"`
+	PictureURL  string `json:"pictureUrl"`
+}
 
-	params := headscale_service.NewHeadscaleServiceCreateUserParams().
+func (c *Client) CreateUser(ctx context.Context, params CreateUserParams) (_ User, err error) {
+	defer derrors.Wrap(&err, "c.CreateUser(%q)", params.Name)
+
+	p := headscale_service.NewHeadscaleServiceCreateUserParams().
 		WithContext(ctx).
-		WithBody(&models.V1CreateUserRequest{Name: name})
-	resp, err := c.api.HeadscaleService.HeadscaleServiceCreateUser(params)
+		WithBody(&models.V1CreateUserRequest{
+			Name:        params.Name,
+			Email:       params.Email,
+			DisplayName: params.DisplayName,
+			PictureURL:  params.PictureURL,
+		})
+	resp, err := c.api.HeadscaleService.HeadscaleServiceCreateUser(p)
 	if err != nil {
 		return User{}, err
 	}

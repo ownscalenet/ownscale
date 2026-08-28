@@ -1,7 +1,6 @@
 package oidcprovider
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
@@ -64,7 +63,7 @@ func testStorage(t *testing.T) (*Storage, *sqlcgen.Queries) {
 func insertTestUser(t *testing.T, queries *sqlcgen.Queries) sqlcgen.User {
 	t.Helper()
 	id := uuid.Must(uuid.NewV7()).String()
-	user, err := queries.CreateUser(context.Background(), sqlcgen.CreateUserParams{
+	user, err := queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
 		ID:             id,
 		Provider:       "oidc",
 		ProviderUserID: id,
@@ -93,7 +92,7 @@ func insertTestClient(t *testing.T, queries *sqlcgen.Queries, orgID string) (sql
 	if err != nil {
 		t.Fatalf("Marshal redirect uris: %v", err)
 	}
-	client, err := queries.CreateOIDCClient(context.Background(), sqlcgen.CreateOIDCClientParams{
+	client, err := queries.CreateOIDCClient(t.Context(), sqlcgen.CreateOIDCClientParams{
 		ID:               uuid.Must(uuid.NewV7()).String(),
 		OrganizationID:   orgID,
 		ClientID:         "client-id",
@@ -108,7 +107,7 @@ func insertTestClient(t *testing.T, queries *sqlcgen.Queries, orgID string) (sql
 
 func insertTestOrg(t *testing.T, queries *sqlcgen.Queries) sqlcgen.Organization {
 	t.Helper()
-	org, err := queries.CreateOrganization(context.Background(), sqlcgen.CreateOrganizationParams{
+	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
 		ID:        uuid.Must(uuid.NewV7()).String(),
 		Subdomain: "acme",
 	})
@@ -158,7 +157,7 @@ func TestClientAdapterAndSecretCheck(t *testing.T) {
 	org := insertTestOrg(t, queries)
 	clientRow, secret := insertTestClient(t, queries, org.ID)
 
-	adapter, err := storage.GetClientByClientID(context.Background(), clientRow.ClientID)
+	adapter, err := storage.GetClientByClientID(t.Context(), clientRow.ClientID)
 	if err != nil {
 		t.Fatalf("GetClientByClientID: %v", err)
 	}
@@ -168,10 +167,10 @@ func TestClientAdapterAndSecretCheck(t *testing.T) {
 	if got, want := adapter.PostLogoutRedirectURIs(), []string{"https://acme.example.com/"}; !reflect.DeepEqual(got, want) {
 		t.Fatalf("post logout redirect uris = %v, want %v", got, want)
 	}
-	if err := storage.AuthorizeClientIDSecret(context.Background(), clientRow.ClientID, secret); err != nil {
+	if err := storage.AuthorizeClientIDSecret(t.Context(), clientRow.ClientID, secret); err != nil {
 		t.Fatalf("AuthorizeClientIDSecret(valid): %v", err)
 	}
-	if err := storage.AuthorizeClientIDSecret(context.Background(), clientRow.ClientID, "wrong"); err == nil {
+	if err := storage.AuthorizeClientIDSecret(t.Context(), clientRow.ClientID, "wrong"); err == nil {
 		t.Fatal("AuthorizeClientIDSecret(wrong): want error")
 	}
 }
@@ -183,7 +182,7 @@ func TestUserClaimsAdapter(t *testing.T) {
 	user := insertTestUser(t, queries)
 
 	userInfo := new(oidc.UserInfo)
-	if err := storage.SetUserinfoFromRequest(context.Background(), userInfo, testIDTokenRequest{
+	if err := storage.SetUserinfoFromRequest(t.Context(), userInfo, testIDTokenRequest{
 		subject:  user.ID,
 		clientID: clientRow.ClientID,
 		scopes:   []string{oidc.ScopeOpenID, oidc.ScopeProfile, oidc.ScopeEmail},
@@ -203,7 +202,7 @@ func TestUserClaimsAdapter(t *testing.T) {
 		Scopes:        []string{oidc.ScopeOpenID, oidc.ScopeProfile, oidc.ScopeEmail},
 	}
 	introspection := new(oidc.IntrospectionResponse)
-	if err := storage.SetIntrospectionFromToken(context.Background(), introspection, "token-1", user.ID, clientRow.ClientID); err != nil {
+	if err := storage.SetIntrospectionFromToken(t.Context(), introspection, "token-1", user.ID, clientRow.ClientID); err != nil {
 		t.Fatalf("SetIntrospectionFromToken: %v", err)
 	}
 	if introspection.ClientID != clientRow.ClientID || introspection.Subject != user.ID {

@@ -232,6 +232,64 @@ func TestListMembersDoesNotRelinkAlreadyLinkedMember(t *testing.T) {
 	}
 }
 
+func TestListMembersDifferentProvidersSameEmailGetDistinctHeadscaleUsers(t *testing.T) {
+	h, queries, users := newMembersTestHandlers(t, RoleOwner, RoleMember, RoleMember)
+	owner, google, microsoft := users[0], users[1], users[2]
+
+	// Pre-link the owner to an unrelated headscale user so it's excluded
+	// from this scenario -- the fake headscale server's POST /api/v1/user
+	// always returns the same fixed new-user id, so leaving the owner
+	// unlinked would make it consume that id and mask the collision this
+	// test is about.
+	if err := queries.LinkUserHeadscaleUser(t.Context(), sqlcgen.LinkUserHeadscaleUserParams{
+		HeadscaleUserID: sql.NullString{String: "9", Valid: true},
+		ID:              owner.ID,
+	}); err != nil {
+		t.Fatalf("LinkUserHeadscaleUser(owner): %v", err)
+	}
+
+	// Two ownscale identities for the same person, via different login
+	// providers, sharing an email -- the scenario the claimed-set logic
+	// exists for.
+	for _, u := range []struct {
+		user     sqlcgen.User
+		provider string
+	}{{google, "google"}, {microsoft, "microsoft"}} {
+		if err := queries.UpdateUserProfile(t.Context(), sqlcgen.UpdateUserProfileParams{
+			Email: "alice@example.com", Name: u.user.Name, AvatarUrl: u.user.AvatarUrl,
+			EmailVerified: u.user.EmailVerified, ID: u.user.ID,
+		}); err != nil {
+			t.Fatalf("UpdateUserProfile: %v", err)
+		}
+	}
+
+	_, client, _ := newFakeHeadscaleServer(t)
+	h.hs = &fakeMachinesRegistry{client: client}
+
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/members", nil), owner)
+	rec := httptest.NewRecorder()
+	h.ListMembers(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
+	}
+
+	gotGoogle, err := queries.GetUserByID(t.Context(), google.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID(google): %v", err)
+	}
+	gotMicrosoft, err := queries.GetUserByID(t.Context(), microsoft.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID(microsoft): %v", err)
+	}
+
+	if !gotGoogle.HeadscaleUserID.Valid || !gotMicrosoft.HeadscaleUserID.Valid {
+		t.Fatalf("expected both members linked, got google=%+v microsoft=%+v", gotGoogle.HeadscaleUserID, gotMicrosoft.HeadscaleUserID)
+	}
+	if gotGoogle.HeadscaleUserID.String == gotMicrosoft.HeadscaleUserID.String {
+		t.Errorf("both members linked to the same headscale user %q, want distinct", gotGoogle.HeadscaleUserID.String)
+	}
+}
+
 func TestRemoveMember(t *testing.T) {
 	h, queries, users := newMembersTestHandlers(t, RoleOwner, RoleMember)
 	owner, target := users[0], users[1]

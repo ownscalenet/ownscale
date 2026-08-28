@@ -122,8 +122,8 @@ func TestServerIntegration(t *testing.T) {
 	const baseDomain = "srvit.test"
 	subdomain := "srv" + uuid.Must(uuid.NewV7()).String()[:8]
 	t.Cleanup(func() {
-		// Must be context.Background() because t.Context() is already cancelled.
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		// Must be t.Context() because t.Context() is already cancelled.
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 		defer cancel()
 		if err := ctl.RemoveOrganization(ctx, subdomain); err != nil {
 			t.Logf("cleanup: RemoveOrganization(%q): %v", subdomain, err)
@@ -131,7 +131,7 @@ func TestServerIntegration(t *testing.T) {
 	})
 
 	h := handlers.New(queries, ctl, baseDomain, nil, logger, config.DerpConfig{})
-	provisionerCtx, cancelProvisioner := context.WithCancel(context.Background())
+	provisionerCtx, cancelProvisioner := context.WithCancel(t.Context())
 	t.Cleanup(cancelProvisioner)
 	h.StartProvisioner(provisionerCtx)
 	auth.Setup("test-session-secret-at-least-32-bytes-long")

@@ -99,8 +99,8 @@ func TestDockerctlIntegration(t *testing.T) {
 	// already-running organizations on this host (EnsureNetwork's
 	// idempotency is exercised below instead).
 	t.Cleanup(func() {
-		// Must be context.Background() because t.Context() is already cancelled.
-		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+		// Must be t.Context() because t.Context() is already cancelled.
+		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 		defer cancel()
 		if err := ctl.RemoveOrganization(ctx, subdomain); err != nil {
 			t.Logf("cleanup: RemoveOrganization(%q): %v", subdomain, err)
