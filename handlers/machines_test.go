@@ -103,6 +103,28 @@ func newFakeHeadscaleServer(t *testing.T) (*httptest.Server, *headscaleclient.Cl
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{}`)
 	})
+	mux.HandleFunc("/api/v1/preauthkey", func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r)
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost {
+			fmt.Fprint(w, `{"preAuthKey":{
+				"id":"2","key":"nodekey:newkey","user":{"id":"1","name":"alice"},
+				"reusable":true,"ephemeral":false,"used":false,"aclTags":["tag:server"],
+				"createdAt":"2024-03-01T00:00:00Z","expiration":"2024-06-01T00:00:00Z"
+			}}`)
+			return
+		}
+		fmt.Fprint(w, `{"preAuthKeys":[
+			{"id":"1","key":"nodekey:existing","user":{"id":"1","name":"alice"},
+			 "reusable":false,"ephemeral":false,"used":false,"aclTags":[],
+			 "createdAt":"2024-01-01T00:00:00Z","expiration":"2024-06-01T00:00:00Z"}
+		]}`)
+	})
+	mux.HandleFunc("/api/v1/preauthkey/expire", func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{}`)
+	})
 
 	srv := httptest.NewServer(mux)
 	t.Cleanup(srv.Close)

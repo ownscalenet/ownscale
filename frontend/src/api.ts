@@ -236,3 +236,44 @@ export function formatAccessControlPolicy(content: string) {
     body: JSON.stringify({ content }),
   })
 }
+
+export interface PreAuthKey {
+  id: string
+  key: string
+  user: HeadscaleUser | null
+  reusable: boolean
+  ephemeral: boolean
+  used: boolean
+  aclTags: string[] | null
+  createdAt: string
+  expiration: string
+}
+
+export interface AuthKeysResponse {
+  notConfigured?: boolean
+  authKeys: PreAuthKey[]
+  users: HeadscaleUser[]
+}
+
+export function listAuthKeys() {
+  return request<AuthKeysResponse>('/api/auth-keys')
+}
+
+export interface CreateAuthKeyParams {
+  userId?: string
+  aclTags?: string[]
+  expiryDays: number
+  reusable: boolean
+  ephemeral: boolean
+}
+
+export function createAuthKey(params: CreateAuthKeyParams) {
+  return request<{ authKey: PreAuthKey }>('/api/auth-keys', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export function expireAuthKey(id: string) {
+  return request<{ ok: boolean }>(`/api/auth-keys/${id}/expire`, { method: 'POST' })
+}

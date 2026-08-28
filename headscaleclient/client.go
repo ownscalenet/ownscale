@@ -54,6 +54,32 @@ type Node struct {
 	SubnetRoutes    []string `json:"subnetRoutes"`
 }
 
+// PreAuthKey is a headscale pre-authentication key, matching
+// frontend/src/api.ts's PreAuthKey interface field-for-field. User is nil
+// for "tag only" keys (keys not tied to a user, only to ACLTags).
+type PreAuthKey struct {
+	ID         string   `json:"id"`
+	Key        string   `json:"key"`
+	User       *User    `json:"user"`
+	Reusable   bool     `json:"reusable"`
+	Ephemeral  bool     `json:"ephemeral"`
+	Used       bool     `json:"used"`
+	ACLTags    []string `json:"aclTags"`
+	CreatedAt  string   `json:"createdAt"`
+	Expiration string   `json:"expiration"`
+}
+
+// CreatePreAuthKeyParams are the inputs to Client.CreatePreAuthKey. UserID
+// is the owning headscale user's ID, or "" for a tag-only key (ACLTags
+// must be non-empty in that case).
+type CreatePreAuthKeyParams struct {
+	UserID     string
+	Reusable   bool
+	Ephemeral  bool
+	Expiration time.Time
+	ACLTags    []string
+}
+
 // Client talks to a single organization's headscale container's
 // management API (see New and Registry, which mints and caches one Client
 // per organization).
@@ -223,6 +249,60 @@ func (c *Client) DeleteNode(ctx context.Context, nodeID string) (err error) {
 	return err
 }
 
+// ListPreAuthKeys returns every pre-authentication key for this
+// organization's tailnet, across all users (and tag-only keys).
+func (c *Client) ListPreAuthKeys(ctx context.Context) (_ []PreAuthKey, err error) {
+	defer derrors.Wrap(&err, "c.ListPreAuthKeys()")
+
+	params := headscale_service.NewHeadscaleServiceListPreAuthKeysParams().WithContext(ctx)
+	resp, err := c.api.HeadscaleService.HeadscaleServiceListPreAuthKeys(params)
+	if err != nil {
+		return nil, err
+	}
+	keys := make([]PreAuthKey, 0, len(resp.Payload.PreAuthKeys))
+	for _, k := range resp.Payload.PreAuthKeys {
+		keys = append(keys, toPreAuthKey(k))
+	}
+	return keys, nil
+}
+
+// CreatePreAuthKey creates a new pre-authentication key per params. The
+// returned PreAuthKey.Key is the plaintext key value; headscale never
+// exposes it again after this call.
+func (c *Client) CreatePreAuthKey(ctx context.Context, params CreatePreAuthKeyParams) (_ PreAuthKey, err error) {
+	defer derrors.Wrap(&err, "c.CreatePreAuthKey(%q)", params.UserID)
+
+	req := &models.V1CreatePreAuthKeyRequest{
+		User:      params.UserID,
+		Reusable:  params.Reusable,
+		Ephemeral: params.Ephemeral,
+		ACLTags:   params.ACLTags,
+	}
+	if !params.Expiration.IsZero() {
+		req.Expiration = strfmt.DateTime(params.Expiration)
+	}
+	p := headscale_service.NewHeadscaleServiceCreatePreAuthKeyParams().
+		WithContext(ctx).
+		WithBody(req)
+	resp, err := c.api.HeadscaleService.HeadscaleServiceCreatePreAuthKey(p)
+	if err != nil {
+		return PreAuthKey{}, err
+	}
+	return toPreAuthKey(resp.Payload.PreAuthKey), nil
+}
+
+// ExpirePreAuthKey immediately expires the pre-authentication key
+// identified by id.
+func (c *Client) ExpirePreAuthKey(ctx context.Context, id string) (err error) {
+	defer derrors.Wrap(&err, "c.ExpirePreAuthKey(%q)", id)
+
+	params := headscale_service.NewHeadscaleServiceExpirePreAuthKeyParams().
+		WithContext(ctx).
+		WithBody(&models.V1ExpirePreAuthKeyRequest{ID: id})
+	_, err = c.api.HeadscaleService.HeadscaleServiceExpirePreAuthKey(params)
+	return err
+}
+
 // toNode converts a generated V1Node into the plain Node shape handlers
 // serve as JSON.
 func toNode(n *models.V1Node) Node {
@@ -272,6 +352,29 @@ func toUser(u *models.V1User) User {
 		Email:       u.Email,
 		CreatedAt:   dateTimeString(u.CreatedAt),
 	}
+}
+
+// toPreAuthKey converts a generated V1PreAuthKey into the plain
+// PreAuthKey shape handlers serve as JSON.
+func toPreAuthKey(k *models.V1PreAuthKey) PreAuthKey {
+	if k == nil {
+		return PreAuthKey{}
+	}
+	key := PreAuthKey{
+		ID:         k.ID,
+		Key:        k.Key,
+		Reusable:   k.Reusable,
+		Ephemeral:  k.Ephemeral,
+		Used:       k.Used,
+		ACLTags:    k.ACLTags,
+		CreatedAt:  dateTimeString(k.CreatedAt),
+		Expiration: dateTimeString(k.Expiration),
+	}
+	if k.User != nil {
+		u := toUser(k.User)
+		key.User = &u
+	}
+	return key
 }
 
 // dateTimeString formats dt as RFC3339, or "" if it's the zero value.

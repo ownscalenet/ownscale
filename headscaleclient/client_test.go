@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 // newTestServer builds an httptest.Server implementing the handful of
@@ -100,6 +101,40 @@ func newTestServer(t *testing.T, wantToken string) (*httptest.Server, *[]*http.R
 			http.NotFound(w, r)
 			return
 		}
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{}`)
+	})
+	mux.HandleFunc("/api/v1/preauthkey", func(w http.ResponseWriter, r *http.Request) {
+		record(r)
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPost {
+			fmt.Fprint(w, `{"preAuthKey":{
+				"id":"2",
+				"key":"nodekey:abc123",
+				"user":{"id":"1","name":"alice","displayName":"Alice","email":"alice@example.com","createdAt":"2024-01-01T00:00:00Z"},
+				"reusable":true,
+				"ephemeral":false,
+				"used":false,
+				"aclTags":["tag:server"],
+				"createdAt":"2024-03-01T00:00:00Z",
+				"expiration":"2024-06-01T00:00:00Z"
+			}}`)
+			return
+		}
+		fmt.Fprint(w, `{"preAuthKeys":[{
+			"id":"1",
+			"key":"nodekey:def456",
+			"user":{"id":"1","name":"alice","displayName":"Alice","email":"alice@example.com","createdAt":"2024-01-01T00:00:00Z"},
+			"reusable":false,
+			"ephemeral":false,
+			"used":false,
+			"aclTags":[],
+			"createdAt":"2024-01-01T00:00:00Z",
+			"expiration":"2024-06-01T00:00:00Z"
+		}]}`)
+	})
+	mux.HandleFunc("/api/v1/preauthkey/expire", func(w http.ResponseWriter, r *http.Request) {
+		record(r)
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{}`)
 	})
@@ -276,6 +311,84 @@ func TestClientDeleteNode(t *testing.T) {
 	last := (*reqs)[len(*reqs)-1]
 	if last.Method != http.MethodDelete {
 		t.Errorf("expected DELETE, got %s", last.Method)
+	}
+}
+
+func TestClientListPreAuthKeys(t *testing.T) {
+	c, srv, _ := newTestClient(t)
+	defer srv.Close()
+
+	keys, err := c.ListPreAuthKeys(context.Background())
+	if err != nil {
+		t.Fatalf("ListPreAuthKeys: %v", err)
+	}
+	if len(keys) != 1 {
+		t.Fatalf("got %d keys, want 1", len(keys))
+	}
+	k := keys[0]
+	if k.ID != "1" || k.Key != "nodekey:def456" {
+		t.Errorf("unexpected key: %+v", k)
+	}
+	if k.User == nil || k.User.Name != "alice" {
+		t.Errorf("unexpected user: %+v", k.User)
+	}
+	if k.Expiration == "" {
+		t.Errorf("expected non-empty expiration")
+	}
+}
+
+func TestClientCreatePreAuthKey(t *testing.T) {
+	c, srv, reqs := newTestClient(t)
+	defer srv.Close()
+
+	key, err := c.CreatePreAuthKey(context.Background(), CreatePreAuthKeyParams{
+		UserID:     "1",
+		Reusable:   true,
+		Expiration: time.Now().Add(90 * 24 * time.Hour),
+		ACLTags:    []string{"tag:server"},
+	})
+	if err != nil {
+		t.Fatalf("CreatePreAuthKey: %v", err)
+	}
+	if key.ID != "2" || key.Key != "nodekey:abc123" || !key.Reusable {
+		t.Errorf("unexpected key: %+v", key)
+	}
+	last := (*reqs)[len(*reqs)-1]
+	if last.Method != http.MethodPost || last.URL.Path != "/api/v1/preauthkey" {
+		t.Errorf("unexpected request: %s %s", last.Method, last.URL.Path)
+	}
+	var body struct {
+		User     string   `json:"user"`
+		Reusable bool     `json:"reusable"`
+		ACLTags  []string `json:"aclTags"`
+	}
+	if err := json.NewDecoder(last.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.User != "1" || !body.Reusable || len(body.ACLTags) != 1 {
+		t.Errorf("unexpected request body: %+v", body)
+	}
+}
+
+func TestClientExpirePreAuthKey(t *testing.T) {
+	c, srv, reqs := newTestClient(t)
+	defer srv.Close()
+
+	if err := c.ExpirePreAuthKey(context.Background(), "1"); err != nil {
+		t.Fatalf("ExpirePreAuthKey: %v", err)
+	}
+	last := (*reqs)[len(*reqs)-1]
+	if last.Method != http.MethodPost || last.URL.Path != "/api/v1/preauthkey/expire" {
+		t.Errorf("unexpected request: %s %s", last.Method, last.URL.Path)
+	}
+	var body struct {
+		ID string `json:"id"`
+	}
+	if err := json.NewDecoder(last.Body).Decode(&body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.ID != "1" {
+		t.Errorf("unexpected request body: %+v", body)
 	}
 }
 

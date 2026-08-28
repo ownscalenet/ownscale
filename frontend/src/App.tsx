@@ -6,6 +6,7 @@ import Dashboard from './pages/Dashboard'
 import Machines from './pages/Machines'
 import Users from './pages/Users'
 import AccessControl from './pages/AccessControl'
+import Settings from './pages/Settings'
 import CreateOrganization from './pages/CreateOrganization'
 import AcceptInvite from './pages/AcceptInvite'
 
@@ -74,6 +75,7 @@ function AppRoutes() {
         <Route path="machines" element={<Machines />} />
         <Route path="users" element={<Users />} />
         <Route path="access-control" element={<AccessControl />} />
+        <Route path="settings" element={<Settings />} />
       </Route>
     </Routes>
   )

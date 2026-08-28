@@ -54,6 +54,11 @@ export default function Layout() {
                 Access Control
               </NavLink>
             </li>
+            <li>
+              <NavLink to="/settings" className={({ isActive }) => (isActive ? 'active' : '')}>
+                Settings
+              </NavLink>
+            </li>
             {organization && (
               <li>
                 <a href={`https://${organization.Subdomain}.${window.location.host}/admin/oidc/start`}>
