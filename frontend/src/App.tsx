@@ -2,7 +2,6 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth'
 import Layout from './Layout'
 import Login from './pages/Login'
-import Dashboard from './pages/Dashboard'
 import Machines from './pages/Machines'
 import Users from './pages/Users'
 import AccessControl from './pages/AccessControl'
@@ -71,7 +70,7 @@ function AppRoutes() {
           </RequireAuth>
         }
       >
-        <Route index element={<Dashboard />} />
+        <Route index element={<Navigate to="/machines" replace />} />
         <Route path="machines" element={<Machines />} />
         <Route path="users" element={<Users />} />
         <Route path="access-control" element={<AccessControl />} />

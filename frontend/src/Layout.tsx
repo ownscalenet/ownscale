@@ -35,11 +35,6 @@ export default function Layout() {
           <div className="p-4 text-xl font-bold border-b border-base-200">Ownscale console</div>
           <ul className="menu p-4 w-full">
             <li>
-              <NavLink to="/" end className={({ isActive }) => (isActive ? 'active' : '')}>
-                Dashboard
-              </NavLink>
-            </li>
-            <li>
               <NavLink to="/machines" className={({ isActive }) => (isActive ? 'active' : '')}>
                 Machines
               </NavLink>
