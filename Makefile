@@ -82,7 +82,7 @@ archive: docker-image
 	ssh az rm -rf ownscale/internal ownscale/cmd
 	tar czf - \
 		--exclude='.git' \
-		--exclude='config.yaml' \
+		--exclude='$(notdir $(CURDIR))/config.yaml' \
 		--exclude='.env' \
 		--exclude='data' \
 		--exclude='node_modules' \
