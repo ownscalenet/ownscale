@@ -454,6 +454,9 @@ log:
   level: info
   format: text
 
+taildrop:
+  enabled: true
+
 dns:
   magic_dns: true
   base_domain: {{.Subdomain}}.headscale.internal
