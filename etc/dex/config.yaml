@@ -3,7 +3,7 @@
 #
 # If you change BASE_DOMAIN away from the "ownscale.test" default in .env,
 # update "issuer" and "redirectURIs" below to match.
-issuer: https://dex.ownscale.test
+issuer: https://dex.$BASE_DOMAIN
 
 storage:
   type: memory
@@ -22,7 +22,7 @@ staticClients:
     secret: ownscale-dev-secret
     name: "ownscale (local dev)"
     redirectURIs:
-      - https://ownscale.test/auth/oidc/callback
+      - https://$BASE_DOMAIN/auth/oidc/callback
 
 enablePasswordDB: true
 staticPasswords:

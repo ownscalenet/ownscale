@@ -35,15 +35,20 @@ services:
       - os-net
     restart: unless-stopped
 
-  # Local-dev-only OIDC provider ownscale federates its own login to by
-  # default (see config.yaml's auth.upstream_oidc.* and
-  # etc/dex/config.yaml). Swap auth.upstream_oidc.issuer/client_id/
-  # client_secret/callback_url to point at a real IdP (Google, Okta, ...)
-  # in production and simply omit this service -- ownscale's own code never
-  # references Dex specifically, only generic OIDC discovery.
   dex:
     image: dexidp/dex:v2.45.1
-    command: ["dex", "serve", "/etc/dex/config.yaml"]
+    # dex's config loader has no env-var interpolation of its own (unlike
+    # Caddy's Caddyfile or litestream's config), so this sed-renders
+    # config.yaml's $BASE_DOMAIN placeholder into a real config file
+    # under /tmp before starting dex, using the stock dexidp/dex image
+    # unmodified (the image already ships sed).
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        sed "s/\$$BASE_DOMAIN/$$BASE_DOMAIN/g" /etc/dex/config.yaml > /tmp/dex-config.yaml &&
+        exec dex serve /tmp/dex-config.yaml
+    environment:
+      BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
     volumes:
       - ./etc/dex/config.yaml:/etc/dex/config.yaml:ro
     networks:
