@@ -233,130 +233,110 @@ func tarContents(r io.Reader) (map[string]string, error) {
 	}
 }
 
-func TestEnsureCaddyNetworkAliasNoCaddyFound(t *testing.T) {
-	api := &dockerfake.API{}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
+// TestEnsureCaddyNetworkAlias covers every combination of "is caddy
+// running at all" and "is caddy already connected to the network, with
+// the right alias" ensureCaddyNetworkAlias needs to handle.
+func TestEnsureCaddyNetworkAlias(t *testing.T) {
+	cases := []struct {
+		name string
+		// containerFound selects whether ContainerList finds a running
+		// caddy container at all.
+		containerFound bool
+		// initialNetworks are the networks (and their current aliases)
+		// caddy's ContainerInspect reports it's already connected to.
+		initialNetworks map[string]*network.EndpointSettings
+		wantDisconnect  bool
+		wantConnect     bool
+		// wantAliases, when wantConnect, are the aliases the (re)connect
+		// call must include.
+		wantAliases []string
+	}{
+		{
+			name:           "no caddy found",
+			containerFound: false,
+		},
+		{
+			name:            "connects when not attached",
+			containerFound:  true,
+			initialNetworks: map[string]*network.EndpointSettings{},
+			wantConnect:     true,
+			wantAliases:     []string{"example.com"},
+		},
+		{
+			name:           "reconnects when alias missing",
+			containerFound: true,
+			initialNetworks: map[string]*network.EndpointSettings{
+				ownscaleNetwork: {Aliases: []string{"caddy"}},
+			},
+			wantDisconnect: true,
+			wantConnect:    true,
+			wantAliases:    []string{"example.com", "caddy"},
+		},
+		{
+			name:           "no-op when already aliased",
+			containerFound: true,
+			initialNetworks: map[string]*network.EndpointSettings{
+				ownscaleNetwork: {Aliases: []string{"example.com"}},
+			},
+		},
 	}
-	t.Cleanup(func() { _ = ctl.Close() })
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var disconnected, connected bool
+			var gotAliases []string
+			api := &dockerfake.API{
+				ContainerListFn: func(ctx context.Context, options container.ListOptions) ([]container.Summary, error) {
+					if !tc.containerFound {
+						return nil, nil
+					}
+					return []container.Summary{{ID: "caddy-1"}}, nil
+				},
+				ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+					return container.InspectResponse{
+						ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running"}},
+						NetworkSettings:   &container.NetworkSettings{Networks: tc.initialNetworks},
+					}, nil
+				},
+				NetworkConnectFn: func(ctx context.Context, networkID, containerID string, config *network.EndpointSettings) error {
+					if !tc.wantConnect {
+						t.Error("NetworkConnect: want no connect")
+					}
+					connected = true
+					if networkID != ownscaleNetwork || containerID != "caddy-1" {
+						t.Errorf("NetworkConnect(%q, %q), want (%q, %q)", networkID, containerID, ownscaleNetwork, "caddy-1")
+					}
+					gotAliases = config.Aliases
+					return nil
+				},
+				NetworkDisconnectFn: func(ctx context.Context, networkID, containerID string, force bool) error {
+					if !tc.wantDisconnect {
+						t.Error("NetworkDisconnect: want no disconnect")
+					}
+					disconnected = true
+					return nil
+				},
+			}
+			ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
+			if err != nil {
+				t.Fatalf("NewWithClient: %v", err)
+			}
+			t.Cleanup(func() { _ = ctl.Close() })
 
-	if err := ctl.ensureCaddyNetworkAlias(t.Context(), ownscaleNetwork, "example.com"); err != nil {
-		t.Fatalf("ensureCaddyNetworkAlias: want nil error when caddy isn't found, got %v", err)
-	}
-}
-
-func TestEnsureCaddyNetworkAliasConnectsWhenNotAttached(t *testing.T) {
-	var connectedNetwork, connectedContainer string
-	var connectedConfig *network.EndpointSettings
-	api := &dockerfake.API{
-		ContainerListFn: func(ctx context.Context, options container.ListOptions) ([]container.Summary, error) {
-			return []container.Summary{{ID: "caddy-1"}}, nil
-		},
-		ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
-			return container.InspectResponse{
-				ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running"}},
-				NetworkSettings:   &container.NetworkSettings{Networks: map[string]*network.EndpointSettings{}},
-			}, nil
-		},
-		NetworkConnectFn: func(ctx context.Context, networkID, containerID string, config *network.EndpointSettings) error {
-			connectedNetwork, connectedContainer, connectedConfig = networkID, containerID, config
-			return nil
-		},
-		NetworkDisconnectFn: func(ctx context.Context, networkID, containerID string, force bool) error {
-			t.Fatal("NetworkDisconnect: want no disconnect when caddy isn't yet on the network")
-			return nil
-		},
-	}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
-	t.Cleanup(func() { _ = ctl.Close() })
-
-	if err := ctl.ensureCaddyNetworkAlias(t.Context(), ownscaleNetwork, "example.com"); err != nil {
-		t.Fatalf("ensureCaddyNetworkAlias: %v", err)
-	}
-	if connectedNetwork != ownscaleNetwork || connectedContainer != "caddy-1" {
-		t.Fatalf("NetworkConnect(%q, %q), want (%q, %q)", connectedNetwork, connectedContainer, ownscaleNetwork, "caddy-1")
-	}
-	if connectedConfig == nil || !slices.Contains(connectedConfig.Aliases, "example.com") {
-		t.Fatalf("NetworkConnect aliases = %v, want it to contain %q", connectedConfig, "example.com")
-	}
-}
-
-func TestEnsureCaddyNetworkAliasReconnectsWhenAliasMissing(t *testing.T) {
-	var disconnected, reconnected bool
-	var newAliases []string
-	api := &dockerfake.API{
-		ContainerListFn: func(ctx context.Context, options container.ListOptions) ([]container.Summary, error) {
-			return []container.Summary{{ID: "caddy-1"}}, nil
-		},
-		ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
-			return container.InspectResponse{
-				ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running"}},
-				NetworkSettings: &container.NetworkSettings{Networks: map[string]*network.EndpointSettings{
-					ownscaleNetwork: {Aliases: []string{"caddy"}},
-				}},
-			}, nil
-		},
-		NetworkDisconnectFn: func(ctx context.Context, networkID, containerID string, force bool) error {
-			disconnected = true
-			return nil
-		},
-		NetworkConnectFn: func(ctx context.Context, networkID, containerID string, config *network.EndpointSettings) error {
-			reconnected = true
-			newAliases = config.Aliases
-			return nil
-		},
-	}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
-	t.Cleanup(func() { _ = ctl.Close() })
-
-	if err := ctl.ensureCaddyNetworkAlias(t.Context(), ownscaleNetwork, "example.com"); err != nil {
-		t.Fatalf("ensureCaddyNetworkAlias: %v", err)
-	}
-	if !disconnected || !reconnected {
-		t.Fatalf("disconnected=%v reconnected=%v, want both true", disconnected, reconnected)
-	}
-	if !slices.Contains(newAliases, "example.com") || !slices.Contains(newAliases, "caddy") {
-		t.Fatalf("reconnect aliases = %v, want it to contain both %q and %q", newAliases, "example.com", "caddy")
-	}
-}
-
-func TestEnsureCaddyNetworkAliasNoopWhenAlreadyAliased(t *testing.T) {
-	api := &dockerfake.API{
-		ContainerListFn: func(ctx context.Context, options container.ListOptions) ([]container.Summary, error) {
-			return []container.Summary{{ID: "caddy-1"}}, nil
-		},
-		ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
-			return container.InspectResponse{
-				ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running"}},
-				NetworkSettings: &container.NetworkSettings{Networks: map[string]*network.EndpointSettings{
-					ownscaleNetwork: {Aliases: []string{"example.com"}},
-				}},
-			}, nil
-		},
-		NetworkConnectFn: func(ctx context.Context, networkID, containerID string, config *network.EndpointSettings) error {
-			t.Fatal("NetworkConnect: want no-op when already aliased")
-			return nil
-		},
-		NetworkDisconnectFn: func(ctx context.Context, networkID, containerID string, force bool) error {
-			t.Fatal("NetworkDisconnect: want no-op when already aliased")
-			return nil
-		},
-	}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
-	t.Cleanup(func() { _ = ctl.Close() })
-
-	if err := ctl.ensureCaddyNetworkAlias(t.Context(), ownscaleNetwork, "example.com"); err != nil {
-		t.Fatalf("ensureCaddyNetworkAlias: %v", err)
+			if err := ctl.ensureCaddyNetworkAlias(t.Context(), ownscaleNetwork, "example.com"); err != nil {
+				t.Fatalf("ensureCaddyNetworkAlias: %v", err)
+			}
+			if disconnected != tc.wantDisconnect {
+				t.Errorf("disconnected = %v, want %v", disconnected, tc.wantDisconnect)
+			}
+			if connected != tc.wantConnect {
+				t.Errorf("connected = %v, want %v", connected, tc.wantConnect)
+			}
+			for _, want := range tc.wantAliases {
+				if !slices.Contains(gotAliases, want) {
+					t.Errorf("aliases = %v, want it to contain %q", gotAliases, want)
+				}
+			}
+		})
 	}
 }
 
@@ -593,55 +573,57 @@ func TestCreateOrganizationUsesPerOrgNetwork(t *testing.T) {
 	}
 }
 
-func TestEnsureOrgNetworkCreatesIfMissing(t *testing.T) {
-	var inspected, created string
-	api := &dockerfake.API{
-		NetworkInspectFn: func(ctx context.Context, networkID string, options network.InspectOptions) (network.Inspect, error) {
-			inspected = networkID
-			return network.Inspect{}, cerrdefs.ErrNotFound
-		},
-		NetworkCreateFn: func(ctx context.Context, name string, options network.CreateOptions) (network.CreateResponse, error) {
-			created = name
-			return network.CreateResponse{}, nil
-		},
+// TestEnsureOrgNetwork covers both branches: creating the network when
+// missing, and leaving it alone (never calling NetworkCreate) when it
+// already exists.
+func TestEnsureOrgNetwork(t *testing.T) {
+	cases := []struct {
+		name          string
+		networkExists bool
+	}{
+		{name: "creates if missing", networkExists: false},
+		{name: "no-op when already exists", networkExists: true},
 	}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
-	t.Cleanup(func() { _ = ctl.Close() })
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var inspected, created string
+			api := &dockerfake.API{
+				NetworkInspectFn: func(ctx context.Context, networkID string, options network.InspectOptions) (network.Inspect, error) {
+					inspected = networkID
+					if tc.networkExists {
+						return network.Inspect{}, nil
+					}
+					return network.Inspect{}, cerrdefs.ErrNotFound
+				},
+				NetworkCreateFn: func(ctx context.Context, name string, options network.CreateOptions) (network.CreateResponse, error) {
+					if tc.networkExists {
+						t.Error("NetworkCreate: want no-op when network already exists")
+					}
+					created = name
+					return network.CreateResponse{}, nil
+				},
+			}
+			ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
+			if err != nil {
+				t.Fatalf("NewWithClient: %v", err)
+			}
+			t.Cleanup(func() { _ = ctl.Close() })
 
-	name, err := ctl.EnsureOrgNetwork(t.Context(), "acme")
-	if err != nil {
-		t.Fatalf("EnsureOrgNetwork: %v", err)
-	}
-	want := OrgNetworkName("acme")
-	if name != want {
-		t.Fatalf("EnsureOrgNetwork returned %q, want %q", name, want)
-	}
-	if inspected != want || created != want {
-		t.Fatalf("inspected=%q created=%q, want both %q", inspected, created, want)
-	}
-}
-
-func TestEnsureOrgNetworkNoopWhenAlreadyExists(t *testing.T) {
-	api := &dockerfake.API{
-		NetworkInspectFn: func(ctx context.Context, networkID string, options network.InspectOptions) (network.Inspect, error) {
-			return network.Inspect{}, nil
-		},
-		NetworkCreateFn: func(ctx context.Context, name string, options network.CreateOptions) (network.CreateResponse, error) {
-			t.Fatal("NetworkCreate: want no-op when network already exists")
-			return network.CreateResponse{}, nil
-		},
-	}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
-	t.Cleanup(func() { _ = ctl.Close() })
-
-	if _, err := ctl.EnsureOrgNetwork(t.Context(), "acme"); err != nil {
-		t.Fatalf("EnsureOrgNetwork: %v", err)
+			name, err := ctl.EnsureOrgNetwork(t.Context(), "acme")
+			if err != nil {
+				t.Fatalf("EnsureOrgNetwork: %v", err)
+			}
+			want := OrgNetworkName("acme")
+			if name != want {
+				t.Errorf("EnsureOrgNetwork returned %q, want %q", name, want)
+			}
+			if inspected != want {
+				t.Errorf("inspected = %q, want %q", inspected, want)
+			}
+			if !tc.networkExists && created != want {
+				t.Errorf("created = %q, want %q", created, want)
+			}
+		})
 	}
 }
 
@@ -802,103 +784,97 @@ func TestRemoveOrganizationDoesNotFailWhenNetworkRemovalErrors(t *testing.T) {
 // TestEnsureOwnscaleNetworkForOrgNoContainerFound verifies it's a no-op
 // (not an error) when the ownscale container itself can't be found (e.g.
 // running outside docker-compose, as in most tests).
-func TestEnsureOwnscaleNetworkForOrgNoContainerFound(t *testing.T) {
-	api := &dockerfake.API{}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
-	t.Cleanup(func() { _ = ctl.Close() })
-
-	if err := ctl.EnsureOwnscaleNetworkForOrg(t.Context(), "acme"); err != nil {
-		t.Fatalf("EnsureOwnscaleNetworkForOrg: want nil error when ownscale isn't found, got %v", err)
-	}
-}
-
-// TestEnsureOwnscaleNetworkForOrgConnectsWhenNotAttached verifies it
-// creates the org's network (if missing) and connects the ownscale
-// container to it, without an alias (unlike Caddy's).
-func TestEnsureOwnscaleNetworkForOrgConnectsWhenNotAttached(t *testing.T) {
-	var connectedNetwork, connectedContainer string
-	var connectedConfig *network.EndpointSettings
-	api := &dockerfake.API{
-		NetworkInspectFn: func(ctx context.Context, networkID string, options network.InspectOptions) (network.Inspect, error) {
-			return network.Inspect{}, cerrdefs.ErrNotFound
-		},
-		NetworkCreateFn: func(ctx context.Context, name string, options network.CreateOptions) (network.CreateResponse, error) {
-			return network.CreateResponse{ID: name}, nil
-		},
-		ContainerListFn: func(ctx context.Context, options container.ListOptions) ([]container.Summary, error) {
-			if !options.Filters.ExactMatch("label", ownscaleComposeServiceLabel) {
-				return nil, nil
-			}
-			return []container.Summary{{ID: "ownscale-1"}}, nil
-		},
-		ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
-			return container.InspectResponse{
-				ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running"}},
-				NetworkSettings:   &container.NetworkSettings{Networks: map[string]*network.EndpointSettings{}},
-			}, nil
-		},
-		NetworkConnectFn: func(ctx context.Context, networkID, containerID string, config *network.EndpointSettings) error {
-			connectedNetwork, connectedContainer, connectedConfig = networkID, containerID, config
-			return nil
-		},
-	}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
-	t.Cleanup(func() { _ = ctl.Close() })
-
-	if err := ctl.EnsureOwnscaleNetworkForOrg(t.Context(), "acme"); err != nil {
-		t.Fatalf("EnsureOwnscaleNetworkForOrg: %v", err)
-	}
-	if want := OrgNetworkName("acme"); connectedNetwork != want || connectedContainer != "ownscale-1" {
-		t.Fatalf("NetworkConnect(%q, %q), want (%q, %q)", connectedNetwork, connectedContainer, want, "ownscale-1")
-	}
-	if connectedConfig != nil && len(connectedConfig.Aliases) != 0 {
-		t.Fatalf("NetworkConnect aliases = %v, want none (ownscale doesn't need a DNS alias)", connectedConfig.Aliases)
-	}
-}
-
-// TestEnsureOwnscaleNetworkForOrgNoopWhenAlreadyConnected verifies it
-// doesn't reconnect (and doesn't disconnect first) when ownscale is
-// already a member of the org's network.
-func TestEnsureOwnscaleNetworkForOrgNoopWhenAlreadyConnected(t *testing.T) {
+// TestEnsureOwnscaleNetworkForOrg covers the three states
+// EnsureOwnscaleNetworkForOrg needs to handle: no running ownscale
+// container at all, one found but not yet on the org's network (which
+// must be created if missing and connected without a DNS alias, unlike
+// Caddy's), and one already connected (a no-op).
+func TestEnsureOwnscaleNetworkForOrg(t *testing.T) {
 	netName := OrgNetworkName("acme")
-	api := &dockerfake.API{
-		NetworkInspectFn: func(ctx context.Context, networkID string, options network.InspectOptions) (network.Inspect, error) {
-			return network.Inspect{ID: netName}, nil
-		},
-		ContainerListFn: func(ctx context.Context, options container.ListOptions) ([]container.Summary, error) {
-			return []container.Summary{{ID: "ownscale-1"}}, nil
-		},
-		ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
-			return container.InspectResponse{
-				ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running"}},
-				NetworkSettings: &container.NetworkSettings{Networks: map[string]*network.EndpointSettings{
-					netName: {},
-				}},
-			}, nil
-		},
-		NetworkConnectFn: func(ctx context.Context, networkID, containerID string, config *network.EndpointSettings) error {
-			t.Fatal("NetworkConnect: want no reconnect when ownscale is already on the network")
-			return nil
-		},
-		NetworkDisconnectFn: func(ctx context.Context, networkID, containerID string, force bool) error {
-			t.Fatal("NetworkDisconnect: want no disconnect when ownscale is already on the network")
-			return nil
-		},
+	cases := []struct {
+		name string
+		// containerFound selects whether ContainerList (filtered by the
+		// ownscale compose service label) finds a running container.
+		containerFound bool
+		// networkExists selects whether the org's network already
+		// exists (NetworkInspect succeeds) or must be created.
+		networkExists bool
+		// alreadyConnected selects whether ownscale's ContainerInspect
+		// reports it's already a member of the org's network.
+		alreadyConnected bool
+	}{
+		{name: "no container found", containerFound: false, networkExists: true},
+		{name: "connects when not attached", containerFound: true, networkExists: false, alreadyConnected: false},
+		{name: "no-op when already connected", containerFound: true, networkExists: true, alreadyConnected: true},
 	}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
-	t.Cleanup(func() { _ = ctl.Close() })
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			var created bool
+			var connectedNetwork, connectedContainer string
+			var connectedConfig *network.EndpointSettings
+			networks := map[string]*network.EndpointSettings{}
+			if tc.alreadyConnected {
+				networks[netName] = &network.EndpointSettings{}
+			}
+			api := &dockerfake.API{
+				NetworkInspectFn: func(ctx context.Context, networkID string, options network.InspectOptions) (network.Inspect, error) {
+					if tc.networkExists {
+						return network.Inspect{ID: netName}, nil
+					}
+					return network.Inspect{}, cerrdefs.ErrNotFound
+				},
+				NetworkCreateFn: func(ctx context.Context, name string, options network.CreateOptions) (network.CreateResponse, error) {
+					created = true
+					return network.CreateResponse{ID: name}, nil
+				},
+				ContainerListFn: func(ctx context.Context, options container.ListOptions) ([]container.Summary, error) {
+					if !tc.containerFound || !options.Filters.ExactMatch("label", ownscaleComposeServiceLabel) {
+						return nil, nil
+					}
+					return []container.Summary{{ID: "ownscale-1"}}, nil
+				},
+				ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+					return container.InspectResponse{
+						ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running"}},
+						NetworkSettings:   &container.NetworkSettings{Networks: networks},
+					}, nil
+				},
+				NetworkConnectFn: func(ctx context.Context, networkID, containerID string, config *network.EndpointSettings) error {
+					if tc.alreadyConnected {
+						t.Error("NetworkConnect: want no reconnect when ownscale is already on the network")
+					}
+					connectedNetwork, connectedContainer, connectedConfig = networkID, containerID, config
+					return nil
+				},
+				NetworkDisconnectFn: func(ctx context.Context, networkID, containerID string, force bool) error {
+					t.Error("NetworkDisconnect: want no disconnect (only reconnect-with-alias needs that, like Caddy)")
+					return nil
+				},
+			}
+			ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
+			if err != nil {
+				t.Fatalf("NewWithClient: %v", err)
+			}
+			t.Cleanup(func() { _ = ctl.Close() })
 
-	if err := ctl.EnsureOwnscaleNetworkForOrg(t.Context(), "acme"); err != nil {
-		t.Fatalf("EnsureOwnscaleNetworkForOrg: %v", err)
+			if err := ctl.EnsureOwnscaleNetworkForOrg(t.Context(), "acme"); err != nil {
+				t.Fatalf("EnsureOwnscaleNetworkForOrg: %v", err)
+			}
+			if !tc.containerFound {
+				return
+			}
+			if !tc.networkExists && !created {
+				t.Error("want NetworkCreate called when the org network doesn't exist yet")
+			}
+			if !tc.alreadyConnected {
+				if connectedNetwork != netName || connectedContainer != "ownscale-1" {
+					t.Errorf("NetworkConnect(%q, %q), want (%q, %q)", connectedNetwork, connectedContainer, netName, "ownscale-1")
+				}
+				if connectedConfig != nil && len(connectedConfig.Aliases) != 0 {
+					t.Errorf("NetworkConnect aliases = %v, want none (ownscale doesn't need a DNS alias)", connectedConfig.Aliases)
+				}
+			}
+		})
 	}
 }
 

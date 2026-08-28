@@ -62,31 +62,30 @@ func TestListAuthKeysReturnsKeysAndUsers(t *testing.T) {
 	}
 }
 
-func TestCreateAuthKeyRequiresUserOrTags(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
-	user, _ := activeOrgUser(t, h, queries)
-
-	body := strings.NewReader(`{"expiryDays":90}`)
-	req := withTestUser(httptest.NewRequest(http.MethodPost, "/api/auth-keys", body), user)
-	rec := httptest.NewRecorder()
-	h.CreateAuthKey(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+// TestCreateAuthKeyValidation covers the two request-body validation
+// errors CreateAuthKey rejects with 400 before ever calling the fake
+// headscale server.
+func TestCreateAuthKeyValidation(t *testing.T) {
+	cases := []struct {
+		name string
+		body string
+	}{
+		{name: "requires user or tags", body: `{"expiryDays":90}`},
+		{name: "requires expiry days", body: `{"userId":"1","expiryDays":0}`},
 	}
-}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h, queries := newMachinesTestHandlers(t)
+			user, _ := activeOrgUser(t, h, queries)
 
-func TestCreateAuthKeyRequiresExpiryDays(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
-	user, _ := activeOrgUser(t, h, queries)
+			req := withTestUser(httptest.NewRequest(http.MethodPost, "/api/auth-keys", strings.NewReader(tc.body)), user)
+			rec := httptest.NewRecorder()
+			h.CreateAuthKey(rec, req)
 
-	body := strings.NewReader(`{"userId":"1","expiryDays":0}`)
-	req := withTestUser(httptest.NewRequest(http.MethodPost, "/api/auth-keys", body), user)
-	rec := httptest.NewRecorder()
-	h.CreateAuthKey(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+			if rec.Code != http.StatusBadRequest {
+				t.Errorf("status = %d, want 400: %s", rec.Code, rec.Body.String())
+			}
+		})
 	}
 }
 

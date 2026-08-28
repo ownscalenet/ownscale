@@ -173,47 +173,42 @@ func newMachinesTestHandlers(t *testing.T) (*Handlers, *dbpkg.TxQueries) {
 	return h, queries
 }
 
-func TestListMachinesNotConfiguredNoRegistry(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
-	user := insertUser(t, queries)
+// TestListMachinesNotConfigured covers the two ways a request can end up
+// "not configured": no headscale registry wired up at all, and a
+// registry wired up but the user having no organization yet.
+func TestListMachinesNotConfigured(t *testing.T) {
+	cases := []struct {
+		name  string
+		setup func(*Handlers)
+	}{
+		{name: "no registry"},
+		{name: "no organization", setup: func(h *Handlers) { h.hs = &fakeMachinesRegistry{} }},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h, queries := newMachinesTestHandlers(t)
+			if tc.setup != nil {
+				tc.setup(h)
+			}
+			user := insertUser(t, queries)
 
-	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/machines", nil), user)
-	rec := httptest.NewRecorder()
-	h.ListMachines(rec, req)
+			req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/machines", nil), user)
+			rec := httptest.NewRecorder()
+			h.ListMachines(rec, req)
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
-	}
-	var body struct {
-		NotConfigured bool `json:"notConfigured"`
-		Total         int  `json:"total"`
-	}
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if !body.NotConfigured {
-		t.Error("expected notConfigured=true")
-	}
-}
-
-func TestListMachinesNotConfiguredNoOrganization(t *testing.T) {
-	// h.hs is set (registry configured) but the user has no organization.
-	h, queries := newMachinesTestHandlers(t)
-	h.hs = &fakeMachinesRegistry{}
-	user := insertUser(t, queries)
-
-	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/machines", nil), user)
-	rec := httptest.NewRecorder()
-	h.ListMachines(rec, req)
-
-	var body struct {
-		NotConfigured bool `json:"notConfigured"`
-	}
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if !body.NotConfigured {
-		t.Error("expected notConfigured=true when the user has no organization")
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200", rec.Code)
+			}
+			var body struct {
+				NotConfigured bool `json:"notConfigured"`
+			}
+			if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+				t.Fatalf("decode: %v", err)
+			}
+			if !body.NotConfigured {
+				t.Error("expected notConfigured=true")
+			}
+		})
 	}
 }
 

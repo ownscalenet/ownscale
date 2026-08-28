@@ -15,6 +15,7 @@ import (
 
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/config"
+	dbpkg "github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/dockerctl/dockerfake"
 )
@@ -25,83 +26,97 @@ func withTestUser(req *http.Request, user sqlcgen.User) *http.Request {
 	return req.WithContext(auth.WithUser(req.Context(), &user))
 }
 
-func TestCreateOrganizationNotConfigured(t *testing.T) {
-	h, _ := newTestHandlers(t, false)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/organizations", strings.NewReader(`{"subdomain":"acme"}`))
-	rec := httptest.NewRecorder()
-	h.CreateOrganization(rec, req)
-
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+// TestCreateOrganizationErrors covers the validation/precondition checks
+// CreateOrganization rejects before ever creating a "pending" organization
+// row -- each case only asserts the resulting status code.
+func TestCreateOrganizationErrors(t *testing.T) {
+	cases := []struct {
+		name string
+		// configured selects whether org provisioning (h.orgs) is set up
+		// at all.
+		configured bool
+		// authenticated selects whether a user is attached to the
+		// request context.
+		authenticated bool
+		body          string
+		// setup runs after the user is inserted (if authenticated) and
+		// before the request is issued, e.g. to pre-assign the user to
+		// an existing organization.
+		setup      func(t *testing.T, h *Handlers, queries *dbpkg.TxQueries, user sqlcgen.User)
+		wantStatus int
+	}{
+		{
+			name:       "not configured",
+			configured: false,
+			body:       `{"subdomain":"acme"}`,
+			wantStatus: http.StatusServiceUnavailable,
+		},
+		{
+			name:       "unauthenticated",
+			configured: true,
+			body:       `{"subdomain":"acme"}`,
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:          "already has organization",
+			configured:    true,
+			authenticated: true,
+			body:          `{"subdomain":"acme"}`,
+			setup: func(t *testing.T, h *Handlers, queries *dbpkg.TxQueries, user sqlcgen.User) {
+				existingOrg, err := h.orgs.Create(t.Context(), "existing-org")
+				if err != nil {
+					t.Fatalf("orgs.Create: %v", err)
+				}
+				if err := queries.SetUserOrganization(t.Context(), sqlcgen.SetUserOrganizationParams{
+					OrganizationID: sql.NullString{String: existingOrg.ID, Valid: true},
+					ID:             user.ID,
+				}); err != nil {
+					t.Fatalf("SetUserOrganization: %v", err)
+				}
+			},
+			wantStatus: http.StatusConflict,
+		},
+		{
+			name:          "invalid JSON",
+			configured:    true,
+			authenticated: true,
+			body:          `not json`,
+			wantStatus:    http.StatusBadRequest,
+		},
+		{
+			name:          "invalid subdomain",
+			configured:    true,
+			authenticated: true,
+			body:          `{"subdomain":"Not Valid!"}`,
+			wantStatus:    http.StatusBadRequest,
+		},
 	}
-}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h, queries := newTestHandlers(t, tc.configured)
 
-func TestCreateOrganizationUnauthenticated(t *testing.T) {
-	h, _ := newTestHandlers(t, true)
+			req := httptest.NewRequest(http.MethodPost, "/api/organizations", strings.NewReader(tc.body))
+			if tc.authenticated {
+				user := insertUser(t, queries)
+				if tc.setup != nil {
+					tc.setup(t, h, queries, user)
+					// Re-fetch: setup may have changed the user's row
+					// (e.g. OrganizationID).
+					var err error
+					user, err = queries.GetUserByID(t.Context(), user.ID)
+					if err != nil {
+						t.Fatalf("GetUserByID: %v", err)
+					}
+				}
+				req = withTestUser(req, user)
+			}
+			rec := httptest.NewRecorder()
+			h.CreateOrganization(rec, req)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/organizations", strings.NewReader(`{"subdomain":"acme"}`))
-	rec := httptest.NewRecorder()
-	h.CreateOrganization(rec, req)
-
-	if rec.Code != http.StatusUnauthorized {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
-	}
-}
-
-func TestCreateOrganizationAlreadyHasOrganization(t *testing.T) {
-	h, queries := newTestHandlers(t, true)
-	user := insertUser(t, queries)
-	existingOrg, err := h.orgs.Create(t.Context(), "existing-org")
-	if err != nil {
-		t.Fatalf("orgs.Create: %v", err)
-	}
-	if err := queries.SetUserOrganization(t.Context(), sqlcgen.SetUserOrganizationParams{
-		OrganizationID: sql.NullString{String: existingOrg.ID, Valid: true},
-		ID:             user.ID,
-	}); err != nil {
-		t.Fatalf("SetUserOrganization: %v", err)
-	}
-	user, err = queries.GetUserByID(t.Context(), user.ID)
-	if err != nil {
-		t.Fatalf("GetUserByID: %v", err)
-	}
-
-	req := httptest.NewRequest(http.MethodPost, "/api/organizations", strings.NewReader(`{"subdomain":"acme"}`))
-	req = withTestUser(req, user)
-	rec := httptest.NewRecorder()
-	h.CreateOrganization(rec, req)
-
-	if rec.Code != http.StatusConflict {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusConflict)
-	}
-}
-
-func TestCreateOrganizationInvalidJSON(t *testing.T) {
-	h, queries := newTestHandlers(t, true)
-	user := insertUser(t, queries)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/organizations", strings.NewReader(`not json`))
-	req = withTestUser(req, user)
-	rec := httptest.NewRecorder()
-	h.CreateOrganization(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
-	}
-}
-
-func TestCreateOrganizationInvalidSubdomain(t *testing.T) {
-	h, queries := newTestHandlers(t, true)
-	user := insertUser(t, queries)
-
-	req := httptest.NewRequest(http.MethodPost, "/api/organizations", strings.NewReader(`{"subdomain":"Not Valid!"}`))
-	req = withTestUser(req, user)
-	rec := httptest.NewRecorder()
-	h.CreateOrganization(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusBadRequest)
+			if rec.Code != tc.wantStatus {
+				t.Errorf("status = %d, want %d", rec.Code, tc.wantStatus)
+			}
+		})
 	}
 }
 

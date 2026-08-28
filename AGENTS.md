@@ -61,6 +61,8 @@ func (c *Ctl) MethodName(ctx context.Context, subdomain string) (_ string, err e
 - make sure variables and functions are not exported when not needed
 - don't write excessively long comments. Just say why some code is the way it is
   and don't mention older/removed approaches/designs of the code.
+- use table-driven tests whenever it fits, for example several tests for the same
+  function, but with different inputs and expected outputs
 
 ## Testing
 

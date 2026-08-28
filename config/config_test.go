@@ -179,177 +179,142 @@ auth:
 	}
 }
 
-func TestLoadGoogleUnsetIsDisabled(t *testing.T) {
-	dir := withDir(t)
-
-	yaml := `
-base_domain: example.com
-`
-	path := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	cfg, err := Load("")
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if cfg.Auth.Google.Enabled() {
-		t.Fatalf("Auth.Google.Enabled() = true, want false when auth.google.client_id is unset")
-	}
-	if cfg.Auth.Google != (GoogleConfig{}) {
-		t.Errorf("Auth.Google = %+v, want zero value when unset", cfg.Auth.Google)
-	}
-}
-
-func TestLoadGoogleConfigured(t *testing.T) {
-	dir := withDir(t)
-
-	yaml := `
+// TestLoadGoogleConfig covers auth.google, which is disabled when unset
+// and enabled with its three fields set when configured.
+func TestLoadGoogleConfig(t *testing.T) {
+	cases := []struct {
+		name string
+		yaml string
+		want GoogleConfig
+	}{
+		{
+			name: "unset is disabled",
+			yaml: "base_domain: example.com\n",
+		},
+		{
+			name: "configured",
+			yaml: `
 base_domain: example.com
 auth:
   google:
     client_id: "google-client-id"
     client_secret: "google-client-secret"
     callback_url: "https://example.com/auth/google/callback"
-`
-	path := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
+`,
+			want: GoogleConfig{
+				ClientID:     "google-client-id",
+				ClientSecret: "google-client-secret",
+				CallbackURL:  "https://example.com/auth/google/callback",
+			},
+		},
 	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := withDir(t)
+			path := filepath.Join(dir, "config.yaml")
+			if err := os.WriteFile(path, []byte(tc.yaml), 0o600); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
 
-	cfg, err := Load("")
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if !cfg.Auth.Google.Enabled() {
-		t.Fatal("Auth.Google.Enabled() = false, want true when auth.google.client_id is set")
-	}
-	want := GoogleConfig{
-		ClientID:     "google-client-id",
-		ClientSecret: "google-client-secret",
-		CallbackURL:  "https://example.com/auth/google/callback",
-	}
-	if cfg.Auth.Google != want {
-		t.Errorf("Auth.Google = %+v, want %+v", cfg.Auth.Google, want)
+			cfg, err := Load("")
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			wantEnabled := tc.want != GoogleConfig{}
+			if got := cfg.Auth.Google.Enabled(); got != wantEnabled {
+				t.Errorf("Auth.Google.Enabled() = %v, want %v", got, wantEnabled)
+			}
+			if cfg.Auth.Google != tc.want {
+				t.Errorf("Auth.Google = %+v, want %+v", cfg.Auth.Google, tc.want)
+			}
+		})
 	}
 }
 
-func TestLoadMicrosoftUnsetIsDisabled(t *testing.T) {
-	dir := withDir(t)
-
-	yaml := `
-base_domain: example.com
-`
-	path := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	cfg, err := Load("")
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if cfg.Auth.Microsoft.Enabled() {
-		t.Fatalf("Auth.Microsoft.Enabled() = true, want false when auth.microsoft.client_id is unset")
-	}
-	if cfg.Auth.Microsoft != (MicrosoftConfig{}) {
-		t.Errorf("Auth.Microsoft = %+v, want zero value when unset", cfg.Auth.Microsoft)
-	}
-}
-
-func TestLoadMicrosoftConfigured(t *testing.T) {
-	dir := withDir(t)
-
-	yaml := `
+// TestLoadMicrosoftConfig covers auth.microsoft, which follows the same
+// "disabled when unset, enabled with these fields when configured" shape
+// as TestLoadGoogleConfig.
+func TestLoadMicrosoftConfig(t *testing.T) {
+	cases := []struct {
+		name string
+		yaml string
+		want MicrosoftConfig
+	}{
+		{
+			name: "unset is disabled",
+			yaml: "base_domain: example.com\n",
+		},
+		{
+			name: "configured",
+			yaml: `
 base_domain: example.com
 auth:
   microsoft:
     client_id: "microsoft-client-id"
     client_secret: "microsoft-client-secret"
     callback_url: "https://example.com/auth/microsoft/callback"
-`
-	path := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
+`,
+			want: MicrosoftConfig{
+				ClientID:     "microsoft-client-id",
+				ClientSecret: "microsoft-client-secret",
+				CallbackURL:  "https://example.com/auth/microsoft/callback",
+			},
+		},
 	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := withDir(t)
+			path := filepath.Join(dir, "config.yaml")
+			if err := os.WriteFile(path, []byte(tc.yaml), 0o600); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
 
-	cfg, err := Load("")
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if !cfg.Auth.Microsoft.Enabled() {
-		t.Fatal("Auth.Microsoft.Enabled() = false, want true when auth.microsoft.client_id is set")
-	}
-	want := MicrosoftConfig{
-		ClientID:     "microsoft-client-id",
-		ClientSecret: "microsoft-client-secret",
-		CallbackURL:  "https://example.com/auth/microsoft/callback",
-	}
-	if cfg.Auth.Microsoft != want {
-		t.Errorf("Auth.Microsoft = %+v, want %+v", cfg.Auth.Microsoft, want)
+			cfg, err := Load("")
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			wantEnabled := tc.want != MicrosoftConfig{}
+			if got := cfg.Auth.Microsoft.Enabled(); got != wantEnabled {
+				t.Errorf("Auth.Microsoft.Enabled() = %v, want %v", got, wantEnabled)
+			}
+			if cfg.Auth.Microsoft != tc.want {
+				t.Errorf("Auth.Microsoft = %+v, want %+v", cfg.Auth.Microsoft, tc.want)
+			}
+		})
 	}
 }
 
-func TestLoadDerpUnsetIsNoop(t *testing.T) {
-	dir := withDir(t)
-
-	yaml := `
-base_domain: example.com
-`
-	path := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	cfg, err := Load("")
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if cfg.Derp.Enabled() {
-		t.Fatalf("Derp.Enabled() = true, want false when derp.hostname is unset")
-	}
-	if cfg.Derp != (DerpConfig{}) {
-		t.Errorf("Derp = %+v, want zero value when unset", cfg.Derp)
-	}
-}
-
-func TestLoadDerpFillsDefaultsWhenHostnameSet(t *testing.T) {
-	dir := withDir(t)
-
-	yaml := `
+// TestLoadDerpConfig covers derp.*, which is a no-op when unset, fills in
+// defaults for optional fields when only hostname is set, and preserves
+// any explicitly-set fields.
+func TestLoadDerpConfig(t *testing.T) {
+	cases := []struct {
+		name string
+		yaml string
+		want DerpConfig
+	}{
+		{
+			name: "unset is a no-op",
+			yaml: "base_domain: example.com\n",
+		},
+		{
+			name: "fills defaults when hostname set",
+			yaml: `
 base_domain: example.com
 derp:
   hostname: derp.example.com
-`
-	path := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	cfg, err := Load("")
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if !cfg.Derp.Enabled() {
-		t.Fatal("Derp.Enabled() = false, want true when derp.hostname is set")
-	}
-	want := DerpConfig{
-		Hostname:   "derp.example.com",
-		STUNPort:   3478,
-		RegionID:   900,
-		RegionCode: "custom",
-		RegionName: "Self-hosted DERP",
-	}
-	if cfg.Derp != want {
-		t.Errorf("Derp = %+v, want %+v", cfg.Derp, want)
-	}
-}
-
-func TestLoadDerpExplicitOverridesPreserved(t *testing.T) {
-	dir := withDir(t)
-
-	yaml := `
+`,
+			want: DerpConfig{
+				Hostname:   "derp.example.com",
+				STUNPort:   3478,
+				RegionID:   900,
+				RegionCode: "custom",
+				RegionName: "Self-hosted DERP",
+			},
+		},
+		{
+			name: "explicit overrides preserved",
+			yaml: `
 base_domain: example.com
 derp:
   hostname: derp.example.com
@@ -359,59 +324,86 @@ derp:
   region_id: 901
   region_code: "myderp"
   region_name: "My DERP"
-`
-	path := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
+`,
+			want: DerpConfig{
+				Hostname:   "derp.example.com",
+				IPv4:       "198.51.100.1",
+				IPv6:       "2001:db8::1",
+				STUNPort:   4000,
+				RegionID:   901,
+				RegionCode: "myderp",
+				RegionName: "My DERP",
+			},
+		},
 	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := withDir(t)
+			path := filepath.Join(dir, "config.yaml")
+			if err := os.WriteFile(path, []byte(tc.yaml), 0o600); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
 
-	cfg, err := Load("")
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	want := DerpConfig{
-		Hostname:   "derp.example.com",
-		IPv4:       "198.51.100.1",
-		IPv6:       "2001:db8::1",
-		STUNPort:   4000,
-		RegionID:   901,
-		RegionCode: "myderp",
-		RegionName: "My DERP",
-	}
-	if cfg.Derp != want {
-		t.Errorf("Derp = %+v, want %+v (explicit values preserved)", cfg.Derp, want)
+			cfg, err := Load("")
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			wantEnabled := tc.want != DerpConfig{}
+			if got := cfg.Derp.Enabled(); got != wantEnabled {
+				t.Errorf("Derp.Enabled() = %v, want %v", got, wantEnabled)
+			}
+			if cfg.Derp != tc.want {
+				t.Errorf("Derp = %+v, want %+v", cfg.Derp, tc.want)
+			}
+		})
 	}
 }
 
-func TestLoadExplicitMissingPathErrors(t *testing.T) {
-	withDir(t)
-	_, err := Load("/does/not/exist/config.yaml")
-	if err == nil {
-		t.Fatal("Load: want error for missing explicit --config path, got nil")
+// TestLoadErrors covers the ways Load can fail: an explicit --config path
+// that doesn't exist, malformed YAML, and an unknown YAML field (rejected
+// by KnownFields).
+func TestLoadErrors(t *testing.T) {
+	cases := []struct {
+		name string
+		// path returns the path to pass to Load, writing any file it
+		// needs under dir first.
+		path func(t *testing.T, dir string) string
+	}{
+		{
+			name: "explicit missing path",
+			path: func(t *testing.T, dir string) string {
+				return "/does/not/exist/config.yaml"
+			},
+		},
+		{
+			name: "malformed YAML",
+			path: func(t *testing.T, dir string) string {
+				path := filepath.Join(dir, "bad.yaml")
+				if err := os.WriteFile(path, []byte("addr: [unterminated"), 0o600); err != nil {
+					t.Fatalf("WriteFile: %v", err)
+				}
+				return path
+			},
+		},
+		{
+			name: "unknown YAML field",
+			path: func(t *testing.T, dir string) string {
+				path := filepath.Join(dir, "config.yaml")
+				if err := os.WriteFile(path, []byte("not_a_real_field: true"), 0o600); err != nil {
+					t.Fatalf("WriteFile: %v", err)
+				}
+				return path
+			},
+		},
 	}
-}
-
-func TestLoadMalformedYAMLErrors(t *testing.T) {
-	dir := withDir(t)
-	path := filepath.Join(dir, "bad.yaml")
-	if err := os.WriteFile(path, []byte("addr: [unterminated"), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	_, err := Load(path)
-	if err == nil {
-		t.Fatal("Load: want error for malformed YAML, got nil")
-	}
-}
-
-func TestLoadUnknownFieldErrors(t *testing.T) {
-	dir := withDir(t)
-	path := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(path, []byte("not_a_real_field: true"), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-	_, err := Load(path)
-	if err == nil {
-		t.Fatal("Load: want error for unknown YAML field (KnownFields), got nil")
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := withDir(t)
+			_, err := Load(tc.path(t, dir))
+			if err == nil {
+				t.Error("Load: want error, got nil")
+			}
+		})
 	}
 }
 
