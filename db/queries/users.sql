@@ -9,6 +9,9 @@ SELECT * FROM users WHERE provider = ? AND provider_user_id = ?;
 -- name: GetUserByID :one
 SELECT * FROM users WHERE id = ?;
 
+-- name: DeleteUser :exec
+DELETE FROM users WHERE id = ?;
+
 -- name: SetUserOrganization :exec
 UPDATE users SET organization_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
 

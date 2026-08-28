@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"strings"
 	"testing"
 
@@ -98,6 +99,38 @@ func TestListUsers(t *testing.T) {
 		}
 		if !strings.Contains(orphanLine, "-") {
 			t.Errorf("orphan user line = %q, want it to show %q for missing organization/last login", orphanLine, "-")
+		}
+	})
+}
+
+func TestDeleteUser(t *testing.T) {
+	t.Run("not found", func(t *testing.T) {
+		_, queries := newTestDB(t)
+		var out strings.Builder
+		err := deleteUser(t.Context(), &out, queries, "nonexistent-id")
+		if err == nil {
+			t.Fatal("deleteUser: expected error for nonexistent id, got nil")
+		}
+		if !strings.Contains(err.Error(), "nonexistent-id") {
+			t.Errorf("deleteUser error = %q, want it to mention the id", err)
+		}
+	})
+
+	t.Run("deletes existing user", func(t *testing.T) {
+		_, queries := newTestDB(t)
+		user := insertUser(t, queries.Queries, t.Context(), "delete-me@example.test")
+
+		var out strings.Builder
+		if err := deleteUser(t.Context(), &out, queries, user.ID); err != nil {
+			t.Fatalf("deleteUser: %v", err)
+		}
+		got := out.String()
+		if !strings.Contains(got, user.ID) || !strings.Contains(got, "delete-me@example.test") {
+			t.Errorf("deleteUser output = %q, want it to mention the deleted user's id and email", got)
+		}
+
+		if _, err := queries.GetUserByID(t.Context(), user.ID); !errors.Is(err, sql.ErrNoRows) {
+			t.Errorf("GetUserByID after delete: err = %v, want sql.ErrNoRows", err)
 		}
 	})
 }

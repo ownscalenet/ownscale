@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io"
@@ -26,6 +27,7 @@ func newUserCommand(rootFlags *ff.FlagSet, configPath *string) *ff.Command {
 
 	userCmd.Subcommands = append(userCmd.Subcommands,
 		newUserListCommand(userFlags, configPath),
+		newUserDeleteCommand(userFlags, configPath),
 	)
 	return userCmd
 }
@@ -83,5 +85,44 @@ func listUsers(ctx context.Context, out io.Writer, queries *db.TxQueries) error 
 			u.ID, u.Email, org, u.Role, u.Provider, headscaleID,
 			u.CreatedAt.Format("2006-01-02 15:04:05"), lastLogin)
 	}
+	return nil
+}
+
+func newUserDeleteCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
+	flags := ff.NewFlagSet("user delete").SetParent(parent)
+	return &ff.Command{
+		Name:      "delete",
+		Usage:     "osa user delete [FLAGS] <user_id>",
+		ShortHelp: "delete a user",
+		Flags:     flags,
+		Exec: func(ctx context.Context, args []string) error {
+			if len(args) != 1 {
+				return errors.New("usage: osa user delete <user_id>")
+			}
+			res, cleanup, err := newOrgResources(configPath, true, false)
+			defer cleanup()
+			if err != nil {
+				return err
+			}
+			return deleteUser(ctx, os.Stdout, res.queries, args[0])
+		},
+	}
+}
+
+// deleteUser looks up userID, deletes the corresponding user record, and
+// writes a confirmation to out. It does not touch the headscale user.
+func deleteUser(ctx context.Context, out io.Writer, queries *db.TxQueries, userID string) error {
+	user, err := queries.GetUserByID(ctx, userID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("no user with id %q", userID)
+	}
+	if err != nil {
+		return fmt.Errorf("get user: %w", err)
+	}
+
+	if err := queries.DeleteUser(ctx, user.ID); err != nil {
+		return fmt.Errorf("delete user record: %w", err)
+	}
+	_, _ = fmt.Fprintf(out, "deleted user %s (%s)\n", user.ID, user.Email)
 	return nil
 }
