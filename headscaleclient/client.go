@@ -200,6 +200,25 @@ func (c *Client) DeleteUser(ctx context.Context, id string) (err error) {
 	return err
 }
 
+// RegisterNode registers a machine pending interactive authentication
+// (i.e. one that ran `tailscale up --login-server=...` and is waiting at
+// its printed registration key/URL) to user, returning the newly created
+// Node. key must already be in headscale's expected
+// `hskey-authreq-<token>` form -- see NormalizeRegistrationKey.
+func (c *Client) RegisterNode(ctx context.Context, user, key string) (_ Node, err error) {
+	defer derrors.Wrap(&err, "c.RegisterNode(%q, %q)", user, key)
+
+	params := headscale_service.NewHeadscaleServiceRegisterNodeParams().
+		WithContext(ctx).
+		WithUser(&user).
+		WithKey(&key)
+	resp, err := c.api.HeadscaleService.HeadscaleServiceRegisterNode(params)
+	if err != nil {
+		return Node{}, err
+	}
+	return toNode(resp.Payload.Node), nil
+}
+
 // RenameNode sets nodeID's display name (givenName) to name.
 func (c *Client) RenameNode(ctx context.Context, nodeID, name string) (err error) {
 	defer derrors.Wrap(&err, "c.RenameNode(%q, %q)", nodeID, name)

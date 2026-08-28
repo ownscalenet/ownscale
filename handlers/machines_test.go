@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -124,6 +125,16 @@ func newFakeHeadscaleServer(t *testing.T) (*httptest.Server, *headscaleclient.Cl
 		requests = append(requests, r)
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{}`)
+	})
+	mux.HandleFunc("/api/v1/node/register", func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r)
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("key") == "hskey-authreq-failme00000000000000000000" {
+			w.WriteHeader(http.StatusInternalServerError)
+			fmt.Fprint(w, `{"message":"registration key not found"}`)
+			return
+		}
+		fmt.Fprintf(w, `{"node":{"id":"4","name":"new-machine","givenName":"new-machine","user":{"id":"1","name":%q}}}`, r.URL.Query().Get("user"))
 	})
 
 	srv := httptest.NewServer(mux)
@@ -413,5 +424,87 @@ func TestMachineActionMissingIDReturns400(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestRegisterMachine(t *testing.T) {
+	cases := []struct {
+		name       string
+		body       string
+		wantStatus int
+		wantQuery  url.Values // only checked on 200
+	}{
+		{
+			name:       "bare token",
+			body:       `{"user":"alice","key":"abcdefghijklmnopqrstuvwx"}`,
+			wantStatus: http.StatusOK,
+			wantQuery:  url.Values{"user": {"alice"}, "key": {"hskey-authreq-abcdefghijklmnopqrstuvwx"}},
+		},
+		{
+			name:       "already prefixed key",
+			body:       `{"user":"bob","key":"hskey-authreq-abcdefghijklmnopqrstuvwx"}`,
+			wantStatus: http.StatusOK,
+			wantQuery:  url.Values{"user": {"bob"}, "key": {"hskey-authreq-abcdefghijklmnopqrstuvwx"}},
+		},
+		{
+			name:       "full registration URL",
+			body:       `{"user":"alice","key":"https://hs.example.test/register/abcdefghijklmnopqrstuvwx"}`,
+			wantStatus: http.StatusOK,
+			wantQuery:  url.Values{"user": {"alice"}, "key": {"hskey-authreq-abcdefghijklmnopqrstuvwx"}},
+		},
+		{
+			name:       "missing user",
+			body:       `{"key":"abcdefghijklmnopqrstuvwx"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "missing key",
+			body:       `{"user":"alice"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "unrecognized key format",
+			body:       `{"user":"alice","key":"not a key!!"}`,
+			wantStatus: http.StatusBadRequest,
+		},
+		{
+			name:       "headscale error propagates as 500",
+			body:       `{"user":"alice","key":"hskey-authreq-failme00000000000000000000"}`,
+			wantStatus: http.StatusInternalServerError,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h, queries := newMachinesTestHandlers(t)
+			user, requests := activeOrgUser(t, h, queries)
+
+			req := withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/register", strings.NewReader(tc.body)), user)
+			rec := httptest.NewRecorder()
+			h.RegisterMachine(rec, req)
+
+			if rec.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d: %s", rec.Code, tc.wantStatus, rec.Body.String())
+			}
+			if tc.wantQuery != nil {
+				last := (*requests)[len(*requests)-1]
+				if got := last.URL.Query(); got.Get("user") != tc.wantQuery.Get("user") || got.Get("key") != tc.wantQuery.Get("key") {
+					t.Errorf("upstream query = %v, want %v", got, tc.wantQuery)
+				}
+			}
+		})
+	}
+}
+
+func TestRegisterMachineNotConfiguredReturns503(t *testing.T) {
+	h, queries := newMachinesTestHandlers(t)
+	user := insertUser(t, queries)
+
+	req := withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/register", strings.NewReader(`{"user":"alice","key":"abcdefghijklmnopqrstuvwx"}`)), user)
+	rec := httptest.NewRecorder()
+	h.RegisterMachine(rec, req)
+
+	if rec.Code != http.StatusServiceUnavailable {
+		t.Fatalf("status = %d, want 503", rec.Code)
 	}
 }

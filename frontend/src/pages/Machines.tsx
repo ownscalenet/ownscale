@@ -4,6 +4,7 @@ import {
   deleteMachine,
   expireMachine,
   listMachines,
+  registerMachine,
   renameMachine,
   setMachineRoutes,
   setMachineTags,
@@ -72,6 +73,7 @@ export default function Machines() {
   const [total, setTotal] = useState(0)
   const [notConfigured, setNotConfigured] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const registerRef = useRef<HTMLDialogElement>(null)
 
   const load = async () => {
     try {
@@ -102,7 +104,18 @@ export default function Machines() {
     <>
       <div className="flex items-center justify-between mb-4">
         <h1 className="text-2xl font-bold">Machines</h1>
+        {!notConfigured && (
+          <button
+            type="button"
+            className="btn btn-sm btn-primary"
+            onClick={() => registerRef.current?.showModal()}
+          >
+            Register machine
+          </button>
+        )}
       </div>
+
+      <RegisterMachineDialog dialogRef={registerRef} users={users} onRegistered={load} />
 
       {error && (
         <div className="alert alert-error mb-4">
@@ -204,6 +217,125 @@ export default function Machines() {
         </>
       )}
     </>
+  )
+}
+
+function RegisterMachineDialog({
+  dialogRef,
+  users,
+  onRegistered,
+}: {
+  dialogRef: React.RefObject<HTMLDialogElement | null>
+  users: HeadscaleUser[]
+  onRegistered: () => void
+}) {
+  const [userId, setUserId] = useState('')
+  const [key, setKey] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  const reset = () => {
+    setUserId('')
+    setKey('')
+    setError(null)
+  }
+
+  const close = () => {
+    dialogRef.current?.close()
+    reset()
+  }
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError(null)
+    if (!userId) {
+      setError('Choose a user to own this machine.')
+      return
+    }
+    if (!key.trim()) {
+      setError('Paste the registration key or URL shown by `tailscale up`.')
+      return
+    }
+    setBusy(true)
+    try {
+      await registerMachine(userId, key.trim())
+      onRegistered()
+      close()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <dialog ref={dialogRef} className="modal">
+      <div className="modal-box text-left">
+        <h3 className="text-lg font-bold mb-4">Register machine</h3>
+        <p className="text-sm opacity-60 mb-2">Run this on the device you want to add:</p>
+        <div className="mockup-code text-xs mb-4 overflow-x-auto">
+          <pre data-prefix="$">
+            <code>tailscale up --login-server={window.location.origin}</code>
+          </pre>
+        </div>
+        {error && (
+          <div className="alert alert-error mb-4">
+            <span>{error}</span>
+          </div>
+        )}
+        <form className="space-y-4" onSubmit={(e) => void handleSubmit(e)}>
+          <div className="form-control">
+            <label className="label" htmlFor="register-machine-key">
+              <span className="label-text">Registration key or URL</span>
+            </label>
+            <input
+              id="register-machine-key"
+              type="text"
+              className="input input-bordered w-full font-mono"
+              placeholder="hskey-authreq-… or the full registration URL"
+              value={key}
+              onChange={(e) => setKey(e.target.value)}
+              required
+            />
+            <span className="label-text-alt opacity-60 mt-1">
+              Printed by the command above once the device is waiting to register.
+            </span>
+          </div>
+          <div className="form-control">
+            <label className="label" htmlFor="register-machine-user">
+              <span className="label-text">Owner</span>
+            </label>
+            <select
+              id="register-machine-user"
+              className="select select-bordered w-full"
+              value={userId}
+              onChange={(e) => setUserId(e.target.value)}
+              required
+            >
+              <option value="" disabled>
+                Select a user
+              </option>
+              {users.map((u) => (
+                <option key={u.id} value={u.name}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="modal-action">
+            <button type="submit" className="btn btn-primary" disabled={busy}>
+              Register
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={close}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      </div>
+      <form method="dialog" className="modal-backdrop">
+        <button>close</button>
+      </form>
+    </dialog>
   )
 }
 

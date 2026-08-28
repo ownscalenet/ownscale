@@ -105,6 +105,13 @@ export function listMachines(params: { q?: string; user?: string; status?: strin
   return request<MachinesResponse>(`/api/machines${suffix}`)
 }
 
+export function registerMachine(user: string, key: string) {
+  return request<{ machine: Machine }>('/api/machines/register', {
+    method: 'POST',
+    body: JSON.stringify({ user, key }),
+  })
+}
+
 export function renameMachine(id: string, name: string) {
   return request<{ ok: boolean }>(`/api/machines/${id}/rename`, {
     method: 'POST',

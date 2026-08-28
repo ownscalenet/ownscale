@@ -140,6 +140,45 @@ func (h *Handlers) ListMachines(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// RegisterMachine handles POST /api/machines/register. It registers a
+// machine that's waiting at its interactive registration key/URL (i.e.
+// ran `tailscale up --login-server=...`) to the given user.
+func (h *Handlers) RegisterMachine(w http.ResponseWriter, r *http.Request) {
+	client, notConfigured, err := h.resolveMachinesClient(r)
+	if err != nil {
+		h.serverError(w, err)
+		return
+	}
+	if notConfigured {
+		h.writeError(w, http.StatusServiceUnavailable, "headscale is not reachable for this organization")
+		return
+	}
+
+	var req struct {
+		User string `json:"user"`
+		Key  string `json:"key"`
+	}
+	if !h.decodeJSONBody(w, r, &req) {
+		return
+	}
+	if strings.TrimSpace(req.User) == "" {
+		h.writeError(w, http.StatusBadRequest, "user is required")
+		return
+	}
+	key, err := headscaleclient.NormalizeRegistrationKey(req.Key)
+	if err != nil {
+		h.writeError(w, http.StatusBadRequest, err.Error())
+		return
+	}
+
+	node, err := client.RegisterNode(r.Context(), req.User, key)
+	if err != nil {
+		h.serverError(w, err)
+		return
+	}
+	h.writeJSON(w, http.StatusOK, map[string]any{"machine": node})
+}
+
 // machineIDAndClient extracts the {id} path value and resolves the
 // caller's organization's headscale client, writing an appropriate error
 // response (and returning ok=false) if either isn't available.
