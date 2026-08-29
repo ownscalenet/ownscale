@@ -24,3 +24,15 @@ complicated code for organization provisioning process.
 ### 5. Headplane runs in limited mode
 Because Headplane and Headscale run in different container, Headplane UX is
 limited because it cannot do things like: modify headscale config and reload it.
+
+### 6. Two-phase backup restore
+When restoring the databases from backup, it's ownscale's database that is restored
+first, then organizations are queried (osa restore organizations) and their
+databases are restored one by one. To list the existing databases, we could do as
+suggested at https://litestream.io/guides/directory-watcher/#listing-available-databases
+but each backup destination type (local, s3, abs, etc.) would need its own
+implementation for listing databases. We rely on ownscale's database to avoid
+that. Drawbacks: two-phase is more complicated than a regular list/restore.
+Additionally, restoring is done manually. At startup, ownscale will
+check the health of existing databases against the backup and fail when something
+is off.

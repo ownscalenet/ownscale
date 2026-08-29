@@ -2,17 +2,6 @@
 # under OWNSCALE_DATA_DIR, using the directory watcher feature so newly
 # created/removed databases are picked up automatically without restarting
 # litestream. See https://litestream.io/guides/directory-watcher/.
-#
-# Variable expansion: OWNSCALE_DATA_DIR, LITESTREAM_REPLICA_URL,
-# LITESTREAM_REGION, LITESTREAM_ENDPOINT and LITESTREAM_SYNC_INTERVAL are
-# substituted from the environment before this file is parsed (see
-# .env.example). AWS/S3 credentials (LITESTREAM_ACCESS_KEY_ID /
-# LITESTREAM_SECRET_ACCESS_KEY) are read automatically by litestream and
-# intentionally don't appear here -- see
-# https://litestream.io/reference/config/#auto-read-environment-variables.
-# LITESTREAM_REGION/LITESTREAM_ENDPOINT may be left blank for AWS S3; set
-# them to point at an S3-compatible backend (MinIO, Cloudflare R2, Backblaze
-# B2, etc).
 
 logging:
   type: json

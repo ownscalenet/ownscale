@@ -27,6 +27,14 @@ services:
       OWNSCALE_BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
       OWNSCALE_DATA_DIR: ${OWNSCALE_DATA_DIR:?set OWNSCALE_DATA_DIR to an absolute host path in .env}
       SSL_CERT_DIR: /etc/ssl/certs:/etc/pki/tls/certs:${OWNSCALE_DATA_DIR}/local-ca
+      # Inject litestream's vars too because we use litestream to verify dbs
+      # against the replication backups (an to restore, in case they're missing/dirty)
+      LITESTREAM_REPLICA_URL: ${LITESTREAM_REPLICA_URL:-}
+      LITESTREAM_REGION: ${LITESTREAM_REGION:-}
+      LITESTREAM_ENDPOINT: ${LITESTREAM_ENDPOINT:-}
+      LITESTREAM_ACCESS_KEY_ID: ${LITESTREAM_ACCESS_KEY_ID:-}
+      LITESTREAM_SECRET_ACCESS_KEY: ${LITESTREAM_SECRET_ACCESS_KEY:-}
+      LITESTREAM_AZURE_ACCOUNT_KEY: ${LITESTREAM_AZURE_ACCOUNT_KEY:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${OWNSCALE_DATA_DIR}:${OWNSCALE_DATA_DIR}
@@ -68,6 +76,7 @@ services:
       LITESTREAM_SYNC_INTERVAL: ${LITESTREAM_SYNC_INTERVAL:-10s}
       LITESTREAM_ACCESS_KEY_ID: ${LITESTREAM_ACCESS_KEY_ID:-}
       LITESTREAM_SECRET_ACCESS_KEY: ${LITESTREAM_SECRET_ACCESS_KEY:-}
+      LITESTREAM_AZURE_ACCOUNT_KEY: ${LITESTREAM_AZURE_ACCOUNT_KEY:-}
     volumes:
       # litestream LTX-based writes internal bookkeeping tables.
       # the volume must be writable

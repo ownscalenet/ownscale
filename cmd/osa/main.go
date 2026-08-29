@@ -31,6 +31,8 @@ func main() {
 		newUserCommand(rootFlags, configPath),
 		newMigrateCommand(rootFlags, configPath),
 		newGenLocalCACommand(rootFlags, configPath),
+		newRestoreCommand(rootFlags, configPath),
+		newVerifyCommand(rootFlags, configPath),
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
