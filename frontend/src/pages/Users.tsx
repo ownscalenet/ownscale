@@ -225,6 +225,12 @@ export default function Users() {
                   className="input input-bordered w-full"
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
+                  autoComplete="off"
+                  data-1p-ignore
+                  data-lpignore="true"
+                  data-bwignore
+                  data-form-type="other"
+                  data-protonpass-ignore
                 />
               </div>
               <div className="form-control">

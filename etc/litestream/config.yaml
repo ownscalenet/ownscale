@@ -23,6 +23,7 @@ dbs:
       endpoint: ${LITESTREAM_ENDPOINT}
       sync-interval: ${LITESTREAM_SYNC_INTERVAL}
 
+  # TODO: this could be dropped, together with the mount from dockerctl.go.
   # Every organization's headplane database (hp_persist.db), one level
   # down per subdomain -- same directory tree as above, but litestream
   # requires a separate dbs entry per glob pattern.

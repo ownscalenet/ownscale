@@ -4,7 +4,7 @@
 # (go:embed needs real files at Go build time), so run `make frontend`
 # whenever frontend/ changes and commit the updated webui/dist.
 
-.PHONY: build frontend backend osa test test-integration coverage migration archive docker-image rm-orphans purge ci docs load-cert e2e
+.PHONY: build frontend backend osa restore test test-integration coverage migration archive docker-image rm-orphans purge ci docs load-cert e2e
 
 DOCKER_IMAGE := ownscale:latest
 
@@ -16,6 +16,7 @@ frontend:
 
 osa:
 	docker compose exec ownscale ./osa $(filter-out osa,$(MAKECMDGOALS))
+
 
 # Build the site/ Hugo module (hugo-book theme) into etc/caddy/site, which
 # Caddy serves at {$BASE_DOMAIN}. The generated output is committed to the
@@ -38,7 +39,16 @@ generate-headscale-client:
 migration:
 	go run ./cmd/osa --config config.yaml migrate $(filter-out migration,$(MAKECMDGOALS))
 
+
+restore:
+	docker compose run --rm --entrypoint /app/osa ownscale --config /etc/ownscale/config.yaml restore $(filter-out restore,$(MAKECMDGOALS))
+
 up down status:
+	@:
+
+# Swallows `make restore db`/`make restore organizations`'s positional
+# argument the same way `up down status:` does for `make migration ...`.
+db organizations:
 	@:
 
 ifneq (,$(filter osa,$(MAKECMDGOALS)))
