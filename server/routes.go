@@ -84,5 +84,5 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	// client-side routes (/, /login, /machines, ...).
 	mux.Handle("/", static)
 
-	return loggingMiddleware(logger, mux)
+	return loggingMiddleware(logger, securityHeadersMiddleware(mux))
 }

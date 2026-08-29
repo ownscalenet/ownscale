@@ -4,6 +4,7 @@ package auth
 
 import (
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/gorilla/sessions"
@@ -32,6 +33,8 @@ const MicrosoftProviderName = "microsoft"
 func Setup(sessionSecret string) {
 	store := sessions.NewCookieStore([]byte(sessionSecret))
 	store.Options.HttpOnly = true
+	store.Options.Secure = true
+	store.Options.SameSite = http.SameSiteLaxMode
 	store.Options.Path = "/"
 	store.MaxAge(SessionMaxAge)
 	gothic.Store = store

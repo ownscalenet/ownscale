@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/gorilla/sessions"
 	"github.com/markbates/goth"
+	"github.com/markbates/goth/gothic"
 	"github.com/pressly/goose/v3"
 	"github.com/rs/xid"
 
@@ -220,6 +222,24 @@ func TestClearUserSessionInvalidatesSession(t *testing.T) {
 	}
 	if rec.Code != http.StatusUnauthorized {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusUnauthorized)
+	}
+}
+
+func TestSetupCookieOptions(t *testing.T) {
+	setupSessions()
+
+	store, ok := gothic.Store.(*sessions.CookieStore)
+	if !ok {
+		t.Fatalf("gothic.Store = %T, want *sessions.CookieStore", gothic.Store)
+	}
+	if !store.Options.HttpOnly {
+		t.Error("Options.HttpOnly = false, want true")
+	}
+	if !store.Options.Secure {
+		t.Error("Options.Secure = false, want true")
+	}
+	if store.Options.SameSite != http.SameSiteLaxMode {
+		t.Errorf("Options.SameSite = %v, want http.SameSiteLaxMode", store.Options.SameSite)
 	}
 }
 
