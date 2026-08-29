@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { useAuth } from '../auth'
 import {
   deleteMachine,
   expireMachine,
@@ -233,6 +234,8 @@ function RegisterMachineDialog({
   const [key, setKey] = useState('')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const { organization } = useAuth()
+  const loginServer = `${window.location.protocol}//${organization?.Domain}`
 
   const reset = () => {
     setUserId('')
@@ -275,7 +278,7 @@ function RegisterMachineDialog({
         <p className="text-sm opacity-60 mb-2">Run this on the device you want to add:</p>
         <div className="mockup-code text-xs mb-4 overflow-x-auto">
           <pre data-prefix="$">
-            <code>tailscale up --login-server={window.location.origin}</code>
+            <code>tailscale up --login-server={loginServer}</code>
           </pre>
         </div>
         {error && (

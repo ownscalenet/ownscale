@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { useAuth } from '../auth'
 import { createAuthKey, expireAuthKey, listAuthKeys, type HeadscaleUser, type PreAuthKey } from '../api'
 
 const TAG_ONLY = '__tag_only__'
@@ -242,6 +243,8 @@ function CreateAuthKeyDialog({
   const [expiryDays, setExpiryDays] = useState(90)
   const [reusable, setReusable] = useState(false)
   const [ephemeral, setEphemeral] = useState(false)
+  const { organization } = useAuth()
+  const loginServer = `${window.location.protocol}//${organization?.Domain}`
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [createdKey, setCreatedKey] = useState<string | null>(null)
@@ -315,7 +318,7 @@ function CreateAuthKeyDialog({
             <div className="mockup-code text-xs mb-4 overflow-x-auto">
               <pre data-prefix="$">
                 <code>
-                  tailscale up --login-server={window.location.origin} --authkey {createdKey}
+                  tailscale up --login-server={loginServer} --authkey {createdKey}
                 </code>
               </pre>
             </div>

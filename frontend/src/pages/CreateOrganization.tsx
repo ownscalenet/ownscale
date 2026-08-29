@@ -32,9 +32,9 @@ export default function CreateOrganization() {
 
   useEffect(() => {
     if (organization?.Status === "active") {
-      window.location.href = `https://${organization.Subdomain}.${window.location.host}/admin/oidc/start`;
+      window.location.href = `https://${organization.Domain}/admin/oidc/start`;
     }
-  }, [organization?.Status, organization?.Subdomain]);
+  }, [organization?.Status, organization?.Domain]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -59,7 +59,7 @@ export default function CreateOrganization() {
             <h1 className="text-3xl font-bold mb-2">Setting up your organization…</h1>
             <p className="text-base-content/70">
               This usually only takes a few seconds. This page will move on
-              automatically once <code>{organization.Subdomain}</code> is ready.
+              automatically once <code>{organization.Domain}</code> is ready.
             </p>
           </div>
         </div>
@@ -75,7 +75,7 @@ export default function CreateOrganization() {
             <h1 className="text-3xl font-bold mb-2">Something went wrong</h1>
             <div role="alert" className="alert alert-error">
               <span>
-                We couldn't finish setting up <code>{organization.Subdomain}</code>. Please
+                We couldn't finish setting up <code>{organization.Domain}</code>. Please
                 contact an administrator for help.
               </span>
             </div>

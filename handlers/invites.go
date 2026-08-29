@@ -235,5 +235,5 @@ func (h *Handlers) AcceptInvite(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, err)
 		return
 	}
-	h.writeJSON(w, http.StatusOK, map[string]any{"organization": org})
+	h.writeJSON(w, http.StatusOK, map[string]any{"organization": h.toOrganizationResponse(org)})
 }

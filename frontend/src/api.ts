@@ -18,7 +18,7 @@ export interface User {
 
 export interface Organization {
   ID: string
-  Subdomain: string
+  Domain: string
   CreatedAt: string
   Status: 'pending' | 'active' | 'failed'
 }

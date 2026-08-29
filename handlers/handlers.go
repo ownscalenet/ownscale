@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"log/slog"
 	"net/http"
+	"time"
 
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/auth/oidcprovider"
@@ -101,6 +102,20 @@ func (h *Handlers) serverError(w http.ResponseWriter, err error) {
 	h.writeError(w, http.StatusInternalServerError, "internal server error")
 }
 
+type organizationResponse struct {
+	Domain    string    `json:"Domain"`
+	CreatedAt time.Time `json:"CreatedAt"`
+	Status    string    `json:"Status"`
+}
+
+func (h *Handlers) toOrganizationResponse(org sqlcgen.Organization) organizationResponse {
+	return organizationResponse{
+		Domain:    org.Subdomain + "." + h.baseDomain,
+		CreatedAt: org.CreatedAt,
+		Status:    org.Status,
+	}
+}
+
 // Session returns the currently authenticated user, plus their
 // organization (including its provisioning status), as JSON. It is mounted
 // behind auth.RequireAuthAPI, so reaching this handler implies a user is
@@ -126,7 +141,11 @@ func (h *Handlers) Session(w http.ResponseWriter, r *http.Request) {
 		h.ensureCallerHeadscaleUser(r, user, o)
 	}
 
-	h.writeJSON(w, http.StatusOK, map[string]any{"user": user, "organization": org})
+	var orgResp any
+	if org != nil {
+		orgResp = h.toOrganizationResponse(*org)
+	}
+	h.writeJSON(w, http.StatusOK, map[string]any{"user": user, "organization": orgResp})
 }
 
 func (h *Handlers) ensureCallerHeadscaleUser(r *http.Request, user *sqlcgen.User, org sqlcgen.Organization) {

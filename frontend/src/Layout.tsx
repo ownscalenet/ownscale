@@ -56,7 +56,7 @@ export default function Layout() {
             </li>
             {organization && (
               <li>
-                <a href={`https://${organization.Subdomain}.${window.location.host}/admin/oidc/start`}>
+                <a href={`https://${organization.Domain}/admin/oidc/start`}>
                   Headplane
                 </a>
               </li>
@@ -68,7 +68,7 @@ export default function Layout() {
               <p className="text-xs text-base-content/60 truncate">{user.Email}</p>
               {organization && (
                 <div className="mt-2 mb-2">
-                  <p className="text-xs text-base-content/60 truncate">{organization.Subdomain}</p>
+                  <p className="text-xs text-base-content/60 truncate">{organization.Domain}</p>
                   <span
                     className={`badge badge-xs ${
                       organization.Status === 'active'

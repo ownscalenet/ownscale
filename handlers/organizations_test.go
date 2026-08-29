@@ -135,6 +135,9 @@ func TestCreateOrganizationSuccess(t *testing.T) {
 	if !strings.Contains(rec.Body.String(), "acme") {
 		t.Errorf("body = %q, want it to contain the created subdomain", rec.Body.String())
 	}
+	if !strings.Contains(rec.Body.String(), `"Domain":"acme.`+testBaseDomain+`"`) {
+		t.Errorf("body = %q, want it to contain Domain=acme.%s", rec.Body.String(), testBaseDomain)
+	}
 
 	updated, err := queries.GetUserByID(t.Context(), user.ID)
 	if err != nil {

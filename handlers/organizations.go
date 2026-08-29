@@ -78,5 +78,5 @@ func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
 
 	h.provisioner.Signal(org.ID)
 
-	h.writeJSON(w, http.StatusCreated, map[string]any{"organization": org})
+	h.writeJSON(w, http.StatusCreated, map[string]any{"organization": h.toOrganizationResponse(org)})
 }
