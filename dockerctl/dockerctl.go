@@ -490,6 +490,8 @@ oidc:
 // the policy file doesn't change behavior for existing/new organizations
 // until an admin edits it from the Access Control page.
 const DefaultACLPolicy = `{
+    // Lines starting with // are comments.
+    // Leave comments for future reference or explanations about the settings.
 	// See https://headscale.net/stable/ref/acls/ for the full HuJSON syntax.
 	"acls": [
 		{

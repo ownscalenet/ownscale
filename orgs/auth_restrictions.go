@@ -6,30 +6,33 @@ import (
 	"encoding/json"
 
 	"github.com/rs/xid"
+	"github.com/tailscale/hujson"
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/derrors"
 )
 
-// AuthRestrictionsConfigKey is the orgconfigs.path value for the stored
-// OIDC allowlist JSON.
 const AuthRestrictionsConfigKey = "oidc_restrictions"
 
-// authRestrictions is the JSON shape persisted in orgconfigs.content for
-// AuthRestrictionsConfigKey.
+const defaultAuthRestrictions = `{
+  // Lines starting with // are comments.
+  // Leave comments for future reference or explanations about the settings.
+  "domains": [],
+  "groups": [],
+  "users": [],
+}
+`
+
 type authRestrictions struct {
 	Domains []string `json:"domains"`
 	Groups  []string `json:"groups"`
 	Users   []string `json:"users"`
 }
 
-// GetAuthRestrictions returns orgID's stored OIDC login allowlist
-// (domains, groups, users). A missing row (no restrictions configured
-// yet, e.g. a brand new organization, or one provisioned before this
-// feature existed) returns three empty slices rather than an error,
-// matching headscale's own "keys absent" default of allowing every
-// OIDC-authenticated user.
-func (s *Service) GetAuthRestrictions(ctx context.Context, orgID string) (domains, groups, users []string, err error) {
+// GetAuthRestrictions returns orgID's stored OIDC login allowlist as
+// HuJSON. A missing row falls back to defaultAuthRestrictions rather than
+// erroring.
+func (s *Service) GetAuthRestrictions(ctx context.Context, orgID string) (_ string, err error) {
 	defer derrors.Wrap(&err, "s.GetAuthRestrictions(%q)", orgID)
 
 	cfg, err := s.queries.GetOrgConfig(ctx, sqlcgen.GetOrgConfigParams{
@@ -38,42 +41,42 @@ func (s *Service) GetAuthRestrictions(ctx context.Context, orgID string) (domain
 	})
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return nil, nil, nil, nil
+			return defaultAuthRestrictions, nil
 		}
-		return nil, nil, nil, err
+		return "", err
 	}
-
-	var r authRestrictions
-	if err := json.Unmarshal([]byte(cfg.Content), &r); err != nil {
-		return nil, nil, nil, err
-	}
-	return r.Domains, r.Groups, r.Users, nil
+	return cfg.Content, nil
 }
 
-// SetAuthRestrictions persists orgID's OIDC login allowlist (domains,
-// groups, users), then patches it into subdomain's running headscale
-// container and restarts it so headscale reloads it (it only reads its
-// config file at startup). Persisting to the DB happens before touching
-// Docker, mirroring SetACLPolicy, so a Docker-side failure never leaves
-// the stored allowlist out of sync with what an admin just saved.
-func (s *Service) SetAuthRestrictions(ctx context.Context, orgID, subdomain string, domains, groups, users []string) (err error) {
+// SetAuthRestrictions validates content as HuJSON, persists it as orgID's
+// OIDC login allowlist (orgconfigs), then patches the equivalent
+// domains/groups/users into subdomain's running headscale container and
+// restarts it so headscale reloads it.
+func (s *Service) SetAuthRestrictions(ctx context.Context, orgID, subdomain, content string) (err error) {
 	defer derrors.Wrap(&err, "s.SetAuthRestrictions(%q, %q)", orgID, subdomain)
 
-	content, err := json.Marshal(authRestrictions{Domains: domains, Groups: groups, Users: users})
+	val, err := hujson.Parse([]byte(content))
 	if err != nil {
 		return err
 	}
+	val.Standardize()
+	var r authRestrictions
+	if err := json.Unmarshal(val.Pack(), &r); err != nil {
+		return err
+	}
 
+	// TODO: this should be in a transaction
+	// Check if other save config + restart places need transactions.
 	if _, err := s.queries.UpsertOrgConfig(ctx, sqlcgen.UpsertOrgConfigParams{
 		ID:             xid.New().String(),
 		OrganizationID: orgID,
 		Path:           AuthRestrictionsConfigKey,
-		Content:        string(content),
+		Content:        content,
 	}); err != nil {
 		return err
 	}
 
-	if err := s.ctl.SetOIDCAllowlist(ctx, subdomain, domains, groups, users); err != nil {
+	if err := s.ctl.SetOIDCAllowlist(ctx, subdomain, r.Domains, r.Groups, r.Users); err != nil {
 		return err
 	}
 	return nil

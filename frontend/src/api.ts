@@ -235,17 +235,15 @@ export function updateAccessControlPolicy(content: string) {
   })
 }
 
-export function formatAccessControlPolicy(content: string) {
-  return request<{ content: string }>('/api/access-control/format', {
+export function formatHuJSON(content: string) {
+  return request<{ content: string }>('/api/hujson/format', {
     method: 'POST',
     body: JSON.stringify({ content }),
   })
 }
 
 export interface AuthRestrictionsResponse {
-  domains: string[]
-  groups: string[]
-  users: string[]
+  content: string
   canManage: boolean
 }
 
@@ -253,10 +251,10 @@ export function getAuthRestrictions() {
   return request<AuthRestrictionsResponse>('/api/auth-restrictions')
 }
 
-export function updateAuthRestrictions(domains: string[], groups: string[], users: string[]) {
-  return request<{ domains: string[]; groups: string[]; users: string[] }>('/api/auth-restrictions', {
+export function updateAuthRestrictions(content: string) {
+  return request<{ ok: boolean }>('/api/auth-restrictions', {
     method: 'PUT',
-    body: JSON.stringify({ domains, groups, users }),
+    body: JSON.stringify({ content }),
   })
 }
 

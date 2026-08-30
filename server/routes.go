@@ -50,7 +50,7 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 
 	mux.HandleFunc("GET /api/access-control", requireAuthAPI(h.RequireActiveOrg(h.GetAccessControlPolicy)))
 	mux.HandleFunc("PUT /api/access-control", requireAuthAPI(h.RequireActiveOrg(h.UpdateAccessControlPolicy)))
-	mux.HandleFunc("POST /api/access-control/format", requireAuthAPI(h.FormatAccessControlPolicy))
+	mux.HandleFunc("POST /api/hujson/format", requireAuthAPI(h.FormatHuJSON))
 
 	mux.HandleFunc("GET /api/auth-restrictions", requireAuthAPI(h.RequireActiveOrg(h.GetAuthRestrictions)))
 	mux.HandleFunc("PUT /api/auth-restrictions", requireAuthAPI(h.RequireActiveOrg(h.UpdateAuthRestrictions)))

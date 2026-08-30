@@ -54,24 +54,3 @@ func (h *Handlers) UpdateAccessControlPolicy(w http.ResponseWriter, r *http.Requ
 	}
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
-
-// FormatAccessControlPolicy handles POST /api/access-control/format. It
-// pretty-prints the supplied HuJSON content using hujson.Format, which
-// preserves comments. This is a stateless transform with no DB write or
-// Docker interaction, so it only requires the caller to be authenticated
-// (no organization/manager gating, unlike Get/UpdateAccessControlPolicy).
-func (h *Handlers) FormatAccessControlPolicy(w http.ResponseWriter, r *http.Request) {
-	var req struct {
-		Content string `json:"content"`
-	}
-	if !h.decodeJSONBody(w, r, &req) {
-		return
-	}
-
-	formatted, err := hujson.Format([]byte(req.Content))
-	if err != nil {
-		h.writeError(w, http.StatusBadRequest, "invalid HuJSON: "+err.Error())
-		return
-	}
-	h.writeJSON(w, http.StatusOK, map[string]string{"content": string(formatted)})
-}

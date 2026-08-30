@@ -2,62 +2,33 @@ package handlers
 
 import (
 	"net/http"
-	"strings"
+
+	"github.com/tailscale/hujson"
 )
 
 // GetAuthRestrictions handles GET /api/auth-restrictions. It returns the
-// caller's organization's stored OIDC login allowlist (domains, groups,
-// users), plus whether the caller can edit it (owner/admin, mirroring
-// GetAccessControlPolicy's canManage). requireActiveOrg guarantees the org
-// is active.
+// caller's organization's stored OIDC login allowlist (HuJSON), plus
+// whether the caller can edit it (owner/admin, mirroring
+// GetAccessControlPolicy's canManage). requireActiveOrg guarantees the
+// org is active.
 func (h *Handlers) GetAuthRestrictions(w http.ResponseWriter, r *http.Request) {
 	caller, org, _ := orgFromContext(r)
 
-	domains, groups, users, err := h.orgs.GetAuthRestrictions(r.Context(), org.ID)
+	content, err := h.orgs.GetAuthRestrictions(r.Context(), org.ID)
 	if err != nil {
 		h.serverError(w, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]any{
-		"domains":   emptyIfNil(domains),
-		"groups":    emptyIfNil(groups),
-		"users":     emptyIfNil(users),
+		"content":   content,
 		"canManage": isManager(caller.Role),
 	})
 }
 
-// emptyIfNil returns a non-nil empty slice for a nil input, so JSON
-// encodes an empty list ("[]") rather than null.
-func emptyIfNil(s []string) []string {
-	if s == nil {
-		return []string{}
-	}
-	return s
-}
-
-// normalizeAuthRestrictionList trims whitespace from each entry, drops
-// blanks, and deduplicates while preserving first-seen order (mirroring
-// headplane's [...new Set(...)] behavior for its allowed_domains/groups/
-// users lists).
-func normalizeAuthRestrictionList(values []string) []string {
-	seen := make(map[string]bool, len(values))
-	out := make([]string, 0, len(values))
-	for _, v := range values {
-		v = strings.TrimSpace(v)
-		if v == "" || seen[v] {
-			continue
-		}
-		seen[v] = true
-		out = append(out, v)
-	}
-	return out
-}
-
 // UpdateAuthRestrictions handles PUT /api/auth-restrictions. Only an
-// owner/admin may edit the OIDC login allowlist. Each of domains/groups/
-// users is trimmed, deduplicated, and persisted+applied as a whole
-// (replacing whatever was there before), mirroring
-// UpdateAccessControlPolicy's full-content-replace semantics.
+// owner/admin may edit the OIDC login allowlist. content is validated as
+// HuJSON before anything is persisted, mirroring
+// UpdateAccessControlPolicy's validate-then-persist semantics.
 // requireActiveOrg guarantees the org is active.
 func (h *Handlers) UpdateAuthRestrictions(w http.ResponseWriter, r *http.Request) {
 	caller, org, _ := orgFromContext(r)
@@ -67,25 +38,19 @@ func (h *Handlers) UpdateAuthRestrictions(w http.ResponseWriter, r *http.Request
 	}
 
 	var req struct {
-		Domains []string `json:"domains"`
-		Groups  []string `json:"groups"`
-		Users   []string `json:"users"`
+		Content string `json:"content"`
 	}
 	if !h.decodeJSONBody(w, r, &req) {
 		return
 	}
+	if _, err := hujson.Parse([]byte(req.Content)); err != nil {
+		h.writeError(w, http.StatusBadRequest, "invalid HuJSON: "+err.Error())
+		return
+	}
 
-	domains := normalizeAuthRestrictionList(req.Domains)
-	groups := normalizeAuthRestrictionList(req.Groups)
-	users := normalizeAuthRestrictionList(req.Users)
-
-	if err := h.orgs.SetAuthRestrictions(r.Context(), org.ID, org.Subdomain, domains, groups, users); err != nil {
+	if err := h.orgs.SetAuthRestrictions(r.Context(), org.ID, org.Subdomain, req.Content); err != nil {
 		h.serverError(w, err)
 		return
 	}
-	h.writeJSON(w, http.StatusOK, map[string]any{
-		"domains": emptyIfNil(domains),
-		"groups":  emptyIfNil(groups),
-		"users":   emptyIfNil(users),
-	})
+	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }

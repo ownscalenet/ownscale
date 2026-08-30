@@ -1,84 +1,50 @@
-import { useEffect, useState } from 'react'
-import { getAuthRestrictions, updateAuthRestrictions, ApiError } from '../api'
+import { useEffect, useRef, useState } from 'react'
+import { getAuthRestrictions, updateAuthRestrictions, formatHuJSON, ApiError } from '../api'
+import DiffModal from '../components/DiffModal'
 
-// ListEditor renders a labeled card with an add-input and a removable
-// chip/row list for one of the three OIDC allowlists (domains, groups,
-// users). It keeps the list purely as local state; the parent owns
-// persistence (a full-list PUT on every add/remove), mirroring headplane's
-// per-action add/remove UX but backed by ownscale's replace-all API.
-function ListEditor({
-  title,
-  description,
-  placeholder,
-  items,
-  canManage,
-  disabled,
-  onAdd,
-  onRemove,
-}: {
-  title: string
-  description: string
-  placeholder: string
-  items: string[]
-  canManage: boolean
-  disabled: boolean
-  onAdd: (value: string) => void
-  onRemove: (value: string) => void
-}) {
-  const [value, setValue] = useState('')
-
-  const submit = () => {
-    const trimmed = value.trim()
-    if (!trimmed) return
-    onAdd(trimmed)
-    setValue('')
-  }
-
+// cheatsheet is a static reference for the OIDC login allowlist's HuJSON
+// shape, rendered alongside the editor, mirroring AccessControl.tsx's
+// Cheatsheet.
+function Cheatsheet() {
   return (
     <div className="card bg-base-100 shadow h-full">
       <div className="card-body">
-        <h2 className="card-title">{title}</h2>
-        <p className="text-sm text-base-content/70">{description}</p>
+        <h2 className="card-title">Cheatsheet</h2>
+        <p className="text-sm text-base-content/70">
+          The allowlist is HuJSON (JSON with comments and trailing commas allowed). It
+          restricts which OIDC-authenticated users can join this organization. Leave a list
+          empty (or omit its key) to not restrict on that field.
+        </p>
 
-        {canManage && (
-          <div className="join mt-2">
-            <input
-              type="text"
-              className="input input-bordered join-item w-full"
-              placeholder={placeholder}
-              value={value}
-              disabled={disabled}
-              onChange={(e) => setValue(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault()
-                  submit()
-                }
-              }}
-            />
-            <button type="button" className="btn btn-primary join-item" disabled={disabled} onClick={submit}>
-              Add
-            </button>
+        <div className="divider my-2">Top-level keys</div>
+        <dl className="text-sm space-y-2">
+          <div>
+            <dt className="font-semibold">domains</dt>
+            <dd className="text-base-content/70">Allowed email domains, e.g. <code>"example.com"</code></dd>
           </div>
-        )}
+          <div>
+            <dt className="font-semibold">groups</dt>
+            <dd className="text-base-content/70">Allowed IdP-provided groups, e.g. <code>"group:eng"</code></dd>
+          </div>
+          <div>
+            <dt className="font-semibold">users</dt>
+            <dd className="text-base-content/70">Allowed specific email addresses, e.g. <code>"alice@example.com"</code></dd>
+          </div>
+        </dl>
 
-        <ul className="mt-3 space-y-1">
-          {items.length === 0 && <li className="text-sm text-base-content/60">No entries. Anyone can sign in.</li>}
-          {items.map((item) => (
-            <li key={item} className="flex items-center justify-between bg-base-200 rounded px-3 py-1.5 text-sm">
-              <span className="font-mono">{item}</span>
-              {canManage && (
-                <button
-                  type="button"
-                  className="btn btn-ghost btn-xs"
-                  disabled={disabled}
-                  onClick={() => onRemove(item)}
-                >
-                  Remove
-                </button>
-              )}
-            </li>
-          ))}
+        <div className="divider my-2">Example</div>
+        <pre className="text-xs bg-base-200 rounded p-3 overflow-x-auto whitespace-pre-wrap">
+{`{
+  "domains": ["example.com"],
+  "groups": ["group:eng"],
+  "users": ["alice@example.com"],
+}`}
+        </pre>
+
+        <div className="divider my-2">Semantics</div>
+        <ul className="text-sm text-base-content/70 list-disc list-inside space-y-1">
+          <li>A user may join if they match <em>any</em> domain, group, or user entry.</li>
+          <li>All three lists empty means anyone can sign in.</li>
         </ul>
       </div>
     </div>
@@ -86,23 +52,23 @@ function ListEditor({
 }
 
 export default function AuthRestrictions() {
-  const [domains, setDomains] = useState<string[]>([])
-  const [groups, setGroups] = useState<string[]>([])
-  const [users, setUsers] = useState<string[]>([])
+  const [content, setContent] = useState('')
+  const [savedContent, setSavedContent] = useState('')
   const [canManage, setCanManage] = useState(false)
   const [notConfigured, setNotConfigured] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [formatting, setFormatting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const diffRef = useRef<HTMLDialogElement>(null)
 
   useEffect(() => {
     void (async () => {
       try {
         const res = await getAuthRestrictions()
-        setDomains(res.domains)
-        setGroups(res.groups)
-        setUsers(res.users)
+        setContent(res.content)
+        setSavedContent(res.content)
         setCanManage(res.canManage)
         setNotConfigured(false)
       } catch (err) {
@@ -117,15 +83,13 @@ export default function AuthRestrictions() {
     })()
   }, [])
 
-  const persist = async (nextDomains: string[], nextGroups: string[], nextUsers: string[]) => {
+  const handleSave = async () => {
     setSaving(true)
     setError(null)
     setSuccess(false)
     try {
-      const res = await updateAuthRestrictions(nextDomains, nextGroups, nextUsers)
-      setDomains(res.domains)
-      setGroups(res.groups)
-      setUsers(res.users)
+      await updateAuthRestrictions(content)
+      setSavedContent(content)
       setSuccess(true)
     } catch (err) {
       setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err))
@@ -133,6 +97,22 @@ export default function AuthRestrictions() {
       setSaving(false)
     }
   }
+
+  const handleFormat = async () => {
+    setFormatting(true)
+    setError(null)
+    setSuccess(false)
+    try {
+      const res = await formatHuJSON(content)
+      setContent(res.content)
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err))
+    } finally {
+      setFormatting(false)
+    }
+  }
+
+  const dirty = content !== savedContent
 
   if (loading) {
     return (
@@ -162,41 +142,67 @@ export default function AuthRestrictions() {
           <span>Restrictions saved. Headscale is restarting to apply them.</span>
         </div>
       )}
-      {!canManage && !notConfigured && (
-        <p className="text-sm text-base-content/60 mb-4">Only owners and admins can edit authentication restrictions.</p>
-      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <ListEditor
-          title="Allowed domains"
-          description="Only users signing in with an email at one of these domains can join. Leave empty to allow any domain."
-          placeholder="example.com"
-          items={domains}
-          canManage={canManage}
-          disabled={saving || notConfigured}
-          onAdd={(value) => void persist([...domains, value], groups, users)}
-          onRemove={(value) => void persist(domains.filter((d) => d !== value), groups, users)}
-        />
-        <ListEditor
-          title="Allowed groups"
-          description="Only users whose IdP-provided groups include one of these can join. Leave empty to allow any group."
-          placeholder="group:eng"
-          items={groups}
-          canManage={canManage}
-          disabled={saving || notConfigured}
-          onAdd={(value) => void persist(domains, [...groups, value], users)}
-          onRemove={(value) => void persist(domains, groups.filter((g) => g !== value), users)}
-        />
-        <ListEditor
-          title="Allowed users"
-          description="Only these specific email addresses can join, in addition to any domain/group match above."
-          placeholder="alice@example.com"
-          items={users}
-          canManage={canManage}
-          disabled={saving || notConfigured}
-          onAdd={(value) => void persist(domains, groups, [...users, value])}
-          onRemove={(value) => void persist(domains, groups, users.filter((u) => u !== value))}
-        />
+        <div className="lg:col-span-2">
+          <div className="card bg-base-100 shadow h-full">
+            <div className="card-body">
+              <div className="flex items-center justify-between mb-2">
+                <h2 className="card-title">OIDC allowlist</h2>
+                <div className="flex items-center gap-2">
+                  {canManage && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      disabled={!dirty}
+                      onClick={() => diffRef.current?.showModal()}
+                    >
+                      View diff
+                    </button>
+                  )}
+                  {canManage && (
+                    <button
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      disabled={formatting || notConfigured}
+                      onClick={() => void handleFormat()}
+                    >
+                      {formatting ? <span className="loading loading-spinner loading-xs"></span> : null}
+                      Format
+                    </button>
+                  )}
+                  {canManage && (
+                    <button
+                      type="button"
+                      className="btn btn-primary btn-sm"
+                      disabled={saving || notConfigured || !dirty}
+                      onClick={() => void handleSave()}
+                    >
+                      {saving ? <span className="loading loading-spinner loading-xs"></span> : null}
+                      Save
+                    </button>
+                  )}
+                </div>
+              </div>
+              <textarea
+                className="textarea textarea-bordered w-full font-mono text-sm"
+                style={{ minHeight: '32rem' }}
+                spellCheck={false}
+                value={content}
+                readOnly={!canManage}
+                onChange={(e) => setContent(e.target.value)}
+              />
+              {!canManage && (
+                <p className="text-sm text-base-content/60 mt-2">Only owners and admins can edit authentication restrictions.</p>
+              )}
+              <DiffModal dialogRef={diffRef} savedContent={savedContent} content={content} />
+            </div>
+          </div>
+        </div>
+
+        <div className="lg:col-span-1">
+          <Cheatsheet />
+        </div>
       </div>
     </div>
   )

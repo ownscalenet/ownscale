@@ -46,16 +46,35 @@ func newAuthRestrictionsTestService(t *testing.T) (svc *Service, restarted *[]st
 // TestGetAuthRestrictionsDefaultsToEmptyWhenMissing verifies
 // GetAuthRestrictions doesn't error for an organization with no
 // orgconfigs row (e.g. a brand new one, or one provisioned before this
-// feature existed), returning "no restriction" (empty slices) instead.
+// feature existed), returning defaultAuthRestrictions instead.
 func TestGetAuthRestrictionsDefaultsToEmptyWhenMissing(t *testing.T) {
 	svc, _ := newAuthRestrictionsTestService(t)
 
-	domains, groups, users, err := svc.GetAuthRestrictions(t.Context(), "nonexistent-org-id")
+	content, err := svc.GetAuthRestrictions(t.Context(), "nonexistent-org-id")
 	if err != nil {
 		t.Fatalf("GetAuthRestrictions: %v", err)
 	}
-	if len(domains) != 0 || len(groups) != 0 || len(users) != 0 {
-		t.Fatalf("domains=%v groups=%v users=%v, want all empty", domains, groups, users)
+	if content != defaultAuthRestrictions {
+		t.Fatalf("content = %q, want default", content)
+	}
+}
+
+// TestSetAuthRestrictionsRejectsInvalidHuJSON verifies SetAuthRestrictions
+// validates content before persisting or touching Docker.
+func TestSetAuthRestrictionsRejectsInvalidHuJSON(t *testing.T) {
+	svc, restarted := newAuthRestrictionsTestService(t)
+	org, err := svc.Create(t.Context(), "acme")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	*restarted = nil
+
+	if err := svc.SetAuthRestrictions(t.Context(), org.ID, "acme", "not valid hujson {{{"); err == nil {
+		t.Fatal("SetAuthRestrictions: want error for invalid HuJSON, got nil")
+	}
+
+	if len(*restarted) != 0 {
+		t.Fatalf("headscale restarted for invalid content: %v", *restarted)
 	}
 }
 
@@ -71,33 +90,25 @@ func TestSetAuthRestrictionsPersistsPatchesAndRestarts(t *testing.T) {
 	}
 	*restarted = nil
 
-	wantDomains := []string{"example.com"}
-	wantGroups := []string{"group:eng"}
-	wantUsers := []string{"alice@example.com"}
-	if err := svc.SetAuthRestrictions(t.Context(), org.ID, "acme", wantDomains, wantGroups, wantUsers); err != nil {
+	newContent := `{"domains":["example.com"],"groups":["group:eng"],"users":["alice@example.com"]}`
+	if err := svc.SetAuthRestrictions(t.Context(), org.ID, "acme", newContent); err != nil {
 		t.Fatalf("SetAuthRestrictions: %v", err)
 	}
 
-	domains, groups, users, err := svc.GetAuthRestrictions(t.Context(), org.ID)
+	content, err := svc.GetAuthRestrictions(t.Context(), org.ID)
 	if err != nil {
 		t.Fatalf("GetAuthRestrictions: %v", err)
 	}
-	if len(domains) != 1 || domains[0] != "example.com" {
-		t.Fatalf("domains = %v, want %v", domains, wantDomains)
-	}
-	if len(groups) != 1 || groups[0] != "group:eng" {
-		t.Fatalf("groups = %v, want %v", groups, wantGroups)
-	}
-	if len(users) != 1 || users[0] != "alice@example.com" {
-		t.Fatalf("users = %v, want %v", users, wantUsers)
+	if content != newContent {
+		t.Fatalf("GetAuthRestrictions = %q, want %q", content, newContent)
 	}
 	if len(*restarted) != 1 || (*restarted)[0] != dockerctl.HSContainerName("acme") {
 		t.Fatalf("restarted = %v, want [%q]", *restarted, dockerctl.HSContainerName("acme"))
 	}
 }
 
-// TestSetAuthRestrictionsCanClearAllowlist verifies passing empty slices
-// after a previous non-empty save clears the stored allowlist.
+// TestSetAuthRestrictionsCanClearAllowlist verifies saving an empty
+// allowlist after a previous non-empty save clears the stored one.
 func TestSetAuthRestrictionsCanClearAllowlist(t *testing.T) {
 	svc, _ := newAuthRestrictionsTestService(t)
 	org, err := svc.Create(t.Context(), "acme")
@@ -105,18 +116,19 @@ func TestSetAuthRestrictionsCanClearAllowlist(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	if err := svc.SetAuthRestrictions(t.Context(), org.ID, "acme", []string{"example.com"}, nil, nil); err != nil {
+	if err := svc.SetAuthRestrictions(t.Context(), org.ID, "acme", `{"domains":["example.com"]}`); err != nil {
 		t.Fatalf("SetAuthRestrictions: %v", err)
 	}
-	if err := svc.SetAuthRestrictions(t.Context(), org.ID, "acme", nil, nil, nil); err != nil {
+	emptyContent := `{"domains":[],"groups":[],"users":[]}`
+	if err := svc.SetAuthRestrictions(t.Context(), org.ID, "acme", emptyContent); err != nil {
 		t.Fatalf("SetAuthRestrictions: %v", err)
 	}
 
-	domains, groups, users, err := svc.GetAuthRestrictions(t.Context(), org.ID)
+	content, err := svc.GetAuthRestrictions(t.Context(), org.ID)
 	if err != nil {
 		t.Fatalf("GetAuthRestrictions: %v", err)
 	}
-	if len(domains) != 0 || len(groups) != 0 || len(users) != 0 {
-		t.Fatalf("domains=%v groups=%v users=%v, want all empty after clearing", domains, groups, users)
+	if content != emptyContent {
+		t.Fatalf("GetAuthRestrictions = %q, want %q", content, emptyContent)
 	}
 }
