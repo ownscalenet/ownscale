@@ -2,6 +2,7 @@ package orgs
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"testing"
@@ -75,6 +76,46 @@ func TestSetAuthRestrictionsRejectsInvalidHuJSON(t *testing.T) {
 
 	if len(*restarted) != 0 {
 		t.Fatalf("headscale restarted for invalid content: %v", *restarted)
+	}
+}
+
+func TestSetAuthRestrictionsRollsBackOnDockerFailure(t *testing.T) {
+	queries := newTestQueries(t)
+	var failRestart bool
+	api := &dockerfake.API{
+		ContainerCreateFn: func(ctx context.Context, cfg *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+			return container.CreateResponse{ID: containerName}, nil
+		},
+		ContainerRestartFn: func(ctx context.Context, containerID string, options container.StopOptions) error {
+			if failRestart {
+				return errors.New("restart failed")
+			}
+			return nil
+		},
+	}
+	ctl, err := dockerctl.NewWithClient(api, t.TempDir(), "", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("dockerctl.NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { ctl.Close() })
+
+	svc := NewService(queries, ctl, "example.com", "https://auth.example.com", config.DerpConfig{})
+	org, err := svc.Create(t.Context(), "acme")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	failRestart = true
+	if err := svc.SetAuthRestrictions(t.Context(), org.ID, "acme", `{"domains":["example.com"]}`); err == nil {
+		t.Fatal("SetAuthRestrictions: want error when restart fails, got nil")
+	}
+
+	content, err := svc.GetAuthRestrictions(t.Context(), org.ID)
+	if err != nil {
+		t.Fatalf("GetAuthRestrictions: %v", err)
+	}
+	if content != defaultAuthRestrictions {
+		t.Fatalf("GetAuthRestrictions = %q, want the pre-failure default (rolled back)", content)
 	}
 }
 

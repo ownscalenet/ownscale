@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 
 	"github.com/rs/xid"
 	"github.com/tailscale/hujson"
@@ -51,7 +52,7 @@ func (s *Service) GetAuthRestrictions(ctx context.Context, orgID string) (_ stri
 // SetAuthRestrictions validates content as HuJSON, persists it as orgID's
 // OIDC login allowlist (orgconfigs), then patches the equivalent
 // domains/groups/users into subdomain's running headscale container and
-// restarts it so headscale reloads it.
+// restarts it so headscale reloads it. The process is in a transaction.
 func (s *Service) SetAuthRestrictions(ctx context.Context, orgID, subdomain, content string) (err error) {
 	defer derrors.Wrap(&err, "s.SetAuthRestrictions(%q, %q)", orgID, subdomain)
 
@@ -65,9 +66,13 @@ func (s *Service) SetAuthRestrictions(ctx context.Context, orgID, subdomain, con
 		return err
 	}
 
-	// TODO: this should be in a transaction
-	// Check if other save config + restart places need transactions.
-	if _, err := s.queries.UpsertOrgConfig(ctx, sqlcgen.UpsertOrgConfigParams{
+	txQueries, commit, rollback, err := s.queries.StartTx(ctx)
+	if err != nil {
+		return fmt.Errorf("start transaction: %w", err)
+	}
+	defer rollback()
+
+	if _, err := txQueries.UpsertOrgConfig(ctx, sqlcgen.UpsertOrgConfigParams{
 		ID:             xid.New().String(),
 		OrganizationID: orgID,
 		Path:           AuthRestrictionsConfigKey,
@@ -78,6 +83,10 @@ func (s *Service) SetAuthRestrictions(ctx context.Context, orgID, subdomain, con
 
 	if err := s.ctl.SetOIDCAllowlist(ctx, subdomain, r.Domains, r.Groups, r.Users); err != nil {
 		return err
+	}
+
+	if err := commit(); err != nil {
+		return fmt.Errorf("commit allowlist: %w", err)
 	}
 	return nil
 }

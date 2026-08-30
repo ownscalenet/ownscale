@@ -37,10 +37,10 @@ func (s *Service) GetACLPolicy(ctx context.Context, orgID string) (_ string, err
 // SetACLPolicy validates content as HuJSON, persists it as orgID's ACL
 // policy (orgconfigs), uploads it into subdomain's running headscale
 // container, and restarts that container so headscale reloads it (it only
-// reads its policy file at startup). Persisting to the DB happens before
-// touching Docker, so a Docker-side failure never leaves the stored
-// policy out of sync with what an admin just saved -- the next edit (or a
-// future re-provision) still has the content they intended.
+// reads its policy file at startup). The DB write happens inside a
+// transaction that's only committed once the Docker steps succeed; if
+// either fails, the DB write is rolled back so the stored policy never
+// diverges from what's actually running.
 func (s *Service) SetACLPolicy(ctx context.Context, orgID, subdomain, content string) (err error) {
 	defer derrors.Wrap(&err, "s.SetACLPolicy(%q, %q)", orgID, subdomain)
 
@@ -48,7 +48,13 @@ func (s *Service) SetACLPolicy(ctx context.Context, orgID, subdomain, content st
 		return fmt.Errorf("invalid HuJSON policy: %w", err)
 	}
 
-	if _, err := s.queries.UpsertOrgConfig(ctx, sqlcgen.UpsertOrgConfigParams{
+	txQueries, commit, rollback, err := s.queries.StartTx(ctx)
+	if err != nil {
+		return fmt.Errorf("start transaction: %w", err)
+	}
+	defer rollback()
+
+	if _, err := txQueries.UpsertOrgConfig(ctx, sqlcgen.UpsertOrgConfigParams{
 		ID:             xid.New().String(),
 		OrganizationID: orgID,
 		Path:           dockerctl.PolicyConfigPath,
@@ -62,6 +68,10 @@ func (s *Service) SetACLPolicy(ctx context.Context, orgID, subdomain, content st
 	}
 	if err := s.ctl.RestartHeadscale(ctx, subdomain); err != nil {
 		return fmt.Errorf("restart headscale: %w", err)
+	}
+
+	if err := commit(); err != nil {
+		return fmt.Errorf("commit policy: %w", err)
 	}
 	return nil
 }

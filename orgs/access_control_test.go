@@ -2,6 +2,7 @@ package orgs
 
 import (
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"maps"
@@ -121,7 +122,49 @@ func TestSetACLPolicyRejectsInvalidHuJSON(t *testing.T) {
 	}
 }
 
-// TestSetACLPolicyPersistsUploadsAndRestarts verifies SetACLPolicy stores
+func TestSetACLPolicyRollsBackOnDockerFailure(t *testing.T) {
+	queries := newTestQueries(t)
+	var failRestart bool
+	api := &dockerfake.API{
+		ContainerCreateFn: func(ctx context.Context, cfg *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+			return container.CreateResponse{ID: containerName}, nil
+		},
+		CopyToContainerFn: func(ctx context.Context, containerID, path string, content io.Reader, options container.CopyToContainerOptions) error {
+			return nil
+		},
+		ContainerRestartFn: func(ctx context.Context, containerID string, options container.StopOptions) error {
+			if failRestart {
+				return errors.New("restart failed")
+			}
+			return nil
+		},
+	}
+	ctl, err := dockerctl.NewWithClient(api, t.TempDir(), "", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("dockerctl.NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { ctl.Close() })
+
+	svc := NewService(queries, ctl, "example.com", "https://auth.example.com", config.DerpConfig{})
+	org, err := svc.Create(t.Context(), "acme")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	failRestart = true
+	if err := svc.SetACLPolicy(t.Context(), org.ID, "acme", `{"acls":[]}`); err == nil {
+		t.Fatal("SetACLPolicy: want error when restart fails, got nil")
+	}
+
+	content, err := svc.GetACLPolicy(t.Context(), org.ID)
+	if err != nil {
+		t.Fatalf("GetACLPolicy: %v", err)
+	}
+	if content != dockerctl.DefaultACLPolicy {
+		t.Fatalf("GetACLPolicy = %q, want the pre-failure default policy (rolled back)", content)
+	}
+}
+
 // the new policy, uploads it into the running container, and restarts
 // headscale so it reloads the policy.
 func TestSetACLPolicyPersistsUploadsAndRestarts(t *testing.T) {
