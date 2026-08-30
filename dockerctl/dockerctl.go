@@ -26,6 +26,7 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
+	"gopkg.in/yaml.v3"
 
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/derrors"
@@ -1132,6 +1133,46 @@ func (c *Ctl) RestartHeadscale(ctx context.Context, subdomain string) (err error
 
 	if err := c.cli.ContainerRestart(ctx, HSContainerName(subdomain), container.StopOptions{}); err != nil {
 		return fmt.Errorf("restart container: %w", err)
+	}
+	return nil
+}
+
+// SetOIDCAllowlist updates the OIDC allowlist in config.yaml and restarts headscale
+// for reload. TODO: when we drop headplane, this function will not need to mount
+// the config anymore. Instead it will be possible to generate it and use docker
+// API to upload it to container.
+func (c *Ctl) SetOIDCAllowlist(ctx context.Context, subdomain string, domains, groups, users []string) (err error) {
+	defer derrors.Wrap(&err, "c.SetOIDCAllowlist(%q)", subdomain)
+
+	configHostFile := filepath.Join(c.headscaleConfigHostDir(subdomain), "config.yaml")
+	raw, err := os.ReadFile(configHostFile)
+	if err != nil {
+		return fmt.Errorf("read config file: %w", err)
+	}
+
+	var doc map[string]any
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		return fmt.Errorf("parse config file: %w", err)
+	}
+	oidc, _ := doc["oidc"].(map[string]any)
+	if oidc == nil {
+		oidc = make(map[string]any)
+	}
+	oidc["allowed_domains"] = domains
+	oidc["allowed_groups"] = groups
+	oidc["allowed_users"] = users
+	doc["oidc"] = oidc
+
+	updated, err := yaml.Marshal(doc)
+	if err != nil {
+		return fmt.Errorf("marshal config file: %w", err)
+	}
+	if err := os.WriteFile(configHostFile, updated, 0o644); err != nil {
+		return fmt.Errorf("write config file: %w", err)
+	}
+
+	if err := c.RestartHeadscale(ctx, subdomain); err != nil {
+		return err
 	}
 	return nil
 }

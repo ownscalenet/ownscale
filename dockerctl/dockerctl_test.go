@@ -22,6 +22,7 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/pkg/stdcopy"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	"gopkg.in/yaml.v3"
 
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/dockerctl/dockerfake"
@@ -1119,5 +1120,145 @@ func TestRestartHeadscaleRestartsTheRightContainer(t *testing.T) {
 	}
 	if restarted != HSContainerName("acme") {
 		t.Fatalf("restarted = %q, want %q", restarted, HSContainerName("acme"))
+	}
+}
+
+// newOIDCAllowlistTestCtl provisions organization "acme" (so its
+// config.yaml exists on disk to patch) and returns a Ctl plus a pointer to
+// the list of restarted container names.
+func newOIDCAllowlistTestCtl(t *testing.T) (ctl *Ctl, restarted *[]string) {
+	t.Helper()
+	var restartedContainers []string
+	api := &dockerfake.API{
+		ContainerCreateFn: func(ctx context.Context, cfg *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+			return container.CreateResponse{ID: containerName}, nil
+		},
+		ContainerRestartFn: func(ctx context.Context, containerID string, options container.StopOptions) error {
+			restartedContainers = append(restartedContainers, containerID)
+			return nil
+		},
+	}
+	var err error
+	ctl, err = NewWithClient(api, t.TempDir(), "", discardLogger())
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{
+		Issuer: "https://auth.example.com", ClientID: "client-id", ClientSecret: "client-secret",
+	}, config.DerpConfig{}, DefaultACLPolicy); err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+	restartedContainers = nil // ignore CreateOrganization's own container start, only ContainerRestart is tracked anyway
+	return ctl, &restartedContainers
+}
+
+func readOIDCConfig(t *testing.T, ctl *Ctl, subdomain string) map[string]any {
+	t.Helper()
+	raw, err := os.ReadFile(filepath.Join(ctl.headscaleConfigHostDir(subdomain), "config.yaml"))
+	if err != nil {
+		t.Fatalf("read config.yaml: %v", err)
+	}
+	var doc map[string]any
+	if err := yaml.Unmarshal(raw, &doc); err != nil {
+		t.Fatalf("parse config.yaml: %v", err)
+	}
+	oidc, _ := doc["oidc"].(map[string]any)
+	if oidc == nil {
+		t.Fatalf("config.yaml has no oidc section:\n%s", raw)
+	}
+	return oidc
+}
+
+func toStringSlice(t *testing.T, v any) []string {
+	t.Helper()
+	if v == nil {
+		return nil
+	}
+	raw, ok := v.([]any)
+	if !ok {
+		t.Fatalf("expected []any, got %T (%v)", v, v)
+	}
+	out := make([]string, len(raw))
+	for i, e := range raw {
+		out[i], _ = e.(string)
+	}
+	return out
+}
+
+// TestSetOIDCAllowlistPatchesConfigAndRestarts verifies SetOIDCAllowlist
+// writes the allowed_domains/allowed_groups/allowed_users keys into the
+// already-materialized config.yaml and restarts headscale so it reloads
+// them.
+func TestSetOIDCAllowlistPatchesConfigAndRestarts(t *testing.T) {
+	ctl, restarted := newOIDCAllowlistTestCtl(t)
+
+	if err := ctl.SetOIDCAllowlist(t.Context(), "acme",
+		[]string{"example.com"}, []string{"group:eng"}, []string{"alice@example.com"}); err != nil {
+		t.Fatalf("SetOIDCAllowlist: %v", err)
+	}
+
+	oidc := readOIDCConfig(t, ctl, "acme")
+	if got := toStringSlice(t, oidc["allowed_domains"]); len(got) != 1 || got[0] != "example.com" {
+		t.Fatalf("allowed_domains = %v, want [example.com]", got)
+	}
+	if got := toStringSlice(t, oidc["allowed_groups"]); len(got) != 1 || got[0] != "group:eng" {
+		t.Fatalf("allowed_groups = %v, want [group:eng]", got)
+	}
+	if got := toStringSlice(t, oidc["allowed_users"]); len(got) != 1 || got[0] != "alice@example.com" {
+		t.Fatalf("allowed_users = %v, want [alice@example.com]", got)
+	}
+	// The rest of the oidc block (issuer/client_id/etc.) must survive the patch untouched.
+	if oidc["issuer"] != "https://auth.example.com" {
+		t.Fatalf("issuer = %v, want unchanged", oidc["issuer"])
+	}
+	if len(*restarted) != 1 || (*restarted)[0] != HSContainerName("acme") {
+		t.Fatalf("restarted = %v, want [%q]", *restarted, HSContainerName("acme"))
+	}
+}
+
+// TestSetOIDCAllowlistEmptyClearsRestriction verifies passing empty slices
+// clears any previously set allowlist (rather than, say, leaving stale
+// values in place).
+func TestSetOIDCAllowlistEmptyClearsRestriction(t *testing.T) {
+	ctl, _ := newOIDCAllowlistTestCtl(t)
+
+	if err := ctl.SetOIDCAllowlist(t.Context(), "acme",
+		[]string{"example.com"}, nil, nil); err != nil {
+		t.Fatalf("SetOIDCAllowlist: %v", err)
+	}
+	if err := ctl.SetOIDCAllowlist(t.Context(), "acme", nil, nil, nil); err != nil {
+		t.Fatalf("SetOIDCAllowlist: %v", err)
+	}
+
+	oidc := readOIDCConfig(t, ctl, "acme")
+	for _, key := range []string{"allowed_domains", "allowed_groups", "allowed_users"} {
+		if got := toStringSlice(t, oidc[key]); len(got) != 0 {
+			t.Fatalf("%s = %v, want empty", key, got)
+		}
+	}
+}
+
+// TestSetOIDCAllowlistIdempotent verifies re-applying the same allowlist
+// twice in a row leaves the config file in the same state (no
+// accumulation/duplication across calls).
+func TestSetOIDCAllowlistIdempotent(t *testing.T) {
+	ctl, restarted := newOIDCAllowlistTestCtl(t)
+
+	for range 2 {
+		if err := ctl.SetOIDCAllowlist(t.Context(), "acme",
+			[]string{"example.com", "other.com"}, nil, nil); err != nil {
+			t.Fatalf("SetOIDCAllowlist: %v", err)
+		}
+	}
+
+	oidc := readOIDCConfig(t, ctl, "acme")
+	got := toStringSlice(t, oidc["allowed_domains"])
+	if len(got) != 2 || got[0] != "example.com" || got[1] != "other.com" {
+		t.Fatalf("allowed_domains = %v, want [example.com other.com]", got)
+	}
+	if len(*restarted) != 2 {
+		t.Fatalf("restarted %d times, want 2", len(*restarted))
 	}
 }

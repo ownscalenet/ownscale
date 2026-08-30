@@ -11,11 +11,9 @@ import (
 )
 
 // resolveMachinesClient returns the calling user's organization's
-// headscaleclient.Client. notConfigured is true (with a nil client and nil
-// error) when the user has no organization yet, the organization is still
-// provisioning (or failed to), or minting/reaching its headscale API key
-// failed (e.g. its container isn't running yet). Any other failure (e.g. a
-// DB error looking up the organization) is returned as err.
+// headscaleclient.Client. notConfigured is true (nil client, nil error)
+// when the user has no org, the org isn't active yet, or minting/reaching
+// its headscale API key failed. Other failures are returned as err.
 func (h *Handlers) resolveMachinesClient(r *http.Request) (_ *headscaleclient.Client, notConfigured bool, err error) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok || !user.OrganizationID.Valid {
@@ -83,12 +81,9 @@ func matchesFilters(m headscaleclient.Node, q, userFilter, status string) bool {
 }
 
 // ListMachines handles GET /api/machines. It returns every machine
-// (headscale node) registered to the caller's organization, applying the
-// optional q/user/status query-string filters server-side. If headscale
-// isn't reachable for the caller's organization (still provisioning, or
-// its container isn't up) it responds 200 with notConfigured:true and
-// empty machines/users, matching the frontend's "not configured" state
-// rather than surfacing an error.
+// (headscale node) for the caller's organization, applying the optional
+// q/user/status query-string filters. If headscale isn't reachable it
+// responds 200 with notConfigured:true instead of an error.
 func (h *Handlers) ListMachines(w http.ResponseWriter, r *http.Request) {
 	client, notConfigured, err := h.resolveMachinesClient(r)
 	if err != nil {

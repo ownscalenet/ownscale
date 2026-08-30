@@ -244,6 +244,26 @@ export function formatAccessControlPolicy(content: string) {
   })
 }
 
+export interface AuthRestrictionsResponse {
+  notConfigured?: boolean
+  domains: string[]
+  groups: string[]
+  users: string[]
+  canManage: boolean
+}
+
+export function getAuthRestrictions() {
+  return request<AuthRestrictionsResponse>('/api/auth-restrictions')
+}
+
+export function updateAuthRestrictions(domains: string[], groups: string[], users: string[]) {
+  return request<{ domains: string[]; groups: string[]; users: string[] }>('/api/auth-restrictions', {
+    method: 'PUT',
+    body: JSON.stringify({ domains, groups, users }),
+  })
+}
+
+
 export interface PreAuthKey {
   id: string
   key: string

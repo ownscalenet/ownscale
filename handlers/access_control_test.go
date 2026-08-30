@@ -44,14 +44,12 @@ func newAccessControlTestHandlers(t *testing.T, roles ...string) (*Handlers, []s
 	return h, users
 }
 
-// TestGetAccessControlPolicyPendingOrgIsNotConfigured: the caller's organization
-// exists (and org provisioning is configured) but hasn't finished provisioning yet
-// (status still pending), so there's no headscale container/ACL policy to show yet.
+// TestGetAccessControlPolicyPendingOrgIsNotConfigured covers a pending
+// (not yet provisioned) organization: no ACL policy to show yet.
 func TestGetAccessControlPolicyPendingOrgIsNotConfigured(t *testing.T) {
 	h, queries := newTestHandlers(t, true)
 
-	// CreatePending (unlike Create) leaves the organization "pending"
-	// without synchronously provisioning it.
+	// CreatePending, unlike Create, leaves the org "pending".
 	org, err := h.orgs.CreatePending(t.Context(), "acme")
 	if err != nil {
 		t.Fatalf("orgs.CreatePending: %v", err)

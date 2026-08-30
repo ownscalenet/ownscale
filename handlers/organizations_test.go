@@ -27,10 +27,7 @@ func withTestUser(req *http.Request, user sqlcgen.User) *http.Request {
 }
 
 // TestCreateOrganizationErrors covers the validation/precondition checks
-// CreateOrganization rejects before ever creating a "pending" organization
-// row -- each case only asserts the resulting status code. Organization
-// provisioning (h.orgs) is always configured (mirroring production, where
-// base_domain/Docker are required at startup -- see config.Config.Validate).
+// CreateOrganization rejects before creating a "pending" organization row.
 func TestCreateOrganizationErrors(t *testing.T) {
 	cases := []struct {
 		name string

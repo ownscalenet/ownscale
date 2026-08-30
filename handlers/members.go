@@ -35,6 +35,25 @@ func (h *Handlers) callerAndOrg(w http.ResponseWriter, r *http.Request) (caller 
 	return user, user.OrganizationID.String, true
 }
 
+// resolveActiveOrg resolves the caller and their organization (via
+// callerAndOrg), reporting notConfigured if the org isn't active yet.
+func (h *Handlers) resolveActiveOrg(w http.ResponseWriter, r *http.Request) (caller *sqlcgen.User, org sqlcgen.Organization, notConfigured bool, ok bool) {
+	c, orgID, callerOk := h.callerAndOrg(w, r)
+	if !callerOk {
+		return nil, sqlcgen.Organization{}, false, false
+	}
+
+	o, err := h.queries.GetOrganization(r.Context(), orgID)
+	if err != nil {
+		h.serverError(w, err)
+		return nil, sqlcgen.Organization{}, false, false
+	}
+	if o.Status != "active" {
+		return c, o, true, true
+	}
+	return c, o, false, true
+}
+
 // toMember converts u into its JSON representation.
 func toMember(u sqlcgen.User) member {
 	return member{ID: u.ID, Name: u.Name, Email: u.Email, Role: u.Role}

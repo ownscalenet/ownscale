@@ -52,6 +52,9 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	mux.HandleFunc("PUT /api/access-control", requireAuthAPI(h.UpdateAccessControlPolicy))
 	mux.HandleFunc("POST /api/access-control/format", requireAuthAPI(h.FormatAccessControlPolicy))
 
+	mux.HandleFunc("GET /api/auth-restrictions", requireAuthAPI(h.GetAuthRestrictions))
+	mux.HandleFunc("PUT /api/auth-restrictions", requireAuthAPI(h.UpdateAuthRestrictions))
+
 	// Caddy's on-demand TLS "ask" endpoint; unauthenticated (checked by
 	// TLSAsk itself against known organizations/subdomains).
 	mux.HandleFunc("GET /api/tls-ask", h.TLSAsk)

@@ -1,21 +1,6 @@
 package headscaleclient
 
 import (
-	"context"
-	"sync"
-
-	"github.com/ownscalenet/ownscale/derrors"
-)
-
-// KeyMinter mints a fresh, independent headscale API key for the
-// organization whose headscale container is identified by
-// containerNameOrID (see dockerctl.HSContainerName). Implemented by
-// *dockerctl.Ctl; declared here as a narrow interface (rather than
-// importing dockerctl directly) so Registry stays decoupled from Docker
-// specifics and easy to test with a fake.
-type KeyMinter interface {
-	MintHeadscaleAPIKey(ctx context.Context, containerNameOrID string) (string, error)
-}
 
 // Registry lazily mints and caches one Client per organization subdomain,
 // entirely in memory: the ownscale-facing headscale API key is never

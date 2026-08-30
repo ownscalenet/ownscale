@@ -50,6 +50,11 @@ export default function Layout() {
               </NavLink>
             </li>
             <li>
+              <NavLink to="/auth-restrictions" className={({ isActive }) => (isActive ? 'active' : '')}>
+                Auth Restrictions
+              </NavLink>
+            </li>
+            <li>
               <NavLink to="/settings" className={({ isActive }) => (isActive ? 'active' : '')}>
                 Settings
               </NavLink>

@@ -24,9 +24,8 @@ func newMembersTestHandlers(t *testing.T, roles ...string) (*Handlers, *dbpkg.Tx
 	t.Helper()
 	queries := newTestQueries(t)
 	h := New(queries, nil, "", nil, discardLogger(), config.DerpConfig{})
-	// Simulate headscale being unreachable: h.hs.Client always errors, so
-	// resolveMachinesClient reports notConfigured. Tests exercising real
-	// linking behavior override h.hs with a fakeMachinesRegistry below.
+	// Simulate headscale being unreachable; tests needing real linking
+	// override h.hs with a fakeMachinesRegistry below.
 	h.hs = &fakeMachinesRegistry{err: errors.New("headscale unreachable")}
 
 	orgID := xid.New().String()
