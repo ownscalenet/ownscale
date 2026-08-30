@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { getAuthRestrictions, updateAuthRestrictions, formatHuJSON, ApiError } from '../api'
 import DiffModal from '../components/DiffModal'
+import LineNumberedTextarea from '../components/LineNumberedTextarea'
 
 // cheatsheet is a static reference for the OIDC login allowlist's HuJSON
 // shape, rendered alongside the editor, mirroring AccessControl.tsx's
@@ -184,13 +185,10 @@ export default function AuthRestrictions() {
                   )}
                 </div>
               </div>
-              <textarea
-                className="textarea textarea-bordered w-full font-mono text-sm"
-                style={{ minHeight: '32rem' }}
-                spellCheck={false}
+              <LineNumberedTextarea
                 value={content}
                 readOnly={!canManage}
-                onChange={(e) => setContent(e.target.value)}
+                onChange={setContent}
               />
               {!canManage && (
                 <p className="text-sm text-base-content/60 mt-2">Only owners and admins can edit authentication restrictions.</p>

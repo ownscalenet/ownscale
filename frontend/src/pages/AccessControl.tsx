@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { getAccessControlPolicy, updateAccessControlPolicy, formatHuJSON, ApiError } from '../api'
 import DiffModal from '../components/DiffModal'
+import LineNumberedTextarea from '../components/LineNumberedTextarea'
 
 // cheatsheet is a static reference for headscale's HuJSON ACL policy
 // syntax (https://headscale.net/stable/ref/acls/). It never calls the API
@@ -206,13 +207,10 @@ export default function AccessControl() {
                   )}
                 </div>
               </div>
-              <textarea
-                className="textarea textarea-bordered w-full font-mono text-sm"
-                style={{ minHeight: '32rem' }}
-                spellCheck={false}
+              <LineNumberedTextarea
                 value={content}
                 readOnly={!canManage}
-                onChange={(e) => setContent(e.target.value)}
+                onChange={setContent}
               />
               {!canManage && (
                 <p className="text-sm text-base-content/60 mt-2">Only owners and admins can edit the access control policy.</p>
