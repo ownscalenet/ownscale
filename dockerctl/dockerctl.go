@@ -26,7 +26,6 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/client"
 	"github.com/docker/docker/pkg/stdcopy"
-	"gopkg.in/yaml.v3"
 
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/derrors"
@@ -38,7 +37,7 @@ const (
 	ownscaleNetwork     = "os-net"
 	Image               = "headscale/headscale:0.29.3-debug"
 	headplaneImage      = "ghcr.io/tale/headplane:0.7.0-shell"
-	headscaleConfigPath = "/etc/headscale/config.yaml"
+	ConfigYAMLPath      = "/etc/headscale/config.yaml"
 	headplaneConfigPath = "/etc/headplane/config.yaml"
 	derpConfigPath      = "/etc/headscale/derp.yaml"
 	PolicyConfigPath    = "/etc/headscale/acl.hujson"
@@ -163,7 +162,7 @@ func (c *Ctl) headplaneHostDir(subdomain string) string {
 }
 
 // headscaleConfigHostDir returns the host directory for organization's
-// headscale config.yaml, bind-mounted at headscaleConfigPath
+// headscale config.yaml, bind-mounted at ConfigYAMLPath
 // into both the headscale container (read-only) and the headplane
 // container (read-write) so Headplane's Network Management feature can edit
 // live headscale settings (DNS, MagicDNS, ACLs, ...) and have headscale
@@ -415,7 +414,7 @@ func (c *Ctl) ensureCaddyNetworkAlias(ctx context.Context, networkName, baseDoma
 }
 
 // headscale config for an organization; ServerURL must match the public subdomain.
-// The "derp" block is filled in by buildHSConfig depending on whether a
+// The "derp" block is filled in by BuildHeadscaleConfig depending on whether a
 // custom DERP relay (config.DerpConfig) is configured: either today's default
 // (Tailscale's public DERP map, no embedded server), or a custom derp.paths
 // entry pointing at the rendered derp.yaml (see configTemplateDerp), with
@@ -461,7 +460,7 @@ taildrop:
 
 dns:
   magic_dns: true
-  base_domain: {{.Subdomain}}.headscale.internal
+  base_domain: {{.Subdomain}}.ownscale.internal
   nameservers:
     global:
       - 1.1.1.1
@@ -538,9 +537,9 @@ func buildDerpConfig(derpCfg config.DerpConfig) (_ string, err error) {
 	return buf.String(), nil
 }
 
-// buildHSConfig renders the headscale config.yaml content for an organization.
-func buildHSConfig(subdomain, domain string, oidcCreds OIDCClientCredentials, derpCfg config.DerpConfig) (_ string, err error) {
-	defer derrors.Wrap(&err, "buildHSConfig(%q, %q)", subdomain, domain)
+// BuildHeadscaleConfig renders the headscale config.yaml content for an organization.
+func BuildHeadscaleConfig(subdomain, domain string, oidcCreds OIDCClientCredentials, derpCfg config.DerpConfig) (_ string, err error) {
+	defer derrors.Wrap(&err, "BuildHeadscaleConfig(%q, %q)", subdomain, domain)
 
 	var buf bytes.Buffer
 	if err := configTemplateHS.Execute(&buf, struct {
@@ -627,7 +626,7 @@ func buildHPConfig(subdomain, domain, cookieSecret, headscaleAPIKey string, oidc
 		CookieSecret:       cookieSecret,
 		HSContainerName:    HSContainerName(subdomain),
 		HSExternalEndpoint: HSExternalEndpoint(domain),
-		HSConfigPath:       headscaleConfigPath,
+		HSConfigPath:       ConfigYAMLPath,
 		HeadscaleAPIKey:    headscaleAPIKey,
 		OIDCIssuer:         oidcCreds.Issuer,
 		OIDCClientID:       oidcCreds.ClientID,
@@ -853,7 +852,7 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 	orgNetwork := OrgNetworkName(subdomain)
 
 	domain := subdomain + "." + baseDomain
-	cfg, err := buildHSConfig(subdomain, domain, oidcCreds, derpCfg)
+	cfg, err := BuildHeadscaleConfig(subdomain, domain, oidcCreds, derpCfg)
 	if err != nil {
 		return "", err
 	}
@@ -876,7 +875,7 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 		{Type: mount.TypeBind, Source: hostDir, Target: "/var/lib/headscale"},
 		// Read-only: headscale only ever reads its own config; Headplane
 		// (given write access below) is what edits it.
-		{Type: mount.TypeBind, Source: configHostFile, Target: headscaleConfigPath, ReadOnly: true},
+		{Type: mount.TypeBind, Source: configHostFile, Target: ConfigYAMLPath, ReadOnly: true},
 	}
 	var env []string
 	if m, ok := c.localCAMount(); ok {
@@ -978,7 +977,7 @@ func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain, headscaleA
 
 	mounts := []mount.Mount{
 		{Type: mount.TypeBind, Source: hostDir, Target: "/var/lib/headplane"},
-		{Type: mount.TypeBind, Source: configHostFile, Target: headscaleConfigPath},
+		{Type: mount.TypeBind, Source: configHostFile, Target: ConfigYAMLPath},
 		{Type: mount.TypeBind, Source: "/var/run/docker.sock", Target: "/var/run/docker.sock", ReadOnly: true},
 	}
 	if m, ok := c.localCAMount(); ok {
@@ -1151,46 +1150,6 @@ func (c *Ctl) RestartHeadscale(ctx context.Context, subdomain string) (err error
 
 	if err := c.cli.ContainerRestart(ctx, HSContainerName(subdomain), container.StopOptions{}); err != nil {
 		return fmt.Errorf("restart container: %w", err)
-	}
-	return nil
-}
-
-// SetOIDCAllowlist updates the OIDC allowlist in config.yaml and restarts headscale
-// for reload. TODO: when we drop headplane, this function will not need to mount
-// the config anymore. Instead it will be possible to generate it and use docker
-// API to upload it to container.
-func (c *Ctl) SetOIDCAllowlist(ctx context.Context, subdomain string, domains, groups, users []string) (err error) {
-	defer derrors.Wrap(&err, "c.SetOIDCAllowlist(%q)", subdomain)
-
-	configHostFile := filepath.Join(c.headscaleConfigHostDir(subdomain), "config.yaml")
-	raw, err := os.ReadFile(configHostFile)
-	if err != nil {
-		return fmt.Errorf("read config file: %w", err)
-	}
-
-	var doc map[string]any
-	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		return fmt.Errorf("parse config file: %w", err)
-	}
-	oidc, _ := doc["oidc"].(map[string]any)
-	if oidc == nil {
-		oidc = make(map[string]any)
-	}
-	oidc["allowed_domains"] = domains
-	oidc["allowed_groups"] = groups
-	oidc["allowed_users"] = users
-	doc["oidc"] = oidc
-
-	updated, err := yaml.Marshal(doc)
-	if err != nil {
-		return fmt.Errorf("marshal config file: %w", err)
-	}
-	if err := os.WriteFile(configHostFile, updated, 0o644); err != nil {
-		return fmt.Errorf("write config file: %w", err)
-	}
-
-	if err := c.RestartHeadscale(ctx, subdomain); err != nil {
-		return err
 	}
 	return nil
 }

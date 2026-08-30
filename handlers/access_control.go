@@ -13,7 +13,7 @@ import (
 func (h *Handlers) GetAccessControlPolicy(w http.ResponseWriter, r *http.Request) {
 	caller, org, _ := orgFromContext(r)
 
-	content, err := h.orgs.GetACLPolicy(r.Context(), org.ID)
+	content, err := h.orgs.ForOrg(org).GetACLPolicy(r.Context())
 	if err != nil {
 		h.serverError(w, err)
 		return
@@ -48,7 +48,7 @@ func (h *Handlers) UpdateAccessControlPolicy(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := h.orgs.SetACLPolicy(r.Context(), org.ID, org.Subdomain, req.Content); err != nil {
+	if err := h.orgs.ForOrg(org).SetACLPolicy(r.Context(), req.Content); err != nil {
 		h.serverError(w, err)
 		return
 	}

@@ -55,6 +55,11 @@ export default function Layout() {
               </NavLink>
             </li>
             <li>
+              <NavLink to="/dns" className={({ isActive }) => (isActive ? 'active' : '')}>
+                DNS
+              </NavLink>
+            </li>
+            <li>
               <NavLink to="/settings" className={({ isActive }) => (isActive ? 'active' : '')}>
                 Settings
               </NavLink>

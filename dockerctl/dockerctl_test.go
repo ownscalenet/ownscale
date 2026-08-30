@@ -22,7 +22,6 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/pkg/stdcopy"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	"gopkg.in/yaml.v3"
 
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/dockerctl/dockerfake"
@@ -34,13 +33,13 @@ func discardLogger() *slog.Logger {
 }
 
 func TestBuildHSConfigIncludesOIDC(t *testing.T) {
-	cfg, err := buildHSConfig("acme", "acme.example.com", OIDCClientCredentials{
+	cfg, err := BuildHeadscaleConfig("acme", "acme.example.com", OIDCClientCredentials{
 		Issuer:       "https://auth.example.com",
 		ClientID:     "client-id",
 		ClientSecret: "client-secret",
 	}, config.DerpConfig{})
 	if err != nil {
-		t.Fatalf("buildHSConfig: %v", err)
+		t.Fatalf("BuildHeadscaleConfig: %v", err)
 	}
 	for _, want := range []string{
 		`issuer: "https://auth.example.com"`,
@@ -59,7 +58,7 @@ func TestBuildHSConfigIncludesOIDC(t *testing.T) {
 }
 
 func TestBuildHSConfigWithCustomDerp(t *testing.T) {
-	cfg, err := buildHSConfig("acme", "acme.example.com", OIDCClientCredentials{}, config.DerpConfig{
+	cfg, err := BuildHeadscaleConfig("acme", "acme.example.com", OIDCClientCredentials{}, config.DerpConfig{
 		Hostname:   "derp.example.com",
 		STUNPort:   3478,
 		RegionID:   900,
@@ -67,7 +66,7 @@ func TestBuildHSConfigWithCustomDerp(t *testing.T) {
 		RegionName: "Self-hosted DERP",
 	})
 	if err != nil {
-		t.Fatalf("buildHSConfig: %v", err)
+		t.Fatalf("BuildHeadscaleConfig: %v", err)
 	}
 	for _, want := range []string{
 		"paths:",
@@ -424,7 +423,7 @@ func TestCreateOrganizationSkipsLocalCAMountWhenNotConfigured(t *testing.T) {
 // TestCreateOrganizationSharesHeadscaleConfigWithHeadplane verifies that
 // the headscale config file is bind-mounted (read-only) into the headscale
 // container and the exact same host file is bind-mounted (read-write) into
-// the headplane container, both at headscaleConfigPath -- this is what
+// the headplane container, both at ConfigYAMLPath -- this is what
 // lets Headplane's Network Management feature edit live headscale settings
 // and have headscale pick them up.
 func TestCreateOrganizationSharesHeadscaleConfigWithHeadplane(t *testing.T) {
@@ -454,17 +453,17 @@ func TestCreateOrganizationSharesHeadscaleConfigWithHeadplane(t *testing.T) {
 
 	wantSource := filepath.Join(ctl.headscaleConfigHostDir("acme"), "config.yaml")
 
-	hsIdx := slices.IndexFunc(hsMounts, func(m mount.Mount) bool { return m.Target == headscaleConfigPath })
+	hsIdx := slices.IndexFunc(hsMounts, func(m mount.Mount) bool { return m.Target == ConfigYAMLPath })
 	if hsIdx < 0 {
-		t.Fatalf("headscale mounts = %+v, want a bind mount at %q", hsMounts, headscaleConfigPath)
+		t.Fatalf("headscale mounts = %+v, want a bind mount at %q", hsMounts, ConfigYAMLPath)
 	}
 	if hsMounts[hsIdx].Source != wantSource || !hsMounts[hsIdx].ReadOnly {
 		t.Fatalf("headscale config mount = %+v, want read-only bind mount of %q", hsMounts[hsIdx], wantSource)
 	}
 
-	hpIdx := slices.IndexFunc(hpMounts, func(m mount.Mount) bool { return m.Target == headscaleConfigPath })
+	hpIdx := slices.IndexFunc(hpMounts, func(m mount.Mount) bool { return m.Target == ConfigYAMLPath })
 	if hpIdx < 0 {
-		t.Fatalf("headplane mounts = %+v, want a bind mount at %q", hpMounts, headscaleConfigPath)
+		t.Fatalf("headplane mounts = %+v, want a bind mount at %q", hpMounts, ConfigYAMLPath)
 	}
 	if hpMounts[hpIdx].Source != wantSource || hpMounts[hpIdx].ReadOnly {
 		t.Fatalf("headplane config mount = %+v, want read-write bind mount of %q", hpMounts[hpIdx], wantSource)
@@ -1007,9 +1006,9 @@ func TestMintHeadscaleAPIKeyByContainerName(t *testing.T) {
 // TestBuildHSConfigIncludesPolicy verifies the rendered headscale config
 // points headscale at the uploaded ACL policy file in "file" mode.
 func TestBuildHSConfigIncludesPolicy(t *testing.T) {
-	cfg, err := buildHSConfig("acme", "acme.example.com", OIDCClientCredentials{}, config.DerpConfig{})
+	cfg, err := BuildHeadscaleConfig("acme", "acme.example.com", OIDCClientCredentials{}, config.DerpConfig{})
 	if err != nil {
-		t.Fatalf("buildHSConfig: %v", err)
+		t.Fatalf("BuildHeadscaleConfig: %v", err)
 	}
 	for _, want := range []string{
 		"policy:\n  mode: file\n  path: " + PolicyConfigPath,
@@ -1123,10 +1122,10 @@ func TestRestartHeadscaleRestartsTheRightContainer(t *testing.T) {
 	}
 }
 
-// newOIDCAllowlistTestCtl provisions organization "acme" (so its
+// newProvisionedTestCtl provisions organization "acme" (so its
 // config.yaml exists on disk to patch) and returns a Ctl plus a pointer to
 // the list of restarted container names.
-func newOIDCAllowlistTestCtl(t *testing.T) (ctl *Ctl, restarted *[]string) {
+func newProvisionedTestCtl(t *testing.T) (ctl *Ctl, restarted *[]string) {
 	t.Helper()
 	var restartedContainers []string
 	api := &dockerfake.API{
@@ -1152,113 +1151,4 @@ func newOIDCAllowlistTestCtl(t *testing.T) (ctl *Ctl, restarted *[]string) {
 	}
 	restartedContainers = nil // ignore CreateOrganization's own container start, only ContainerRestart is tracked anyway
 	return ctl, &restartedContainers
-}
-
-func readOIDCConfig(t *testing.T, ctl *Ctl, subdomain string) map[string]any {
-	t.Helper()
-	raw, err := os.ReadFile(filepath.Join(ctl.headscaleConfigHostDir(subdomain), "config.yaml"))
-	if err != nil {
-		t.Fatalf("read config.yaml: %v", err)
-	}
-	var doc map[string]any
-	if err := yaml.Unmarshal(raw, &doc); err != nil {
-		t.Fatalf("parse config.yaml: %v", err)
-	}
-	oidc, _ := doc["oidc"].(map[string]any)
-	if oidc == nil {
-		t.Fatalf("config.yaml has no oidc section:\n%s", raw)
-	}
-	return oidc
-}
-
-func toStringSlice(t *testing.T, v any) []string {
-	t.Helper()
-	if v == nil {
-		return nil
-	}
-	raw, ok := v.([]any)
-	if !ok {
-		t.Fatalf("expected []any, got %T (%v)", v, v)
-	}
-	out := make([]string, len(raw))
-	for i, e := range raw {
-		out[i], _ = e.(string)
-	}
-	return out
-}
-
-// TestSetOIDCAllowlistPatchesConfigAndRestarts verifies SetOIDCAllowlist
-// writes the allowed_domains/allowed_groups/allowed_users keys into the
-// already-materialized config.yaml and restarts headscale so it reloads
-// them.
-func TestSetOIDCAllowlistPatchesConfigAndRestarts(t *testing.T) {
-	ctl, restarted := newOIDCAllowlistTestCtl(t)
-
-	if err := ctl.SetOIDCAllowlist(t.Context(), "acme",
-		[]string{"example.com"}, []string{"group:eng"}, []string{"alice@example.com"}); err != nil {
-		t.Fatalf("SetOIDCAllowlist: %v", err)
-	}
-
-	oidc := readOIDCConfig(t, ctl, "acme")
-	if got := toStringSlice(t, oidc["allowed_domains"]); len(got) != 1 || got[0] != "example.com" {
-		t.Fatalf("allowed_domains = %v, want [example.com]", got)
-	}
-	if got := toStringSlice(t, oidc["allowed_groups"]); len(got) != 1 || got[0] != "group:eng" {
-		t.Fatalf("allowed_groups = %v, want [group:eng]", got)
-	}
-	if got := toStringSlice(t, oidc["allowed_users"]); len(got) != 1 || got[0] != "alice@example.com" {
-		t.Fatalf("allowed_users = %v, want [alice@example.com]", got)
-	}
-	// The rest of the oidc block (issuer/client_id/etc.) must survive the patch untouched.
-	if oidc["issuer"] != "https://auth.example.com" {
-		t.Fatalf("issuer = %v, want unchanged", oidc["issuer"])
-	}
-	if len(*restarted) != 1 || (*restarted)[0] != HSContainerName("acme") {
-		t.Fatalf("restarted = %v, want [%q]", *restarted, HSContainerName("acme"))
-	}
-}
-
-// TestSetOIDCAllowlistEmptyClearsRestriction verifies passing empty slices
-// clears any previously set allowlist (rather than, say, leaving stale
-// values in place).
-func TestSetOIDCAllowlistEmptyClearsRestriction(t *testing.T) {
-	ctl, _ := newOIDCAllowlistTestCtl(t)
-
-	if err := ctl.SetOIDCAllowlist(t.Context(), "acme",
-		[]string{"example.com"}, nil, nil); err != nil {
-		t.Fatalf("SetOIDCAllowlist: %v", err)
-	}
-	if err := ctl.SetOIDCAllowlist(t.Context(), "acme", nil, nil, nil); err != nil {
-		t.Fatalf("SetOIDCAllowlist: %v", err)
-	}
-
-	oidc := readOIDCConfig(t, ctl, "acme")
-	for _, key := range []string{"allowed_domains", "allowed_groups", "allowed_users"} {
-		if got := toStringSlice(t, oidc[key]); len(got) != 0 {
-			t.Fatalf("%s = %v, want empty", key, got)
-		}
-	}
-}
-
-// TestSetOIDCAllowlistIdempotent verifies re-applying the same allowlist
-// twice in a row leaves the config file in the same state (no
-// accumulation/duplication across calls).
-func TestSetOIDCAllowlistIdempotent(t *testing.T) {
-	ctl, restarted := newOIDCAllowlistTestCtl(t)
-
-	for range 2 {
-		if err := ctl.SetOIDCAllowlist(t.Context(), "acme",
-			[]string{"example.com", "other.com"}, nil, nil); err != nil {
-			t.Fatalf("SetOIDCAllowlist: %v", err)
-		}
-	}
-
-	oidc := readOIDCConfig(t, ctl, "acme")
-	got := toStringSlice(t, oidc["allowed_domains"])
-	if len(got) != 2 || got[0] != "example.com" || got[1] != "other.com" {
-		t.Fatalf("allowed_domains = %v, want [example.com other.com]", got)
-	}
-	if len(*restarted) != 2 {
-		t.Fatalf("restarted %d times, want 2", len(*restarted))
-	}
 }

@@ -14,7 +14,7 @@ import (
 func (h *Handlers) GetAuthRestrictions(w http.ResponseWriter, r *http.Request) {
 	caller, org, _ := orgFromContext(r)
 
-	content, err := h.orgs.GetAuthRestrictions(r.Context(), org.ID)
+	content, err := h.orgs.ForOrg(org).GetAuthRestrictions(r.Context())
 	if err != nil {
 		h.serverError(w, err)
 		return
@@ -48,7 +48,7 @@ func (h *Handlers) UpdateAuthRestrictions(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.orgs.SetAuthRestrictions(r.Context(), org.ID, org.Subdomain, req.Content); err != nil {
+	if err := h.orgs.ForOrg(org).SetAuthRestrictions(r.Context(), req.Content); err != nil {
 		h.serverError(w, err)
 		return
 	}

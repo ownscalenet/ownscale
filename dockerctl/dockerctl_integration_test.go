@@ -180,7 +180,7 @@ func TestDockerctlIntegration(t *testing.T) {
 
 		// Network Management requires the headscale config file to be a
 		// real, shared host file: verify both containers see identical
-		// content at headscaleConfigPath, backed by the same host file.
+		// content at ConfigYAMLPath, backed by the same host file.
 		hostConfigPath := filepath.Join(dataDir, "headscale-config", subdomain, "config.yaml")
 		hostConfig, err := os.ReadFile(hostConfigPath)
 		if err != nil {

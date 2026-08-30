@@ -47,6 +47,16 @@ func (s *Service) BaseDomain() string {
 	return s.baseDomain
 }
 
+// ForOrg instantiates an OrgService.
+func (s *Service) ForOrg(org sqlcgen.Organization) *OrgService {
+	return &OrgService{
+		queries:   s.queries,
+		ctl:       s.ctl,
+		orgID:     org.ID,
+		subdomain: org.Subdomain,
+	}
+}
+
 // CreatePending inserts an organizations row (status "pending") for
 // subdomain and returns it. It deliberately does none of the Docker/network
 // work that used to happen inline in Create: creating an organization's
@@ -159,11 +169,32 @@ func (s *Service) provision(ctx context.Context, org sqlcgen.Organization) error
 		return err
 	}
 
-	if _, err := s.ctl.CreateOrganization(ctx, subdomain, s.baseDomain, dockerctl.OIDCClientCredentials{
+	oidcCreds := dockerctl.OIDCClientCredentials{
 		Issuer:       s.issuer,
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
-	}, s.derpCfg, dockerctl.DefaultACLPolicy); err != nil {
+	}
+
+	// Seed the config.yaml orgconfigs row with the same content
+	// CreateOrganization independently renders (via the same pure,
+	// deterministic BuildHeadscaleConfig call) and writes to disk, so the
+	// database has an authoritative copy from the moment the organization
+	// exists -- GetDNSSettings/SetDNSSettings/SetAuthRestrictions never
+	// read the file back, only this row.
+	hsConfig, err := dockerctl.BuildHeadscaleConfig(subdomain, subdomain+"."+s.baseDomain, oidcCreds, s.derpCfg)
+	if err != nil {
+		return err
+	}
+	if _, err := s.queries.CreateOrgConfig(ctx, sqlcgen.CreateOrgConfigParams{
+		ID:             xid.New().String(),
+		OrganizationID: org.ID,
+		Path:           dockerctl.ConfigYAMLPath,
+		Content:        hsConfig,
+	}); err != nil {
+		return err
+	}
+
+	if _, err := s.ctl.CreateOrganization(ctx, subdomain, s.baseDomain, oidcCreds, s.derpCfg, dockerctl.DefaultACLPolicy); err != nil {
 		return err
 	}
 	return nil

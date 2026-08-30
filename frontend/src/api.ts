@@ -258,6 +258,40 @@ export function updateAuthRestrictions(content: string) {
   })
 }
 
+export interface DNSRecord {
+  name: string
+  type: string
+  value: string
+}
+
+export interface Nameservers {
+  global: string[]
+}
+
+export interface DNSConfig {
+  baseDomain: string
+  magicDns: boolean
+  nameservers: Nameservers
+  searchDomains: string[]
+  extraRecords: DNSRecord[]
+}
+
+export interface DNSSettingsResponse {
+  dns: DNSConfig
+  canManage: boolean
+}
+
+export function getDNSSettings() {
+  return request<DNSSettingsResponse>('/api/dns')
+}
+
+export function updateDNSSettings(dns: DNSConfig) {
+  return request<{ ok: boolean }>('/api/dns', {
+    method: 'PUT',
+    body: JSON.stringify(dns),
+  })
+}
+
 
 export interface PreAuthKey {
   id: string
