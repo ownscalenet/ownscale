@@ -10,15 +10,14 @@ import (
 )
 
 const createOrgConfig = `-- name: CreateOrgConfig :one
-INSERT INTO orgconfigs (id, organization_id, container_type, path, content)
-VALUES (?, ?, ?, ?, ?)
-RETURNING id, organization_id, container_type, path, content, created_at
+INSERT INTO orgconfigs (id, organization_id, path, content)
+VALUES (?, ?, ?, ?)
+RETURNING id, organization_id, path, content, created_at
 `
 
 type CreateOrgConfigParams struct {
 	ID             string
 	OrganizationID string
-	ContainerType  string
 	Path           string
 	Content        string
 }
@@ -27,7 +26,6 @@ func (q *Queries) CreateOrgConfig(ctx context.Context, arg CreateOrgConfigParams
 	row := q.db.QueryRowContext(ctx, createOrgConfig,
 		arg.ID,
 		arg.OrganizationID,
-		arg.ContainerType,
 		arg.Path,
 		arg.Content,
 	)
@@ -35,7 +33,6 @@ func (q *Queries) CreateOrgConfig(ctx context.Context, arg CreateOrgConfigParams
 	err := row.Scan(
 		&i.ID,
 		&i.OrganizationID,
-		&i.ContainerType,
 		&i.Path,
 		&i.Content,
 		&i.CreatedAt,
@@ -44,23 +41,21 @@ func (q *Queries) CreateOrgConfig(ctx context.Context, arg CreateOrgConfigParams
 }
 
 const getOrgConfig = `-- name: GetOrgConfig :one
-SELECT id, organization_id, container_type, path, content, created_at FROM orgconfigs
-WHERE organization_id = ? AND container_type = ? AND path = ?
+SELECT id, organization_id, path, content, created_at FROM orgconfigs
+WHERE organization_id = ? AND path = ?
 `
 
 type GetOrgConfigParams struct {
 	OrganizationID string
-	ContainerType  string
 	Path           string
 }
 
 func (q *Queries) GetOrgConfig(ctx context.Context, arg GetOrgConfigParams) (Orgconfig, error) {
-	row := q.db.QueryRowContext(ctx, getOrgConfig, arg.OrganizationID, arg.ContainerType, arg.Path)
+	row := q.db.QueryRowContext(ctx, getOrgConfig, arg.OrganizationID, arg.Path)
 	var i Orgconfig
 	err := row.Scan(
 		&i.ID,
 		&i.OrganizationID,
-		&i.ContainerType,
 		&i.Path,
 		&i.Content,
 		&i.CreatedAt,
@@ -69,17 +64,16 @@ func (q *Queries) GetOrgConfig(ctx context.Context, arg GetOrgConfigParams) (Org
 }
 
 const upsertOrgConfig = `-- name: UpsertOrgConfig :one
-INSERT INTO orgconfigs (id, organization_id, container_type, path, content)
-VALUES (?, ?, ?, ?, ?)
-ON CONFLICT(organization_id, container_type, path)
+INSERT INTO orgconfigs (id, organization_id, path, content)
+VALUES (?, ?, ?, ?)
+ON CONFLICT(organization_id, path)
 DO UPDATE SET content = excluded.content
-RETURNING id, organization_id, container_type, path, content, created_at
+RETURNING id, organization_id, path, content, created_at
 `
 
 type UpsertOrgConfigParams struct {
 	ID             string
 	OrganizationID string
-	ContainerType  string
 	Path           string
 	Content        string
 }
@@ -88,7 +82,6 @@ func (q *Queries) UpsertOrgConfig(ctx context.Context, arg UpsertOrgConfigParams
 	row := q.db.QueryRowContext(ctx, upsertOrgConfig,
 		arg.ID,
 		arg.OrganizationID,
-		arg.ContainerType,
 		arg.Path,
 		arg.Content,
 	)
@@ -96,7 +89,6 @@ func (q *Queries) UpsertOrgConfig(ctx context.Context, arg UpsertOrgConfigParams
 	err := row.Scan(
 		&i.ID,
 		&i.OrganizationID,
-		&i.ContainerType,
 		&i.Path,
 		&i.Content,
 		&i.CreatedAt,

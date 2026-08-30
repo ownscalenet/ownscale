@@ -13,11 +13,6 @@ import (
 	"github.com/ownscalenet/ownscale/dockerctl"
 )
 
-// ACLContainerType is the orgconfigs.container_type value used for the
-// headscale ACL policy row -- headscale is the only container type that
-// currently has an editable, persisted config file (see orgconfigs.sql).
-const ACLContainerType = "headscale"
-
 // GetACLPolicy returns orgID's stored HuJSON access control policy. Every
 // organization gets a default policy row inserted at provisioning time
 // (see provision), so a missing row only happens for organizations
@@ -28,7 +23,6 @@ func (s *Service) GetACLPolicy(ctx context.Context, orgID string) (_ string, err
 
 	cfg, err := s.queries.GetOrgConfig(ctx, sqlcgen.GetOrgConfigParams{
 		OrganizationID: orgID,
-		ContainerType:  ACLContainerType,
 		Path:           dockerctl.PolicyConfigPath,
 	})
 	if err != nil {
@@ -57,7 +51,6 @@ func (s *Service) SetACLPolicy(ctx context.Context, orgID, subdomain, content st
 	if _, err := s.queries.UpsertOrgConfig(ctx, sqlcgen.UpsertOrgConfigParams{
 		ID:             xid.New().String(),
 		OrganizationID: orgID,
-		ContainerType:  ACLContainerType,
 		Path:           dockerctl.PolicyConfigPath,
 		Content:        content,
 	}); err != nil {

@@ -41,7 +41,6 @@ type Organization struct {
 type Orgconfig struct {
 	ID             string
 	OrganizationID string
-	ContainerType  string
 	Path           string
 	Content        string
 	CreatedAt      time.Time

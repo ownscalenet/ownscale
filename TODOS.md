@@ -5,5 +5,3 @@
 - check how .env and config.yaml can be collapsed into one
 - requirements for the admin:
   - a name, (can't be admin?)
-- ACLContainerType and AuthRestrictionsContainerType are not needed
-- make a middleware to block requests while organization is not yet fully provisioned

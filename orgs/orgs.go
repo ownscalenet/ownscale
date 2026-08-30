@@ -153,7 +153,6 @@ func (s *Service) provision(ctx context.Context, org sqlcgen.Organization) error
 	if _, err := s.queries.CreateOrgConfig(ctx, sqlcgen.CreateOrgConfigParams{
 		ID:             xid.New().String(),
 		OrganizationID: org.ID,
-		ContainerType:  ACLContainerType,
 		Path:           dockerctl.PolicyConfigPath,
 		Content:        dockerctl.DefaultACLPolicy,
 	}); err != nil {

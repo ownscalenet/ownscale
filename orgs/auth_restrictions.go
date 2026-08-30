@@ -11,15 +11,6 @@ import (
 	"github.com/ownscalenet/ownscale/derrors"
 )
 
-// AuthRestrictionsContainerType is the orgconfigs.container_type value used
-// for the headscale OIDC allowlist row -- reusing the same generic
-// (organization_id, container_type, path) table as the ACL policy (see
-// ACLContainerType), just with a symbolic path key rather than a real
-// on-disk file path, since these values are patched into config.yaml's
-// existing oidc block rather than written to a file of their own (see
-// dockerctl.Ctl.SetOIDCAllowlist).
-const AuthRestrictionsContainerType = "headscale"
-
 // AuthRestrictionsConfigKey is the orgconfigs.path value for the stored
 // OIDC allowlist JSON.
 const AuthRestrictionsConfigKey = "oidc_restrictions"
@@ -43,7 +34,6 @@ func (s *Service) GetAuthRestrictions(ctx context.Context, orgID string) (domain
 
 	cfg, err := s.queries.GetOrgConfig(ctx, sqlcgen.GetOrgConfigParams{
 		OrganizationID: orgID,
-		ContainerType:  AuthRestrictionsContainerType,
 		Path:           AuthRestrictionsConfigKey,
 	})
 	if err != nil {
@@ -77,7 +67,6 @@ func (s *Service) SetAuthRestrictions(ctx context.Context, orgID, subdomain stri
 	if _, err := s.queries.UpsertOrgConfig(ctx, sqlcgen.UpsertOrgConfigParams{
 		ID:             xid.New().String(),
 		OrganizationID: orgID,
-		ContainerType:  AuthRestrictionsContainerType,
 		Path:           AuthRestrictionsConfigKey,
 		Content:        string(content),
 	}); err != nil {
