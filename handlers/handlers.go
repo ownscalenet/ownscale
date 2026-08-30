@@ -19,9 +19,9 @@ import (
 
 type Handlers struct {
 	queries     *db.TxQueries
-	orgs        *orgs.Service     // nil if organization provisioning isn't configured (no ctl/base_domain)
-	provisioner *orgs.Provisioner // nil under the same conditions as orgs
-	hs          machinesRegistry  // nil under the same conditions as orgs
+	orgs        *orgs.Service
+	provisioner *orgs.Provisioner
+	hs          machinesRegistry
 	baseDomain  string
 	oidc        *oidcprovider.Storage
 	logger      *slog.Logger
@@ -35,44 +35,30 @@ type machinesRegistry interface {
 	Client(ctx context.Context, subdomain string) (*headscaleclient.Client, error)
 }
 
-// New builds the Handlers. queries serves reads/writes outside the
-// organization-provisioning transaction, and (if ctl is non-nil and
-// baseDomain is set) backs the orgs.Service used for organization creation
-// and the orgs.Provisioner that runs provisioning in the background;
-// otherwise provisioning-related handlers respond with 503 (see
-// CreateOrganization). It also backs a headscaleclient.Registry (see
-// machines.go), used to reach each organization's headscale container; a
-// registry backed by a nil ctl reports "not configured" instead of erroring.
-// derpCfg is forwarded to orgs.NewService (see its doc comment); its zero
-// value is a no-op.
+// New builds the Handlers, wiring queries/ctl/baseDomain into the
+// orgs.Service used for organization creation and the orgs.Provisioner
+// that runs provisioning in the background.
 func New(queries *db.TxQueries, ctl *dockerctl.Ctl, baseDomain string, oidc *oidcprovider.Storage, logger *slog.Logger, derpCfg config.DerpConfig) *Handlers {
-	h := &Handlers{
-		queries:    queries,
-		baseDomain: baseDomain,
-		oidc:       oidc,
-		logger:     logger,
+	issuer := ""
+	if oidc != nil {
+		issuer = oidc.Issuer()
 	}
-	if ctl != nil && baseDomain != "" {
-		issuer := ""
-		if oidc != nil {
-			issuer = oidc.Issuer()
-		}
-		h.orgs = orgs.NewService(queries, ctl, baseDomain, issuer, derpCfg)
-		h.provisioner = orgs.NewProvisioner(h.orgs, logger, 0)
-		h.hs = headscaleclient.NewRegistry(ctl)
+	orgSvc := orgs.NewService(queries, ctl, baseDomain, issuer, derpCfg)
+	return &Handlers{
+		queries:     queries,
+		baseDomain:  baseDomain,
+		oidc:        oidc,
+		logger:      logger,
+		orgs:        orgSvc,
+		provisioner: orgs.NewProvisioner(orgSvc, logger, 0),
+		hs:          headscaleclient.NewRegistry(ctl),
 	}
-	return h
 }
 
 // StartProvisioner launches the background organization provisioner (see
-// orgs.Provisioner) in its own goroutine, if organization provisioning is
-// configured (ctl/base_domain set -- see New). It returns immediately; the
-// goroutine runs until ctx is canceled. It's a no-op if provisioning isn't
-// configured.
+// orgs.Provisioner) in its own goroutine. It returns immediately; the
+// goroutine runs until ctx is canceled.
 func (h *Handlers) StartProvisioner(ctx context.Context) {
-	if h.provisioner == nil {
-		return
-	}
 	go func() {
 		if err := h.provisioner.Run(ctx); err != nil {
 			h.logger.Error("organization provisioner stopped", "error", err)

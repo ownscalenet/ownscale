@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -185,23 +186,33 @@ func newMachinesTestHandlers(t *testing.T) (*Handlers, *dbpkg.TxQueries) {
 }
 
 // TestListMachinesNotConfigured covers the two ways a request can end up
-// "not configured": no headscale registry wired up at all, and a
-// registry wired up but the user having no organization yet.
+// "not configured": the user having no organization yet, and minting the
+// org's headscale API key failing.
 func TestListMachinesNotConfigured(t *testing.T) {
 	cases := []struct {
 		name  string
-		setup func(*Handlers)
+		setup func(*Handlers, *dbpkg.TxQueries) sqlcgen.User
 	}{
-		{name: "no registry"},
-		{name: "no organization", setup: func(h *Handlers) { h.hs = &fakeMachinesRegistry{} }},
+		{
+			name: "no organization",
+			setup: func(h *Handlers, queries *dbpkg.TxQueries) sqlcgen.User {
+				h.hs = &fakeMachinesRegistry{}
+				return insertUser(t, queries)
+			},
+		},
+		{
+			name: "mint key fails",
+			setup: func(h *Handlers, queries *dbpkg.TxQueries) sqlcgen.User {
+				user, _ := activeOrgUser(t, h, queries)
+				h.hs = &fakeMachinesRegistry{err: errors.New("mint failed")}
+				return user
+			},
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			h, queries := newMachinesTestHandlers(t)
-			if tc.setup != nil {
-				tc.setup(h)
-			}
-			user := insertUser(t, queries)
+			user := tc.setup(h, queries)
 
 			req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/machines", nil), user)
 			rec := httptest.NewRecorder()

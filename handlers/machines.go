@@ -12,17 +12,11 @@ import (
 
 // resolveMachinesClient returns the calling user's organization's
 // headscaleclient.Client. notConfigured is true (with a nil client and nil
-// error) whenever machines can't be listed/managed for a reason that isn't
-// really an error from the caller's point of view: the registry/ctl aren't
-// configured at all, the user has no organization yet, the organization is
-// still provisioning (or failed to), or minting/reaching its headscale API
-// key failed (e.g. its container isn't running yet). Any other failure
-// (e.g. a DB error looking up the organization) is returned as err.
+// error) when the user has no organization yet, the organization is still
+// provisioning (or failed to), or minting/reaching its headscale API key
+// failed (e.g. its container isn't running yet). Any other failure (e.g. a
+// DB error looking up the organization) is returned as err.
 func (h *Handlers) resolveMachinesClient(r *http.Request) (_ *headscaleclient.Client, notConfigured bool, err error) {
-	if h.hs == nil {
-		return nil, true, nil
-	}
-
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok || !user.OrganizationID.Valid {
 		return nil, true, nil
@@ -91,10 +85,10 @@ func matchesFilters(m headscaleclient.Node, q, userFilter, status string) bool {
 // ListMachines handles GET /api/machines. It returns every machine
 // (headscale node) registered to the caller's organization, applying the
 // optional q/user/status query-string filters server-side. If headscale
-// isn't reachable for the caller's organization (not yet configured, still
-// provisioning, or its container isn't up) it responds 200 with
-// notConfigured:true and empty machines/users, matching the frontend's
-// "not configured" state rather than surfacing an error.
+// isn't reachable for the caller's organization (still provisioning, or
+// its container isn't up) it responds 200 with notConfigured:true and
+// empty machines/users, matching the frontend's "not configured" state
+// rather than surfacing an error.
 func (h *Handlers) ListMachines(w http.ResponseWriter, r *http.Request) {
 	client, notConfigured, err := h.resolveMachinesClient(r)
 	if err != nil {

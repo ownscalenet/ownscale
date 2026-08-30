@@ -26,11 +26,6 @@ type createOrganizationRequest struct {
 // who already has one gets a 409 Conflict instead of a second, orphaned
 // organization.
 func (h *Handlers) CreateOrganization(w http.ResponseWriter, r *http.Request) {
-	if h.orgs == nil {
-		h.writeError(w, http.StatusServiceUnavailable, "organization provisioning is not configured (base_domain/Docker unavailable)")
-		return
-	}
-
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
 		h.writeError(w, http.StatusUnauthorized, "unauthenticated")

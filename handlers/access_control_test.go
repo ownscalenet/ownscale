@@ -44,15 +44,46 @@ func newAccessControlTestHandlers(t *testing.T, roles ...string) (*Handlers, []s
 	return h, users
 }
 
-func TestGetAccessControlPolicyNotConfigured(t *testing.T) {
-	h, _ := newTestHandlers(t, false)
+// TestGetAccessControlPolicyPendingOrgIsNotConfigured: the caller's organization
+// exists (and org provisioning is configured) but hasn't finished provisioning yet
+// (status still pending), so there's no headscale container/ACL policy to show yet.
+func TestGetAccessControlPolicyPendingOrgIsNotConfigured(t *testing.T) {
+	h, queries := newTestHandlers(t, true)
 
-	req := httptest.NewRequest(http.MethodGet, "/api/access-control", nil)
+	// CreatePending (unlike Create) leaves the organization "pending"
+	// without synchronously provisioning it.
+	org, err := h.orgs.CreatePending(t.Context(), "acme")
+	if err != nil {
+		t.Fatalf("orgs.CreatePending: %v", err)
+	}
+	user := insertUser(t, queries)
+	if err := queries.SetUserOrganizationAndRole(t.Context(), sqlcgen.SetUserOrganizationAndRoleParams{
+		OrganizationID: sql.NullString{String: org.ID, Valid: true},
+		Role:           RoleOwner,
+		ID:             user.ID,
+	}); err != nil {
+		t.Fatalf("SetUserOrganizationAndRole: %v", err)
+	}
+	user, err = queries.GetUserByID(t.Context(), user.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID: %v", err)
+	}
+
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/access-control", nil), user)
 	rec := httptest.NewRecorder()
 	h.GetAccessControlPolicy(rec, req)
 
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusServiceUnavailable)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
+	}
+	var resp struct {
+		NotConfigured bool `json:"notConfigured"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("unmarshal: %v", err)
+	}
+	if !resp.NotConfigured {
+		t.Error("notConfigured = false for a pending organization, want true")
 	}
 }
 

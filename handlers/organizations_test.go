@@ -28,13 +28,12 @@ func withTestUser(req *http.Request, user sqlcgen.User) *http.Request {
 
 // TestCreateOrganizationErrors covers the validation/precondition checks
 // CreateOrganization rejects before ever creating a "pending" organization
-// row -- each case only asserts the resulting status code.
+// row -- each case only asserts the resulting status code. Organization
+// provisioning (h.orgs) is always configured (mirroring production, where
+// base_domain/Docker are required at startup -- see config.Config.Validate).
 func TestCreateOrganizationErrors(t *testing.T) {
 	cases := []struct {
 		name string
-		// configured selects whether org provisioning (h.orgs) is set up
-		// at all.
-		configured bool
 		// authenticated selects whether a user is attached to the
 		// request context.
 		authenticated bool
@@ -46,20 +45,12 @@ func TestCreateOrganizationErrors(t *testing.T) {
 		wantStatus int
 	}{
 		{
-			name:       "not configured",
-			configured: false,
-			body:       `{"subdomain":"acme"}`,
-			wantStatus: http.StatusServiceUnavailable,
-		},
-		{
 			name:       "unauthenticated",
-			configured: true,
 			body:       `{"subdomain":"acme"}`,
 			wantStatus: http.StatusUnauthorized,
 		},
 		{
 			name:          "already has organization",
-			configured:    true,
 			authenticated: true,
 			body:          `{"subdomain":"acme"}`,
 			setup: func(t *testing.T, h *Handlers, queries *dbpkg.TxQueries, user sqlcgen.User) {
@@ -78,14 +69,12 @@ func TestCreateOrganizationErrors(t *testing.T) {
 		},
 		{
 			name:          "invalid JSON",
-			configured:    true,
 			authenticated: true,
 			body:          `not json`,
 			wantStatus:    http.StatusBadRequest,
 		},
 		{
 			name:          "invalid subdomain",
-			configured:    true,
 			authenticated: true,
 			body:          `{"subdomain":"Not Valid!"}`,
 			wantStatus:    http.StatusBadRequest,
@@ -93,7 +82,7 @@ func TestCreateOrganizationErrors(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			h, queries := newTestHandlers(t, tc.configured)
+			h, queries := newTestHandlers(t, true)
 
 			req := httptest.NewRequest(http.MethodPost, "/api/organizations", strings.NewReader(tc.body))
 			if tc.authenticated {

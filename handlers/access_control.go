@@ -16,11 +16,6 @@ import (
 // Control page has nothing meaningful to show before the org's headscale
 // container exists.
 func (h *Handlers) resolveAccessControlOrg(w http.ResponseWriter, r *http.Request) (caller *sqlcgen.User, org sqlcgen.Organization, notConfigured bool, ok bool) {
-	if h.orgs == nil {
-		h.writeError(w, http.StatusServiceUnavailable, "organization provisioning is not configured (base_domain/Docker unavailable)")
-		return nil, sqlcgen.Organization{}, false, false
-	}
-
 	c, orgID, callerOk := h.callerAndOrg(w, r)
 	if !callerOk {
 		return nil, sqlcgen.Organization{}, false, false
