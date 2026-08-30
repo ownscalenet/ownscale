@@ -14,6 +14,7 @@ import (
 	"github.com/ownscalenet/ownscale/config"
 	dbpkg "github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/headscaleclient"
 )
 
 // newMembersTestHandlers builds Handlers (no organization provisioning
@@ -25,8 +26,8 @@ func newMembersTestHandlers(t *testing.T, roles ...string) (*Handlers, *dbpkg.Tx
 	queries := newTestQueries(t)
 	h := New(queries, nil, "", nil, discardLogger(), config.DerpConfig{})
 	// Simulate headscale being unreachable; tests needing real linking
-	// override h.hs with a fakeMachinesRegistry below.
-	h.hs = &fakeMachinesRegistry{err: errors.New("headscale unreachable")}
+	// override h.hs with a Registry wrapping a fakeClientMinter below.
+	h.hs = headscaleclient.NewRegistry(&fakeClientMinter{err: errors.New("headscale unreachable")})
 
 	orgID := xid.New().String()
 	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{ID: orgID, Subdomain: "acme"})
@@ -171,7 +172,7 @@ func TestListMembersAutoLinksByEmail(t *testing.T) {
 	}
 
 	_, client, _ := newFakeHeadscaleServer(t)
-	h.hs = &fakeMachinesRegistry{client: client}
+	h.hs = headscaleclient.NewRegistry(&fakeClientMinter{client: client})
 
 	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/members", nil), owner)
 	rec := httptest.NewRecorder()
@@ -218,7 +219,7 @@ func TestListMembersDoesNotRelinkAlreadyLinkedMember(t *testing.T) {
 	}
 
 	_, client, _ := newFakeHeadscaleServer(t)
-	h.hs = &fakeMachinesRegistry{client: client}
+	h.hs = headscaleclient.NewRegistry(&fakeClientMinter{client: client})
 
 	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/members", nil), owner)
 	rec := httptest.NewRecorder()
@@ -268,7 +269,7 @@ func TestListMembersDifferentProvidersSameEmailGetDistinctHeadscaleUsers(t *test
 	}
 
 	_, client, _ := newFakeHeadscaleServer(t)
-	h.hs = &fakeMachinesRegistry{client: client}
+	h.hs = headscaleclient.NewRegistry(&fakeClientMinter{client: client})
 
 	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/members", nil), owner)
 	rec := httptest.NewRecorder()

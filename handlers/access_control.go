@@ -9,20 +9,9 @@ import (
 // GetAccessControlPolicy handles GET /api/access-control. It returns the
 // caller's organization's stored headscale ACL policy (HuJSON), plus
 // whether the caller can edit it (owner/admin, mirroring ListMembers'
-// canManage).
+// canManage). requireActiveOrg guarantees the org is active.
 func (h *Handlers) GetAccessControlPolicy(w http.ResponseWriter, r *http.Request) {
-	caller, org, notConfigured, ok := h.resolveActiveOrg(w, r)
-	if !ok {
-		return
-	}
-	if notConfigured {
-		h.writeJSON(w, http.StatusOK, map[string]any{
-			"notConfigured": true,
-			"content":       "",
-			"canManage":     isManager(caller.Role),
-		})
-		return
-	}
+	caller, org, _ := orgFromContext(r)
 
 	content, err := h.orgs.GetACLPolicy(r.Context(), org.ID)
 	if err != nil {
@@ -40,15 +29,9 @@ func (h *Handlers) GetAccessControlPolicy(w http.ResponseWriter, r *http.Request
 // before anything is persisted, so a malformed policy is rejected with a
 // 400 and a parser error message rather than reaching orgs.Service (which
 // re-validates as a safety net) or ever being uploaded to headscale.
+// requireActiveOrg guarantees the org is active.
 func (h *Handlers) UpdateAccessControlPolicy(w http.ResponseWriter, r *http.Request) {
-	caller, org, notConfigured, ok := h.resolveActiveOrg(w, r)
-	if !ok {
-		return
-	}
-	if notConfigured {
-		h.writeError(w, http.StatusServiceUnavailable, "organization is not active yet")
-		return
-	}
+	caller, org, _ := orgFromContext(r)
 	if !isManager(caller.Role) {
 		h.writeError(w, http.StatusForbidden, "only owners and admins can edit the access control policy")
 		return

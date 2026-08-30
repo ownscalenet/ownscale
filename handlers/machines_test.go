@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -20,15 +19,15 @@ import (
 	"github.com/ownscalenet/ownscale/headscaleclient"
 )
 
-// fakeMachinesRegistry is a machinesRegistry test double that always
-// returns a *headscaleclient.Client pointed at an httptest.Server, instead
-// of a real hs-<subdomain>:8080 Docker container.
-type fakeMachinesRegistry struct {
+// fakeClientMinter is a headscaleclient.ClientMinter test double that
+// always returns a *headscaleclient.Client pointed at an httptest.Server,
+// instead of a real hs-<subdomain>:8080 Docker container.
+type fakeClientMinter struct {
 	client *headscaleclient.Client
 	err    error
 }
 
-func (f *fakeMachinesRegistry) Client(_ context.Context, _ string) (*headscaleclient.Client, error) {
+func (f *fakeClientMinter) MintClient(_ context.Context, _ string) (*headscaleclient.Client, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -146,10 +145,12 @@ func newFakeHeadscaleServer(t *testing.T) (*httptest.Server, *headscaleclient.Cl
 }
 
 // activeOrgUser inserts a user with an "active" organization, wiring up
-// h.hs to a fakeMachinesRegistry backed by an httptest.Server fake
-// headscale. Returns the (refreshed, org-attached) user and the recorded
-// requests slice.
-func activeOrgUser(t *testing.T, h *Handlers, queries *dbpkg.TxQueries) (sqlcgen.User, *[]*http.Request) {
+// h.hs to a Registry backed by an httptest.Server fake headscale (used by
+// handlers that still call resolveMachinesClient directly, e.g.
+// Session/ListMembers's best-effort linking). Returns the (refreshed,
+// org-attached) user, a client for the middleware-based handlers to
+// attach via withMachinesClient, and the recorded requests slice.
+func activeOrgUser(t *testing.T, h *Handlers, queries *dbpkg.TxQueries) (sqlcgen.User, *headscaleclient.Client, *[]*http.Request) {
 	t.Helper()
 	user := insertUser(t, queries)
 
@@ -173,9 +174,9 @@ func activeOrgUser(t *testing.T, h *Handlers, queries *dbpkg.TxQueries) (sqlcgen
 	}
 
 	_, client, requests := newFakeHeadscaleServer(t)
-	h.hs = &fakeMachinesRegistry{client: client}
+	h.hs = headscaleclient.NewRegistry(&fakeClientMinter{client: client})
 
-	return user, requests
+	return user, client, requests
 }
 
 func newMachinesTestHandlers(t *testing.T) (*Handlers, *dbpkg.TxQueries) {
@@ -185,60 +186,11 @@ func newMachinesTestHandlers(t *testing.T) (*Handlers, *dbpkg.TxQueries) {
 	return h, queries
 }
 
-// TestListMachinesNotConfigured covers the two ways a request can end up
-// "not configured": the user having no organization yet, and minting the
-// org's headscale API key failing.
-func TestListMachinesNotConfigured(t *testing.T) {
-	cases := []struct {
-		name  string
-		setup func(*Handlers, *dbpkg.TxQueries) sqlcgen.User
-	}{
-		{
-			name: "no organization",
-			setup: func(h *Handlers, queries *dbpkg.TxQueries) sqlcgen.User {
-				h.hs = &fakeMachinesRegistry{}
-				return insertUser(t, queries)
-			},
-		},
-		{
-			name: "mint key fails",
-			setup: func(h *Handlers, queries *dbpkg.TxQueries) sqlcgen.User {
-				user, _ := activeOrgUser(t, h, queries)
-				h.hs = &fakeMachinesRegistry{err: errors.New("mint failed")}
-				return user
-			},
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			h, queries := newMachinesTestHandlers(t)
-			user := tc.setup(h, queries)
-
-			req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/machines", nil), user)
-			rec := httptest.NewRecorder()
-			h.ListMachines(rec, req)
-
-			if rec.Code != http.StatusOK {
-				t.Fatalf("status = %d, want 200", rec.Code)
-			}
-			var body struct {
-				NotConfigured bool `json:"notConfigured"`
-			}
-			if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-				t.Fatalf("decode: %v", err)
-			}
-			if !body.NotConfigured {
-				t.Error("expected notConfigured=true")
-			}
-		})
-	}
-}
-
 func TestListMachinesReturnsNodesAndUsers(t *testing.T) {
 	h, queries := newMachinesTestHandlers(t)
-	user, _ := activeOrgUser(t, h, queries)
+	user, client, _ := activeOrgUser(t, h, queries)
 
-	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/machines", nil), user)
+	req := withMachinesClient(withTestUser(httptest.NewRequest(http.MethodGet, "/api/machines", nil), user), client)
 	rec := httptest.NewRecorder()
 	h.ListMachines(rec, req)
 
@@ -246,16 +198,12 @@ func TestListMachinesReturnsNodesAndUsers(t *testing.T) {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
 	var body struct {
-		NotConfigured bool                   `json:"notConfigured"`
-		Machines      []headscaleclient.Node `json:"machines"`
-		Users         []headscaleclient.User `json:"users"`
-		Total         int                    `json:"total"`
+		Machines []headscaleclient.Node `json:"machines"`
+		Users    []headscaleclient.User `json:"users"`
+		Total    int                    `json:"total"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
-	}
-	if body.NotConfigured {
-		t.Fatal("expected notConfigured=false for an active organization")
 	}
 	if body.Total != 2 || len(body.Machines) != 2 {
 		t.Errorf("got %d/%d machines, want 2/2", len(body.Machines), body.Total)
@@ -267,7 +215,7 @@ func TestListMachinesReturnsNodesAndUsers(t *testing.T) {
 
 func TestListMachinesFiltersByQUserStatus(t *testing.T) {
 	h, queries := newMachinesTestHandlers(t)
-	user, _ := activeOrgUser(t, h, queries)
+	user, client, _ := activeOrgUser(t, h, queries)
 
 	cases := []struct {
 		name      string
@@ -283,7 +231,7 @@ func TestListMachinesFiltersByQUserStatus(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/machines?"+tc.qs, nil), user)
+			req := withMachinesClient(withTestUser(httptest.NewRequest(http.MethodGet, "/api/machines?"+tc.qs, nil), user), client)
 			rec := httptest.NewRecorder()
 			h.ListMachines(rec, req)
 
@@ -312,10 +260,10 @@ func withPathValue(req *http.Request, key, value string) *http.Request {
 
 func TestRenameMachine(t *testing.T) {
 	h, queries := newMachinesTestHandlers(t)
-	user, requests := activeOrgUser(t, h, queries)
+	user, client, requests := activeOrgUser(t, h, queries)
 
 	body := strings.NewReader(`{"name":"new-name"}`)
-	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/rename", body), user), "id", "1")
+	req := withPathValue(withMachinesClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/rename", body), user), client), "id", "1")
 	rec := httptest.NewRecorder()
 	h.RenameMachine(rec, req)
 
@@ -330,10 +278,10 @@ func TestRenameMachine(t *testing.T) {
 
 func TestRenameMachineRejectsEmptyName(t *testing.T) {
 	h, queries := newMachinesTestHandlers(t)
-	user, _ := activeOrgUser(t, h, queries)
+	user, client, _ := activeOrgUser(t, h, queries)
 
 	body := strings.NewReader(`{"name":""}`)
-	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/rename", body), user), "id", "1")
+	req := withPathValue(withMachinesClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/rename", body), user), client), "id", "1")
 	rec := httptest.NewRecorder()
 	h.RenameMachine(rec, req)
 
@@ -344,10 +292,10 @@ func TestRenameMachineRejectsEmptyName(t *testing.T) {
 
 func TestSetMachineTags(t *testing.T) {
 	h, queries := newMachinesTestHandlers(t)
-	user, requests := activeOrgUser(t, h, queries)
+	user, client, requests := activeOrgUser(t, h, queries)
 
 	body := strings.NewReader(`{"tags":["tag:a","tag:b"]}`)
-	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/tags", body), user), "id", "1")
+	req := withPathValue(withMachinesClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/tags", body), user), client), "id", "1")
 	rec := httptest.NewRecorder()
 	h.SetMachineTags(rec, req)
 
@@ -362,10 +310,10 @@ func TestSetMachineTags(t *testing.T) {
 
 func TestSetMachineRoutes(t *testing.T) {
 	h, queries := newMachinesTestHandlers(t)
-	user, requests := activeOrgUser(t, h, queries)
+	user, client, requests := activeOrgUser(t, h, queries)
 
 	body := strings.NewReader(`{"routes":["10.0.0.0/24"]}`)
-	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/routes", body), user), "id", "1")
+	req := withPathValue(withMachinesClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/routes", body), user), client), "id", "1")
 	rec := httptest.NewRecorder()
 	h.SetMachineRoutes(rec, req)
 
@@ -380,9 +328,9 @@ func TestSetMachineRoutes(t *testing.T) {
 
 func TestExpireMachine(t *testing.T) {
 	h, queries := newMachinesTestHandlers(t)
-	user, requests := activeOrgUser(t, h, queries)
+	user, client, requests := activeOrgUser(t, h, queries)
 
-	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/expire", nil), user), "id", "1")
+	req := withPathValue(withMachinesClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/expire", nil), user), client), "id", "1")
 	rec := httptest.NewRecorder()
 	h.ExpireMachine(rec, req)
 
@@ -397,9 +345,9 @@ func TestExpireMachine(t *testing.T) {
 
 func TestDeleteMachine(t *testing.T) {
 	h, queries := newMachinesTestHandlers(t)
-	user, requests := activeOrgUser(t, h, queries)
+	user, client, requests := activeOrgUser(t, h, queries)
 
-	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/machines/1", nil), user), "id", "1")
+	req := withPathValue(withMachinesClient(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/machines/1", nil), user), client), "id", "1")
 	rec := httptest.NewRecorder()
 	h.DeleteMachine(rec, req)
 
@@ -409,32 +357,6 @@ func TestDeleteMachine(t *testing.T) {
 	last := (*requests)[len(*requests)-1]
 	if last.Method != http.MethodDelete {
 		t.Errorf("expected DELETE upstream, got %s", last.Method)
-	}
-}
-
-func TestMachineActionNotConfiguredReturns503(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
-	user := insertUser(t, queries)
-
-	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/expire", nil), user), "id", "1")
-	rec := httptest.NewRecorder()
-	h.ExpireMachine(rec, req)
-
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want 503", rec.Code)
-	}
-}
-
-func TestMachineActionMissingIDReturns400(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
-	user, _ := activeOrgUser(t, h, queries)
-
-	req := withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines//expire", nil), user)
-	rec := httptest.NewRecorder()
-	h.ExpireMachine(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400", rec.Code)
 	}
 }
 
@@ -488,9 +410,9 @@ func TestRegisterMachine(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			h, queries := newMachinesTestHandlers(t)
-			user, requests := activeOrgUser(t, h, queries)
+			user, client, requests := activeOrgUser(t, h, queries)
 
-			req := withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/register", strings.NewReader(tc.body)), user)
+			req := withMachinesClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/register", strings.NewReader(tc.body)), user), client)
 			rec := httptest.NewRecorder()
 			h.RegisterMachine(rec, req)
 
@@ -504,18 +426,5 @@ func TestRegisterMachine(t *testing.T) {
 				}
 			}
 		})
-	}
-}
-
-func TestRegisterMachineNotConfiguredReturns503(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
-	user := insertUser(t, queries)
-
-	req := withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/register", strings.NewReader(`{"user":"alice","key":"abcdefghijklmnopqrstuvwx"}`)), user)
-	rec := httptest.NewRecorder()
-	h.RegisterMachine(rec, req)
-
-	if rec.Code != http.StatusServiceUnavailable {
-		t.Fatalf("status = %d, want 503", rec.Code)
 	}
 }

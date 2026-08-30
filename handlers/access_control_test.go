@@ -16,7 +16,7 @@ import (
 // provisioning configured (dockerfake-backed), synchronously creates and
 // provisions an active organization, and inserts one user per role in
 // roles (in order).
-func newAccessControlTestHandlers(t *testing.T, roles ...string) (*Handlers, []sqlcgen.User) {
+func newAccessControlTestHandlers(t *testing.T, roles ...string) (*Handlers, sqlcgen.Organization, []sqlcgen.User) {
 	t.Helper()
 	h, queries := newTestHandlers(t, true)
 
@@ -41,55 +41,14 @@ func newAccessControlTestHandlers(t *testing.T, roles ...string) (*Handlers, []s
 		}
 		users = append(users, u)
 	}
-	return h, users
-}
-
-// TestGetAccessControlPolicyPendingOrgIsNotConfigured covers a pending
-// (not yet provisioned) organization: no ACL policy to show yet.
-func TestGetAccessControlPolicyPendingOrgIsNotConfigured(t *testing.T) {
-	h, queries := newTestHandlers(t, true)
-
-	// CreatePending, unlike Create, leaves the org "pending".
-	org, err := h.orgs.CreatePending(t.Context(), "acme")
-	if err != nil {
-		t.Fatalf("orgs.CreatePending: %v", err)
-	}
-	user := insertUser(t, queries)
-	if err := queries.SetUserOrganizationAndRole(t.Context(), sqlcgen.SetUserOrganizationAndRoleParams{
-		OrganizationID: sql.NullString{String: org.ID, Valid: true},
-		Role:           RoleOwner,
-		ID:             user.ID,
-	}); err != nil {
-		t.Fatalf("SetUserOrganizationAndRole: %v", err)
-	}
-	user, err = queries.GetUserByID(t.Context(), user.ID)
-	if err != nil {
-		t.Fatalf("GetUserByID: %v", err)
-	}
-
-	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/access-control", nil), user)
-	rec := httptest.NewRecorder()
-	h.GetAccessControlPolicy(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
-	}
-	var resp struct {
-		NotConfigured bool `json:"notConfigured"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if !resp.NotConfigured {
-		t.Error("notConfigured = false for a pending organization, want true")
-	}
+	return h, org, users
 }
 
 func TestGetAccessControlPolicyDefaultsToDockerctlDefault(t *testing.T) {
-	h, users := newAccessControlTestHandlers(t, RoleMember)
+	h, org, users := newAccessControlTestHandlers(t, RoleMember)
 	member := users[0]
 
-	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/access-control", nil), member)
+	req := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodGet, "/api/access-control", nil), member), member, org)
 	rec := httptest.NewRecorder()
 	h.GetAccessControlPolicy(rec, req)
 
@@ -112,11 +71,11 @@ func TestGetAccessControlPolicyDefaultsToDockerctlDefault(t *testing.T) {
 }
 
 func TestUpdateAccessControlPolicyRequiresManager(t *testing.T) {
-	h, users := newAccessControlTestHandlers(t, RoleMember)
+	h, org, users := newAccessControlTestHandlers(t, RoleMember)
 	member := users[0]
 
 	body := `{"content":"{\"acls\":[]}"}`
-	req := withTestUser(httptest.NewRequest(http.MethodPut, "/api/access-control", strings.NewReader(body)), member)
+	req := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPut, "/api/access-control", strings.NewReader(body)), member), member, org)
 	rec := httptest.NewRecorder()
 	h.UpdateAccessControlPolicy(rec, req)
 
@@ -126,11 +85,11 @@ func TestUpdateAccessControlPolicyRequiresManager(t *testing.T) {
 }
 
 func TestUpdateAccessControlPolicyRejectsInvalidHuJSON(t *testing.T) {
-	h, users := newAccessControlTestHandlers(t, RoleOwner)
+	h, org, users := newAccessControlTestHandlers(t, RoleOwner)
 	owner := users[0]
 
 	body := `{"content":"not valid hujson {{{"}`
-	req := withTestUser(httptest.NewRequest(http.MethodPut, "/api/access-control", strings.NewReader(body)), owner)
+	req := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPut, "/api/access-control", strings.NewReader(body)), owner), owner, org)
 	rec := httptest.NewRecorder()
 	h.UpdateAccessControlPolicy(rec, req)
 
@@ -140,12 +99,12 @@ func TestUpdateAccessControlPolicyRejectsInvalidHuJSON(t *testing.T) {
 }
 
 func TestUpdateAccessControlPolicyPersistsAndReturnsOK(t *testing.T) {
-	h, users := newAccessControlTestHandlers(t, RoleOwner)
+	h, org, users := newAccessControlTestHandlers(t, RoleOwner)
 	owner := users[0]
 
 	newPolicy := `{"acls":[{"action":"accept","src":["tag:test"],"dst":["*:*"]}]}`
 	body := `{"content":` + jsonQuote(newPolicy) + `}`
-	req := withTestUser(httptest.NewRequest(http.MethodPut, "/api/access-control", strings.NewReader(body)), owner)
+	req := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPut, "/api/access-control", strings.NewReader(body)), owner), owner, org)
 	rec := httptest.NewRecorder()
 	h.UpdateAccessControlPolicy(rec, req)
 
@@ -153,7 +112,7 @@ func TestUpdateAccessControlPolicyPersistsAndReturnsOK(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	getReq := withTestUser(httptest.NewRequest(http.MethodGet, "/api/access-control", nil), owner)
+	getReq := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodGet, "/api/access-control", nil), owner), owner, org)
 	getRec := httptest.NewRecorder()
 	h.GetAccessControlPolicy(getRec, getReq)
 

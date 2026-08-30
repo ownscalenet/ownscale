@@ -428,23 +428,23 @@ func TestClientAuthFailureSurfacesAsError(t *testing.T) {
 	}
 }
 
-// fakeMinter is a KeyMinter test double recording which container names it
-// was asked to mint keys for.
+// fakeMinter is a ClientMinter test double recording which subdomains it
+// was asked to build clients for.
 type fakeMinter struct {
 	minted map[string]int
 	key    string
 	err    error
 }
 
-func (m *fakeMinter) MintHeadscaleAPIKey(_ context.Context, containerNameOrID string) (string, error) {
+func (m *fakeMinter) MintClient(_ context.Context, subdomain string) (*Client, error) {
 	if m.minted == nil {
 		m.minted = make(map[string]int)
 	}
-	m.minted[containerNameOrID]++
+	m.minted[subdomain]++
 	if m.err != nil {
-		return "", m.err
+		return nil, m.err
 	}
-	return m.key, nil
+	return New("hs-"+subdomain+":8080", m.key), nil
 }
 
 func TestRegistryMintsOnceAndCaches(t *testing.T) {
@@ -462,8 +462,8 @@ func TestRegistryMintsOnceAndCaches(t *testing.T) {
 	if c1 != c2 {
 		t.Error("expected the same cached *Client on the second call")
 	}
-	if minter.minted["hs-acme"] != 1 {
-		t.Errorf("expected exactly 1 mint for hs-acme, got %d", minter.minted["hs-acme"])
+	if minter.minted["acme"] != 1 {
+		t.Errorf("expected exactly 1 mint for acme, got %d", minter.minted["acme"])
 	}
 }
 
@@ -492,7 +492,7 @@ func TestRegistryDifferentSubdomainsGetDifferentClients(t *testing.T) {
 	if c1 == c2 {
 		t.Error("expected distinct clients for distinct subdomains")
 	}
-	if minter.minted["hs-acme"] != 1 || minter.minted["hs-widgets"] != 1 {
+	if minter.minted["acme"] != 1 || minter.minted["widgets"] != 1 {
 		t.Errorf("unexpected mint counts: %v", minter.minted)
 	}
 }

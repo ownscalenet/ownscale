@@ -1,0 +1,170 @@
+package handlers
+
+import (
+	"database/sql"
+	"errors"
+	"net/http"
+	"net/http/httptest"
+	"testing"
+
+	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/headscaleclient"
+)
+
+// TestRequireActiveOrgShortCircuits covers RequireActiveOrg's guard: an
+// unauthenticated caller gets 401, a caller with no organization gets 409
+// (from callerAndOrg), and a pending (not yet provisioned) organization
+// gets 409+notConfigured -- in all three cases next is never called.
+func TestRequireActiveOrgShortCircuits(t *testing.T) {
+	h, queries := newTestHandlers(t, true)
+
+	pendingOrg, err := h.orgs.CreatePending(t.Context(), "acme")
+	if err != nil {
+		t.Fatalf("orgs.CreatePending: %v", err)
+	}
+	pendingUser := insertUser(t, queries)
+	if err := queries.SetUserOrganizationAndRole(t.Context(), sqlcgen.SetUserOrganizationAndRoleParams{
+		OrganizationID: sql.NullString{String: pendingOrg.ID, Valid: true},
+		Role:           RoleOwner,
+		ID:             pendingUser.ID,
+	}); err != nil {
+		t.Fatalf("SetUserOrganizationAndRole: %v", err)
+	}
+	pendingUser, err = queries.GetUserByID(t.Context(), pendingUser.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID: %v", err)
+	}
+
+	noOrgUser := insertUser(t, queries)
+
+	cases := []struct {
+		name       string
+		req        *http.Request
+		wantStatus int
+	}{
+		{
+			name:       "unauthenticated",
+			req:        httptest.NewRequest(http.MethodGet, "/api/access-control", nil),
+			wantStatus: http.StatusUnauthorized,
+		},
+		{
+			name:       "no organization",
+			req:        withTestUser(httptest.NewRequest(http.MethodGet, "/api/access-control", nil), noOrgUser),
+			wantStatus: http.StatusConflict,
+		},
+		{
+			name:       "pending organization",
+			req:        withTestUser(httptest.NewRequest(http.MethodGet, "/api/access-control", nil), pendingUser),
+			wantStatus: http.StatusConflict,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			nextCalled := false
+			next := func(http.ResponseWriter, *http.Request) { nextCalled = true }
+
+			rec := httptest.NewRecorder()
+			h.RequireActiveOrg(next)(rec, tc.req)
+
+			if rec.Code != tc.wantStatus {
+				t.Errorf("status = %d, want %d, body=%s", rec.Code, tc.wantStatus, rec.Body.String())
+			}
+			if nextCalled {
+				t.Error("next was called, want short-circuit")
+			}
+		})
+	}
+}
+
+func TestRequireActiveOrgCallsNextForActiveOrg(t *testing.T) {
+	h, org, users := newAccessControlTestHandlers(t, RoleMember)
+	member := users[0]
+
+	var gotCaller *sqlcgen.User
+	var gotOrg sqlcgen.Organization
+	next := func(w http.ResponseWriter, r *http.Request) {
+		gotCaller, gotOrg, _ = orgFromContext(r)
+		w.WriteHeader(http.StatusOK)
+	}
+
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/access-control", nil), member)
+	rec := httptest.NewRecorder()
+	h.RequireActiveOrg(next)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", rec.Code, rec.Body.String())
+	}
+	if gotCaller == nil || gotCaller.ID != member.ID {
+		t.Errorf("context caller = %+v, want %+v", gotCaller, member)
+	}
+	if gotOrg.ID != org.ID {
+		t.Errorf("context org = %+v, want %+v", gotOrg, org)
+	}
+}
+
+// TestRequireMachinesClientShortCircuits covers RequireMachinesClient's
+// guard: no organization and a mint-key failure both short-circuit with
+// 409+notConfigured without calling next.
+func TestRequireMachinesClientShortCircuits(t *testing.T) {
+	t.Run("no organization", func(t *testing.T) {
+		h, queries := newMachinesTestHandlers(t)
+		h.hs = headscaleclient.NewRegistry(&fakeClientMinter{})
+		user := insertUser(t, queries)
+
+		nextCalled := false
+		next := func(http.ResponseWriter, *http.Request) { nextCalled = true }
+
+		req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/machines", nil), user)
+		rec := httptest.NewRecorder()
+		h.RequireMachinesClient(next)(rec, req)
+
+		if rec.Code != http.StatusConflict {
+			t.Errorf("status = %d, want 409, body=%s", rec.Code, rec.Body.String())
+		}
+		if nextCalled {
+			t.Error("next was called, want short-circuit")
+		}
+	})
+
+	t.Run("mint key fails", func(t *testing.T) {
+		h, queries := newMachinesTestHandlers(t)
+		user, _, _ := activeOrgUser(t, h, queries)
+		h.hs = headscaleclient.NewRegistry(&fakeClientMinter{err: errors.New("mint failed")})
+
+		nextCalled := false
+		next := func(http.ResponseWriter, *http.Request) { nextCalled = true }
+
+		req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/machines", nil), user)
+		rec := httptest.NewRecorder()
+		h.RequireMachinesClient(next)(rec, req)
+
+		if rec.Code != http.StatusConflict {
+			t.Errorf("status = %d, want 409, body=%s", rec.Code, rec.Body.String())
+		}
+		if nextCalled {
+			t.Error("next was called, want short-circuit")
+		}
+	})
+}
+
+func TestRequireMachinesClientCallsNextWithClient(t *testing.T) {
+	h, queries := newMachinesTestHandlers(t)
+	user, _, _ := activeOrgUser(t, h, queries)
+
+	var gotClient bool
+	next := func(w http.ResponseWriter, r *http.Request) {
+		_, gotClient = machinesClientFromContext(r)
+		w.WriteHeader(http.StatusOK)
+	}
+
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/machines", nil), user)
+	rec := httptest.NewRecorder()
+	h.RequireMachinesClient(next)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", rec.Code, rec.Body.String())
+	}
+	if !gotClient {
+		t.Error("expected a client attached to the request context")
+	}
+}

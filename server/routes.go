@@ -25,17 +25,17 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 
 	mux.HandleFunc("POST /api/organizations", requireAuthAPI(h.CreateOrganization))
 
-	mux.HandleFunc("GET /api/machines", requireAuthAPI(h.ListMachines))
-	mux.HandleFunc("POST /api/machines/register", requireAuthAPI(h.RegisterMachine))
-	mux.HandleFunc("POST /api/machines/{id}/rename", requireAuthAPI(h.RenameMachine))
-	mux.HandleFunc("POST /api/machines/{id}/tags", requireAuthAPI(h.SetMachineTags))
-	mux.HandleFunc("POST /api/machines/{id}/routes", requireAuthAPI(h.SetMachineRoutes))
-	mux.HandleFunc("POST /api/machines/{id}/expire", requireAuthAPI(h.ExpireMachine))
-	mux.HandleFunc("DELETE /api/machines/{id}", requireAuthAPI(h.DeleteMachine))
+	mux.HandleFunc("GET /api/machines", requireAuthAPI(h.RequireMachinesClient(h.ListMachines)))
+	mux.HandleFunc("POST /api/machines/register", requireAuthAPI(h.RequireMachinesClient(h.RegisterMachine)))
+	mux.HandleFunc("POST /api/machines/{id}/rename", requireAuthAPI(h.RequireMachinesClient(h.RenameMachine)))
+	mux.HandleFunc("POST /api/machines/{id}/tags", requireAuthAPI(h.RequireMachinesClient(h.SetMachineTags)))
+	mux.HandleFunc("POST /api/machines/{id}/routes", requireAuthAPI(h.RequireMachinesClient(h.SetMachineRoutes)))
+	mux.HandleFunc("POST /api/machines/{id}/expire", requireAuthAPI(h.RequireMachinesClient(h.ExpireMachine)))
+	mux.HandleFunc("DELETE /api/machines/{id}", requireAuthAPI(h.RequireMachinesClient(h.DeleteMachine)))
 
-	mux.HandleFunc("GET /api/auth-keys", requireAuthAPI(h.ListAuthKeys))
-	mux.HandleFunc("POST /api/auth-keys", requireAuthAPI(h.CreateAuthKey))
-	mux.HandleFunc("POST /api/auth-keys/{id}/expire", requireAuthAPI(h.ExpireAuthKey))
+	mux.HandleFunc("GET /api/auth-keys", requireAuthAPI(h.RequireMachinesClient(h.ListAuthKeys)))
+	mux.HandleFunc("POST /api/auth-keys", requireAuthAPI(h.RequireMachinesClient(h.CreateAuthKey)))
+	mux.HandleFunc("POST /api/auth-keys/{id}/expire", requireAuthAPI(h.RequireMachinesClient(h.ExpireAuthKey)))
 
 	mux.HandleFunc("GET /api/members", requireAuthAPI(h.ListMembers))
 	mux.HandleFunc("POST /api/members/transfer-ownership", requireAuthAPI(h.TransferOwnership))
@@ -48,12 +48,12 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	mux.HandleFunc("GET /api/invites/{token}", h.GetInvitePreview) // public: preview before login
 	mux.HandleFunc("POST /api/invites/{token}/accept", requireAuthAPI(h.AcceptInvite))
 
-	mux.HandleFunc("GET /api/access-control", requireAuthAPI(h.GetAccessControlPolicy))
-	mux.HandleFunc("PUT /api/access-control", requireAuthAPI(h.UpdateAccessControlPolicy))
+	mux.HandleFunc("GET /api/access-control", requireAuthAPI(h.RequireActiveOrg(h.GetAccessControlPolicy)))
+	mux.HandleFunc("PUT /api/access-control", requireAuthAPI(h.RequireActiveOrg(h.UpdateAccessControlPolicy)))
 	mux.HandleFunc("POST /api/access-control/format", requireAuthAPI(h.FormatAccessControlPolicy))
 
-	mux.HandleFunc("GET /api/auth-restrictions", requireAuthAPI(h.GetAuthRestrictions))
-	mux.HandleFunc("PUT /api/auth-restrictions", requireAuthAPI(h.UpdateAuthRestrictions))
+	mux.HandleFunc("GET /api/auth-restrictions", requireAuthAPI(h.RequireActiveOrg(h.GetAuthRestrictions)))
+	mux.HandleFunc("PUT /api/auth-restrictions", requireAuthAPI(h.RequireActiveOrg(h.UpdateAuthRestrictions)))
 
 	// Caddy's on-demand TLS "ask" endpoint; unauthenticated (checked by
 	// TLSAsk itself against known organizations/subdomains).

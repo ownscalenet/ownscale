@@ -21,18 +21,10 @@ type Handlers struct {
 	queries     *db.TxQueries
 	orgs        *orgs.Service
 	provisioner *orgs.Provisioner
-	hs          machinesRegistry
+	hs          *headscaleclient.Registry
 	baseDomain  string
 	oidc        *oidcprovider.Storage
 	logger      *slog.Logger
-}
-
-// machinesRegistry is the narrow interface machines.go needs from a
-// *headscaleclient.Registry -- letting tests substitute a fake that
-// returns a client pointed at an httptest.Server instead of a real
-// hs-<subdomain>:8080 Docker container.
-type machinesRegistry interface {
-	Client(ctx context.Context, subdomain string) (*headscaleclient.Client, error)
 }
 
 // New builds the Handlers, wiring queries/ctl/baseDomain into the

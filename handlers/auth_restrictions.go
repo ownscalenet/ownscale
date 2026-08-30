@@ -8,22 +8,10 @@ import (
 // GetAuthRestrictions handles GET /api/auth-restrictions. It returns the
 // caller's organization's stored OIDC login allowlist (domains, groups,
 // users), plus whether the caller can edit it (owner/admin, mirroring
-// GetAccessControlPolicy's canManage).
+// GetAccessControlPolicy's canManage). requireActiveOrg guarantees the org
+// is active.
 func (h *Handlers) GetAuthRestrictions(w http.ResponseWriter, r *http.Request) {
-	caller, org, notConfigured, ok := h.resolveActiveOrg(w, r)
-	if !ok {
-		return
-	}
-	if notConfigured {
-		h.writeJSON(w, http.StatusOK, map[string]any{
-			"notConfigured": true,
-			"domains":       []string{},
-			"groups":        []string{},
-			"users":         []string{},
-			"canManage":     isManager(caller.Role),
-		})
-		return
-	}
+	caller, org, _ := orgFromContext(r)
 
 	domains, groups, users, err := h.orgs.GetAuthRestrictions(r.Context(), org.ID)
 	if err != nil {
@@ -70,15 +58,9 @@ func normalizeAuthRestrictionList(values []string) []string {
 // users is trimmed, deduplicated, and persisted+applied as a whole
 // (replacing whatever was there before), mirroring
 // UpdateAccessControlPolicy's full-content-replace semantics.
+// requireActiveOrg guarantees the org is active.
 func (h *Handlers) UpdateAuthRestrictions(w http.ResponseWriter, r *http.Request) {
-	caller, org, notConfigured, ok := h.resolveActiveOrg(w, r)
-	if !ok {
-		return
-	}
-	if notConfigured {
-		h.writeError(w, http.StatusServiceUnavailable, "organization is not active yet")
-		return
-	}
+	caller, org, _ := orgFromContext(r)
 	if !isManager(caller.Role) {
 		h.writeError(w, http.StatusForbidden, "only owners and admins can edit authentication restrictions")
 		return

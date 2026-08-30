@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth'
 import {
+  ApiError,
   deleteMachine,
   expireMachine,
   listMachines,
@@ -82,9 +83,14 @@ export default function Machines() {
       setMachines(res.machines ?? [])
       setUsers(res.users ?? [])
       setTotal(res.total)
-      setNotConfigured(!!res.notConfigured)
+      setNotConfigured(false)
       setError(null)
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setNotConfigured(true)
+        setError(null)
+        return
+      }
       setError(err instanceof Error ? err.message : String(err))
     }
   }

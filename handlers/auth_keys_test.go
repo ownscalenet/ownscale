@@ -10,33 +10,11 @@ import (
 	"github.com/ownscalenet/ownscale/headscaleclient"
 )
 
-func TestListAuthKeysNotConfiguredNoRegistry(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
-	user := insertUser(t, queries)
-
-	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/auth-keys", nil), user)
-	rec := httptest.NewRecorder()
-	h.ListAuthKeys(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200", rec.Code)
-	}
-	var body struct {
-		NotConfigured bool `json:"notConfigured"`
-	}
-	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if !body.NotConfigured {
-		t.Error("expected notConfigured=true")
-	}
-}
-
 func TestListAuthKeysReturnsKeysAndUsers(t *testing.T) {
 	h, queries := newMachinesTestHandlers(t)
-	user, _ := activeOrgUser(t, h, queries)
+	user, client, _ := activeOrgUser(t, h, queries)
 
-	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/auth-keys", nil), user)
+	req := withMachinesClient(withTestUser(httptest.NewRequest(http.MethodGet, "/api/auth-keys", nil), user), client)
 	rec := httptest.NewRecorder()
 	h.ListAuthKeys(rec, req)
 
@@ -44,15 +22,11 @@ func TestListAuthKeysReturnsKeysAndUsers(t *testing.T) {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
 	var body struct {
-		NotConfigured bool                         `json:"notConfigured"`
-		AuthKeys      []headscaleclient.PreAuthKey `json:"authKeys"`
-		Users         []headscaleclient.User       `json:"users"`
+		AuthKeys []headscaleclient.PreAuthKey `json:"authKeys"`
+		Users    []headscaleclient.User       `json:"users"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
-	}
-	if body.NotConfigured {
-		t.Fatal("expected notConfigured=false for an active organization")
 	}
 	if len(body.AuthKeys) != 1 || body.AuthKeys[0].ID != "1" {
 		t.Errorf("unexpected auth keys: %+v", body.AuthKeys)
@@ -76,9 +50,9 @@ func TestCreateAuthKeyValidation(t *testing.T) {
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
 			h, queries := newMachinesTestHandlers(t)
-			user, _ := activeOrgUser(t, h, queries)
+			user, client, _ := activeOrgUser(t, h, queries)
 
-			req := withTestUser(httptest.NewRequest(http.MethodPost, "/api/auth-keys", strings.NewReader(tc.body)), user)
+			req := withMachinesClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/auth-keys", strings.NewReader(tc.body)), user), client)
 			rec := httptest.NewRecorder()
 			h.CreateAuthKey(rec, req)
 
@@ -91,10 +65,10 @@ func TestCreateAuthKeyValidation(t *testing.T) {
 
 func TestCreateAuthKeySuccess(t *testing.T) {
 	h, queries := newMachinesTestHandlers(t)
-	user, requests := activeOrgUser(t, h, queries)
+	user, client, requests := activeOrgUser(t, h, queries)
 
 	body := strings.NewReader(`{"userId":"1","reusable":true,"expiryDays":90,"aclTags":["tag:server"]}`)
-	req := withTestUser(httptest.NewRequest(http.MethodPost, "/api/auth-keys", body), user)
+	req := withMachinesClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/auth-keys", body), user), client)
 	rec := httptest.NewRecorder()
 	h.CreateAuthKey(rec, req)
 
@@ -118,10 +92,10 @@ func TestCreateAuthKeySuccess(t *testing.T) {
 
 func TestCreateAuthKeyTagOnly(t *testing.T) {
 	h, queries := newMachinesTestHandlers(t)
-	user, _ := activeOrgUser(t, h, queries)
+	user, client, _ := activeOrgUser(t, h, queries)
 
 	body := strings.NewReader(`{"aclTags":["tag:server"],"expiryDays":90}`)
-	req := withTestUser(httptest.NewRequest(http.MethodPost, "/api/auth-keys", body), user)
+	req := withMachinesClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/auth-keys", body), user), client)
 	rec := httptest.NewRecorder()
 	h.CreateAuthKey(rec, req)
 
@@ -132,9 +106,9 @@ func TestCreateAuthKeyTagOnly(t *testing.T) {
 
 func TestExpireAuthKey(t *testing.T) {
 	h, queries := newMachinesTestHandlers(t)
-	user, requests := activeOrgUser(t, h, queries)
+	user, client, requests := activeOrgUser(t, h, queries)
 
-	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodPost, "/api/auth-keys/1/expire", nil), user), "id", "1")
+	req := withPathValue(withMachinesClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/auth-keys/1/expire", nil), user), client), "id", "1")
 	rec := httptest.NewRecorder()
 	h.ExpireAuthKey(rec, req)
 
@@ -144,18 +118,5 @@ func TestExpireAuthKey(t *testing.T) {
 	last := (*requests)[len(*requests)-1]
 	if !strings.HasSuffix(last.URL.Path, "/preauthkey/expire") {
 		t.Errorf("unexpected upstream request path: %s", last.URL.Path)
-	}
-}
-
-func TestExpireAuthKeyMissingID(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
-	user, _ := activeOrgUser(t, h, queries)
-
-	req := withTestUser(httptest.NewRequest(http.MethodPost, "/api/auth-keys//expire", nil), user)
-	rec := httptest.NewRecorder()
-	h.ExpireAuthKey(rec, req)
-
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body.String())
 	}
 }

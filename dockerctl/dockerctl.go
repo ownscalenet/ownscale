@@ -30,6 +30,7 @@ import (
 
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/derrors"
+	"github.com/ownscalenet/ownscale/headscaleclient"
 	"github.com/ownscalenet/ownscale/localca"
 )
 
@@ -750,6 +751,21 @@ func (c *Ctl) MintHeadscaleAPIKey(ctx context.Context, containerNameOrID string)
 		}
 	}
 	return "", lastErr
+}
+
+// MintClient implements headscaleclient.ClientMinter: it mints a fresh API
+// key for subdomain's headscale container and returns a Client pointed at
+// http://hs-<subdomain>:8080, reachable because the ownscale container is
+// joined to subdomain's Docker network (see EnsureOwnscaleNetworkForOrg).
+func (c *Ctl) MintClient(ctx context.Context, subdomain string) (_ *headscaleclient.Client, err error) {
+	defer derrors.Wrap(&err, "c.MintClient(%q)", subdomain)
+
+	containerName := HSContainerName(subdomain)
+	apiKey, err := c.MintHeadscaleAPIKey(ctx, containerName)
+	if err != nil {
+		return nil, err
+	}
+	return headscaleclient.New(containerName+":8080", apiKey), nil
 }
 
 // waitForHTTPServing execs into containerID repeatedly, using Node's own

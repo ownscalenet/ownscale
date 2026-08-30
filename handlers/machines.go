@@ -82,23 +82,10 @@ func matchesFilters(m headscaleclient.Node, q, userFilter, status string) bool {
 
 // ListMachines handles GET /api/machines. It returns every machine
 // (headscale node) for the caller's organization, applying the optional
-// q/user/status query-string filters. If headscale isn't reachable it
-// responds 200 with notConfigured:true instead of an error.
+// q/user/status query-string filters. requireMachinesClient guarantees
+// the client is reachable.
 func (h *Handlers) ListMachines(w http.ResponseWriter, r *http.Request) {
-	client, notConfigured, err := h.resolveMachinesClient(r)
-	if err != nil {
-		h.serverError(w, err)
-		return
-	}
-	if notConfigured {
-		h.writeJSON(w, http.StatusOK, map[string]any{
-			"notConfigured": true,
-			"machines":      []headscaleclient.Node{},
-			"users":         []headscaleclient.User{},
-			"total":         0,
-		})
-		return
-	}
+	client, _ := machinesClientFromContext(r)
 
 	nodes, err := client.ListNodes(r.Context())
 	if err != nil {
@@ -132,16 +119,9 @@ func (h *Handlers) ListMachines(w http.ResponseWriter, r *http.Request) {
 // RegisterMachine handles POST /api/machines/register. It registers a
 // machine that's waiting at its interactive registration key/URL (i.e.
 // ran `tailscale up --login-server=...`) to the given user.
+// requireMachinesClient guarantees the client is reachable.
 func (h *Handlers) RegisterMachine(w http.ResponseWriter, r *http.Request) {
-	client, notConfigured, err := h.resolveMachinesClient(r)
-	if err != nil {
-		h.serverError(w, err)
-		return
-	}
-	if notConfigured {
-		h.writeError(w, http.StatusServiceUnavailable, "headscale is not reachable for this organization")
-		return
-	}
+	client, _ := machinesClientFromContext(r)
 
 	var req struct {
 		User string `json:"user"`
@@ -168,26 +148,11 @@ func (h *Handlers) RegisterMachine(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, map[string]any{"machine": node})
 }
 
-// machineIDAndClient extracts the {id} path value and resolves the
-// caller's organization's headscale client, writing an appropriate error
-// response (and returning ok=false) if either isn't available.
-func (h *Handlers) machineIDAndClient(w http.ResponseWriter, r *http.Request) (client *headscaleclient.Client, id string, ok bool) {
-	id = r.PathValue("id")
-	if id == "" {
-		h.writeError(w, http.StatusBadRequest, "missing machine id")
-		return nil, "", false
-	}
-
-	client, notConfigured, err := h.resolveMachinesClient(r)
-	if err != nil {
-		h.serverError(w, err)
-		return nil, "", false
-	}
-	if notConfigured {
-		h.writeError(w, http.StatusServiceUnavailable, "headscale is not reachable for this organization")
-		return nil, "", false
-	}
-	return client, id, true
+// machineIDAndClient extracts the {id} path value and the caller's
+// organization's headscale client (attached by requireMachinesClient).
+func (h *Handlers) machineIDAndClient(r *http.Request) (client *headscaleclient.Client, id string) {
+	client, _ = machinesClientFromContext(r)
+	return client, r.PathValue("id")
 }
 
 // decodeJSONBody decodes r's JSON body into v, writing a 400 response and
@@ -202,10 +167,7 @@ func (h *Handlers) decodeJSONBody(w http.ResponseWriter, r *http.Request, v any)
 
 // RenameMachine handles POST /api/machines/{id}/rename.
 func (h *Handlers) RenameMachine(w http.ResponseWriter, r *http.Request) {
-	client, id, ok := h.machineIDAndClient(w, r)
-	if !ok {
-		return
-	}
+	client, id := h.machineIDAndClient(r)
 	var req struct {
 		Name string `json:"name"`
 	}
@@ -225,10 +187,7 @@ func (h *Handlers) RenameMachine(w http.ResponseWriter, r *http.Request) {
 
 // SetMachineTags handles POST /api/machines/{id}/tags.
 func (h *Handlers) SetMachineTags(w http.ResponseWriter, r *http.Request) {
-	client, id, ok := h.machineIDAndClient(w, r)
-	if !ok {
-		return
-	}
+	client, id := h.machineIDAndClient(r)
 	var req struct {
 		Tags []string `json:"tags"`
 	}
@@ -244,10 +203,7 @@ func (h *Handlers) SetMachineTags(w http.ResponseWriter, r *http.Request) {
 
 // SetMachineRoutes handles POST /api/machines/{id}/routes.
 func (h *Handlers) SetMachineRoutes(w http.ResponseWriter, r *http.Request) {
-	client, id, ok := h.machineIDAndClient(w, r)
-	if !ok {
-		return
-	}
+	client, id := h.machineIDAndClient(r)
 	var req struct {
 		Routes []string `json:"routes"`
 	}
@@ -263,10 +219,7 @@ func (h *Handlers) SetMachineRoutes(w http.ResponseWriter, r *http.Request) {
 
 // ExpireMachine handles POST /api/machines/{id}/expire.
 func (h *Handlers) ExpireMachine(w http.ResponseWriter, r *http.Request) {
-	client, id, ok := h.machineIDAndClient(w, r)
-	if !ok {
-		return
-	}
+	client, id := h.machineIDAndClient(r)
 	if err := client.ExpireNode(r.Context(), id); err != nil {
 		h.serverError(w, err)
 		return
@@ -276,10 +229,7 @@ func (h *Handlers) ExpireMachine(w http.ResponseWriter, r *http.Request) {
 
 // DeleteMachine handles DELETE /api/machines/{id}.
 func (h *Handlers) DeleteMachine(w http.ResponseWriter, r *http.Request) {
-	client, id, ok := h.machineIDAndClient(w, r)
-	if !ok {
-		return
-	}
+	client, id := h.machineIDAndClient(r)
 	if err := client.DeleteNode(r.Context(), id); err != nil {
 		h.serverError(w, err)
 		return

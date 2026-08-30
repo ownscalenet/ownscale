@@ -90,7 +90,6 @@ export function createOrganization(subdomain: string) {
 }
 
 export interface MachinesResponse {
-  notConfigured?: boolean
   machines: Machine[]
   users: HeadscaleUser[]
   total: number
@@ -221,7 +220,6 @@ export function acceptInvite(token: string) {
 }
 
 export interface AccessControlResponse {
-  notConfigured?: boolean
   content: string
   canManage: boolean
 }
@@ -245,7 +243,6 @@ export function formatAccessControlPolicy(content: string) {
 }
 
 export interface AuthRestrictionsResponse {
-  notConfigured?: boolean
   domains: string[]
   groups: string[]
   users: string[]
@@ -277,7 +274,6 @@ export interface PreAuthKey {
 }
 
 export interface AuthKeysResponse {
-  notConfigured?: boolean
   authKeys: PreAuthKey[]
   users: HeadscaleUser[]
 }

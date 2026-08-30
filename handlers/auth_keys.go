@@ -11,23 +11,10 @@ import (
 // ListAuthKeys handles GET /api/auth-keys. It returns every
 // pre-authentication key for the caller's organization's tailnet, plus the
 // list of headscale users (so the frontend can build a user filter/picker
-// without a second round trip). If headscale isn't reachable for the
-// caller's organization it responds 200 with notConfigured:true and empty
-// lists, matching ListMachines's convention.
+// without a second round trip). requireMachinesClient guarantees the
+// client is reachable.
 func (h *Handlers) ListAuthKeys(w http.ResponseWriter, r *http.Request) {
-	client, notConfigured, err := h.resolveMachinesClient(r)
-	if err != nil {
-		h.serverError(w, err)
-		return
-	}
-	if notConfigured {
-		h.writeJSON(w, http.StatusOK, map[string]any{
-			"notConfigured": true,
-			"authKeys":      []headscaleclient.PreAuthKey{},
-			"users":         []headscaleclient.User{},
-		})
-		return
-	}
+	client, _ := machinesClientFromContext(r)
 
 	keys, err := client.ListPreAuthKeys(r.Context())
 	if err != nil {
@@ -48,17 +35,10 @@ func (h *Handlers) ListAuthKeys(w http.ResponseWriter, r *http.Request) {
 
 // CreateAuthKey handles POST /api/auth-keys. The request body must set
 // either userID (the owning headscale user) or a non-empty aclTags (for a
-// "tag only" key with no owning user).
+// "tag only" key with no owning user). requireMachinesClient guarantees
+// the client is reachable.
 func (h *Handlers) CreateAuthKey(w http.ResponseWriter, r *http.Request) {
-	client, notConfigured, err := h.resolveMachinesClient(r)
-	if err != nil {
-		h.serverError(w, err)
-		return
-	}
-	if notConfigured {
-		h.writeError(w, http.StatusServiceUnavailable, "headscale is not reachable for this organization")
-		return
-	}
+	client, _ := machinesClientFromContext(r)
 
 	var req struct {
 		UserID     string   `json:"userId"`
@@ -94,22 +74,10 @@ func (h *Handlers) CreateAuthKey(w http.ResponseWriter, r *http.Request) {
 }
 
 // ExpireAuthKey handles POST /api/auth-keys/{id}/expire.
+// requireMachinesClient guarantees the client is reachable.
 func (h *Handlers) ExpireAuthKey(w http.ResponseWriter, r *http.Request) {
+	client, _ := machinesClientFromContext(r)
 	id := r.PathValue("id")
-	if id == "" {
-		h.writeError(w, http.StatusBadRequest, "missing auth key id")
-		return
-	}
-
-	client, notConfigured, err := h.resolveMachinesClient(r)
-	if err != nil {
-		h.serverError(w, err)
-		return
-	}
-	if notConfigured {
-		h.writeError(w, http.StatusServiceUnavailable, "headscale is not reachable for this organization")
-		return
-	}
 
 	if err := client.ExpirePreAuthKey(r.Context(), id); err != nil {
 		h.serverError(w, err)

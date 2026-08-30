@@ -12,7 +12,7 @@ import (
 
 func TestSessionEnsuresHeadscaleUserForActiveOrg(t *testing.T) {
 	h, queries := newMachinesTestHandlers(t)
-	user, _ := activeOrgUser(t, h, queries)
+	user, _, _ := activeOrgUser(t, h, queries)
 
 	if err := queries.UpdateUserProfile(t.Context(), sqlcgen.UpdateUserProfileParams{
 		Email: "alice@example.com", Name: user.Name, AvatarUrl: user.AvatarUrl,

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth'
-import { createAuthKey, expireAuthKey, listAuthKeys, type HeadscaleUser, type PreAuthKey } from '../api'
+import { createAuthKey, expireAuthKey, listAuthKeys, ApiError, type HeadscaleUser, type PreAuthKey } from '../api'
 
 const TAG_ONLY = '__tag_only__'
 
@@ -57,9 +57,14 @@ export default function Settings() {
       const res = await listAuthKeys()
       setAuthKeys(res.authKeys ?? [])
       setUsers(res.users ?? [])
-      setNotConfigured(!!res.notConfigured)
+      setNotConfigured(false)
       setError(null)
     } catch (err) {
+      if (err instanceof ApiError && err.status === 409) {
+        setNotConfigured(true)
+        setError(null)
+        return
+      }
       setError(err instanceof Error ? err.message : String(err))
     }
   }

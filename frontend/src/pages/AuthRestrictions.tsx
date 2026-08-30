@@ -104,9 +104,13 @@ export default function AuthRestrictions() {
         setGroups(res.groups)
         setUsers(res.users)
         setCanManage(res.canManage)
-        setNotConfigured(res.notConfigured ?? false)
+        setNotConfigured(false)
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err))
+        if (err instanceof ApiError && err.status === 409) {
+          setNotConfigured(true)
+        } else {
+          setError(err instanceof Error ? err.message : String(err))
+        }
       } finally {
         setLoading(false)
       }

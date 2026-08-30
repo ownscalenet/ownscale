@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"context"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -17,6 +18,7 @@ import (
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/dockerctl"
 	"github.com/ownscalenet/ownscale/dockerctl/dockerfake"
+	"github.com/ownscalenet/ownscale/headscaleclient"
 
 	"github.com/rs/xid"
 )
@@ -86,6 +88,21 @@ func newTestHandlers(t *testing.T, withOrgs bool) (*Handlers, *dbpkg.TxQueries) 
 		baseDomain = testBaseDomain
 	}
 	return New(queries, ctl, baseDomain, nil, discardLogger(), config.DerpConfig{}), queries
+}
+
+// withActiveOrg attaches (caller, org) to req's context, as RequireActiveOrg
+// would for an authenticated request against an active organization.
+func withActiveOrg(req *http.Request, caller sqlcgen.User, org sqlcgen.Organization) *http.Request {
+	ctx := context.WithValue(req.Context(), activeOrgContextKey, activeOrgContext{caller: &caller, org: org})
+	return req.WithContext(ctx)
+}
+
+// withMachinesClient attaches client to req's context, as
+// RequireMachinesClient would for an authenticated request whose
+// organization's headscale is reachable.
+func withMachinesClient(req *http.Request, client *headscaleclient.Client) *http.Request {
+	ctx := context.WithValue(req.Context(), machinesClientContextKey, client)
+	return req.WithContext(ctx)
 }
 
 // insertUser inserts a user row directly and returns it.
