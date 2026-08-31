@@ -65,6 +65,42 @@ you care about.
 - No real Tailscale client is registered against the e2e organization, so
   `machines.spec.ts` only covers the page's own rendering/filters/empty
   state, not per-machine actions (rename/tag/routes/expire/delete) which
-  need an existing machine row.
+  need an existing machine row. See `tailscale-connectivity.sh` below for
+  a real-client test.
 - Headplane's own UI/OIDC-SSO-into-headplane is not tested.
 - Not wired into CI; run locally/manually.
+
+## `tailscale-connectivity.sh`: real Tailscale client + DERP connectivity test
+
+A standalone bash script (not part of the Playwright suite above) that
+provisions a fresh, throwaway organization, drives the real invite HTTP
+API to get an owner and an invitee both registered to it, then runs two
+real Tailscale clients, each in its own network-isolated Docker
+container, with no route to each other or to any other container in this
+stack and verifies they can reach each other. Since the two client
+containers share no network route, a successful ping is only possible via
+headscale's coordination plus a DERP relay
+
+### Prerequisites
+
+- The `docker-compose.yml` at root is up and running
+- `docker`, `curl`, `jq`, and `gnome-terminal` on `PATH`.
+- `.env` present in the repo root with `BASE_DOMAIN` and
+  `OWNSCALE_DATA_DIR` set (same file docker compose reads).
+- No `/etc/hosts` entry is needed for the randomly-generated test
+  subdomain: the orchestrating script only talks to the base domain's
+  `/api/*`.
+
+### Running
+
+```sh
+./e2e/tailscale-connectivity.sh
+```
+
+Set `KEEP_ORG=1` to skip deleting the test organization/users on exit.
+
+### What it doesn't cover
+
+- Interactive/browser-based OIDC login (see `auth.spec.ts` above for that).
+- Direct (non-DERP) peer-to-peer connectivity -- the whole point of the
+  isolated networks is to force a DERP relay path.

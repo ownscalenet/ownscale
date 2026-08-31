@@ -4,11 +4,15 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 
+	"github.com/markbates/goth/gothic"
 	"github.com/rs/xid"
 
+	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
 
@@ -131,6 +135,166 @@ func TestDeleteUser(t *testing.T) {
 
 		if _, err := queries.GetUserByID(t.Context(), user.ID); !errors.Is(err, sql.ErrNoRows) {
 			t.Errorf("GetUserByID after delete: err = %v, want sql.ErrNoRows", err)
+		}
+	})
+}
+
+func sessionUserFromCookie(t *testing.T, line string) string {
+	t.Helper()
+	name, value, ok := strings.Cut(strings.TrimSpace(line), "=")
+	if !ok {
+		t.Fatalf("cookie line %q not in name=value form", line)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "http://localhost/", nil)
+	req.AddCookie(&http.Cookie{Name: name, Value: value})
+	sess, err := gothic.Store.Get(req, gothic.SessionName)
+	if err != nil {
+		t.Fatalf("decode session cookie: %v", err)
+	}
+	userID, _ := sess.Values[auth.SessionUserKey].(string)
+	return userID
+}
+
+func TestLoginUser(t *testing.T) {
+	auth.Setup("test-session-secret")
+
+	t.Run("creates a new user and mints a valid session", func(t *testing.T) {
+		_, queries := newTestDB(t)
+
+		var out strings.Builder
+		if err := loginUser(t.Context(), &out, queries, "new@test.example", "", "", "owner"); err != nil {
+			t.Fatalf("loginUser: %v", err)
+		}
+
+		user, err := queries.GetUserByProvider(t.Context(), sqlcgen.GetUserByProviderParams{
+			Provider:       testAuthProvider,
+			ProviderUserID: "new@test.example",
+		})
+		if err != nil {
+			t.Fatalf("GetUserByProvider: %v", err)
+		}
+		if user.Name != "new@test.example" {
+			t.Errorf("user.Name = %q, want it to default to the email", user.Name)
+		}
+		if !user.LastLoginAt.Valid {
+			t.Error("user.LastLoginAt not set, want loginUser to touch it")
+		}
+		if user.OrganizationID.Valid {
+			t.Errorf("user.OrganizationID = %+v, want unset since no --org was given", user.OrganizationID)
+		}
+
+		if got := sessionUserFromCookie(t, out.String()); got != user.ID {
+			t.Errorf("minted session user id = %q, want %q", got, user.ID)
+		}
+	})
+
+	t.Run("reuses the existing user on a second login", func(t *testing.T) {
+		_, queries := newTestDB(t)
+
+		var out1, out2 strings.Builder
+		if err := loginUser(t.Context(), &out1, queries, "again@test.example", "", "", "owner"); err != nil {
+			t.Fatalf("loginUser (1st): %v", err)
+		}
+		if err := loginUser(t.Context(), &out2, queries, "again@test.example", "", "", "owner"); err != nil {
+			t.Fatalf("loginUser (2nd): %v", err)
+		}
+
+		if sessionUserFromCookie(t, out1.String()) != sessionUserFromCookie(t, out2.String()) {
+			t.Error("loginUser created a second distinct user for the same email instead of reusing it")
+		}
+	})
+
+	t.Run("attaches to an already-active organization", func(t *testing.T) {
+		_, queries := newTestDB(t)
+		org := insertOrg(t, queries, "acme")
+		if _, err := queries.UpdateOrganizationStatus(t.Context(), sqlcgen.UpdateOrganizationStatusParams{
+			Status: "active",
+			ID:     org.ID,
+		}); err != nil {
+			t.Fatalf("UpdateOrganizationStatus: %v", err)
+		}
+
+		var out strings.Builder
+		if err := loginUser(t.Context(), &out, queries, "owner@test.example", "", "acme", "owner"); err != nil {
+			t.Fatalf("loginUser: %v", err)
+		}
+
+		user, err := queries.GetUserByProvider(t.Context(), sqlcgen.GetUserByProviderParams{
+			Provider:       testAuthProvider,
+			ProviderUserID: "owner@test.example",
+		})
+		if err != nil {
+			t.Fatalf("GetUserByProvider: %v", err)
+		}
+		if !user.OrganizationID.Valid || user.OrganizationID.String != org.ID {
+			t.Errorf("user.OrganizationID = %+v, want %q", user.OrganizationID, org.ID)
+		}
+		if user.Role != "owner" {
+			t.Errorf("user.Role = %q, want %q", user.Role, "owner")
+		}
+	})
+
+	t.Run("errors for an unknown organization", func(t *testing.T) {
+		_, queries := newTestDB(t)
+		var out strings.Builder
+		err := loginUser(t.Context(), &out, queries, "someone@test.example", "", "does-not-exist", "owner")
+		if err == nil {
+			t.Fatal("loginUser: expected error for unknown organization, got nil")
+		}
+		if !strings.Contains(err.Error(), "does-not-exist") {
+			t.Errorf("loginUser error = %q, want it to mention the subdomain", err)
+		}
+	})
+
+	t.Run("errors for a not-yet-active organization", func(t *testing.T) {
+		_, queries := newTestDB(t)
+		insertOrg(t, queries, "pending-org")
+
+		var out strings.Builder
+		err := loginUser(t.Context(), &out, queries, "someone@test.example", "", "pending-org", "owner")
+		if err == nil {
+			t.Fatal("loginUser: expected error for a pending organization, got nil")
+		}
+		if !strings.Contains(err.Error(), "not active") {
+			t.Errorf("loginUser error = %q, want it to mention the organization isn't active", err)
+		}
+	})
+
+	t.Run("does not reattach a user who already has an organization", func(t *testing.T) {
+		_, queries := newTestDB(t)
+		firstOrg := insertOrg(t, queries, "first-org")
+		if _, err := queries.UpdateOrganizationStatus(t.Context(), sqlcgen.UpdateOrganizationStatusParams{
+			Status: "active",
+			ID:     firstOrg.ID,
+		}); err != nil {
+			t.Fatalf("UpdateOrganizationStatus: %v", err)
+		}
+		secondOrg := insertOrg(t, queries, "second-org")
+		if _, err := queries.UpdateOrganizationStatus(t.Context(), sqlcgen.UpdateOrganizationStatusParams{
+			Status: "active",
+			ID:     secondOrg.ID,
+		}); err != nil {
+			t.Fatalf("UpdateOrganizationStatus: %v", err)
+		}
+
+		var out strings.Builder
+		if err := loginUser(t.Context(), &out, queries, "member@test.example", "", "first-org", "owner"); err != nil {
+			t.Fatalf("loginUser (1st): %v", err)
+		}
+		if err := loginUser(t.Context(), &out, queries, "member@test.example", "", "second-org", "owner"); err != nil {
+			t.Fatalf("loginUser (2nd): %v", err)
+		}
+
+		user, err := queries.GetUserByProvider(t.Context(), sqlcgen.GetUserByProviderParams{
+			Provider:       testAuthProvider,
+			ProviderUserID: "member@test.example",
+		})
+		if err != nil {
+			t.Fatalf("GetUserByProvider: %v", err)
+		}
+		if user.OrganizationID.String != firstOrg.ID {
+			t.Errorf("user.OrganizationID = %q, want it to keep the first org %q", user.OrganizationID.String, firstOrg.ID)
 		}
 	})
 }
