@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -84,7 +85,7 @@ func (o *OrgService) GetACLPolicy(ctx context.Context) (_ string, err error) {
 		Path:           dockerctl.PolicyConfigPath,
 	})
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return dockerctl.DefaultACLPolicy, nil
 		}
 		return "", err
@@ -162,7 +163,7 @@ func (o *OrgService) GetAuthRestrictions(ctx context.Context) (_ string, err err
 		Path:           AuthRestrictionsConfigKey,
 	})
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return defaultAuthRestrictions, nil
 		}
 		return "", err

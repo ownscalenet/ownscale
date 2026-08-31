@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -123,7 +124,7 @@ func newMigrateStatusCommand(parent *ff.FlagSet, configPath *string) *ff.Command
 func migrateUp(ctx context.Context, provider *goose.Provider) error {
 	result, err := provider.UpByOne(ctx)
 	if err != nil {
-		if err == goose.ErrNoNextVersion {
+		if errors.Is(err, goose.ErrNoNextVersion) {
 			fmt.Println("no pending migrations")
 			return nil
 		}
