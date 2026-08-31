@@ -460,7 +460,7 @@ taildrop:
 
 dns:
   magic_dns: true
-  base_domain: {{.Subdomain}}.ownscale.internal
+  base_domain: {{.Subdomain}}.ownscale
   nameservers:
     global:
       - 1.1.1.1

@@ -29,9 +29,10 @@ type Config struct {
 	DataDir    string `yaml:"data_dir" env:"OWNSCALE_DATA_DIR"`
 	LocalCADir string `yaml:"local_ca_dir" env:"OWNSCALE_LOCAL_CA_DIR"`
 
-	Auth AuthConfig `yaml:"auth"`
-	Log  LogConfig  `yaml:"log"`
-	Derp DerpConfig `yaml:"derp"`
+	Auth        AuthConfig        `yaml:"auth"`
+	Log         LogConfig         `yaml:"log"`
+	Derp        DerpConfig        `yaml:"derp"`
+	Provisioner ProvisionerConfig `yaml:"provisioner"`
 }
 
 // LogConfig configures the application's structured (slog) logger.
@@ -121,6 +122,13 @@ type DerpConfig struct {
 
 // Enabled reports whether a self-hosted DERP relay is configured.
 func (d DerpConfig) Enabled() bool { return d.Hostname != "" }
+
+// ProvisionerConfig configures the background organization provisioner
+// (see orgs.Provisioner), which keeps a small pool of fully-provisioned
+// organizations ready to be assigned to new users on login.
+type ProvisionerConfig struct {
+	QueueCapacity int `yaml:"queue_capacity" env:"OWNSCALE_PROVISIONER_QUEUE_CAPACITY"`
+}
 
 func defaults() *Config {
 	return &Config{

@@ -47,6 +47,12 @@ func newTestQueries(t *testing.T) *dbpkg.TxQueries {
 	if _, err := provider.Up(t.Context()); err != nil {
 		t.Fatalf("apply migrations: %v", err)
 	}
+	// Migration 000008 seeds placeholder organizations (aaaa..ffff) so a real
+	// deployment's provisioner has something to recover at startup; tests
+	// assume a clean organizations table, so remove them here.
+	if _, err := pool.ExecContext(t.Context(), `DELETE FROM organizations WHERE id LIKE 'seed-%'`); err != nil {
+		t.Fatalf("clear seeded organizations: %v", err)
+	}
 
 	return dbpkg.New(pool, discardLogger())
 }
@@ -54,7 +60,7 @@ func newTestQueries(t *testing.T) *dbpkg.TxQueries {
 func newTestMux(t *testing.T) http.Handler {
 	t.Helper()
 	queries := newTestQueries(t)
-	h := handlers.New(queries, nil, "", nil, discardLogger(), config.DerpConfig{})
+	h := handlers.New(queries, nil, "", nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{})
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
 		return auth.RequireAuthAPI(queries.Queries, next)
 	}
@@ -69,7 +75,6 @@ func TestNewMuxProtectedRoutesRequireAuth(t *testing.T) {
 	}{
 		{http.MethodGet, "/api/session"},
 		{http.MethodPost, "/api/logout"},
-		{http.MethodPost, "/api/organizations"},
 	}
 	for _, p := range protected {
 		req := httptest.NewRequest(p.method, p.path, nil)
@@ -97,7 +102,7 @@ func TestNewMuxTLSAskUnauthenticated(t *testing.T) {
 
 func TestNewMuxUnmatchedPathFallsBackToStatic(t *testing.T) {
 	queries := newTestQueries(t)
-	h := handlers.New(queries, nil, "", nil, discardLogger(), config.DerpConfig{})
+	h := handlers.New(queries, nil, "", nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{})
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
 		return auth.RequireAuthAPI(queries.Queries, next)
 	}
@@ -123,7 +128,7 @@ func TestNewMuxUnmatchedPathFallsBackToStatic(t *testing.T) {
 
 func TestNewMuxAuthenticatedSession(t *testing.T) {
 	queries := newTestQueries(t)
-	h := handlers.New(queries, nil, "", nil, discardLogger(), config.DerpConfig{})
+	h := handlers.New(queries, nil, "", nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{})
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
 		return auth.RequireAuthAPI(queries.Queries, next)
 	}

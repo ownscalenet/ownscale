@@ -15,6 +15,7 @@ package server_test
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"io"
 	"io/fs"
@@ -36,30 +37,9 @@ import (
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/dockerctl"
 	"github.com/ownscalenet/ownscale/handlers"
+	"github.com/ownscalenet/ownscale/orgs"
 	"github.com/ownscalenet/ownscale/server"
 )
-
-// waitForOrganizationStatus polls orgID's status until it equals want or
-// timeout elapses, failing the test if it doesn't reach want in time. It's
-// used because provisioning now runs in the background instead of inline
-// in the CreateOrganization response (see handlers.CreateOrganization).
-func waitForOrganizationStatus(t *testing.T, queries *dbpkg.TxQueries, orgID, want string, timeout time.Duration) {
-	t.Helper()
-	deadline := time.Now().Add(timeout)
-	for {
-		org, err := queries.GetOrganization(t.Context(), orgID)
-		if err != nil {
-			t.Fatalf("GetOrganization: %v", err)
-		}
-		if org.Status == want {
-			return
-		}
-		if time.Now().After(deadline) {
-			t.Fatalf("organization status = %q after %s, want %q", org.Status, timeout, want)
-		}
-		time.Sleep(200 * time.Millisecond)
-	}
-}
 
 func requireDocker(t *testing.T) {
 	t.Helper()
@@ -120,8 +100,11 @@ func TestServerIntegration(t *testing.T) {
 	t.Cleanup(func() { _ = ctl.Close() })
 
 	const baseDomain = "srvit.test"
-	subdomain := "srv" + xid.New().String()[:8]
+	var subdomain string
 	t.Cleanup(func() {
+		if subdomain == "" {
+			return
+		}
 		// Must be t.Context() because t.Context() is already cancelled.
 		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 		defer cancel()
@@ -130,7 +113,7 @@ func TestServerIntegration(t *testing.T) {
 		}
 	})
 
-	h := handlers.New(queries, ctl, baseDomain, nil, logger, config.DerpConfig{})
+	h := handlers.New(queries, ctl, baseDomain, nil, logger, config.DerpConfig{}, config.ProvisionerConfig{})
 	provisionerCtx, cancelProvisioner := context.WithCancel(t.Context())
 	t.Cleanup(cancelProvisioner)
 	h.StartProvisioner(provisionerCtx)
@@ -182,31 +165,36 @@ func TestServerIntegration(t *testing.T) {
 		return resp
 	}
 
-	t.Run("CreateOrganization provisions real containers", func(t *testing.T) {
-		resp := authedRequest(t, http.MethodPost, "/api/organizations", []byte(`{"subdomain":"`+subdomain+`"}`))
-		defer resp.Body.Close()
-		if resp.StatusCode != http.StatusCreated {
-			t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusCreated)
-		}
+	t.Run("auto-provisioned organization pool assigns real containers", func(t *testing.T) {
+		// Mirrors what handlers.AuthCallback does for a first-time user:
+		// take a fully-provisioned organization out of the pool and assign
+		// it. Built directly against orgs (rather than through h, whose
+		// provisioner field is private) so this test can drive it exactly
+		// like AuthCallback would.
+		orgSvc := orgs.NewService(queries, ctl, baseDomain, "", config.DerpConfig{})
+		provisioner := orgs.NewProvisioner(orgSvc, logger, 0, 1)
+		poolCtx, cancelPool := context.WithCancel(t.Context())
+		defer cancelPool()
+		go func() { provisioner.Run(poolCtx) }()
 
-		var body struct {
-			Organization sqlcgen.Organization `json:"organization"`
+		takeCtx, cancelTake := context.WithTimeout(t.Context(), 60*time.Second)
+		defer cancelTake()
+		org, err := provisioner.Take(takeCtx)
+		if err != nil {
+			t.Fatalf("provisioner.Take: %v", err)
 		}
-		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
-			t.Fatalf("decode response: %v", err)
-		}
-		if body.Organization.Subdomain != subdomain {
-			t.Errorf("organization.subdomain = %q, want %q", body.Organization.Subdomain, subdomain)
-		}
-		if body.Organization.Status != "pending" {
-			t.Errorf("organization.status = %q, want %q (provisioning is now asynchronous)", body.Organization.Status, "pending")
-		}
+		subdomain = org.Subdomain
 
-		// Provisioning happens in the background (see handlers.StartProvisioner
-		// above), signaled immediately rather than waiting for a poll tick, so
-		// this should become "active" quickly -- but still asynchronously, so
-		// poll for it instead of asserting on the immediate response.
-		waitForOrganizationStatus(t, queries, body.Organization.ID, "active", 15*time.Second)
+		if org.Status != "active" {
+			t.Errorf("organization.status = %q, want %q", org.Status, "active")
+		}
+		if err := queries.SetUserOrganizationAndRole(t.Context(), sqlcgen.SetUserOrganizationAndRoleParams{
+			OrganizationID: sql.NullString{String: org.ID, Valid: true},
+			Role:           "owner",
+			ID:             user.ID,
+		}); err != nil {
+			t.Fatalf("SetUserOrganizationAndRole: %v", err)
+		}
 
 		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 		defer cancel()

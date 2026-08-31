@@ -389,8 +389,8 @@ func TestGetDNSSettingsReflectsProvisionedDefaults(t *testing.T) {
 	if !dns.MagicDNS {
 		t.Errorf("MagicDNS = false, want true")
 	}
-	if dns.BaseDomain != "acme.headscale.internal" {
-		t.Errorf("BaseDomain = %q, want %q", dns.BaseDomain, "acme.headscale.internal")
+	if dns.BaseDomain != "acme.ownscale" {
+		t.Errorf("BaseDomain = %q, want %q", dns.BaseDomain, "acme.ownscale")
 	}
 }
 

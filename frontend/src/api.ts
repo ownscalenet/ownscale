@@ -82,13 +82,6 @@ export function logout() {
   return request<void>('/api/logout', { method: 'POST' })
 }
 
-export function createOrganization(subdomain: string) {
-  return request<{ organization: Organization }>('/api/organizations', {
-    method: 'POST',
-    body: JSON.stringify({ subdomain }),
-  })
-}
-
 export interface MachinesResponse {
   machines: Machine[]
   users: HeadscaleUser[]

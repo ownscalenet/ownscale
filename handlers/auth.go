@@ -66,11 +66,6 @@ func emailVerifiedFromGothUser(gothUser goth.User) bool {
 	return false
 }
 
-// AuthCallback completes the OAuth flow, finds or creates the local user
-// record, stores the user id in the session, and redirects into the app
-// (the SPA root, which loads GET /api/session client-side). First-time
-// users without an organization yet are routed by the SPA itself to the
-// organization creation form (see CreateOrganization).
 func (h *Handlers) AuthCallback(w http.ResponseWriter, r *http.Request) {
 	gothUser, err := gothic.CompleteUserAuth(w, r)
 	if err != nil {
@@ -117,6 +112,23 @@ func (h *Handlers) AuthCallback(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.queries.TouchUserLastLogin(ctx, user.ID); err != nil {
 		h.logger.Error("touch user last login", "error", err)
+	}
+
+	if !user.OrganizationID.Valid {
+		org, err := h.provisioner.Take(ctx)
+		if err != nil {
+			h.serverError(w, err)
+			return
+		}
+		if err := h.queries.SetUserOrganizationAndRole(ctx, sqlcgen.SetUserOrganizationAndRoleParams{
+			OrganizationID: sql.NullString{String: org.ID, Valid: true},
+			Role:           RoleOwner,
+			ID:             user.ID,
+		}); err != nil {
+			h.serverError(w, err)
+			return
+		}
+		user.OrganizationID = sql.NullString{String: org.ID, Valid: true}
 	}
 
 	if err := auth.StoreUserSession(w, r, user.ID); err != nil {

@@ -6,7 +6,6 @@ package orgs
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 
@@ -130,12 +129,12 @@ func (s *Service) Provision(ctx context.Context, orgID string) (err error) {
 func (s *Service) provision(ctx context.Context, org sqlcgen.Organization) error {
 	subdomain := org.Subdomain
 
-	clientID, err := randomHex(8)
+	clientID, err := randomAlphaNum(8)
 	if err != nil {
 		return err
 	}
 	clientID = "os_" + subdomain + "_" + clientID
-	clientSecret, err := randomHex(32)
+	clientSecret, err := randomAlphaNum(32)
 	if err != nil {
 		return err
 	}
@@ -220,12 +219,18 @@ func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organ
 	return org, nil
 }
 
-func randomHex(n int) (_ string, err error) {
-	defer derrors.Wrap(&err, "orgs.randomHex(%d)", n)
+// randomAlphaNum generates a random os-prefixed alphanumeric string of 6 characters.
+func randomAlphaNum(n int) (_ string, err error) {
+	defer derrors.Wrap(&err, "orgs.randomSubdomain()")
 
+	const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
 	buf := make([]byte, n)
 	if _, err := rand.Read(buf); err != nil {
 		return "", err
 	}
-	return hex.EncodeToString(buf), nil
+	suffix := make([]byte, n)
+	for i, b := range buf {
+		suffix[i] = chars[int(b)%len(chars)]
+	}
+	return "os" + string(suffix), nil
 }

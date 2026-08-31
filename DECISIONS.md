@@ -36,3 +36,7 @@ that. Drawbacks: two-phase is more complicated than a regular list/restore.
 Additionally, restoring is done manually. At startup, ownscale will
 check the health of existing databases against the backup and fail when something
 is off.
+
+### 7. docker default-address-pools gets exhausted
+By default docker only allows 32 networks, so at max there are 32 organizations.
+To increase, edit /etc/docker/daemon.json and reload docker.

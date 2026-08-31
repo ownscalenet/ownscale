@@ -5,6 +5,7 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"reflect"
 	"testing"
 	"time"
 
@@ -54,43 +55,107 @@ func newTestService(t *testing.T) *Service {
 	return NewService(queries, ctl, "example.com", "https://auth.example.com", config.DerpConfig{})
 }
 
-func TestProvisionerSignalProvisionsImmediately(t *testing.T) {
+func TestProvisionerTakeReturnsProvisionedOrganization(t *testing.T) {
 	svc := newTestService(t)
-	org, err := svc.CreatePending(t.Context(), "acme")
-	if err != nil {
-		t.Fatalf("CreatePending: %v", err)
-	}
+	p := NewProvisioner(svc, discardLogger(), time.Hour, 1)
 
-	// A long poll interval means the org would never become active in
-	// this test's lifetime via polling alone; only Signal should matter.
-	p := NewProvisioner(svc, discardLogger(), time.Hour)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	go func() { _ = p.Run(ctx) }()
 
-	p.Signal(org.ID)
-	waitForStatus(t, svc, org.ID, "active")
+	org, err := p.Take(ctx)
+	if err != nil {
+		t.Fatalf("Take: %v", err)
+	}
+	if org.Status != "active" {
+		t.Errorf("org.Status = %q, want %q", org.Status, "active")
+	}
 }
 
-func TestProvisionerPollPicksUpPendingOrganizations(t *testing.T) {
+// TestProvisionerReplenishesAfterTake checks that removing an organization
+// from the pool causes another to be produced to take its place, up to the
+// configured capacity.
+func TestProvisionerReplenishesAfterTake(t *testing.T) {
 	svc := newTestService(t)
-	org, err := svc.CreatePending(t.Context(), "acme")
+	p := NewProvisioner(svc, discardLogger(), time.Hour, 1)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	go func() { _ = p.Run(ctx) }()
+
+	first, err := p.Take(ctx)
+	if err != nil {
+		t.Fatalf("first Take: %v", err)
+	}
+	second, err := p.Take(ctx)
+	if err != nil {
+		t.Fatalf("second Take: %v", err)
+	}
+	if first.ID == second.ID {
+		t.Errorf("second Take returned the same organization as the first: %q", first.ID)
+	}
+	if second.Status != "active" {
+		t.Errorf("second.Status = %q, want %q", second.Status, "active")
+	}
+}
+
+// TestProvisionerRecoversPendingOnStart checks that an organization left
+// "pending" (e.g. by a process that crashed between creating and pooling
+// it) is provisioned and pooled as soon as Run starts, without waiting for
+// the replenish loop to generate a brand new one.
+func TestProvisionerRecoversPendingOnStart(t *testing.T) {
+	svc := newTestService(t)
+	pending, err := svc.CreatePending(t.Context(), "acme")
 	if err != nil {
 		t.Fatalf("CreatePending: %v", err)
 	}
 
-	// No Signal call: only the poll loop should pick this org up.
-	p := NewProvisioner(svc, discardLogger(), 20*time.Millisecond)
+	p := NewProvisioner(svc, discardLogger(), time.Hour, 1)
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
-	go func() { _ = p.Run(ctx) }()
+	go func() { p.Run(ctx) }()
 
-	waitForStatus(t, svc, org.ID, "active")
+	expected := []string{
+		"seed-aaaa",
+		"seed-bbbb",
+		"seed-cccc",
+		"seed-dddd",
+		"seed-eeee",
+		"seed-ffff",
+		pending.ID,
+	}
+	got := []string{}
+	for range 6 + 1 { // 6 from seed, 1 from testcase
+		org, err := p.Take(ctx)
+		if err != nil {
+			t.Fatalf("Take: %v", err)
+		}
+		if org.Status != "active" {
+			t.Errorf("org.Status = %q, want %q", org.Status, "active")
+		}
+		got = append(got, org.ID)
+	}
+	if !reflect.DeepEqual(expected, got) {
+		t.Errorf("Take returned orgs %q, want the recovered pending orgs %q", got, expected)
+	}
+}
+
+func TestProvisionerTakeReturnsContextErrorWhenPoolEmpty(t *testing.T) {
+	svc := newTestService(t)
+	// A Provisioner that's never Run: the pool never fills, so Take must
+	// return once ctx is done instead of blocking forever.
+	p := NewProvisioner(svc, discardLogger(), time.Hour, 1)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
+	defer cancel()
+	if _, err := p.Take(ctx); err == nil {
+		t.Fatal("Take: want error when the pool never fills and ctx is done, got nil")
+	}
 }
 
 func TestProvisionerRunStopsOnContextCancel(t *testing.T) {
 	svc := newTestService(t)
-	p := NewProvisioner(svc, discardLogger(), time.Hour)
+	p := NewProvisioner(svc, discardLogger(), time.Hour, 1)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
@@ -105,22 +170,6 @@ func TestProvisionerRunStopsOnContextCancel(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("Run did not return after context cancellation")
 	}
-}
-
-func waitForStatus(t *testing.T, svc *Service, orgID, want string) {
-	t.Helper()
-	deadline := time.Now().Add(3 * time.Second)
-	for time.Now().Before(deadline) {
-		org, err := svc.queries.GetOrganization(t.Context(), orgID)
-		if err != nil {
-			t.Fatalf("GetOrganization: %v", err)
-		}
-		if org.Status == want {
-			return
-		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	t.Fatalf("organization status did not become %q within the deadline", want)
 }
 
 func discardLogger() *slog.Logger {

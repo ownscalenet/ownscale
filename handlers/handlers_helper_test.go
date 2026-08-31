@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"database/sql"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -87,7 +88,7 @@ func newTestHandlers(t *testing.T, withOrgs bool) (*Handlers, *dbpkg.TxQueries) 
 		ctl = newTestCtl(t, noopDockerAPI())
 		baseDomain = testBaseDomain
 	}
-	return New(queries, ctl, baseDomain, nil, discardLogger(), config.DerpConfig{}), queries
+	return New(queries, ctl, baseDomain, nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{}), queries
 }
 
 // withActiveOrg attaches (caller, org) to req's context, as RequireActiveOrg
@@ -95,6 +96,12 @@ func newTestHandlers(t *testing.T, withOrgs bool) (*Handlers, *dbpkg.TxQueries) 
 func withActiveOrg(req *http.Request, caller sqlcgen.User, org sqlcgen.Organization) *http.Request {
 	ctx := context.WithValue(req.Context(), activeOrgContextKey, activeOrgContext{caller: &caller, org: org})
 	return req.WithContext(ctx)
+}
+
+// withTestUser returns req with user attached to its context, as
+// auth.RequireAuthAPI middleware would for an authenticated request.
+func withTestUser(req *http.Request, user sqlcgen.User) *http.Request {
+	return req.WithContext(auth.WithUser(req.Context(), &user))
 }
 
 // withMachinesClient attaches client to req's context, as
@@ -118,6 +125,30 @@ func insertUser(t *testing.T, queries *dbpkg.TxQueries) sqlcgen.User {
 	})
 	if err != nil {
 		t.Fatalf("insertUser: %v", err)
+	}
+	return user
+}
+
+func insertUserWithOrg(t *testing.T, queries *dbpkg.TxQueries) sqlcgen.User {
+	t.Helper()
+	user := insertUser(t, queries)
+	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
+		ID:        xid.New().String(),
+		Subdomain: "acme-" + xid.New().String(),
+	})
+	if err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+	if err := queries.SetUserOrganizationAndRole(t.Context(), sqlcgen.SetUserOrganizationAndRoleParams{
+		OrganizationID: sql.NullString{String: org.ID, Valid: true},
+		Role:           RoleOwner,
+		ID:             user.ID,
+	}); err != nil {
+		t.Fatalf("SetUserOrganizationAndRole: %v", err)
+	}
+	user, err = queries.GetUserByID(t.Context(), user.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID: %v", err)
 	}
 	return user
 }

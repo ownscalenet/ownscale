@@ -1,11 +1,14 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"testing"
 
 	"github.com/ownscalenet/ownscale/auth"
+	"github.com/ownscalenet/ownscale/db/sqlcgen"
 
 	"github.com/markbates/goth"
 	"github.com/markbates/goth/gothic"
@@ -100,19 +103,10 @@ func TestBeginAuthNoNextParam(t *testing.T) {
 	}
 }
 
-// TestAuthCallbackRedirectsToNextCookie verifies that AuthCallback reads
-// the redirect target from the dedicated next cookie set by BeginAuth
-// (rather than gothic's session, which is what caused the original bug:
-// gothic.BeginAuthHandler clobbers a "next" value stored in its own
-// session before it runs) and redirects there instead of falling back to
-// "/". This directly reproduces the invite-accept flow: an unauthenticated
-// visitor hits /invite/<token>, gets redirected through /login?next=... ->
-// /auth/oidc?next=... -> the IdP -> back to this callback, and should land
-// on /invite/<token> again, not /.
 func TestAuthCallbackRedirectsToNextCookie(t *testing.T) {
 	setupSessions()
 	h, queries := newTestHandlers(t, false)
-	user := insertUser(t, queries)
+	user := insertUserWithOrg(t, queries)
 
 	orig := gothic.CompleteUserAuth
 	t.Cleanup(func() { gothic.CompleteUserAuth = orig })
@@ -157,7 +151,7 @@ func TestAuthCallbackRedirectsToNextCookie(t *testing.T) {
 func TestAuthCallbackNoNextCookieFallsBackToRoot(t *testing.T) {
 	setupSessions()
 	h, queries := newTestHandlers(t, false)
-	user := insertUser(t, queries)
+	user := insertUserWithOrg(t, queries)
 
 	orig := gothic.CompleteUserAuth
 	t.Cleanup(func() { gothic.CompleteUserAuth = orig })
@@ -181,6 +175,62 @@ func TestAuthCallbackNoNextCookieFallsBackToRoot(t *testing.T) {
 	}
 	if loc := rec.Header().Get("Location"); loc != "/" {
 		t.Errorf("Location = %q, want %q", loc, "/")
+	}
+}
+
+var randomSubdomainRe = regexp.MustCompile(`^[a-z0-9]+$`)
+
+func TestAuthCallbackAutoAssignsOrganization(t *testing.T) {
+	setupSessions()
+	h, queries := newTestHandlers(t, true)
+
+	provisionerCtx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	h.StartProvisioner(provisionerCtx)
+
+	orig := gothic.CompleteUserAuth
+	t.Cleanup(func() { gothic.CompleteUserAuth = orig })
+	gothic.CompleteUserAuth = func(w http.ResponseWriter, r *http.Request) (goth.User, error) {
+		return goth.User{
+			Provider: "oidc",
+			UserID:   "new-user-id",
+			Email:    "new-user@example.com",
+			Name:     "New User",
+		}, nil
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/oidc/callback", nil)
+	rec := httptest.NewRecorder()
+
+	h.AuthCallback(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusSeeOther, rec.Body.String())
+	}
+
+	user, err := queries.GetUserByProvider(t.Context(), sqlcgen.GetUserByProviderParams{
+		Provider:       "oidc",
+		ProviderUserID: "new-user-id",
+	})
+	if err != nil {
+		t.Fatalf("GetUserByProvider: %v", err)
+	}
+	if !user.OrganizationID.Valid {
+		t.Fatal("OrganizationID: want it set after AuthCallback, got unset")
+	}
+	if user.Role != RoleOwner {
+		t.Errorf("Role = %q, want %q", user.Role, RoleOwner)
+	}
+
+	org, err := queries.GetOrganization(t.Context(), user.OrganizationID.String)
+	if err != nil {
+		t.Fatalf("GetOrganization: %v", err)
+	}
+	if org.Status != "active" {
+		t.Errorf("organization status = %q, want %q", org.Status, "active")
+	}
+	if !randomSubdomainRe.MatchString(org.Subdomain) {
+		t.Errorf("organization subdomain = %q, want match for %s", org.Subdomain, randomSubdomainRe)
 	}
 }
 

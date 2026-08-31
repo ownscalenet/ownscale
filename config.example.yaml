@@ -117,3 +117,10 @@ derp:
   region_id: 900
   region_code: "custom"
   region_name: "Ownscale DERP"
+
+# Configures the background pool of auto-provisioned organizations that new
+# users are assigned from on login (see orgs.Provisioner).
+provisioner:
+  # Maximum number of fully-provisioned organizations kept ready in the
+  # pool at once. Leave at 0 (the default) to use the built-in default.
+  queue_capacity: 0

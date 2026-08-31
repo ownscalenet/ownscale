@@ -103,6 +103,7 @@ archive: docker-image
 purge:
 	# rm all except data/local-ca
 	sudo rm -rf data/headscale data/headplane data/.litestream-backups data/.ownscale.sqlite-litestream
+	sudo rm -rf data/backup
 	sudo rm -f data/*.*
 	docker ps -aq --filter "label=ownscale.organization=true" | xargs -r docker stop | xargs -r docker rm
 

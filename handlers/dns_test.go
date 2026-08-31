@@ -31,8 +31,8 @@ func TestGetDNSSettingsReflectsProvisionedDefaults(t *testing.T) {
 	if !resp.DNS.MagicDNS {
 		t.Error("MagicDNS = false, want true (headscale's default)")
 	}
-	if resp.DNS.BaseDomain != "acme.headscale.internal" {
-		t.Errorf("BaseDomain = %q, want %q", resp.DNS.BaseDomain, "acme.headscale.internal")
+	if resp.DNS.BaseDomain != "acme.ownscale" {
+		t.Errorf("BaseDomain = %q, want %q", resp.DNS.BaseDomain, "acme.ownscale")
 	}
 	if resp.CanManage {
 		t.Error("canManage = true for a plain member, want false")
@@ -43,7 +43,7 @@ func TestUpdateDNSSettingsRequiresManager(t *testing.T) {
 	h, org, users := newAccessControlTestHandlers(t, RoleMember)
 	member := users[0]
 
-	body := `{"baseDomain":"acme.headscale.internal","magicDns":true}`
+	body := `{"baseDomain":"acme.ownscale","magicDns":true}`
 	req := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPut, "/api/dns", strings.NewReader(body)), member), member, org)
 	rec := httptest.NewRecorder()
 	h.UpdateDNSSettings(rec, req)
@@ -57,7 +57,7 @@ func TestUpdateDNSSettingsRejectsInvalidInput(t *testing.T) {
 	h, org, users := newAccessControlTestHandlers(t, RoleOwner)
 	owner := users[0]
 
-	body := `{"baseDomain":"acme.headscale.internal","nameservers":["not-an-ip"]}`
+	body := `{"baseDomain":"acme.ownscale","nameservers":["not-an-ip"]}`
 	req := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPut, "/api/dns", strings.NewReader(body)), owner), owner, org)
 	rec := httptest.NewRecorder()
 	h.UpdateDNSSettings(rec, req)
@@ -71,8 +71,8 @@ func TestUpdateDNSSettingsPersistsAndReturnsOK(t *testing.T) {
 	h, org, users := newAccessControlTestHandlers(t, RoleOwner)
 	owner := users[0]
 
-	body := `{"baseDomain":"acme.headscale.internal","magicDns":true,"nameservers":{"global":["1.1.1.1","8.8.8.8"]},` +
-		`"searchDomains":["internal.acme.example.com"],"extraRecords":[{"name":"server.acme.headscale.internal","type":"A","value":"10.0.0.1"}]}`
+	body := `{"baseDomain":"acme.ownscale","magicDns":true,"nameservers":{"global":["1.1.1.1","8.8.8.8"]},` +
+		`"searchDomains":["internal.acme.example.com"],"extraRecords":[{"name":"server.acme.ownscale","type":"A","value":"10.0.0.1"}]}`
 	req := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPut, "/api/dns", strings.NewReader(body)), owner), owner, org)
 	rec := httptest.NewRecorder()
 	h.UpdateDNSSettings(rec, req)

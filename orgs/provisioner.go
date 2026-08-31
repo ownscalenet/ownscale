@@ -2,119 +2,156 @@ package orgs
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"time"
+
+	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
 
-// defaultPollInterval bounds how long a pending organization can sit
-// unprovisioned if its Signal is ever missed (e.g. the process was
-// restarted between CreatePending and the signal being sent). It's a
-// safety net, not the common path -- see Signal.
-const defaultPollInterval = 60 * time.Second
+const (
+	defaultQueueCapacity = 4
+	defaultRetryBackoff  = 5 * time.Second
+	provisionTimeout     = 2 * time.Minute
+	maxSubdomainAttempts = 5
+)
 
-// provisionTimeout bounds how long a single organization's provisioning
-// (Docker container creation, image pulls, waiting for headplane to start
-// serving, ...) is allowed to run. Run processes organizations one at a
-// time from a single goroutine, so without a bound here, one truly stuck
-// attempt would block every other organization from ever being
-// provisioned.
-const provisionTimeout = 2 * time.Minute
-
-// Provisioner runs organization provisioning (Service.Provision) in the
-// background, off the request path that creates the pending organizations
-// row. Creating an organization's Docker network is picked up by the host
-// OS as a network change, which causes browsers (notably Firefox) to drop
-// in-flight requests; running it here, instead of inline in the HTTP
-// handler that inserts the pending row, avoids that entirely.
-//
-// It provisions organizations two ways:
-//   - immediately, when Signal(orgID) is called (the common case: right
-//     after a web request creates a pending organization)
-//   - on every poll tick, by picking up any organization still "pending"
-//     (covers a missed/lost signal, e.g. a restart between the DB insert
-//     and the signal being sent)
-//
-// Run processes both from a single goroutine, so two attempts to
-// provision the same organization can never race each other.
+// Provisioner keeps a small pool of fully-provisioned, not-yet-assigned
+// organizations ready to hand out.
 type Provisioner struct {
 	svc          *Service
 	logger       *slog.Logger
-	pollInterval time.Duration
-	notify       chan string
+	retryBackoff time.Duration
+	ready        chan sqlcgen.Organization
 }
 
-// NewProvisioner builds a Provisioner backed by svc. If pollInterval is
-// zero, defaultPollInterval is used.
-func NewProvisioner(svc *Service, logger *slog.Logger, pollInterval time.Duration) *Provisioner {
-	if pollInterval <= 0 {
-		pollInterval = defaultPollInterval
+func NewProvisioner(svc *Service, logger *slog.Logger, retryBackoff time.Duration, queueCapacity int) *Provisioner {
+	if retryBackoff <= 0 {
+		retryBackoff = defaultRetryBackoff
+	}
+	if queueCapacity <= 0 {
+		queueCapacity = defaultQueueCapacity
 	}
 	return &Provisioner{
 		svc:          svc,
 		logger:       logger,
-		pollInterval: pollInterval,
-		// Buffered so Signal never blocks the caller (the HTTP handler)
-		// waiting for Run's loop to catch up; a handful of concurrent
-		// organization creations is far more than expected in practice.
-		notify: make(chan string, 16),
+		retryBackoff: retryBackoff,
+		ready:        make(chan sqlcgen.Organization, queueCapacity),
 	}
 }
 
-// Signal requests that orgID be provisioned as soon as possible, without
-// waiting for the next poll tick. It never blocks: if the notify channel
-// is full (Run is falling behind), the signal is dropped and orgID is
-// still picked up by the next poll tick.
-func (p *Provisioner) Signal(orgID string) {
+// Take removes a fully-provisioned organization from the pool, blocking
+// until one is available or ctx is done (in which case it returns
+// ctx.Err()).
+func (p *Provisioner) Take(ctx context.Context) (sqlcgen.Organization, error) {
 	select {
-	case p.notify <- orgID:
-	default:
-		p.logger.Warn("provisioner notify channel full, dropping signal (will be picked up by next poll)", "organization_id", orgID)
+	case org := <-p.ready:
+		return org, nil
+	case <-ctx.Done():
+		return sqlcgen.Organization{}, ctx.Err()
 	}
 }
 
-// Run provisions pending organizations until ctx is canceled, at which
-// point it returns nil. It provisions once on start (so organizations left
-// pending across a restart don't wait a full pollInterval), then again on
-// every pollInterval tick or Signal, in a single goroutine so provisioning
-// attempts for a given organization are never run concurrently with each
-// other.
+// Run recovers any organizations left "pending" from a previous restart
+// (provisioning and pooling each of them), then replenishes the pool forever.
 func (p *Provisioner) Run(ctx context.Context) error {
-	ticker := time.NewTicker(p.pollInterval)
-	defer ticker.Stop()
-
-	p.provisionPending(ctx)
-	for {
-		select {
-		case <-ctx.Done():
+	if err := p.recoverPending(ctx); err != nil {
+		if ctx.Err() != nil {
 			return nil
-		case orgID := <-p.notify:
-			p.provisionOne(ctx, orgID)
-		case <-ticker.C:
-			p.provisionPending(ctx)
+		}
+		return err
+	}
+
+	for {
+		if err := p.replenishOne(ctx); err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			p.logger.Error("replenish organization pool", "error", err)
+			select {
+			case <-ctx.Done():
+				return nil
+			case <-time.After(p.retryBackoff):
+			}
+		}
+		if ctx.Err() != nil {
+			return nil
 		}
 	}
 }
 
-// provisionPending provisions every organization currently "pending".
-func (p *Provisioner) provisionPending(ctx context.Context) {
+// recoverPending provisions every organization left "pending" in the database.
+func (p *Provisioner) recoverPending(ctx context.Context) error {
 	pending, err := p.svc.queries.ListPendingOrganizations(ctx)
 	if err != nil {
-		p.logger.Error("list pending organizations", "error", err)
-		return
+		return err
 	}
+	provisioned := make([]sqlcgen.Organization, 0, len(pending))
 	for _, org := range pending {
-		p.provisionOne(ctx, org.ID)
+		org, err := p.provisionOne(ctx, org.ID)
+		if err != nil {
+			p.logger.Error("recover pending organization", "organization_id", org.ID, "error", err)
+			continue
+		}
+		provisioned = append(provisioned, org)
 	}
+	for _, org := range provisioned {
+		if err := p.push(ctx, org); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
-// provisionOne provisions a single organization, logging (rather than
-// returning) any error since it's run from Run's loop with no caller left
-// to hand the error to. It bounds the attempt with provisionTimeout so a
-// stuck provision can't block every other organization forever.
-func (p *Provisioner) provisionOne(ctx context.Context, orgID string) {
+// replenishOne generates a new organization (retrying its random subdomain
+// on collision), provisions it, and pushes it onto the pool, blocking if
+// the pool is already full.
+func (p *Provisioner) replenishOne(ctx context.Context) error {
+	org, err := p.createPendingWithRandomSubdomain(ctx)
+	if err != nil {
+		return err
+	}
+	provisioned, err := p.provisionOne(ctx, org.ID)
+	if err != nil {
+		return err
+	}
+	return p.push(ctx, provisioned)
+}
+
+// createPendingWithRandomSubdomain creates a pending organization under a
+// randomly generated subdomain, retrying with a fresh candidate up to
+// maxSubdomainAttempts times if one happens to collide with an existing
+// organization.
+func (p *Provisioner) createPendingWithRandomSubdomain(ctx context.Context) (sqlcgen.Organization, error) {
+	var lastErr error
+	for attempt := 0; attempt < maxSubdomainAttempts; attempt++ {
+		subdomain, err := randomAlphaNum(6)
+		if err != nil {
+			return sqlcgen.Organization{}, err
+		}
+		org, err := p.svc.CreatePending(ctx, subdomain)
+		if err == nil {
+			return org, nil
+		}
+		lastErr = err
+	}
+	return sqlcgen.Organization{}, lastErr
+}
+
+func (p *Provisioner) provisionOne(ctx context.Context, orgID string) (sqlcgen.Organization, error) {
 	ctx, cancel := context.WithTimeout(ctx, provisionTimeout)
 	defer cancel()
 	if err := p.svc.Provision(ctx, orgID); err != nil {
-		p.logger.Error("provision organization", "organization_id", orgID, "error", err)
+		return sqlcgen.Organization{}, err
+	}
+	return p.svc.queries.GetOrganization(ctx, orgID)
+}
+
+func (p *Provisioner) push(ctx context.Context, org sqlcgen.Organization) error {
+	select {
+	case p.ready <- org:
+		return nil
+	case <-ctx.Done():
+		return errors.New("provisioner stopped while waiting to pool organization")
 	}
 }

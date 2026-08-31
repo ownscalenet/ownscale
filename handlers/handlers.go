@@ -30,7 +30,7 @@ type Handlers struct {
 // New builds the Handlers, wiring queries/ctl/baseDomain into the
 // orgs.Service used for organization creation and the orgs.Provisioner
 // that runs provisioning in the background.
-func New(queries *db.TxQueries, ctl *dockerctl.Ctl, baseDomain string, oidc *oidcprovider.Storage, logger *slog.Logger, derpCfg config.DerpConfig) *Handlers {
+func New(queries *db.TxQueries, ctl *dockerctl.Ctl, baseDomain string, oidc *oidcprovider.Storage, logger *slog.Logger, derpCfg config.DerpConfig, provisionerCfg config.ProvisionerConfig) *Handlers {
 	issuer := ""
 	if oidc != nil {
 		issuer = oidc.Issuer()
@@ -42,7 +42,7 @@ func New(queries *db.TxQueries, ctl *dockerctl.Ctl, baseDomain string, oidc *oid
 		oidc:        oidc,
 		logger:      logger,
 		orgs:        orgSvc,
-		provisioner: orgs.NewProvisioner(orgSvc, logger, 0),
+		provisioner: orgs.NewProvisioner(orgSvc, logger, 0, provisionerCfg.QueueCapacity),
 		hs:          headscaleclient.NewRegistry(ctl),
 	}
 }
