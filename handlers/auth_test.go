@@ -234,6 +234,55 @@ func TestAuthCallbackAutoAssignsOrganization(t *testing.T) {
 	}
 }
 
+// TestAuthCallbackSkipsAutoAssignForInviteFlow verifies that a first-time
+// login redirected via /login?next=/invite/{token} (see AcceptInvite.tsx)
+// does not get auto-assigned a pool organization: doing so would leave the
+// user already "in an organization" by the time they land back on the
+// invite page, permanently blocking AcceptInvite's one-org-per-user check.
+func TestAuthCallbackSkipsAutoAssignForInviteFlow(t *testing.T) {
+	setupSessions()
+	h, queries := newTestHandlers(t, true)
+
+	provisionerCtx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	h.StartProvisioner(provisionerCtx)
+
+	orig := gothic.CompleteUserAuth
+	t.Cleanup(func() { gothic.CompleteUserAuth = orig })
+	gothic.CompleteUserAuth = func(w http.ResponseWriter, r *http.Request) (goth.User, error) {
+		return goth.User{
+			Provider: "oidc",
+			UserID:   "invitee-user-id",
+			Email:    "invitee@example.com",
+			Name:     "Invitee User",
+		}, nil
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/oidc/callback", nil)
+	req.AddCookie(&http.Cookie{Name: nextCookieName, Value: "/invite/testtoken"})
+	rec := httptest.NewRecorder()
+
+	h.AuthCallback(rec, req)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusSeeOther, rec.Body.String())
+	}
+	if loc := rec.Header().Get("Location"); loc != "/invite/testtoken" {
+		t.Errorf("Location = %q, want %q", loc, "/invite/testtoken")
+	}
+
+	user, err := queries.GetUserByProvider(t.Context(), sqlcgen.GetUserByProviderParams{
+		Provider:       "oidc",
+		ProviderUserID: "invitee-user-id",
+	})
+	if err != nil {
+		t.Fatalf("GetUserByProvider: %v", err)
+	}
+	if user.OrganizationID.Valid {
+		t.Errorf("OrganizationID = %+v, want unset so AcceptInvite can still assign the invited organization", user.OrganizationID)
+	}
+}
+
 func TestLogout(t *testing.T) {
 	h, queries := newTestHandlers(t, false)
 	user := insertUser(t, queries)

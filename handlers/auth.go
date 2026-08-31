@@ -30,6 +30,10 @@ const nextCookieName = "ownscale_next"
 // the redirect to the upstream IdP and back.
 const nextCookieMaxAge = 10 * 60 // 10 minutes, in seconds
 
+func isInviteAcceptPath(next string) bool {
+	return strings.HasPrefix(next, "/invite/")
+}
+
 // BeginAuth kicks off the OAuth flow for the {provider} path segment.
 func (h *Handlers) BeginAuth(w http.ResponseWriter, r *http.Request) {
 	if next := r.URL.Query().Get("next"); next != "" {
@@ -114,7 +118,26 @@ func (h *Handlers) AuthCallback(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("touch user last login", "error", err)
 	}
 
-	if !user.OrganizationID.Valid {
+	var next string
+	if c, err := r.Cookie(nextCookieName); err == nil {
+		next = c.Value
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     nextCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteNoneMode,
+	})
+
+	// Skip auto-assignment for a user who's mid-flow accepting an invite
+	// (see AcceptInvite.tsx's /login?next=/invite/{token} redirect):
+	// otherwise they'd land back on the invite page already owning a fresh
+	// organization, and AcceptInvite's one-org-per-user check would reject
+	// the invite before they ever got a chance to accept it.
+	if !user.OrganizationID.Valid && !isInviteAcceptPath(next) {
 		org, err := h.provisioner.Take(ctx)
 		if err != nil {
 			h.serverError(w, err)
@@ -135,20 +158,6 @@ func (h *Handlers) AuthCallback(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, err)
 		return
 	}
-
-	var next string
-	if c, err := r.Cookie(nextCookieName); err == nil {
-		next = c.Value
-	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     nextCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteNoneMode,
-	})
 	if nextID := oidcprovider.AuthRequestIDFromNext(next); nextID != "" && h.oidc != nil {
 		if err := h.oidc.AuthorizeAuthRequest(nextID, user.ID); err != nil {
 			h.serverError(w, err)

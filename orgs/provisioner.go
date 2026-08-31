@@ -124,7 +124,7 @@ func (p *Provisioner) replenishOne(ctx context.Context) error {
 // organization.
 func (p *Provisioner) createPendingWithRandomSubdomain(ctx context.Context) (sqlcgen.Organization, error) {
 	var lastErr error
-	for attempt := 0; attempt < maxSubdomainAttempts; attempt++ {
+	for range maxSubdomainAttempts {
 		subdomain, err := randomAlphaNum(6)
 		if err != nil {
 			return sqlcgen.Organization{}, err
