@@ -19,8 +19,8 @@ export default function Login() {
 
   // `next` may point at a backend-only route such as
   // /authorize/callback?id=... (used by the OIDC provider to finish an
-  // authorization request for another organization's headscale/headplane
-  // SSO login). That route isn't part of the SPA's client-side router, so
+  // authorization request for another organization's headscale SSO
+  // login). That route isn't part of the SPA's client-side router, so
   // it must be reached via a real HTTP navigation, not React Router's
   // <Navigate>, or the browser is left on a blank page that matches no
   // route. A full navigation is used whenever `next` is present; plain "no

@@ -83,7 +83,7 @@ curl_api() {
 	fi
 }
 
-log "provisioning organization $SUBDOMAIN (real headscale/headplane containers)..."
+log "provisioning organization $SUBDOMAIN (a real headscale container)..."
 "${OSA[@]}" organization create "$SUBDOMAIN" >&2
 
 log "minting a session for the owner ($OWNER_EMAIL), attached to $SUBDOMAIN..."

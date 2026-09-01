@@ -5,11 +5,14 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
 	"maps"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -28,7 +31,27 @@ import (
 	dbpkg "github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/dockerctl"
 	"github.com/ownscalenet/ownscale/dockerctl/dockerfake"
+	"github.com/ownscalenet/ownscale/headscaleclient"
 )
+
+// newFakePolicyClient returns a headscaleclient.Client pointed at an
+// httptest.Server implementing headscale's policy endpoint (GET/PUT
+// /api/v1/policy), accepting any policy content unconditionally. Used to
+// override dockerctl.Ctl.MintClientFn in tests so CreateOrganization's
+// default-policy seeding step doesn't attempt a real network round trip to
+// a container hostname that doesn't actually exist under dockerfake.
+func newFakePolicyClient(t *testing.T) *headscaleclient.Client {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/policy", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"policy":""}`)
+	})
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	host := strings.TrimPrefix(server.URL, "http://")
+	return headscaleclient.New(host, "test-api-key")
+}
 
 func newTestQueries(t *testing.T) *dbpkg.TxQueries {
 	t.Helper()
@@ -91,6 +114,9 @@ func TestServiceCreateCreatesOIDCClient(t *testing.T) {
 	ctl, err := dockerctl.NewWithClient(api, dataDir, "", slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("dockerctl.NewWithClient: %v", err)
+	}
+	ctl.MintClientFn = func(ctx context.Context, subdomain string) (*headscaleclient.Client, error) {
+		return newFakePolicyClient(t), nil
 	}
 	t.Cleanup(func() { _ = ctl.Close() })
 

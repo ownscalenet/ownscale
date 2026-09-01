@@ -10,10 +10,10 @@
 // service) -- so its root certificate is a plain, already-existing file
 // from the very start. That lets every container that needs to trust it
 // (Caddy itself, which is configured to sign all its local certs from
-// this CA -- see etc/caddy/Caddyfile's "pki" block -- plus ownscale,
-// headscale, and headplane, which all just need to trust it) get there via
-// a single, static, read-only bind-mount, with no Docker-API file copying
-// or merging between containers at runtime.
+// this CA -- see etc/caddy/Caddyfile's "pki" block -- plus ownscale and
+// headscale, which just need to trust it) get there via a single, static,
+// read-only bind-mount, with no Docker-API file copying or merging between
+// containers at runtime.
 package localca
 
 import (

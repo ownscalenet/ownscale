@@ -70,9 +70,6 @@ func run() error {
 	}
 	defer ctl.Close()
 	ctx := context.Background()
-	if err := ctl.StreamAllLogs(ctx); err != nil {
-		logger.Warn("reattach organization container logs", "error", err)
-	}
 
 	queries := db.New(pool, logger)
 
@@ -81,7 +78,7 @@ func run() error {
 	// docker-compose.yml), so it's lost whenever Caddy's container gets
 	// recreated (image rebuild, `docker compose up`, ...). This covers the
 	// shared network (used by the ownscale app container itself), plus --
-	// since each organization's headscale/headplane containers live only on
+	// since each organization's headscale container lives only on
 	// their own isolated network, not the shared one -- every existing
 	// organization's own network individually, so their OIDC login doesn't
 	// silently break until the alias is restored.

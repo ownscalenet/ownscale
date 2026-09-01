@@ -1,11 +1,10 @@
 package handlers
 
-// Roles a user can hold within their organization, mirroring headplane's
-// role set for UI/data parity. Only RoleOwner and RoleAdmin are actually
-// enforced anywhere in ownscale today (see members.go/invites.go) -- the
-// others are stored and displayed for parity but don't yet gate any
-// ownscale-specific feature, since ownscale has no equivalent to
-// headplane's ACL/DNS/etc. admin surfaces to gate against.
+// Roles a user can hold within their organization. Only RoleOwner and
+// RoleAdmin are actually enforced anywhere in ownscale today (see
+// members.go/invites.go) -- the others are stored and displayed for
+// parity but don't yet gate any ownscale-specific feature, since ownscale
+// has no equivalent admin surfaces (ACL/DNS/etc.) to gate against yet.
 const (
 	RoleOwner        = "owner"
 	RoleAdmin        = "admin"

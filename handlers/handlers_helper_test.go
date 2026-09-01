@@ -57,12 +57,19 @@ func newTestQueries(t *testing.T) *dbpkg.TxQueries {
 
 // newTestCtl builds a *dockerctl.Ctl backed by api (whose zero value already
 // fakes every Docker call as a success), so organization creation can be
-// exercised without a real Docker daemon.
+// exercised without a real Docker daemon. It installs a fake MintClientFn
+// (backed by newFakePolicyServer) so CreateOrganization's default-policy
+// seeding step doesn't attempt a real network round trip to a container
+// hostname that doesn't actually exist under dockerfake.
 func newTestCtl(t *testing.T, api *dockerfake.API) *dockerctl.Ctl {
 	t.Helper()
 	ctl, err := dockerctl.NewWithClient(api, t.TempDir(), "", discardLogger())
 	if err != nil {
 		t.Fatalf("dockerctl.NewWithClient: %v", err)
+	}
+	ctl.MintClientFn = func(ctx context.Context, subdomain string) (*headscaleclient.Client, error) {
+		client, _ := newFakePolicyServer(t, "")
+		return client, nil
 	}
 	return ctl
 }

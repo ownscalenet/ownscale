@@ -15,7 +15,7 @@ HTTP to a custom binary protocol that most proxies (including Caddy, used
 for every other ownscale-managed service) break. `derper` therefore needs to
 own ports 80/443 (for its own Let's Encrypt cert) and UDP 3478 (STUN)
 directly, rather than sitting behind the same Caddy container that fronts
-`ownscale`, `dex`, and every organization's headscale/headplane containers.
+`ownscale`, `dex`, and every organization's headscale containers.
 
 The simplest way to satisfy that without any port juggling on the main
 ownscale host is to run `derper` on its own separate server, with its own

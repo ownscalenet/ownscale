@@ -5,8 +5,7 @@ import LineNumberedTextarea from '../components/LineNumberedTextarea'
 
 // cheatsheet is a static reference for headscale's HuJSON ACL policy
 // syntax (https://headscale.net/stable/ref/acls/). It never calls the API
-// -- it's just documentation rendered alongside the editor, mirroring
-// headplane's Access Control tab.
+// -- it's just documentation rendered alongside the editor.
 function Cheatsheet() {
   return (
     <div className="card bg-base-100 shadow h-full">

@@ -22,7 +22,7 @@ type ClientMinter interface {
 // persisted anywhere. A process restart simply mints a fresh key next
 // time a Client is needed for a given subdomain -- headscale allows any
 // number of simultaneously valid API keys, so this never invalidates keys
-// already handed out to anything else (e.g. headplane's own key).
+// already handed out to anything else.
 type Registry struct {
 	minter ClientMinter
 

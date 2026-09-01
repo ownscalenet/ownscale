@@ -117,7 +117,7 @@ func newOrganizationCommand(rootFlags *ff.FlagSet, configPath *string) *ff.Comma
 	organizationCmd := &ff.Command{
 		Name:      "organization",
 		Usage:     "osa organization SUBCOMMAND ...",
-		ShortHelp: "manage organizations (headscale/headplane containers)",
+		ShortHelp: "manage organizations (headscale containers)",
 		Flags:     organizationFlags,
 	}
 
@@ -204,7 +204,7 @@ func newOrganizationStartCommand(parent *ff.FlagSet, configPath *string) *ff.Com
 	return &ff.Command{
 		Name:      "start",
 		Usage:     "osa organization start [FLAGS]",
-		ShortHelp: "start every organization's headscale/headplane containers",
+		ShortHelp: "start every organization's headscale containers",
 		Flags:     flags,
 		Exec: func(ctx context.Context, args []string) error {
 			if len(args) != 0 {
@@ -230,7 +230,7 @@ func newOrganizationStopCommand(parent *ff.FlagSet, configPath *string) *ff.Comm
 	return &ff.Command{
 		Name:      "stop",
 		Usage:     "osa organization stop [FLAGS]",
-		ShortHelp: "gracefully stop every organization's headscale/headplane containers",
+		ShortHelp: "gracefully stop every organization's headscale containers",
 		Flags:     flags,
 		Exec: func(ctx context.Context, args []string) error {
 			if len(args) != 0 {
@@ -311,7 +311,7 @@ func listOrganizations(ctx context.Context, out io.Writer, queries *db.TxQueries
 	return nil
 }
 
-// startOrganizations starts the (pre-existing) headscale/headplane
+// startOrganizations starts the (pre-existing) headscale
 // containers for every organization recorded in queries. It's the
 // counterpart to stopOrganizations, for bringing everything back up after
 // a deliberate stop (or a host reboot where the containers' restart
@@ -323,7 +323,7 @@ func listOrganizations(ctx context.Context, out io.Writer, queries *db.TxQueries
 // network and on each organization's own isolated network (see
 // Ctl.EnsureCaddyNetworkAlias/EnsureCaddyNetworkAliasForOrg): those aliases
 // are set imperatively via the Docker API, so a host reboot or Caddy
-// container recreation drops them even though these headscale/headplane
+// container recreation drops them even though these headscale
 // containers keep running (or come back via their own restart policy),
 // silently breaking their OIDC login until they're restored.
 func startOrganizations(ctx context.Context, out io.Writer, logger *slog.Logger, queries *db.TxQueries, ctl *dockerctl.Ctl, domain string) error {
@@ -359,7 +359,7 @@ func startOrganizations(ctx context.Context, out io.Writer, logger *slog.Logger,
 	return nil
 }
 
-// stopOrganizations gracefully stops every headscale/headplane container
+// stopOrganizations gracefully stops every headscale container
 // across all organizations via ctl. It's a deliberate, operator-triggered
 // maintenance action (e.g. before a host reboot or `docker compose down`)
 // and is not run automatically on ownscale process shutdown, since these

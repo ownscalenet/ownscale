@@ -8,7 +8,7 @@
 // with no organization provisioning). Excluded from the default `go test
 // ./...` run via the "integration" build tag; run explicitly with
 // `go test -tags=integration ./...` (or `make test-integration`), which
-// requires Docker running on the host and the headscale/headplane images
+// requires Docker running on the host and the headscale image
 // already pulled.
 package server_test
 

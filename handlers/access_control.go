@@ -7,17 +7,23 @@ import (
 )
 
 // GetAccessControlPolicy handles GET /api/access-control. It returns the
-// caller's organization's stored headscale ACL policy (HuJSON), plus
-// whether the caller can edit it (owner/admin, mirroring ListMembers'
-// canManage). requireActiveOrg guarantees the org is active.
+// caller's organization's headscale ACL policy (HuJSON), plus whether the
+// caller can edit it (owner/admin, mirroring ListMembers' canManage).
+// RequireActiveOrg/RequireMachinesClient guarantee the org is active and
+// its headscale client is resolved.
 func (h *Handlers) GetAccessControlPolicy(w http.ResponseWriter, r *http.Request) {
-	caller, org, _ := orgFromContext(r)
+	caller, _, _ := orgFromContext(r)
+	client, _ := machinesClientFromContext(r)
 
-	content, err := h.orgs.ForOrg(org).GetACLPolicy(r.Context())
+	content, err := client.GetPolicy(r.Context())
 	if err != nil {
 		h.serverError(w, err)
 		return
 	}
+	// dockerctl.CreateOrganization seeds every organization with a default
+	// policy via headscale's own API at provisioning time, so an empty
+	// response here just means headscale genuinely has no policy -- return
+	// it as-is, with no special-casing.
 	h.writeJSON(w, http.StatusOK, map[string]any{
 		"content":   content,
 		"canManage": isManager(caller.Role),
@@ -26,16 +32,19 @@ func (h *Handlers) GetAccessControlPolicy(w http.ResponseWriter, r *http.Request
 
 // UpdateAccessControlPolicy handles PUT /api/access-control. Only an
 // owner/admin may edit the ACL policy. content is validated as HuJSON
-// before anything is persisted, so a malformed policy is rejected with a
-// 400 and a parser error message rather than reaching orgs.Service (which
-// re-validates as a safety net) or ever being uploaded to headscale.
-// requireActiveOrg guarantees the org is active.
+// before anything is sent to headscale, so a malformed policy is rejected
+// with a 400 and a parser error message; headscale itself may still reject
+// a syntactically valid policy (e.g. bad tag/user references), which is
+// also surfaced as a 400 rather than a 500. RequireActiveOrg/
+// RequireMachinesClient guarantee the org is active and its headscale
+// client is resolved.
 func (h *Handlers) UpdateAccessControlPolicy(w http.ResponseWriter, r *http.Request) {
-	caller, org, _ := orgFromContext(r)
+	caller, _, _ := orgFromContext(r)
 	if !isManager(caller.Role) {
 		h.writeError(w, http.StatusForbidden, "only owners and admins can edit the access control policy")
 		return
 	}
+	client, _ := machinesClientFromContext(r)
 
 	var req struct {
 		Content string `json:"content"`
@@ -48,8 +57,8 @@ func (h *Handlers) UpdateAccessControlPolicy(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := h.orgs.ForOrg(org).SetACLPolicy(r.Context(), req.Content); err != nil {
-		h.serverError(w, err)
+	if err := client.SetPolicy(r.Context(), req.Content); err != nil {
+		h.writeError(w, http.StatusBadRequest, "headscale rejected policy: "+err.Error())
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

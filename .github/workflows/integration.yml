@@ -25,7 +25,6 @@ jobs:
       - name: Pull required container images
         run: |
           docker pull headscale/headscale:0.29.3
-          docker pull ghcr.io/tale/headplane:0.7.0-shell
 
       - name: Run integration tests
         run: go test -tags=integration ./...

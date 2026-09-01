@@ -72,69 +72,6 @@ func (o *OrgService) applyHeadscaleConfig(ctx context.Context, txQueries *sqlcge
 	return nil
 }
 
-// GetACLPolicy returns o's stored HuJSON access control policy. Every
-// organization gets a default policy row inserted at provisioning time
-// (see Service.provision), so a missing row only happens for organizations
-// provisioned before this feature existed; those fall back to
-// dockerctl.DefaultACLPolicy rather than erroring.
-func (o *OrgService) GetACLPolicy(ctx context.Context) (_ string, err error) {
-	defer derrors.Wrap(&err, "o.GetACLPolicy(%q)", o.orgID)
-
-	cfg, err := o.queries.GetOrgConfig(ctx, sqlcgen.GetOrgConfigParams{
-		OrganizationID: o.orgID,
-		Path:           dockerctl.PolicyConfigPath,
-	})
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return dockerctl.DefaultACLPolicy, nil
-		}
-		return "", err
-	}
-	return cfg.Content, nil
-}
-
-// SetACLPolicy validates content as HuJSON, persists it as o's ACL
-// policy (orgconfigs), uploads it into o's running headscale
-// container, and restarts that container so headscale reloads it (it only
-// reads its policy file at startup). The DB write happens inside a
-// transaction that's only committed once the Docker steps succeed; if
-// either fails, the DB write is rolled back so the stored policy never
-// diverges from what's actually running.
-func (o *OrgService) SetACLPolicy(ctx context.Context, content string) (err error) {
-	defer derrors.Wrap(&err, "o.SetACLPolicy(%q)", o.orgID)
-
-	if _, err := hujson.Parse([]byte(content)); err != nil {
-		return fmt.Errorf("invalid HuJSON policy: %w", err)
-	}
-
-	txQueries, commit, rollback, err := o.queries.StartTx(ctx)
-	if err != nil {
-		return fmt.Errorf("start transaction: %w", err)
-	}
-	defer rollback()
-
-	if _, err := txQueries.UpsertOrgConfig(ctx, sqlcgen.UpsertOrgConfigParams{
-		ID:             xid.New().String(),
-		OrganizationID: o.orgID,
-		Path:           dockerctl.PolicyConfigPath,
-		Content:        content,
-	}); err != nil {
-		return fmt.Errorf("save policy: %w", err)
-	}
-
-	if err := o.ctl.WriteACLPolicy(ctx, o.subdomain, content); err != nil {
-		return fmt.Errorf("upload policy: %w", err)
-	}
-	if err := o.ctl.RestartHeadscale(ctx, o.subdomain); err != nil {
-		return fmt.Errorf("restart headscale: %w", err)
-	}
-
-	if err := commit(); err != nil {
-		return fmt.Errorf("commit policy: %w", err)
-	}
-	return nil
-}
-
 const AuthRestrictionsConfigKey = "oidc_restrictions"
 
 const defaultAuthRestrictions = `{

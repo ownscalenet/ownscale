@@ -46,8 +46,8 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	mux.HandleFunc("GET /api/invites/{token}", h.GetInvitePreview) // public: preview before login
 	mux.HandleFunc("POST /api/invites/{token}/accept", requireAuthAPI(h.AcceptInvite))
 
-	mux.HandleFunc("GET /api/access-control", requireAuthAPI(h.RequireActiveOrg(h.GetAccessControlPolicy)))
-	mux.HandleFunc("PUT /api/access-control", requireAuthAPI(h.RequireActiveOrg(h.UpdateAccessControlPolicy)))
+	mux.HandleFunc("GET /api/access-control", requireAuthAPI(h.RequireActiveOrg(h.RequireMachinesClient(h.GetAccessControlPolicy))))
+	mux.HandleFunc("PUT /api/access-control", requireAuthAPI(h.RequireActiveOrg(h.RequireMachinesClient(h.UpdateAccessControlPolicy))))
 	mux.HandleFunc("POST /api/hujson/format", requireAuthAPI(h.FormatHuJSON))
 
 	mux.HandleFunc("GET /api/auth-restrictions", requireAuthAPI(h.RequireActiveOrg(h.GetAuthRestrictions)))

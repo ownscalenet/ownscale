@@ -12,9 +12,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -79,7 +77,7 @@ func randomSubdomain(t *testing.T) string {
 func TestDockerctlIntegration(t *testing.T) {
 	rawCli := requireDocker(t)
 
-	var logBuf syncBuffer
+	var logBuf bytes.Buffer
 	logger := slog.New(slog.NewJSONHandler(&logBuf, nil))
 
 	dataDir := t.TempDir()
@@ -127,8 +125,8 @@ func TestDockerctlIntegration(t *testing.T) {
 		// docker-compose stack (see ensureCaddyNetworkAlias), which this
 		// daemon-only integration test doesn't spin up. The OIDC
 		// issuer/network-alias wiring itself is covered by dockerfake-backed
-		// unit tests instead (TestEnsureCaddyNetworkAlias*,
-		// TestCreateOrganizationMountsCaddyDataVolumeAndSetsHeadplaneEnv).
+		// unit tests instead (TestEnsureCaddyNetworkAlias* and the
+		// CreateOrganization unit tests).
 		derpCfg := config.DerpConfig{
 			Hostname:   "derp.it.test",
 			STUNPort:   3478,
@@ -136,12 +134,11 @@ func TestDockerctlIntegration(t *testing.T) {
 			RegionCode: "custom",
 			RegionName: "Self-hosted DERP",
 		}
-		if _, err := ctl.CreateOrganization(ctx, subdomain, baseDomain, dockerctl.OIDCClientCredentials{}, derpCfg, dockerctl.DefaultACLPolicy); err != nil {
+		if _, err := ctl.CreateOrganization(ctx, subdomain, baseDomain, dockerctl.OIDCClientCredentials{}, derpCfg); err != nil {
 			t.Fatalf("CreateOrganization: %v", err)
 		}
 
 		hsName := dockerctl.HSContainerName(subdomain)
-		hpName := dockerctl.HPContainerName(subdomain)
 
 		reader, _, err := rawCli.CopyFromContainer(ctx, hsName, "/etc/headscale/derp.yaml")
 		if err != nil {
@@ -156,7 +153,7 @@ func TestDockerctlIntegration(t *testing.T) {
 			t.Fatalf("derp.yaml in headscale container = %q, want it to reference the configured hostname", derpYAML)
 		}
 
-		for _, name := range []string{hsName, hpName} {
+		for _, name := range []string{hsName} {
 			info, err := rawCli.ContainerInspect(ctx, name)
 			if err != nil {
 				t.Fatalf("ContainerInspect(%q): %v", name, err)
@@ -178,16 +175,15 @@ func TestDockerctlIntegration(t *testing.T) {
 			}
 		}
 
-		// Network Management requires the headscale config file to be a
-		// real, shared host file: verify both containers see identical
-		// content at ConfigYAMLPath, backed by the same host file.
+		// Verify the rendered headscale config is written to the shared
+		// host file and mounted into the container.
 		hostConfigPath := filepath.Join(dataDir, "headscale-config", subdomain, "config.yaml")
 		hostConfig, err := os.ReadFile(hostConfigPath)
 		if err != nil {
 			t.Fatalf("read shared config host file: %v", err)
 		}
 
-		for _, name := range []string{hsName, hpName} {
+		for _, name := range []string{hsName} {
 			reader, _, err := rawCli.CopyFromContainer(ctx, name, "/etc/headscale/config.yaml")
 			if err != nil {
 				t.Fatalf("CopyFromContainer(%q, config.yaml): %v", name, err)
@@ -202,32 +198,6 @@ func TestDockerctlIntegration(t *testing.T) {
 			}
 		}
 
-		hpInfo, err := rawCli.ContainerInspect(ctx, hpName)
-		if err != nil {
-			t.Fatalf("ContainerInspect(%q): %v", hpName, err)
-		}
-		if !slices.ContainsFunc(hpInfo.Mounts, func(m container.MountPoint) bool {
-			return m.Source == "/var/run/docker.sock" && m.Destination == "/var/run/docker.sock"
-		}) {
-			t.Errorf("headplane container mounts = %+v, want a bind mount of the Docker socket", hpInfo.Mounts)
-		}
-	})
-
-	t.Run("StreamAllLogs observes real log output", func(t *testing.T) {
-		if err := ctl.StreamAllLogs(ctx); err != nil {
-			t.Fatalf("StreamAllLogs: %v", err)
-		}
-
-		deadline := time.Now().Add(20 * time.Second)
-		for time.Now().Before(deadline) {
-			if logBuf.Len() > 0 {
-				break
-			}
-			time.Sleep(200 * time.Millisecond)
-		}
-		if logBuf.Len() == 0 {
-			t.Error("expected at least one log line to have been streamed from the running containers")
-		}
 	})
 
 	t.Run("stopping then StartOrganization restarts containers", func(t *testing.T) {
@@ -236,12 +206,11 @@ func TestDockerctlIntegration(t *testing.T) {
 		// the Docker host by design (it's meant to be called once, at
 		// process shutdown) — on a shared host that may also be running
 		// other real organizations outside this test, calling it would
-		// stop those too. Instead, stop only this test's own two
-		// containers directly, then verify StartOrganization (which is
+		// stop those too. Instead, stop only this test's own
+		// container directly, then verify StartOrganization (which is
 		// scoped to a single subdomain) brings them back up.
 		hsName := dockerctl.HSContainerName(subdomain)
-		hpName := dockerctl.HPContainerName(subdomain)
-		for _, name := range []string{hsName, hpName} {
+		for _, name := range []string{hsName} {
 			timeout := 10
 			if err := rawCli.ContainerStop(ctx, name, container.StopOptions{Timeout: &timeout}); err != nil {
 				t.Fatalf("ContainerStop(%q): %v", name, err)
@@ -272,14 +241,13 @@ func TestDockerctlIntegration(t *testing.T) {
 			t.Fatalf("RemoveOrganization: %v", err)
 		}
 
-		for _, name := range []string{dockerctl.HSContainerName(subdomain), dockerctl.HPContainerName(subdomain)} {
+		for _, name := range []string{dockerctl.HSContainerName(subdomain)} {
 			if _, err := rawCli.ContainerInspect(ctx, name); !cerrdefs.IsNotFound(err) {
 				t.Errorf("ContainerInspect(%q) after RemoveOrganization: err = %v, want a not-found error", name, err)
 			}
 		}
 		for _, dir := range []string{
 			filepath.Join(dataDir, "headscale", subdomain),
-			filepath.Join(dataDir, "headplane", subdomain),
 			filepath.Join(dataDir, "headscale-config", subdomain),
 		} {
 			if _, err := os.Stat(dir); !os.IsNotExist(err) {
@@ -290,24 +258,4 @@ func TestDockerctlIntegration(t *testing.T) {
 			t.Errorf("NetworkInspect after RemoveOrganization: err = %v, want a not-found error", err)
 		}
 	})
-}
-
-// syncBuffer is a bytes.Buffer safe for concurrent writes, needed since
-// streamLogs runs the log-streaming goroutines started by CreateOrganization
-// and StreamAllLogs concurrently with the test's own goroutine.
-type syncBuffer struct {
-	mu  sync.Mutex
-	buf bytes.Buffer
-}
-
-func (b *syncBuffer) Write(p []byte) (int, error) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Write(p)
-}
-
-func (b *syncBuffer) Len() int {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	return b.buf.Len()
 }

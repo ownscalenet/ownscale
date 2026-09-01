@@ -21,7 +21,7 @@ while true; do
 done
 
 # Now that ownscale.sqlite is present+migrated, verify every
-# organization's headscale/headplane database the same way (manual
+# organization's headscale database the same way (manual
 # `osa restore organizations` to recover).
 /app/osa --config "$CONFIG_PATH" verify organizations
 

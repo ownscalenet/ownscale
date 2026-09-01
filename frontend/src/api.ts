@@ -133,8 +133,8 @@ export function deleteMachine(id: string) {
   return request<{ ok: boolean }>(`/api/machines/${id}`, { method: 'DELETE' })
 }
 
-// Roles mirror headplane's set for UI parity; only owner/admin are
-// actually enforced server-side (see handlers/roles.go).
+// Roles mirror common tailnet-admin-tool conventions for UI parity; only
+// owner/admin are actually enforced server-side (see handlers/roles.go).
 export const ROLES = ['owner', 'admin', 'network_admin', 'it_admin', 'auditor', 'member'] as const
 export type Role = (typeof ROLES)[number]
 

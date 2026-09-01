@@ -1,5 +1,5 @@
 // Command osa is the operator CLI for managing ownscale organizations
-// (headscale/headplane containers), independent of the ownscale HTTP
+// (headscale containers), independent of the ownscale HTTP
 // server binary (cmd/ownscale).
 package main
 

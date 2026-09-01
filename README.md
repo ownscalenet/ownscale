@@ -59,10 +59,10 @@ and OIDC provider — is bound to the bare base domain; the documentation
 site lives at `https://docs.<base_domain>`). ownscale federates the initial
 login to a configurable upstream OIDC provider (`auth.upstream_oidc` in
 `config.yaml`) — any standard OIDC issuer works: Google, Okta, Dex, etc. —
-then acts as its own OIDC provider so each organization's Headscale and
-Headplane containers trust it as a relying party: one upstream login
-covers the Ownscale console and every organization's tailnet/Headplane
-dashboard. See `site/content/docs/getting-started.md` for details.
+then acts as its own OIDC provider so each organization's Headscale
+container trusts it as a relying party: one upstream login covers the
+Ownscale console and every organization's tailnet. See
+`site/content/docs/getting-started.md` for details.
 
 For local dev, `docker-compose.yml` bundles a
 [Dex](https://dexidp.io/) instance (see the `dex` service and
@@ -76,8 +76,8 @@ code never references Dex specifically, only generic OIDC discovery.
 
 ## Headscale organizations (per-subdomain)
 
-Provision one headscale container, plus a [Headplane](https://github.com/tale/headplane)
-web UI container, per subdomain of `base_domain` using the Docker SDK.
+Provision one headscale container per subdomain of `base_domain` using the
+Docker SDK.
 
 Prerequisites:
 
@@ -146,10 +146,9 @@ sudo update-ca-certificates
 2. Authorities tab → Import → select `${OWNSCALE_DATA_DIR}/local-ca/root.crt`
 3. Check "Trust this CA to identify websites"
 
-Organization headscale/headplane containers trust this same local CA
-automatically: they mount the `caddy-data` volume read-only and, if Caddy's
-local CA is present there, headscale gets it appended to its system CA
-bundle and headplane gets `NODE_EXTRA_CA_CERTS` pointed at it. The
+Organization headscale containers trust this same local CA automatically:
+they mount the `caddy-data` volume read-only and, if Caddy's local CA is
+present there, headscale gets it appended to its system CA bundle. The
 `ownscale` service itself does the same (see `auth.go`), so it can
 trust its own upstream OIDC provider (e.g. the bundled Dex instance) when
 that's also proxied through Caddy under a non-public `BASE_DOMAIN`. This

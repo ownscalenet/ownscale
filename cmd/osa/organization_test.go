@@ -4,9 +4,12 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -23,6 +26,7 @@ import (
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/dockerctl"
 	"github.com/ownscalenet/ownscale/dockerctl/dockerfake"
+	"github.com/ownscalenet/ownscale/headscaleclient"
 	"github.com/ownscalenet/ownscale/orgs"
 )
 
@@ -87,14 +91,36 @@ func insertOrg(t *testing.T, queries *dbpkg.TxQueries, subdomain string) sqlcgen
 // success), so the organization business logic can be exercised against
 // dockerctl's real config/tar-building and container-naming logic without a
 // Docker daemon. dataDir is a fresh temp directory since CreateOrganization
-// creates real host directories under it.
+// creates real host directories under it. It installs a fake MintClientFn
+// so CreateOrganization's default-policy seeding step doesn't attempt a
+// real network round trip to a container hostname that doesn't actually
+// exist under dockerfake.
 func newTestCtl(t *testing.T, api *dockerfake.API) *dockerctl.Ctl {
 	t.Helper()
 	ctl, err := dockerctl.NewWithClient(api, t.TempDir(), "", discardLogger())
 	if err != nil {
 		t.Fatalf("dockerctl.NewWithClient: %v", err)
 	}
+	ctl.MintClientFn = func(ctx context.Context, subdomain string) (*headscaleclient.Client, error) {
+		return newFakePolicyClient(t), nil
+	}
 	return ctl
+}
+
+// newFakePolicyClient returns a headscaleclient.Client pointed at an
+// httptest.Server implementing headscale's policy endpoint (GET/PUT
+// /api/v1/policy), accepting any policy content unconditionally.
+func newFakePolicyClient(t *testing.T) *headscaleclient.Client {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/policy", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"policy":""}`)
+	})
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	host := strings.TrimPrefix(server.URL, "http://")
+	return headscaleclient.New(host, "test-api-key")
 }
 
 func TestBaseDomain(t *testing.T) {
@@ -243,8 +269,8 @@ func TestDeleteOrganization(t *testing.T) {
 		if !strings.Contains(out.String(), "deleted organization acme") {
 			t.Errorf("output = %q, want a deletion confirmation", out.String())
 		}
-		wantRemoved := []string{dockerctl.HSContainerName("acme"), dockerctl.HPContainerName("acme")}
-		if len(removed) != len(wantRemoved) || removed[0] != wantRemoved[0] || removed[1] != wantRemoved[1] {
+		wantRemoved := []string{dockerctl.HSContainerName("acme")}
+		if len(removed) != len(wantRemoved) || removed[0] != wantRemoved[0] {
 			t.Errorf("removed containers = %v, want %v", removed, wantRemoved)
 		}
 		if _, err := queries.GetOrganizationBySubdomain(t.Context(), "acme"); !errors.Is(err, sql.ErrNoRows) {

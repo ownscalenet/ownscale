@@ -19,6 +19,7 @@ import (
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/dockerctl"
 	"github.com/ownscalenet/ownscale/dockerctl/dockerfake"
+	"github.com/ownscalenet/ownscale/headscaleclient"
 )
 
 // newTestService builds a Service backed by a temporary sqlite DB (see
@@ -50,6 +51,9 @@ func newTestService(t *testing.T) *Service {
 	ctl, err := dockerctl.NewWithClient(api, t.TempDir(), "", slog.New(slog.NewTextHandler(io.Discard, nil)))
 	if err != nil {
 		t.Fatalf("dockerctl.NewWithClient: %v", err)
+	}
+	ctl.MintClientFn = func(ctx context.Context, subdomain string) (*headscaleclient.Client, error) {
+		return newFakePolicyClient(t), nil
 	}
 	t.Cleanup(func() { _ = ctl.Close() })
 	return NewService(queries, ctl, "example.com", "https://auth.example.com", config.DerpConfig{})

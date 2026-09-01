@@ -161,11 +161,11 @@ func (h *Handlers) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 
 // RemoveMember handles DELETE /api/members/{id}. Only an admin/owner may
 // remove a member, and the owner can't be removed this way -- ownership
-// must be transferred first (see TransferOwnership), which both protects
-// against ever leaving an organization without an owner and matches
-// headplane's behavior. Removing a member only clears their organization
-// membership (role/link); it does not delete their ownscale account, which
-// is recreated on their next login should they be re-invited.
+// must be transferred first (see TransferOwnership), which protects
+// against ever leaving an organization without an owner. Removing a member
+// only clears their organization membership (role/link); it does not
+// delete their ownscale account, which is recreated on their next login
+// should they be re-invited.
 func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	caller, orgID, ok := h.callerAndOrg(w, r)
 	if !ok {

@@ -64,13 +64,6 @@ export default function Layout() {
                 Settings
               </NavLink>
             </li>
-            {organization && (
-              <li>
-                <a href={`https://${organization.Domain}/admin/oidc/start`}>
-                  Headplane
-                </a>
-              </li>
-            )}
           </ul>
           {user && (
             <div className="p-4 border-t border-base-200 mt-auto">

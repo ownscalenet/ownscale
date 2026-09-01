@@ -11,13 +11,13 @@ const ORG_SUBDOMAIN = 'acme'
 // playwright.config.ts's "setup" project + "chromium" project's
 // `dependencies: ['setup']`): resets the local stack/database, logs in as
 // the admin user through the real Dex OIDC flow, creates and waits for
-// the e2e organization to finish provisioning (real headscale/headplane
-// containers), then saves the authenticated session for reuse.
+// the e2e organization to finish provisioning (a real headscale
+// container), then saves the authenticated session for reuse.
 setup('reset stack and provision e2e organization', async ({ page, baseURL }) => {
   // resetAndStartStack alone can take well over a minute (docker compose
-  // stop/up, migrations), and org provisioning below spins up real
-  // headscale+headplane containers -- give this generous headroom well
-  // beyond the default per-test timeout.
+  // stop/up, migrations), and org provisioning below spins up a real
+  // headscale container -- give this generous headroom well beyond the
+  // default per-test timeout.
   setup.setTimeout(300_000)
 
   await resetAndStartStack()
@@ -31,10 +31,10 @@ setup('reset stack and provision e2e organization', async ({ page, baseURL }) =>
   await page.getByLabel(/subdomain/i).fill(ORG_SUBDOMAIN)
   await page.getByRole('button', { name: /create/i }).click()
 
-  // Organization provisioning spins up real Docker containers (headscale +
-  // headplane); poll the session API directly rather than the UI, both to
-  // avoid racing CreateOrganization.tsx's own auto-redirect-to-headplane
-  // effect and because it's a more direct/reliable readiness signal.
+  // Organization provisioning spins up a real Docker container (headscale);
+  // poll the session API directly rather than the UI, both to avoid racing
+  // CreateOrganization.tsx's own auto-redirect effect and because it's a
+  // more direct/reliable readiness signal.
   await expect
     .poll(
       async () => {
@@ -46,10 +46,10 @@ setup('reset stack and provision e2e organization', async ({ page, baseURL }) =>
     )
     .toBe('active')
 
-  // CreateOrganization.tsx auto-navigates the browser away to headplane's
-  // own OIDC login the instant it observes the org go active; explicitly
-  // return to the ownscale console itself so the saved storage state
-  // reflects being logged into the console, on a console page.
+  // CreateOrganization.tsx auto-navigates the browser to the ownscale
+  // console's own home page the instant it observes the org go active;
+  // explicitly navigate there too so the saved storage state reflects
+  // being logged into the console, on a console page.
   await page.goto(`${baseURL}/`)
   await expect(page).toHaveURL(/\/(machines|users|access-control)?$/)
 

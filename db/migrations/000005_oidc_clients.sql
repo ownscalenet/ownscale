@@ -1,6 +1,6 @@
 -- +goose Up
 -- One OIDC client per organization: ownscale acts as the OIDC provider for
--- that organization's headscale and headplane containers (see
+-- that organization's headscale container (see
 -- auth/oidcprovider and dockerctl). client_secret_hash is
 -- a bcrypt hash; the plaintext secret is only ever handed to the
 -- containers being provisioned, never persisted here.

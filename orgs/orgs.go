@@ -84,7 +84,7 @@ func (s *Service) CreatePending(ctx context.Context, subdomain string) (_ sqlcge
 }
 
 // Provision does the actual work of standing up organization orgID: it
-// creates its OIDC client and its headscale/headplane container (via ctl),
+// creates its OIDC client and its headscale container (via ctl),
 // then marks the organization "active". If any step fails, it marks the
 // organization "failed" (best-effort; the original error is still
 // returned) instead of leaving it stuck "pending" forever.
@@ -123,7 +123,7 @@ func (s *Service) Provision(ctx context.Context, orgID string) (err error) {
 }
 
 // provision creates org's OIDC client (within its own transaction) and its
-// headscale/headplane container via ctl. It's split out of Provision so
+// headscale container via ctl. It's split out of Provision so
 // the latter can uniformly handle the success/failure status update
 // regardless of which step fails.
 func (s *Service) provision(ctx context.Context, org sqlcgen.Organization) error {
@@ -159,15 +159,6 @@ func (s *Service) provision(ctx context.Context, org sqlcgen.Organization) error
 		return err
 	}
 
-	if _, err := s.queries.CreateOrgConfig(ctx, sqlcgen.CreateOrgConfigParams{
-		ID:             xid.New().String(),
-		OrganizationID: org.ID,
-		Path:           dockerctl.PolicyConfigPath,
-		Content:        dockerctl.DefaultACLPolicy,
-	}); err != nil {
-		return err
-	}
-
 	oidcCreds := dockerctl.OIDCClientCredentials{
 		Issuer:       s.issuer,
 		ClientID:     clientID,
@@ -193,7 +184,7 @@ func (s *Service) provision(ctx context.Context, org sqlcgen.Organization) error
 		return err
 	}
 
-	if _, err := s.ctl.CreateOrganization(ctx, subdomain, s.baseDomain, oidcCreds, s.derpCfg, dockerctl.DefaultACLPolicy); err != nil {
+	if _, err := s.ctl.CreateOrganization(ctx, subdomain, s.baseDomain, oidcCreds, s.derpCfg); err != nil {
 		return err
 	}
 	return nil

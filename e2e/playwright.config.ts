@@ -6,7 +6,7 @@ import { defineConfig, devices } from '@playwright/test'
 // and e2e/lib/stack.ts for how the stack is reset/started before tests run.
 export default defineConfig({
   testDir: './tests',
-  // Org provisioning (real headscale/headplane containers) and OIDC
+  // Org provisioning (a real headscale container) and OIDC
   // redirects through a real Dex instance are slow compared to typical
   // frontend e2e tests; give generous timeouts throughout.
   timeout: 90_000,

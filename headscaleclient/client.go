@@ -333,6 +333,31 @@ func (c *Client) ExpirePreAuthKey(ctx context.Context, id string) (err error) {
 	return err
 }
 
+// GetPolicy returns the organization's access control policy.
+func (c *Client) GetPolicy(ctx context.Context) (_ string, err error) {
+	defer derrors.Wrap(&err, "c.GetPolicy()")
+
+	params := headscale_service.NewHeadscaleServiceGetPolicyParams().WithContext(ctx)
+	resp, err := c.api.HeadscaleService.HeadscaleServiceGetPolicy(params)
+	if err != nil {
+		return "", err
+	}
+	return resp.Payload.Policy, nil
+}
+
+// SetPolicy replaces the organization's access control policy with
+// content (HuJSON), taking effect immediately. headscale reloads its
+// policy live in database mode, no restart required.
+func (c *Client) SetPolicy(ctx context.Context, content string) (err error) {
+	defer derrors.Wrap(&err, "c.SetPolicy()")
+
+	params := headscale_service.NewHeadscaleServiceSetPolicyParams().
+		WithContext(ctx).
+		WithBody(&models.V1SetPolicyRequest{Policy: content})
+	_, err = c.api.HeadscaleService.HeadscaleServiceSetPolicy(params)
+	return err
+}
+
 // toNode converts a generated V1Node into the plain Node shape handlers
 // serve as JSON.
 func toNode(n *models.V1Node) Node {

@@ -1,4 +1,5 @@
 import { useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
 
 // How often to re-check the organization's provisioning status once it's
@@ -10,6 +11,7 @@ const STATUS_POLL_INTERVAL_MS = 1500;
 
 export default function CreateOrganization() {
   const { organization, refresh } = useAuth();
+  const navigate = useNavigate();
 
   // Once the organization exists, poll GET /api/session (via refresh())
   // until its status stops being "pending". Creating the org's Docker
@@ -27,9 +29,9 @@ export default function CreateOrganization() {
 
   useEffect(() => {
     if (organization?.Status === "active") {
-      window.location.href = `https://${organization.Domain}/admin/oidc/start`;
+      navigate("/", { replace: true });
     }
-  }, [organization?.Status, organization?.Domain]);
+  }, [organization?.Status, navigate]);
 
   if (organization?.Status === "failed") {
     return (

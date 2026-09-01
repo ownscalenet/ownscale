@@ -3,9 +3,9 @@ import { getDNSSettings, updateDNSSettings, ApiError, type DNSConfig, type DNSRe
 
 const RECORD_TYPES = ['A', 'AAAA', 'CNAME']
 
-// ListEditor renders a headplane-style list of chips with per-item remove
-// buttons plus an inline add form, reused for nameservers and search
-// domains (both are just string lists).
+// ListEditor renders a simple list of chips with per-item remove buttons
+// plus an inline add form, reused for nameservers and search domains
+// (both are just string lists).
 function ListEditor({
   items,
   placeholder,

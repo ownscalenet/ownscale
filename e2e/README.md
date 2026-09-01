@@ -3,9 +3,9 @@
 Real, end-to-end browser tests against the actual `docker-compose.yml`
 stack (`ownscale` + `dex` + `caddy`), backed by a real, freshly-migrated
 SQLite database. Nothing here is mocked: OIDC login goes through a real
-bundled Dex instance, organization creation spins up real headscale +
-headplane Docker containers, and the access control policy is really
-uploaded to and restarts a real headscale container.
+bundled Dex instance, organization creation spins up a real headscale Docker container, and the
+access control policy is really uploaded to a real headscale container via
+its API.
 
 ## Prerequisites
 
@@ -39,8 +39,8 @@ every spec file) will:
 3. Log in as `admin@ownscale.test` (password `ownscale`, from
    `etc/dex/config.yaml`) through the real Dex OIDC flow.
 4. Create and wait for the `acme` organization to finish provisioning
-   (real headscale + headplane containers) -- this is the slowest step,
-   normally well under a minute.
+   (a real headscale container) -- this is the slowest step, normally
+   well under a minute.
 5. Save the authenticated session for reuse by the other spec files.
 
 **This destroys the local `data/ownscale.sqlite` database and any existing
@@ -67,7 +67,6 @@ you care about.
   state, not per-machine actions (rename/tag/routes/expire/delete) which
   need an existing machine row. See `tailscale-connectivity.sh` below for
   a real-client test.
-- Headplane's own UI/OIDC-SSO-into-headplane is not tested.
 - Not wired into CI; run locally/manually.
 
 ## `tailscale-connectivity.sh`: real Tailscale client + DERP connectivity test

@@ -5,8 +5,6 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -30,35 +28,29 @@ import (
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/derrors"
 	"github.com/ownscalenet/ownscale/headscaleclient"
-	"github.com/ownscalenet/ownscale/localca"
 )
 
 const (
-	ownscaleNetwork     = "os-net"
-	Image               = "headscale/headscale:0.29.3-debug"
-	headplaneImage      = "ghcr.io/tale/headplane:0.7.0-shell"
-	ConfigYAMLPath      = "/etc/headscale/config.yaml"
-	headplaneConfigPath = "/etc/headplane/config.yaml"
-	derpConfigPath      = "/etc/headscale/derp.yaml"
-	PolicyConfigPath    = "/etc/headscale/acl.hujson"
+	ownscaleNetwork = "os-net"
+	Image           = "headscale/headscale:0.29.3-debug"
+	ConfigYAMLPath  = "/etc/headscale/config.yaml"
+	derpConfigPath  = "/etc/headscale/derp.yaml"
 
 	// Caddy self-signed CA is mounted here for organization containers.
 	LocalCAMountTarget = "/etc/ownscale-local-ca"
 )
 
 func HSContainerName(subdomain string) string { return "hs-" + subdomain }
-func HPContainerName(subdomain string) string { return "hp-" + subdomain }
-func HSExternalEndpoint(domain string) string { return "https://" + domain }
 
 // OrgNetworkName returns the name of the Docker network isolating a single
-// organization's headscale/headplane containers from every other
-// organization's. Each organization gets its own network (created lazily by
-// EnsureOrgNetwork), separate from the shared ownscaleNetwork used by the
-// core infra services (ownscale, dex, litestream, caddy).
+// organization's headscale container from every other organization's. Each
+// organization gets its own network (created lazily by EnsureOrgNetwork),
+// separate from the shared ownscaleNetwork used by the core infra services
+// (ownscale, dex, litestream, caddy).
 func OrgNetworkName(subdomain string) string { return "org-" + subdomain + "-net" }
 
 // OIDCClientCredentials are the per-organization relying-party credentials
-// templated into headscale and headplane.
+// templated into headscale.
 type OIDCClientCredentials struct {
 	Issuer       string
 	ClientID     string
@@ -96,6 +88,16 @@ type Ctl struct {
 	// value was cleared entirely, though in practice it always defaults to
 	// a real path (see config.Load).
 	localCADir string
+
+	// MintClientFn is used by CreateOrganization to obtain a
+	// headscaleclient.Client for seeding the default ACL policy once the
+	// container is healthy. It defaults to c.MintClient (set by New/
+	// NewWithClient), and is exported so tests in other packages that
+	// build a Ctl over dockerfake can override it. It's a bit dirty but works.
+	MintClientFn func(ctx context.Context, subdomain string) (*headscaleclient.Client, error)
+
+	healthCheckPollInterval time.Duration
+	healthCheckTimeout      time.Duration
 }
 
 // New creates a controller using the standard Docker environment (DOCKER_HOST
@@ -127,11 +129,16 @@ func NewWithClient(cli API, dataDir, localCADir string, logger *slog.Logger) (_ 
 		return nil, fmt.Errorf("dataDir must be an absolute path, got %q", dataDir)
 	}
 	// TODO: instantiating background context here seems suspicious.
-	// Story is we need two contexts in this code:
-	// 1. for making regular docker requests (create container, stop container, etc.)
-	// 2. for long-running watcher for logs of containers from 1.
+	// Story is we need two contexts in this code: for making regular docker
+	// requests (create container, stop container, etc.)
 	ctx, cancel := context.WithCancel(context.Background())
-	return &Ctl{cli: cli, dataDir: dataDir, logger: logger, ctx: ctx, cancel: cancel, localCADir: localCADir}, nil
+	c := &Ctl{
+		cli: cli, dataDir: dataDir, logger: logger, ctx: ctx, cancel: cancel, localCADir: localCADir,
+		healthCheckPollInterval: time.Second / 5,
+		healthCheckTimeout:      5 * time.Second,
+	}
+	c.MintClientFn = c.MintClient
+	return c, nil
 }
 
 // localCAMount returns the read-only bind mount attaching localCADir at
@@ -153,20 +160,11 @@ func (c *Ctl) headscaleHostDir(subdomain string) string {
 	return filepath.Join(c.dataDir, "headscale", subdomain)
 }
 
-// headplaneHostDir returns the host directory bind-mounted at
-// /var/lib/headplane in an organization's headplane container, mirroring
-// headscaleHostDir so headplane's database is discovered and replicated by
-// litestream's directory watcher the same way headscale's is.
-func (c *Ctl) headplaneHostDir(subdomain string) string {
-	return filepath.Join(c.dataDir, "headplane", subdomain)
-}
-
 // headscaleConfigHostDir returns the host directory for organization's
-// headscale config.yaml, bind-mounted at ConfigYAMLPath
-// into both the headscale container (read-only) and the headplane
-// container (read-write) so Headplane's Network Management feature can edit
-// live headscale settings (DNS, MagicDNS, ACLs, ...) and have headscale
-// pick them up on restart.
+// headscale config.yaml, bind-mounted read-only at ConfigYAMLPath into the
+// headscale container. It's a real directory (not a single file mount) so
+// DNS/auth-restriction edits can rewrite the file in place (see
+// WriteConfigYAML) and headscale picks up the change on its next restart.
 func (c *Ctl) headscaleConfigHostDir(subdomain string) string {
 	return filepath.Join(c.dataDir, "headscale-config", subdomain)
 }
@@ -186,8 +184,8 @@ func (c *Ctl) EnsureNetwork(ctx context.Context) (err error) {
 // EnsureOrgNetwork creates subdomain's isolated per-organization network if
 // it does not exist, and returns its name. Every organization gets its own
 // network (see OrgNetworkName), separate from the shared ownscaleNetwork,
-// so that organizations' headscale/headplane containers can't reach each
-// other over Docker's embedded network.
+// so that each organization's headscale container can't reach another
+// organization's over Docker's embedded network.
 func (c *Ctl) EnsureOrgNetwork(ctx context.Context, subdomain string) (_ string, err error) {
 	defer derrors.Wrap(&err, "c.EnsureOrgNetwork(%q)", subdomain)
 
@@ -238,7 +236,7 @@ func (c *Ctl) EnsureCaddyNetworkAlias(ctx context.Context, baseDomain string) (e
 // EnsureCaddyNetworkAliasForOrg re-asserts baseDomain as a network alias
 // for the Caddy container on subdomain's own per-organization network (see
 // EnsureOrgNetwork and ensureCaddyNetworkAlias), so that subdomain's
-// headscale/headplane containers -- which live only on their own isolated
+// headscale container -- which lives only on its own isolated
 // network, not the shared ownscaleNetwork -- can still resolve
 // https://{baseDomain} back to Caddy for OIDC discovery/token calls.
 //
@@ -469,8 +467,7 @@ unix_socket: /var/run/headscale/headscale.sock
 unix_socket_permission: "0770"
 
 policy:
-  mode: file
-  path: {{.PolicyConfigPath}}
+  mode: database
 
 oidc:
   issuer: "{{.OIDCIssuer}}"
@@ -482,21 +479,17 @@ oidc:
     method: S256
 `))
 
-// DefaultACLPolicy is the HuJSON access control policy every organization
-// starts with: a single accept-all rule allowing every node to reach every
-// other node on every port. This deliberately matches headscale's
-// no-policy-configured behavior (unrestricted tailnet access) so enabling
-// the policy file doesn't change behavior for existing/new organizations
-// until an admin edits it from the Access Control page.
-const DefaultACLPolicy = `{
+// defaultACLPolicy is the HuJSON access control policy shown as a placeholder
+// when an organization has no policy configured yet in headscale's database.
+const defaultACLPolicy = `{
     // Lines starting with // are comments.
     // Leave comments for future reference or explanations about the settings.
 	// See https://headscale.net/stable/ref/acls/ for the full HuJSON syntax.
 	"acls": [
 		{
 			"action": "accept",
-			"src": ["*"],
-			"dst": ["*:*"],
+			"src":    ["*"],
+			"dst":    ["*:*"],
 		},
 	],
 }
@@ -550,7 +543,6 @@ func BuildHeadscaleConfig(subdomain, domain string, oidcCreds OIDCClientCredenti
 		OIDCClientSecret string
 		HasCustomDerp    bool
 		DerpConfigPath   string
-		PolicyConfigPath string
 	}{
 		Subdomain:        subdomain,
 		ServerURL:        domain,
@@ -559,92 +551,10 @@ func BuildHeadscaleConfig(subdomain, domain string, oidcCreds OIDCClientCredenti
 		OIDCClientSecret: oidcCreds.ClientSecret,
 		HasCustomDerp:    derpCfg.Enabled(),
 		DerpConfigPath:   derpConfigPath,
-		PolicyConfigPath: PolicyConfigPath,
 	}); err != nil {
 		return "", err
 	}
 	return buf.String(), nil
-}
-
-// headplane config for an organization; BaseURL must be the public
-// subdomain URL (without the /admin dashboard prefix), and headscale.url
-// points at the organization's own headscale container over the shared
-// Docker network. Docker integration is enabled to power Headplane's
-// Network Management feature (editing DNS/MagicDNS/ACL settings for the
-// Tailnet from the UI). CAUTION: this docker integrations relies on sharing the
-// docker socket.
-var configTemplateHP = template.Must(template.New("headplaneConfig").Parse(`server:
-  host: "0.0.0.0"
-  port: 3000
-  base_url: "https://{{.BaseURL}}"
-  cookie_secret: "{{.CookieSecret}}"
-  cookie_secure: true
-  data_path: "/var/lib/headplane"
-
-headscale:
-  url: "http://{{.HSContainerName}}:8080"
-  public_url: "{{.HSExternalEndpoint}}"
-  config_path: "{{.HSConfigPath}}"
-  api_key: "{{.HeadscaleAPIKey}}"
-
-oidc:
-  enabled: {{if .OIDCIssuer}}true{{else}}false{{end}}
-  issuer: "{{if .OIDCIssuer}}{{.OIDCIssuer}}{{else}}http://disabled.invalid{{end}}"
-  token_endpoint_auth_method: "client_secret_basic"
-  client_id: "{{.OIDCClientID}}"
-  client_secret: "{{.OIDCClientSecret}}"
-  use_pkce: true
-  disable_api_key_login: false
-  scope: "openid email profile offline_access"
-
-integration:
-  docker:
-    enabled: true
-    container_name: "{{.HSContainerName}}"
-    socket: "unix:///var/run/docker.sock"
-`))
-
-// buildHPConfig renders the headplane config.yaml content for an
-// organization.
-func buildHPConfig(subdomain, domain, cookieSecret, headscaleAPIKey string, oidcCreds OIDCClientCredentials) (_ string, err error) {
-	defer derrors.Wrap(&err, "buildHPConfig(%q, %q, %q)", subdomain, domain, cookieSecret)
-
-	var buf bytes.Buffer
-	type tplData struct {
-		BaseURL            string
-		CookieSecret       string
-		HSContainerName    string
-		HSExternalEndpoint string
-		HSConfigPath       string
-		HeadscaleAPIKey    string
-		OIDCIssuer         string
-		OIDCClientID       string
-		OIDCClientSecret   string
-	}
-	if err := configTemplateHP.Execute(&buf, tplData{
-		BaseURL:            domain,
-		CookieSecret:       cookieSecret,
-		HSContainerName:    HSContainerName(subdomain),
-		HSExternalEndpoint: HSExternalEndpoint(domain),
-		HSConfigPath:       ConfigYAMLPath,
-		HeadscaleAPIKey:    headscaleAPIKey,
-		OIDCIssuer:         oidcCreds.Issuer,
-		OIDCClientID:       oidcCreds.ClientID,
-		OIDCClientSecret:   oidcCreds.ClientSecret,
-	}); err != nil {
-		return "", err
-	}
-	return buf.String(), nil
-}
-
-// randomCookieSecret generates a 32-character hex string suitable for
-// headplane's server.cookie_secret.
-func randomCookieSecret() (string, error) {
-	buf := make([]byte, 16)
-	if _, err := rand.Read(buf); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(buf), nil
 }
 
 // configTar wraps content in a tar archive containing a single file at path
@@ -652,9 +562,9 @@ func randomCookieSecret() (string, error) {
 // with explicit directory entries for every intermediate path component.
 // It's meant to be extracted at the container's filesystem root ("/") via
 // client.CopyToContainer: some minimal images (e.g. distroless-style
-// headscale/headplane images) don't ship the config directory pre-created,
+// headscale images) don't ship the config directory pre-created,
 // and CopyToContainer requires its destination directory to already exist,
-// so we can't extract directly into headscaleConfigDir/headplaneConfigDir.
+// so we can't extract directly into headscaleConfigDir.
 // Rooting the archive at "/" (which always exists) and including directory
 // entries lets the daemon's tar extraction create any missing directories.
 func configTar(path, content string) (_ *bytes.Buffer, err error) {
@@ -702,7 +612,7 @@ func configTar(path, content string) (_ *bytes.Buffer, err error) {
 // against an already-running organization, by passing HSContainerName(subdomain)).
 // Every call mints a brand new, independent, long-lived (10 year) API key;
 // headscale supports any number of valid keys at once, so minting another
-// one doesn't invalidate keys already handed out (e.g. to headplane).
+// one doesn't invalidate keys already handed out elsewhere.
 func (c *Ctl) MintHeadscaleAPIKey(ctx context.Context, containerNameOrID string) (_ string, err error) {
 	defer derrors.Wrap(&err, "c.MintHeadscaleAPIKey(%q)", containerNameOrID)
 
@@ -769,75 +679,10 @@ func (c *Ctl) MintClient(ctx context.Context, subdomain string) (_ *headscalecli
 	return headscaleclient.New(containerName+":8080", apiKey), nil
 }
 
-// waitForHTTPServing execs into containerID repeatedly, using Node's own
-// HTTP client (Node is guaranteed present since this is used to probe
-// headplane, itself a Node app) to check whether something is actually
-// listening and responding at url. It retries with a fixed backoff for up
-// to ~10s and returns an error if nothing ever responds.
-//
-// A container reaching "started" doesn't mean the process inside has
-// finished booting and bound its listening socket yet -- for a Node app in
-// particular there can be a noticeable gap between "docker start" and the
-// server accepting connections. Without this, an organization could be
-// marked "active" (see orgs.Service.Provision) while headplane is still
-// starting up, so a user redirected there immediately after provisioning
-// would hit a connection error instead of the login page.
-func (c *Ctl) waitForHTTPServing(ctx context.Context, containerID, url string) (err error) {
-	defer derrors.Wrap(&err, "c.waitForHTTPServing(%q, %q)", containerID, url)
-
-	// Exit 0 if we get any HTTP response at all (status doesn't matter --
-	// we only care whether something is listening), exit 1 on any
-	// connection-level error (not listening yet, connection reset, ...).
-	probe := fmt.Sprintf(
-		"require('http').get(%q, res => { res.resume(); process.exit(0); }).on('error', () => process.exit(1));",
-		url,
-	)
-
-	const attempts = 20
-	const backoff = 500 * time.Millisecond
-
-	var lastErr error
-	for attempt := range attempts {
-		if err := ctx.Err(); err != nil {
-			return err
-		}
-
-		execResp, err := c.cli.ContainerExecCreate(ctx, containerID, container.ExecOptions{
-			AttachStdout: true,
-			AttachStderr: true,
-			Cmd:          []string{"node", "-e", probe},
-		})
-		if err != nil {
-			lastErr = err
-		} else if attachResp, err := c.cli.ContainerExecAttach(ctx, execResp.ID, container.ExecAttachOptions{}); err != nil {
-			lastErr = err
-		} else {
-			var stdout, stderr bytes.Buffer
-			_, readErr := stdcopy.StdCopy(&stdout, &stderr, attachResp.Reader)
-			attachResp.Close()
-			if readErr != nil {
-				lastErr = readErr
-			} else if inspectResp, inspectErr := c.cli.ContainerExecInspect(ctx, execResp.ID); inspectErr != nil {
-				lastErr = inspectErr
-			} else if inspectResp.ExitCode == 0 {
-				return nil
-			} else {
-				lastErr = fmt.Errorf("not serving yet: %s", strings.TrimSpace(stderr.String()))
-			}
-		}
-
-		if attempt < attempts-1 {
-			time.Sleep(backoff)
-		}
-	}
-	return lastErr
-}
-
 // CreateOrganization provisions and starts a headscale container serving
-// https://<subdomain>.<baseDomain>. aclPolicy is the HuJSON access control
-// policy content to upload at policyConfigPath (see DefaultACLPolicy for
-// the value new organizations start with). It returns the container ID.
-func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain string, oidcCreds OIDCClientCredentials, derpCfg config.DerpConfig, aclPolicy string) (_ string, err error) {
+// https://<subdomain>.<baseDomain>. It returns the container ID. headscale
+// is configured with policy.mode: database.
+func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain string, oidcCreds OIDCClientCredentials, derpCfg config.DerpConfig) (_ string, err error) {
 	defer derrors.Wrap(&err, "c.CreateOrganization(%q, %q)", subdomain, baseDomain)
 
 	if err := ValidateSubdomain(subdomain); err != nil {
@@ -873,8 +718,6 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 
 	mounts := []mount.Mount{
 		{Type: mount.TypeBind, Source: hostDir, Target: "/var/lib/headscale"},
-		// Read-only: headscale only ever reads its own config; Headplane
-		// (given write access below) is what edits it.
 		{Type: mount.TypeBind, Source: configHostFile, Target: ConfigYAMLPath, ReadOnly: true},
 	}
 	var env []string
@@ -892,6 +735,16 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 				"ownscale.organization": "true",
 				"ownscale.subdomain":    subdomain,
 				"ownscale.domain":       domain,
+			},
+			// The headscale image ships with no built-in HEALTHCHECK; add
+			// one so Docker (and the wait-for-healthy poll below) can tell
+			// when the server is actually up and serving, not just running.
+			Healthcheck: &container.HealthConfig{
+				Test:          []string{"CMD", "headscale", "health"},
+				StartInterval: time.Second / 2,  // check fast at startup to keep execution fast
+				Interval:      10 * time.Second, // relax afterwards
+				Timeout:       2 * time.Second,
+				Retries:       5,
 			},
 		},
 		&container.HostConfig{
@@ -924,123 +777,65 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 		}
 	}
 
-	// aclPolicy is uploaded straight into the container's filesystem via
-	// the Docker API (not bind-mounted): the only way it ever changes is
-	// another such upload from ownscale itself (see WriteACLPolicy),
-	// keeping the file's source of truth firmly in the orgconfigs table.
-	policyTarBuf, err := configTar(PolicyConfigPath, aclPolicy)
-	if err != nil {
-		return "", err
-	}
-	if err := c.cli.CopyToContainer(ctx, resp.ID, "/", policyTarBuf, container.CopyToContainerOptions{}); err != nil {
-		return "", fmt.Errorf("copy acl policy into container: %w", err)
-	}
-
 	if err := c.cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
 		return "", fmt.Errorf("start container: %w", err)
 	}
-	go c.streamLogs(resp.ID, HSContainerName(subdomain))
 
-	headscaleAPIKey, err := c.MintHeadscaleAPIKey(ctx, resp.ID)
-	if err != nil {
+	if err := c.waitForHealthy(ctx, resp.ID); err != nil {
 		return "", err
 	}
 
-	if err := c.createHeadplane(ctx, subdomain, domain, headscaleAPIKey, oidcCreds); err != nil {
+	// Seed the default ACL policy through headscale's own API now that the
+	// server is confirmed up and serving. headscale in policy.mode: database
+	// starts with no policy configured, and callers shouldn't have
+	// to special-case "no policy yet" when reading it back.
+	cl, err := c.MintClientFn(ctx, subdomain)
+	if err != nil {
 		return "", err
+	}
+	if err := cl.SetPolicy(ctx, defaultACLPolicy); err != nil {
+		return "", fmt.Errorf("seed default policy: %w", err)
 	}
 
 	return resp.ID, nil
 }
 
-// createHeadplane provisions and starts the headplane container for an
-// organization, configured to talk to that organization's headscale
-// container over the organization's own isolated Docker network.
-func (c *Ctl) createHeadplane(ctx context.Context, subdomain, domain, headscaleAPIKey string, oidcCreds OIDCClientCredentials) (err error) {
-	defer derrors.Wrap(&err, "c.createHeadplane(%q, %q)", subdomain, domain)
+// waitForHealthy polls containerID's Docker health status until it reports
+// healthy or c.healthCheckTimeout elapses, at which point it returns an
+// error. It requires the container to have a HEALTHCHECK configured (see
+// CreateOrganization).
+func (c *Ctl) waitForHealthy(ctx context.Context, containerID string) (err error) {
+	defer derrors.Wrap(&err, "c.waitForHealthy(%q)", containerID)
 
-	cookieSecret, err := randomCookieSecret()
-	if err != nil {
-		return fmt.Errorf("generate cookie secret: %w", err)
+	deadline := time.Now().Add(c.healthCheckTimeout)
+	for {
+		info, err := c.cli.ContainerInspect(ctx, containerID)
+		if err != nil {
+			return fmt.Errorf("inspect container: %w", err)
+		}
+		if info.State != nil && info.State.Health != nil {
+			switch info.State.Health.Status {
+			case container.Healthy:
+				return nil
+			case container.Unhealthy:
+				return fmt.Errorf("container reported unhealthy")
+			}
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timed out after %s waiting for container to become healthy", c.healthCheckTimeout)
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(c.healthCheckPollInterval):
+		}
 	}
-	cfg, err := buildHPConfig(subdomain, domain, cookieSecret, headscaleAPIKey, oidcCreds)
-	if err != nil {
-		return err
-	}
-
-	hostDir := c.headplaneHostDir(subdomain)
-	if err := os.MkdirAll(hostDir, 0o755); err != nil {
-		return fmt.Errorf("create data directory: %w", err)
-	}
-	// Written by CreateOrganization before this is called.
-	configHostFile := filepath.Join(c.headscaleConfigHostDir(subdomain), "config.yaml")
-
-	mounts := []mount.Mount{
-		{Type: mount.TypeBind, Source: hostDir, Target: "/var/lib/headplane"},
-		{Type: mount.TypeBind, Source: configHostFile, Target: ConfigYAMLPath},
-		{Type: mount.TypeBind, Source: "/var/run/docker.sock", Target: "/var/run/docker.sock", ReadOnly: true},
-	}
-	if m, ok := c.localCAMount(); ok {
-		mounts = append(mounts, m)
-	}
-
-	resp, err := c.cli.ContainerCreate(ctx,
-		&container.Config{
-			Image: headplaneImage,
-			Labels: map[string]string{
-				"ownscale.organization": "true",
-				"ownscale.subdomain":    subdomain,
-				"ownscale.domain":       domain,
-				"ownscale.component":    "headplane",
-			},
-			// Node.js only reads NODE_EXTRA_CA_CERTS in addition to its
-			// built-in trust store (it doesn't replace it), and silently
-			// ignores the variable if the file doesn't exist -- so this is
-			// safe to always set: it makes headplane trust the local
-			// development root CA.
-			Env: []string{"NODE_EXTRA_CA_CERTS=" + filepath.Join(LocalCAMountTarget, localca.RootCertFileName)},
-		},
-		&container.HostConfig{
-			RestartPolicy: container.RestartPolicy{Name: container.RestartPolicyUnlessStopped},
-			Mounts:        mounts,
-		},
-		&network.NetworkingConfig{
-			EndpointsConfig: map[string]*network.EndpointSettings{
-				OrgNetworkName(subdomain): {},
-			},
-		},
-		nil,
-		HPContainerName(subdomain),
-	)
-	if err != nil {
-		return fmt.Errorf("create container: %w", err)
-	}
-
-	tarBuf, err := configTar(headplaneConfigPath, cfg)
-	if err != nil {
-		return err
-	}
-	if err := c.cli.CopyToContainer(ctx, resp.ID, "/", tarBuf, container.CopyToContainerOptions{}); err != nil {
-		return fmt.Errorf("copy config into container: %w", err)
-	}
-
-	if err := c.cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
-		return fmt.Errorf("start container: %w", err)
-	}
-	go c.streamLogs(resp.ID, HPContainerName(subdomain))
-
-	// Headplane only serves at /admin.
-	if err := c.waitForHTTPServing(ctx, resp.ID, "http://localhost:3000/admin/"); err != nil {
-		return err
-	}
-	return nil
 }
 
-// RemoveOrganization stops and removes the headscale and headplane
-// containers and their data (the headscale, headplane and headscale-config
-// host directories under DataDir), and the organization's own isolated
-// Docker network (disconnecting Caddy from it first). Missing resources are
-// ignored so
+// RemoveOrganization stops and removes the headscale container and its
+// data (the headscale and headscale-config host directories under
+// DataDir), and the organization's own isolated Docker network
+// (disconnecting Caddy from it first). Missing resources are ignored so
 // removal is idempotent.
 func (c *Ctl) RemoveOrganization(ctx context.Context, subdomain string) (err error) {
 	defer derrors.Wrap(&err, "c.RemoveOrganization(%q)", subdomain)
@@ -1057,26 +852,13 @@ func (c *Ctl) RemoveOrganization(ctx context.Context, subdomain string) (err err
 		return fmt.Errorf("remove config directory: %w", err)
 	}
 
-	hpName := HPContainerName(subdomain)
-	if err := c.cli.ContainerRemove(ctx, hpName, container.RemoveOptions{Force: true}); err != nil && !cerrdefs.IsNotFound(err) {
-		return fmt.Errorf("remove headplane container: %w", err)
-	}
-	if err := os.RemoveAll(c.headplaneHostDir(subdomain)); err != nil {
-		return fmt.Errorf("remove headplane data directory: %w", err)
-	}
-
 	c.removeOrgNetwork(ctx, subdomain)
 	return nil
 }
 
 // removeOrgNetwork disconnects Caddy and the ownscale container (if
 // connected) from subdomain's per-organization network and removes the
-// network itself. It's deliberately best-effort (failures are logged, not
-// returned): by the time it's called, RemoveOrganization has already
-// deleted the organization's containers and data, so a leftover network
-// (or a failed disconnect, e.g. because Caddy/ownscale isn't running) is
-// harmless clutter rather than a correctness problem, and shouldn't fail
-// organization removal.
+// network itself.
 func (c *Ctl) removeOrgNetwork(ctx context.Context, subdomain string) {
 	netName := OrgNetworkName(subdomain)
 
@@ -1103,10 +885,10 @@ func (c *Ctl) removeOrgNetwork(ctx context.Context, subdomain string) {
 	}
 }
 
-// StartOrganization starts the headscale and headplane containers for
-// subdomain if they exist and aren't already running. It's the counterpart
-// to StopAll/RemoveOrganization: it never (re)creates containers or
-// configs, it only starts pre-existing ones. Missing containers are
+// StartOrganization starts subdomain's headscale container if it exists
+// and isn't already running. It's the counterpart to
+// StopAll/RemoveOrganization: it never (re)creates the container or its
+// config, it only starts a pre-existing one. A missing container is
 // reported as an error, since that indicates the organization was never
 // provisioned (or was removed) rather than just stopped.
 func (c *Ctl) StartOrganization(ctx context.Context, subdomain string) (err error) {
@@ -1115,36 +897,12 @@ func (c *Ctl) StartOrganization(ctx context.Context, subdomain string) (err erro
 	if err := c.cli.ContainerStart(ctx, HSContainerName(subdomain), container.StartOptions{}); err != nil {
 		return fmt.Errorf("start container: %w", err)
 	}
-	go c.streamLogs(HSContainerName(subdomain), HSContainerName(subdomain))
-	if err := c.cli.ContainerStart(ctx, HPContainerName(subdomain), container.StartOptions{}); err != nil {
-		return fmt.Errorf("start headplane container: %w", err)
-	}
-	go c.streamLogs(HPContainerName(subdomain), HPContainerName(subdomain))
-	return nil
-}
-
-// WriteACLPolicy uploads content (a HuJSON access control policy) into
-// subdomain's running headscale container at policyConfigPath via the
-// Docker API's CopyToContainer, overwriting whatever policy file is
-// already there. It does not restart the container -- call
-// RestartHeadscale afterwards so headscale actually reloads the new
-// policy (headscale only reads its policy file at startup).
-func (c *Ctl) WriteACLPolicy(ctx context.Context, subdomain, content string) (err error) {
-	defer derrors.Wrap(&err, "c.WriteACLPolicy(%q)", subdomain)
-
-	tarBuf, err := configTar(PolicyConfigPath, content)
-	if err != nil {
-		return err
-	}
-	if err := c.cli.CopyToContainer(ctx, HSContainerName(subdomain), "/", tarBuf, container.CopyToContainerOptions{}); err != nil {
-		return fmt.Errorf("copy acl policy into container: %w", err)
-	}
 	return nil
 }
 
 // RestartHeadscale restarts subdomain's headscale container via the Docker
-// API, so it picks up a newly uploaded ACL policy (or any other on-disk
-// config change). Headplane, running on its own container, is unaffected.
+// API, so it picks up an on-disk config.yaml change (e.g. DNS or
+// auth-restriction settings, see orgs.OrgService.applyHeadscaleConfig).
 func (c *Ctl) RestartHeadscale(ctx context.Context, subdomain string) (err error) {
 	defer derrors.Wrap(&err, "c.RestartHeadscale(%q)", subdomain)
 
@@ -1169,8 +927,8 @@ func (c *Ctl) ContainerState(ctx context.Context, subdomain string) (_ string, e
 	return info.State.Status, nil
 }
 
-// StopAll gracefully stops every headscale and headplane container managed
-// by ownscale (identified by "ownscale.organization=true" label)
+// StopAll gracefully stops every headscale container managed by ownscale
+// (identified by "ownscale.organization=true" label) ahead of host
 // restarts/deploys. This function will not fail-fast.
 func (c *Ctl) StopAll(ctx context.Context, timeout time.Duration) (err error) {
 	defer derrors.Wrap(&err, "c.StopAll(%s)", timeout)

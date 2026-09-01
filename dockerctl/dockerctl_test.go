@@ -1,19 +1,21 @@
 package dockerctl
 
 import (
-	"archive/tar"
-	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log/slog"
-	"maps"
 	"net"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/docker/api/types"
@@ -25,11 +27,41 @@ import (
 
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/dockerctl/dockerfake"
-	"github.com/ownscalenet/ownscale/localca"
+	"github.com/ownscalenet/ownscale/headscaleclient"
 )
 
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+// newTestCtl wraps NewWithClient and installs a fake MintClientFn that talks
+// to an in-memory httptest server accepting any GetPolicy/SetPolicy call,
+// so CreateOrganization's default-policy seeding step doesn't attempt a
+// real network round trip to a container hostname that doesn't actually
+// exist under dockerfake.
+func newTestCtl(t *testing.T, api API, dataDir, localCADir string) *Ctl {
+	t.Helper()
+	ctl, err := NewWithClient(api, dataDir, localCADir, discardLogger())
+	if err != nil {
+		t.Fatalf("NewWithClient: %v", err)
+	}
+	ctl.MintClientFn = func(ctx context.Context, subdomain string) (*headscaleclient.Client, error) {
+		return newFakePolicyClient(t), nil
+	}
+	return ctl
+}
+
+func newFakePolicyClient(t *testing.T) *headscaleclient.Client {
+	t.Helper()
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/policy", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"policy":""}`)
+	})
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	host := strings.TrimPrefix(server.URL, "http://")
+	return headscaleclient.New(host, "test-api-key")
 }
 
 func TestBuildHSConfigIncludesOIDC(t *testing.T) {
@@ -109,64 +141,10 @@ func TestBuildDerpConfig(t *testing.T) {
 		}
 	}
 }
-
-func TestBuildHPConfigIncludesOIDCAndAPIKey(t *testing.T) {
-	cfg, err := buildHPConfig("acme", "acme.example.com", "cookie-secret", "headscale-api-key", OIDCClientCredentials{
-		Issuer:       "https://auth.example.com",
-		ClientID:     "client-id",
-		ClientSecret: "client-secret",
-	})
-	if err != nil {
-		t.Fatalf("buildHPConfig: %v", err)
-	}
-	for _, want := range []string{
-		`api_key: "headscale-api-key"`,
-		`issuer: "https://auth.example.com"`,
-		`token_endpoint_auth_method: "client_secret_basic"`,
-		`client_id: "client-id"`,
-		`client_secret: "client-secret"`,
-	} {
-		if !strings.Contains(cfg, want) {
-			t.Fatalf("config missing %q:\n%s", want, cfg)
-		}
-	}
-}
-
-// TestBuildHPConfigEnablesDockerIntegration verifies that the rendered
-// Headplane config enables the Docker integration (Network Management)
-// and points it at this org's own headscale container by name.
-func TestBuildHPConfigEnablesDockerIntegration(t *testing.T) {
-	cfg, err := buildHPConfig("acme", "acme.example.com", "cookie-secret", "headscale-api-key", OIDCClientCredentials{})
-	if err != nil {
-		t.Fatalf("buildHPConfig: %v", err)
-	}
-	for _, want := range []string{
-		"docker:\n    enabled: true",
-		`container_name: "hs-acme"`,
-		`socket: "unix:///var/run/docker.sock"`,
-	} {
-		if !strings.Contains(cfg, want) {
-			t.Fatalf("config missing %q:\n%s", want, cfg)
-		}
-	}
-}
-
 func TestCreateOrganizationBootstrapsHeadscaleAPIKey(t *testing.T) {
-	copied := make(map[string]map[string]string)
 	api := &dockerfake.API{
 		ContainerCreateFn: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
 			return container.CreateResponse{ID: containerName}, nil
-		},
-		CopyToContainerFn: func(ctx context.Context, containerID, path string, content io.Reader, options container.CopyToContainerOptions) error {
-			files, err := tarContents(content)
-			if err != nil {
-				return err
-			}
-			if copied[containerID] == nil {
-				copied[containerID] = make(map[string]string)
-			}
-			maps.Copy(copied[containerID], files)
-			return nil
 		},
 		ContainerExecCreateFn: func(ctx context.Context, containerID string, options container.ExecOptions) (container.ExecCreateResponse, error) {
 			return container.ExecCreateResponse{ID: "exec-1"}, nil
@@ -184,23 +162,16 @@ func TestCreateOrganizationBootstrapsHeadscaleAPIKey(t *testing.T) {
 			return container.ExecInspect{ExitCode: 0}, nil
 		},
 	}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
+	ctl := newTestCtl(t, api, t.TempDir(), "")
 	t.Cleanup(func() { _ = ctl.Close() })
 
-	_, err = ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{
+	_, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{
 		Issuer:       "https://auth.example.com",
 		ClientID:     "client-id",
 		ClientSecret: "client-secret",
-	}, config.DerpConfig{}, DefaultACLPolicy)
+	}, config.DerpConfig{})
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
-	}
-	hpCfg := copied[HPContainerName("acme")][strings.TrimPrefix(headplaneConfigPath, "/")]
-	if !strings.Contains(hpCfg, `api_key: "headscale-api-key"`) || !strings.Contains(hpCfg, `client_id: "client-id"`) {
-		t.Fatalf("unexpected headplane config:\n%s", hpCfg)
 	}
 	hsCfg, err := os.ReadFile(filepath.Join(ctl.headscaleConfigHostDir("acme"), "config.yaml"))
 	if err != nil {
@@ -211,25 +182,137 @@ func TestCreateOrganizationBootstrapsHeadscaleAPIKey(t *testing.T) {
 	}
 }
 
-func tarContents(r io.Reader) (map[string]string, error) {
-	tr := tar.NewReader(r)
-	files := make(map[string]string)
-	for {
-		hdr, err := tr.Next()
-		if err == io.EOF {
-			return files, nil
+func TestCreateOrganizationConfiguresHealthcheck(t *testing.T) {
+	var gotHealthcheck *container.HealthConfig
+	api := &dockerfake.API{
+		ContainerCreateFn: func(ctx context.Context, cfg *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+			if containerName == HSContainerName("acme") {
+				gotHealthcheck = cfg.Healthcheck
+			}
+			return container.CreateResponse{ID: containerName}, nil
+		},
+	}
+	ctl := newTestCtl(t, api, t.TempDir(), "")
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}); err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+	if gotHealthcheck == nil {
+		t.Fatal("container created with no Healthcheck config")
+	}
+	wantCmd := []string{"CMD", "headscale", "health"}
+	if !slices.Equal(gotHealthcheck.Test, wantCmd) {
+		t.Errorf("Healthcheck.Test = %v, want %v", gotHealthcheck.Test, wantCmd)
+	}
+}
+
+func TestCreateOrganizationWaitsForHealthy(t *testing.T) {
+	var inspectCalls int
+	api := &dockerfake.API{
+		ContainerCreateFn: func(ctx context.Context, cfg *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+			return container.CreateResponse{ID: containerName}, nil
+		},
+		ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+			inspectCalls++
+			status := container.Starting
+			if inspectCalls >= 3 {
+				status = container.Healthy
+			}
+			return container.InspectResponse{
+				ContainerJSONBase: &container.ContainerJSONBase{
+					State: &container.State{Status: "running", Health: &container.Health{Status: status}},
+				},
+			}, nil
+		},
+	}
+	ctl := newTestCtl(t, api, t.TempDir(), "")
+	t.Cleanup(func() { ctl.Close() })
+	ctl.healthCheckPollInterval = time.Millisecond
+
+	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}); err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+	if inspectCalls < 3 {
+		t.Errorf("ContainerInspect called %d times, want at least 3 (waiting for healthy)", inspectCalls)
+	}
+}
+
+func TestCreateOrganizationFailsWhenNeverHealthy(t *testing.T) {
+	api := &dockerfake.API{
+		ContainerCreateFn: func(ctx context.Context, cfg *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+			return container.CreateResponse{ID: containerName}, nil
+		},
+		ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+			return container.InspectResponse{
+				ContainerJSONBase: &container.ContainerJSONBase{
+					State: &container.State{Status: "running", Health: &container.Health{Status: container.Starting}},
+				},
+			}, nil
+		},
+	}
+	ctl := newTestCtl(t, api, t.TempDir(), "")
+	t.Cleanup(func() { ctl.Close() })
+	ctl.healthCheckPollInterval = time.Millisecond
+	ctl.healthCheckTimeout = 10 * time.Millisecond
+
+	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}); err == nil {
+		t.Fatal("CreateOrganization: want error when container never becomes healthy, got nil")
+	}
+}
+
+func TestCreateOrganizationSeedsDefaultPolicyViaAPI(t *testing.T) {
+	api := &dockerfake.API{
+		ContainerCreateFn: func(ctx context.Context, cfg *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+			return container.CreateResponse{ID: containerName}, nil
+		},
+	}
+	ctl := newTestCtl(t, api, t.TempDir(), "")
+	t.Cleanup(func() { ctl.Close() })
+
+	var gotPolicy string
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/policy", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			var body struct {
+				Policy string `json:"policy"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				t.Fatalf("decode PUT body: %v", err)
+			}
+			gotPolicy = body.Policy
 		}
-		if err != nil {
-			return nil, err
-		}
-		if hdr.Typeflag == tar.TypeDir {
-			continue
-		}
-		var buf bytes.Buffer
-		if _, err := io.Copy(&buf, tr); err != nil {
-			return nil, err
-		}
-		files[hdr.Name] = buf.String()
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"policy":%q}`, gotPolicy)
+	})
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	ctl.MintClientFn = func(ctx context.Context, subdomain string) (*headscaleclient.Client, error) {
+		return headscaleclient.New(strings.TrimPrefix(server.URL, "http://"), "test-api-key"), nil
+	}
+
+	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}); err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+	if gotPolicy != defaultACLPolicy {
+		t.Errorf("policy seeded via API = %q, want the default ACL policy", gotPolicy)
+	}
+}
+
+func TestCreateOrganizationFailsWhenSetPolicyFails(t *testing.T) {
+	api := &dockerfake.API{
+		ContainerCreateFn: func(ctx context.Context, cfg *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+			return container.CreateResponse{ID: containerName}, nil
+		},
+	}
+	ctl := newTestCtl(t, api, t.TempDir(), "")
+	t.Cleanup(func() { ctl.Close() })
+	ctl.MintClientFn = func(ctx context.Context, subdomain string) (*headscaleclient.Client, error) {
+		return nil, errors.New("mint failed")
+	}
+
+	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}); err == nil {
+		t.Fatal("CreateOrganization: want error when minting the policy-seeding client fails, got nil")
 	}
 }
 
@@ -293,7 +376,7 @@ func TestEnsureCaddyNetworkAlias(t *testing.T) {
 				},
 				ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
 					return container.InspectResponse{
-						ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running"}},
+						ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running", Health: &container.Health{Status: container.Healthy}}},
 						NetworkSettings:   &container.NetworkSettings{Networks: tc.initialNetworks},
 					}, nil
 				},
@@ -316,10 +399,7 @@ func TestEnsureCaddyNetworkAlias(t *testing.T) {
 					return nil
 				},
 			}
-			ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-			if err != nil {
-				t.Fatalf("NewWithClient: %v", err)
-			}
+			ctl := newTestCtl(t, api, t.TempDir(), "")
 			t.Cleanup(func() { _ = ctl.Close() })
 
 			if err := ctl.ensureCaddyNetworkAlias(t.Context(), ownscaleNetwork, "example.com"); err != nil {
@@ -341,193 +421,73 @@ func TestEnsureCaddyNetworkAlias(t *testing.T) {
 }
 
 func TestCreateOrganizationMountsLocalCADirAndSetsEnvWhenConfigured(t *testing.T) {
-	var hsMounts, hpMounts []mount.Mount
-	var hsEnv, hpEnv []string
+	var hsMounts []mount.Mount
+	var hsEnv []string
 	api := &dockerfake.API{
 		ContainerCreateFn: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
-			switch containerName {
-			case HSContainerName("acme"):
+			if containerName == HSContainerName("acme") {
 				hsMounts = hostConfig.Mounts
 				hsEnv = config.Env
-			case HPContainerName("acme"):
-				hpMounts = hostConfig.Mounts
-				hpEnv = config.Env
 			}
 			return container.CreateResponse{ID: containerName}, nil
 		},
 	}
 	localCADir := t.TempDir()
-	ctl, err := NewWithClient(api, t.TempDir(), localCADir, discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
+	ctl := newTestCtl(t, api, t.TempDir(), localCADir)
 	t.Cleanup(func() { _ = ctl.Close() })
 
 	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{
 		Issuer: "https://example.com", ClientID: "id", ClientSecret: "secret",
-	}, config.DerpConfig{}, DefaultACLPolicy); err != nil {
+	}, config.DerpConfig{}); err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
 
-	for _, mounts := range [][]mount.Mount{hsMounts, hpMounts} {
-		if !slices.ContainsFunc(mounts, func(m mount.Mount) bool {
-			return m.Type == mount.TypeBind && m.Source == localCADir && m.Target == LocalCAMountTarget && m.ReadOnly
-		}) {
-			t.Fatalf("mounts = %+v, want a read-only bind mount of %q at %q", mounts, localCADir, LocalCAMountTarget)
-		}
+	if !slices.ContainsFunc(hsMounts, func(m mount.Mount) bool {
+		return m.Type == mount.TypeBind && m.Source == localCADir && m.Target == LocalCAMountTarget && m.ReadOnly
+	}) {
+		t.Fatalf("mounts = %+v, want a read-only bind mount of %q at %q", hsMounts, localCADir, LocalCAMountTarget)
 	}
 
 	wantHSEnv := "SSL_CERT_DIR=/etc/ssl/certs:/etc/pki/tls/certs:" + LocalCAMountTarget
 	if !slices.Contains(hsEnv, wantHSEnv) {
 		t.Fatalf("headscale env = %v, want it to contain %q", hsEnv, wantHSEnv)
 	}
-
-	wantHPEnv := "NODE_EXTRA_CA_CERTS=" + LocalCAMountTarget + "/" + localca.RootCertFileName
-	if !slices.Contains(hpEnv, wantHPEnv) {
-		t.Fatalf("headplane env = %v, want it to contain %q", hpEnv, wantHPEnv)
-	}
 }
 
 func TestCreateOrganizationSkipsLocalCAMountWhenNotConfigured(t *testing.T) {
-	var hsMounts, hpMounts []mount.Mount
+	var hsMounts []mount.Mount
 	api := &dockerfake.API{
 		ContainerCreateFn: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
-			switch containerName {
-			case HSContainerName("acme"):
+			if containerName == HSContainerName("acme") {
 				hsMounts = hostConfig.Mounts
-			case HPContainerName("acme"):
-				hpMounts = hostConfig.Mounts
 			}
 			return container.CreateResponse{ID: containerName}, nil
 		},
 	}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
+	ctl := newTestCtl(t, api, t.TempDir(), "")
 	t.Cleanup(func() { _ = ctl.Close() })
 
 	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{
 		Issuer: "https://example.com", ClientID: "id", ClientSecret: "secret",
-	}, config.DerpConfig{}, DefaultACLPolicy); err != nil {
+	}, config.DerpConfig{}); err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
 
-	for _, mounts := range [][]mount.Mount{hsMounts, hpMounts} {
-		if slices.ContainsFunc(mounts, func(m mount.Mount) bool { return m.Target == LocalCAMountTarget }) {
-			t.Fatalf("mounts = %+v, want no local CA mount when LocalCADir is unset", mounts)
-		}
+	if slices.ContainsFunc(hsMounts, func(m mount.Mount) bool { return m.Target == LocalCAMountTarget }) {
+		t.Fatalf("mounts = %+v, want no local CA mount when LocalCADir is unset", hsMounts)
 	}
 }
 
-// TestCreateOrganizationSharesHeadscaleConfigWithHeadplane verifies that
-// the headscale config file is bind-mounted (read-only) into the headscale
-// container and the exact same host file is bind-mounted (read-write) into
-// the headplane container, both at ConfigYAMLPath -- this is what
-// lets Headplane's Network Management feature edit live headscale settings
-// and have headscale pick them up.
-func TestCreateOrganizationSharesHeadscaleConfigWithHeadplane(t *testing.T) {
-	var hsMounts, hpMounts []mount.Mount
-	api := &dockerfake.API{
-		ContainerCreateFn: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
-			switch containerName {
-			case HSContainerName("acme"):
-				hsMounts = hostConfig.Mounts
-			case HPContainerName("acme"):
-				hpMounts = hostConfig.Mounts
-			}
-			return container.CreateResponse{ID: containerName}, nil
-		},
-	}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
-	t.Cleanup(func() { _ = ctl.Close() })
-
-	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{
-		Issuer: "https://example.com", ClientID: "id", ClientSecret: "secret",
-	}, config.DerpConfig{}, DefaultACLPolicy); err != nil {
-		t.Fatalf("CreateOrganization: %v", err)
-	}
-
-	wantSource := filepath.Join(ctl.headscaleConfigHostDir("acme"), "config.yaml")
-
-	hsIdx := slices.IndexFunc(hsMounts, func(m mount.Mount) bool { return m.Target == ConfigYAMLPath })
-	if hsIdx < 0 {
-		t.Fatalf("headscale mounts = %+v, want a bind mount at %q", hsMounts, ConfigYAMLPath)
-	}
-	if hsMounts[hsIdx].Source != wantSource || !hsMounts[hsIdx].ReadOnly {
-		t.Fatalf("headscale config mount = %+v, want read-only bind mount of %q", hsMounts[hsIdx], wantSource)
-	}
-
-	hpIdx := slices.IndexFunc(hpMounts, func(m mount.Mount) bool { return m.Target == ConfigYAMLPath })
-	if hpIdx < 0 {
-		t.Fatalf("headplane mounts = %+v, want a bind mount at %q", hpMounts, ConfigYAMLPath)
-	}
-	if hpMounts[hpIdx].Source != wantSource || hpMounts[hpIdx].ReadOnly {
-		t.Fatalf("headplane config mount = %+v, want read-write bind mount of %q", hpMounts[hpIdx], wantSource)
-	}
-
-	content, err := os.ReadFile(wantSource)
-	if err != nil {
-		t.Fatalf("read shared config file: %v", err)
-	}
-	if !strings.Contains(string(content), `issuer: "https://example.com"`) {
-		t.Fatalf("shared config file content = %s, want it to contain the rendered headscale config", content)
-	}
-}
-
-// TestCreateOrganizationMountsDockerSocketIntoHeadplane verifies the
-// headplane container gets a read-only bind mount of the host Docker
-// socket, which it needs to restart the headscale container after Network
-// Management edits its config file.
-func TestCreateOrganizationMountsDockerSocketIntoHeadplane(t *testing.T) {
-	var hsMounts, hpMounts []mount.Mount
-	api := &dockerfake.API{
-		ContainerCreateFn: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
-			switch containerName {
-			case HSContainerName("acme"):
-				hsMounts = hostConfig.Mounts
-			case HPContainerName("acme"):
-				hpMounts = hostConfig.Mounts
-			}
-			return container.CreateResponse{ID: containerName}, nil
-		},
-	}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
-	t.Cleanup(func() { _ = ctl.Close() })
-
-	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}, DefaultACLPolicy); err != nil {
-		t.Fatalf("CreateOrganization: %v", err)
-	}
-
-	if !slices.ContainsFunc(hpMounts, func(m mount.Mount) bool {
-		return m.Type == mount.TypeBind && m.Source == "/var/run/docker.sock" && m.Target == "/var/run/docker.sock" && m.ReadOnly
-	}) {
-		t.Fatalf("headplane mounts = %+v, want a read-only bind mount of the Docker socket", hpMounts)
-	}
-	if slices.ContainsFunc(hsMounts, func(m mount.Mount) bool { return m.Source == "/var/run/docker.sock" }) {
-		t.Fatalf("headscale mounts = %+v, want no Docker socket mount", hsMounts)
-	}
-}
-
-// TestCreateOrganizationUsesPerOrgNetwork verifies that both the headscale
-// and headplane containers are created on the organization's own isolated
-// network (orgNetworkName), not the shared ownscaleNetwork.
+// TestCreateOrganizationUsesPerOrgNetwork verifies the headscale
+// container is created on the organization's own isolated network
+// (orgNetworkName), not the shared ownscaleNetwork.
 func TestCreateOrganizationUsesPerOrgNetwork(t *testing.T) {
-	var hsNetworks, hpNetworks map[string]*network.EndpointSettings
+	var hsNetworks map[string]*network.EndpointSettings
 	var caddyConnectedNetwork string
 	api := &dockerfake.API{
 		ContainerCreateFn: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
-			switch containerName {
-			case HSContainerName("acme"):
+			if containerName == HSContainerName("acme") {
 				hsNetworks = networkingConfig.EndpointsConfig
-			case HPContainerName("acme"):
-				hpNetworks = networkingConfig.EndpointsConfig
 			}
 			return container.CreateResponse{ID: containerName}, nil
 		},
@@ -536,7 +496,7 @@ func TestCreateOrganizationUsesPerOrgNetwork(t *testing.T) {
 		},
 		ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
 			return container.InspectResponse{
-				ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running"}},
+				ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running", Health: &container.Health{Status: container.Healthy}}},
 				NetworkSettings:   &container.NetworkSettings{Networks: map[string]*network.EndpointSettings{}},
 			}, nil
 		},
@@ -545,13 +505,10 @@ func TestCreateOrganizationUsesPerOrgNetwork(t *testing.T) {
 			return nil
 		},
 	}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
+	ctl := newTestCtl(t, api, t.TempDir(), "")
 	t.Cleanup(func() { _ = ctl.Close() })
 
-	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}, DefaultACLPolicy); err != nil {
+	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}); err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
 
@@ -561,12 +518,6 @@ func TestCreateOrganizationUsesPerOrgNetwork(t *testing.T) {
 	}
 	if _, ok := hsNetworks[ownscaleNetwork]; ok {
 		t.Fatalf("headscale networks = %+v, want it NOT to include the shared %q", hsNetworks, ownscaleNetwork)
-	}
-	if _, ok := hpNetworks[wantNetwork]; !ok {
-		t.Fatalf("headplane networks = %+v, want it to include %q", hpNetworks, wantNetwork)
-	}
-	if _, ok := hpNetworks[ownscaleNetwork]; ok {
-		t.Fatalf("headplane networks = %+v, want it NOT to include the shared %q", hpNetworks, ownscaleNetwork)
 	}
 	if caddyConnectedNetwork != wantNetwork {
 		t.Fatalf("caddy connected to network %q, want %q", caddyConnectedNetwork, wantNetwork)
@@ -603,10 +554,7 @@ func TestEnsureOrgNetwork(t *testing.T) {
 					return network.CreateResponse{}, nil
 				},
 			}
-			ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-			if err != nil {
-				t.Fatalf("NewWithClient: %v", err)
-			}
+			ctl := newTestCtl(t, api, t.TempDir(), "")
 			t.Cleanup(func() { _ = ctl.Close() })
 
 			name, err := ctl.EnsureOrgNetwork(t.Context(), "acme")
@@ -640,7 +588,7 @@ func TestEnsureCaddyNetworkAliasForOrg(t *testing.T) {
 		},
 		ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
 			return container.InspectResponse{
-				ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running"}},
+				ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running", Health: &container.Health{Status: container.Healthy}}},
 				NetworkSettings:   &container.NetworkSettings{Networks: map[string]*network.EndpointSettings{}},
 			}, nil
 		},
@@ -649,10 +597,7 @@ func TestEnsureCaddyNetworkAliasForOrg(t *testing.T) {
 			return nil
 		},
 	}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
+	ctl := newTestCtl(t, api, t.TempDir(), "")
 	t.Cleanup(func() { _ = ctl.Close() })
 
 	if err := ctl.EnsureCaddyNetworkAliasForOrg(t.Context(), "acme", "example.com"); err != nil {
@@ -681,10 +626,7 @@ func TestRemoveOrganizationCleansUpNetwork(t *testing.T) {
 			return nil
 		},
 	}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
+	ctl := newTestCtl(t, api, t.TempDir(), "")
 	t.Cleanup(func() { _ = ctl.Close() })
 
 	if err := ctl.RemoveOrganization(t.Context(), "acme"); err != nil {
@@ -711,13 +653,10 @@ func TestRemoveOrganizationCleansUpConfigDir(t *testing.T) {
 			return container.CreateResponse{ID: containerName}, nil
 		},
 	}
-	ctl, err := NewWithClient(api, dataDir, "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
+	ctl := newTestCtl(t, api, dataDir, "")
 	t.Cleanup(func() { _ = ctl.Close() })
 
-	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}, DefaultACLPolicy); err != nil {
+	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}); err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
 
@@ -746,10 +685,7 @@ func TestRemoveOrganizationIgnoresMissingNetwork(t *testing.T) {
 			return cerrdefs.ErrNotFound
 		},
 	}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
+	ctl := newTestCtl(t, api, t.TempDir(), "")
 	t.Cleanup(func() { _ = ctl.Close() })
 
 	if err := ctl.RemoveOrganization(t.Context(), "acme"); err != nil {
@@ -770,10 +706,7 @@ func TestRemoveOrganizationDoesNotFailWhenNetworkRemovalErrors(t *testing.T) {
 			return errors.New("network has active endpoints")
 		},
 	}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
+	ctl := newTestCtl(t, api, t.TempDir(), "")
 	t.Cleanup(func() { _ = ctl.Close() })
 
 	if err := ctl.RemoveOrganization(t.Context(), "acme"); err != nil {
@@ -835,7 +768,7 @@ func TestEnsureOwnscaleNetworkForOrg(t *testing.T) {
 				},
 				ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
 					return container.InspectResponse{
-						ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running"}},
+						ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running", Health: &container.Health{Status: container.Healthy}}},
 						NetworkSettings:   &container.NetworkSettings{Networks: networks},
 					}, nil
 				},
@@ -851,10 +784,7 @@ func TestEnsureOwnscaleNetworkForOrg(t *testing.T) {
 					return nil
 				},
 			}
-			ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-			if err != nil {
-				t.Fatalf("NewWithClient: %v", err)
-			}
+			ctl := newTestCtl(t, api, t.TempDir(), "")
 			t.Cleanup(func() { _ = ctl.Close() })
 
 			if err := ctl.EnsureOwnscaleNetworkForOrg(t.Context(), "acme"); err != nil {
@@ -896,7 +826,7 @@ func TestCreateOrganizationJoinsOwnscaleToOrgNetwork(t *testing.T) {
 		},
 		ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
 			return container.InspectResponse{
-				ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running"}},
+				ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running", Health: &container.Health{Status: container.Healthy}}},
 				NetworkSettings:   &container.NetworkSettings{Networks: map[string]*network.EndpointSettings{}},
 			}, nil
 		},
@@ -907,13 +837,10 @@ func TestCreateOrganizationJoinsOwnscaleToOrgNetwork(t *testing.T) {
 			return nil
 		},
 	}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
+	ctl := newTestCtl(t, api, t.TempDir(), "")
 	t.Cleanup(func() { _ = ctl.Close() })
 
-	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}, DefaultACLPolicy); err != nil {
+	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}); err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
 	if !ownscaleConnected {
@@ -944,10 +871,7 @@ func TestRemoveOrganizationDisconnectsOwnscaleFromNetwork(t *testing.T) {
 			return nil
 		},
 	}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
+	ctl := newTestCtl(t, api, t.TempDir(), "")
 	t.Cleanup(func() { _ = ctl.Close() })
 
 	if err := ctl.RemoveOrganization(t.Context(), "acme"); err != nil {
@@ -985,10 +909,7 @@ func TestMintHeadscaleAPIKeyByContainerName(t *testing.T) {
 			return container.ExecInspect{ExitCode: 0}, nil
 		},
 	}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
+	ctl := newTestCtl(t, api, t.TempDir(), "")
 	t.Cleanup(func() { _ = ctl.Close() })
 
 	key, err := ctl.MintHeadscaleAPIKey(t.Context(), HSContainerName("acme"))
@@ -1003,103 +924,26 @@ func TestMintHeadscaleAPIKeyByContainerName(t *testing.T) {
 	}
 }
 
-// TestBuildHSConfigIncludesPolicy verifies the rendered headscale config
-// points headscale at the uploaded ACL policy file in "file" mode.
+// TestBuildHSConfigIncludesPolicy verifies the rendered headscale
+// config uses database-backed ACL policy storage.
 func TestBuildHSConfigIncludesPolicy(t *testing.T) {
 	cfg, err := BuildHeadscaleConfig("acme", "acme.example.com", OIDCClientCredentials{}, config.DerpConfig{})
 	if err != nil {
 		t.Fatalf("BuildHeadscaleConfig: %v", err)
 	}
-	for _, want := range []string{
-		"policy:\n  mode: file\n  path: " + PolicyConfigPath,
-	} {
-		if !strings.Contains(cfg, want) {
-			t.Fatalf("config missing %q:\n%s", want, cfg)
-		}
+	if !strings.Contains(cfg, "policy:\n  mode: database") {
+		t.Fatalf("config missing database policy mode:\n%s", cfg)
 	}
-}
-
-// TestCreateOrganizationUploadsACLPolicy verifies CreateOrganization
-// uploads the given ACL policy content into the headscale container's
-// filesystem (not a bind mount) at PolicyConfigPath.
-func TestCreateOrganizationUploadsACLPolicy(t *testing.T) {
-	copied := make(map[string]map[string]string)
-	api := &dockerfake.API{
-		ContainerCreateFn: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
-			return container.CreateResponse{ID: containerName}, nil
-		},
-		CopyToContainerFn: func(ctx context.Context, containerID, path string, content io.Reader, options container.CopyToContainerOptions) error {
-			files, err := tarContents(content)
-			if err != nil {
-				return err
-			}
-			if copied[containerID] == nil {
-				copied[containerID] = make(map[string]string)
-			}
-			maps.Copy(copied[containerID], files)
-			return nil
-		},
+	if strings.Contains(cfg, "policy:\n  mode: file") {
+		t.Fatalf("config unexpectedly contains file policy mode:\n%s", cfg)
 	}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
-	t.Cleanup(func() { _ = ctl.Close() })
-
-	wantPolicy := `{"acls":[{"action":"accept","src":["*"],"dst":["*:*"]}]}`
-	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}, wantPolicy); err != nil {
-		t.Fatalf("CreateOrganization: %v", err)
-	}
-
-	got := copied[HSContainerName("acme")][strings.TrimPrefix(PolicyConfigPath, "/")]
-	if got != wantPolicy {
-		t.Fatalf("uploaded acl policy = %q, want %q", got, wantPolicy)
-	}
-
-	// No bind mount for the policy file: it must only reach the container
-	// via CopyToContainer, source-of-truth stays in the DB, not the host fs.
-	if _, err := os.Stat(filepath.Join(ctl.headscaleConfigHostDir("acme"), "acl.hujson")); err == nil {
-		t.Fatalf("acl.hujson unexpectedly written to host config dir")
-	}
-}
-
-// TestWriteACLPolicyUploadsToRunningContainer verifies WriteACLPolicy
-// re-uploads content into the (already running) headscale container by
-// name, without requiring a fresh container ID.
-func TestWriteACLPolicyUploadsToRunningContainer(t *testing.T) {
-	var gotContainerID string
-	var gotContent string
-	api := &dockerfake.API{
-		CopyToContainerFn: func(ctx context.Context, containerID, path string, content io.Reader, options container.CopyToContainerOptions) error {
-			files, err := tarContents(content)
-			if err != nil {
-				return err
-			}
-			gotContainerID = containerID
-			gotContent = files[strings.TrimPrefix(PolicyConfigPath, "/")]
-			return nil
-		},
-	}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
-	t.Cleanup(func() { _ = ctl.Close() })
-
-	newPolicy := `{"acls":[]}`
-	if err := ctl.WriteACLPolicy(t.Context(), "acme", newPolicy); err != nil {
-		t.Fatalf("WriteACLPolicy: %v", err)
-	}
-	if gotContainerID != HSContainerName("acme") {
-		t.Fatalf("container = %q, want %q", gotContainerID, HSContainerName("acme"))
-	}
-	if gotContent != newPolicy {
-		t.Fatalf("content = %q, want %q", gotContent, newPolicy)
+	if strings.Contains(cfg, "policy:\n  path:") || strings.Contains(cfg, "\n  path: ") {
+		t.Fatalf("config unexpectedly contains a policy path:\n%s", cfg)
 	}
 }
 
 // TestRestartHeadscaleRestartsTheRightContainer verifies RestartHeadscale
-// restarts only the org's headscale container (not headplane).
+// restarts the org's headscale container.
 func TestRestartHeadscaleRestartsTheRightContainer(t *testing.T) {
 	var restarted string
 	api := &dockerfake.API{
@@ -1108,10 +952,7 @@ func TestRestartHeadscaleRestartsTheRightContainer(t *testing.T) {
 			return nil
 		},
 	}
-	ctl, err := NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
+	ctl := newTestCtl(t, api, t.TempDir(), "")
 	t.Cleanup(func() { _ = ctl.Close() })
 
 	if err := ctl.RestartHeadscale(t.Context(), "acme"); err != nil {
@@ -1137,16 +978,12 @@ func newProvisionedTestCtl(t *testing.T) (ctl *Ctl, restarted *[]string) {
 			return nil
 		},
 	}
-	var err error
-	ctl, err = NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("NewWithClient: %v", err)
-	}
+	ctl = newTestCtl(t, api, t.TempDir(), "")
 	t.Cleanup(func() { _ = ctl.Close() })
 
 	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{
 		Issuer: "https://auth.example.com", ClientID: "client-id", ClientSecret: "client-secret",
-	}, config.DerpConfig{}, DefaultACLPolicy); err != nil {
+	}, config.DerpConfig{}); err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
 	restartedContainers = nil // ignore CreateOrganization's own container start, only ContainerRestart is tracked anyway

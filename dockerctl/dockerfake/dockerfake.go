@@ -94,13 +94,22 @@ func (a *API) ContainerRemove(ctx context.Context, containerID string, options c
 	return nil
 }
 
-// ContainerInspect fakes inspecting a container, defaulting to a "running" state.
+// ContainerInspect fakes inspecting a container, defaulting to a "running"
+// and Docker-healthy state (so tests exercising dockerctl.CreateOrganization's
+// health-check wait pass without needing to stub ContainerInspectFn
+// themselves, unless they specifically want to simulate a slow/failing
+// health check).
 func (a *API) ContainerInspect(ctx context.Context, containerID string) (container.InspectResponse, error) {
 	if a.ContainerInspectFn != nil {
 		return a.ContainerInspectFn(ctx, containerID)
 	}
 	return container.InspectResponse{
-		ContainerJSONBase: &container.ContainerJSONBase{State: &container.State{Status: "running"}},
+		ContainerJSONBase: &container.ContainerJSONBase{
+			State: &container.State{
+				Status: "running",
+				Health: &container.Health{Status: container.Healthy},
+			},
+		},
 	}, nil
 }
 

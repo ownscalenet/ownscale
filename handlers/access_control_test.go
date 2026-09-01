@@ -3,14 +3,49 @@ package handlers
 import (
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/dockerctl"
+	"github.com/ownscalenet/ownscale/headscaleclient"
 )
+
+// newFakePolicyServer builds an httptest.Server implementing headscale's
+// policy endpoint (GET/PUT /api/v1/policy) backed by an in-memory policy
+// string, and a *headscaleclient.Client pointed at it.
+func newFakePolicyServer(t *testing.T, initial string) (*headscaleclient.Client, *string) {
+	t.Helper()
+	policy := initial
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/policy", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		switch r.Method {
+		case http.MethodGet:
+			fmt.Fprintf(w, `{"policy":%s}`, jsonQuote(policy))
+		case http.MethodPut:
+			var body struct {
+				Policy string `json:"policy"`
+			}
+			if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+				w.WriteHeader(http.StatusBadRequest)
+				return
+			}
+			policy = body.Policy
+			fmt.Fprintf(w, `{"policy":%s}`, jsonQuote(policy))
+		default:
+			w.WriteHeader(http.StatusMethodNotAllowed)
+		}
+	})
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	host := strings.TrimPrefix(server.URL, "http://")
+
+	return headscaleclient.New(host, "test-api-key"), &policy
+}
 
 // newAccessControlTestHandlers builds Handlers with organization
 // provisioning configured (dockerfake-backed), synchronously creates and
@@ -44,11 +79,17 @@ func newAccessControlTestHandlers(t *testing.T, roles ...string) (*Handlers, sql
 	return h, org, users
 }
 
-func TestGetAccessControlPolicyDefaultsToDockerctlDefault(t *testing.T) {
+func TestGetAccessControlPolicyReturnsEmptyStringAsIs(t *testing.T) {
 	h, org, users := newAccessControlTestHandlers(t, RoleMember)
 	member := users[0]
+	// dockerctl.CreateOrganization seeds every organization with a default
+	// policy via headscale's API at provisioning time; this test simulates
+	// the (otherwise-unexpected) case where headscale genuinely reports no
+	// policy configured, and asserts the handler passes it through as-is
+	// with no fallback/special-casing.
+	client, _ := newFakePolicyServer(t, "")
 
-	req := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodGet, "/api/access-control", nil), member), member, org)
+	req := withMachinesClient(withActiveOrg(withTestUser(httptest.NewRequest(http.MethodGet, "/api/access-control", nil), member), member, org), client)
 	rec := httptest.NewRecorder()
 	h.GetAccessControlPolicy(rec, req)
 
@@ -62,8 +103,8 @@ func TestGetAccessControlPolicyDefaultsToDockerctlDefault(t *testing.T) {
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
 	}
-	if resp.Content != dockerctl.DefaultACLPolicy {
-		t.Errorf("content = %q, want default policy", resp.Content)
+	if resp.Content != "" {
+		t.Errorf("content = %q, want empty string (no fallback)", resp.Content)
 	}
 	if resp.CanManage {
 		t.Error("canManage = true for a plain member, want false")
@@ -73,9 +114,10 @@ func TestGetAccessControlPolicyDefaultsToDockerctlDefault(t *testing.T) {
 func TestUpdateAccessControlPolicyRequiresManager(t *testing.T) {
 	h, org, users := newAccessControlTestHandlers(t, RoleMember)
 	member := users[0]
+	client, _ := newFakePolicyServer(t, "")
 
 	body := `{"content":"{\"acls\":[]}"}`
-	req := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPut, "/api/access-control", strings.NewReader(body)), member), member, org)
+	req := withMachinesClient(withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPut, "/api/access-control", strings.NewReader(body)), member), member, org), client)
 	rec := httptest.NewRecorder()
 	h.UpdateAccessControlPolicy(rec, req)
 
@@ -87,9 +129,10 @@ func TestUpdateAccessControlPolicyRequiresManager(t *testing.T) {
 func TestUpdateAccessControlPolicyRejectsInvalidHuJSON(t *testing.T) {
 	h, org, users := newAccessControlTestHandlers(t, RoleOwner)
 	owner := users[0]
+	client, _ := newFakePolicyServer(t, "")
 
 	body := `{"content":"not valid hujson {{{"}`
-	req := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPut, "/api/access-control", strings.NewReader(body)), owner), owner, org)
+	req := withMachinesClient(withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPut, "/api/access-control", strings.NewReader(body)), owner), owner, org), client)
 	rec := httptest.NewRecorder()
 	h.UpdateAccessControlPolicy(rec, req)
 
@@ -101,18 +144,22 @@ func TestUpdateAccessControlPolicyRejectsInvalidHuJSON(t *testing.T) {
 func TestUpdateAccessControlPolicyPersistsAndReturnsOK(t *testing.T) {
 	h, org, users := newAccessControlTestHandlers(t, RoleOwner)
 	owner := users[0]
+	client, stored := newFakePolicyServer(t, "")
 
 	newPolicy := `{"acls":[{"action":"accept","src":["tag:test"],"dst":["*:*"]}]}`
 	body := `{"content":` + jsonQuote(newPolicy) + `}`
-	req := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPut, "/api/access-control", strings.NewReader(body)), owner), owner, org)
+	req := withMachinesClient(withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPut, "/api/access-control", strings.NewReader(body)), owner), owner, org), client)
 	rec := httptest.NewRecorder()
 	h.UpdateAccessControlPolicy(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
+	if *stored != newPolicy {
+		t.Fatalf("policy stored on the fake headscale server = %q, want %q", *stored, newPolicy)
+	}
 
-	getReq := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodGet, "/api/access-control", nil), owner), owner, org)
+	getReq := withMachinesClient(withActiveOrg(withTestUser(httptest.NewRequest(http.MethodGet, "/api/access-control", nil), owner), owner, org), client)
 	getRec := httptest.NewRecorder()
 	h.GetAccessControlPolicy(getRec, getReq)
 
