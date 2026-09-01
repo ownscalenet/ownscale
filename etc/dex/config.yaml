@@ -9,7 +9,7 @@ storage:
   type: memory
 
 web:
-  http: 0.0.0.0:5556
+  http: 0.0.0.0:80
 
 oauth2:
   # Skip Dex's own "allow ownscale to access your profile?" consent screen:
