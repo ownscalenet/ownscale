@@ -135,7 +135,7 @@ func NewWithClient(cli API, dataDir, localCADir string, logger *slog.Logger) (_ 
 	c := &Ctl{
 		cli: cli, dataDir: dataDir, logger: logger, ctx: ctx, cancel: cancel, localCADir: localCADir,
 		healthCheckPollInterval: time.Second / 5,
-		healthCheckTimeout:      5 * time.Second,
+		healthCheckTimeout:      20 * time.Second,
 	}
 	c.MintClientFn = c.MintClient
 	return c, nil
@@ -741,10 +741,11 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 			// when the server is actually up and serving, not just running.
 			Healthcheck: &container.HealthConfig{
 				Test:          []string{"CMD", "headscale", "health"},
+				StartPeriod:   2 * time.Second,
 				StartInterval: time.Second / 2,  // check fast at startup to keep execution fast
 				Interval:      10 * time.Second, // relax afterwards
 				Timeout:       2 * time.Second,
-				Retries:       5,
+				Retries:       3,
 			},
 		},
 		&container.HostConfig{

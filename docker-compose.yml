@@ -23,6 +23,8 @@ services:
     depends_on:
       local-ca-init:
         condition: service_completed_successfully
+      dex:
+        condition: service_healthy
     environment:
       OWNSCALE_BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
       OWNSCALE_DATA_DIR: ${OWNSCALE_DATA_DIR:?set OWNSCALE_DATA_DIR to an absolute host path in .env}
@@ -42,6 +44,12 @@ services:
     networks:
       - os-net
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
   dex:
     image: dexidp/dex:v2.45.1
@@ -62,6 +70,12 @@ services:
     networks:
       - os-net
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5556/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
   # Replicates every SQLite database under ${PWD}/data to a remote
   # destination (see etc/litestream/litestream.yaml and .env.example).
@@ -117,6 +131,12 @@ services:
         # has no real DNS at all.
         aliases:
           - dex.${BASE_DOMAIN:-ownscale.test}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:2019/config/"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
 
 volumes:
   caddy-data:
