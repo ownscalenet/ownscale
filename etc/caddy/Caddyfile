@@ -1,7 +1,7 @@
 {
 	# Ask the Ownscale console before issuing a certificate for a subdomain.
 	on_demand_tls {
-		ask http://ownscale/api/tls-ask
+		ask http://ownscale:8080/api/tls-ask
 	}
 
 	# Set CADDY_LOCAL_CERTS=local_certs in .env whenever BASE_DOMAIN isn't a
@@ -39,7 +39,7 @@
 }
 
 {$BASE_DOMAIN} {
-	reverse_proxy ownscale
+	reverse_proxy ownscale:8080
 }
 
 docs.{$BASE_DOMAIN} {
@@ -62,7 +62,7 @@ dex.{$BASE_DOMAIN} {
 	tls {
 		on_demand
 	}
-	reverse_proxy dex
+	reverse_proxy dex:5556
 }
 
 # Route https://<sub>.{$BASE_DOMAIN} to the hs-<sub> container, and

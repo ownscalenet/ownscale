@@ -9,7 +9,7 @@
 # precedence over this file, which takes precedence over built-in defaults.
 
 # Address the HTTP server listens on.
-addr: ":80"
+addr: ":8080"
 
 # Wildcard domain organizations are provisioned under (e.g. "example.com" for
 # "<sub>.example.com"). Required to run the server (for POST /api/organizations)
