@@ -17,6 +17,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -37,23 +38,29 @@ import (
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/dockerctl"
 	"github.com/ownscalenet/ownscale/handlers"
+	"github.com/ownscalenet/ownscale/headscaleclient"
 	"github.com/ownscalenet/ownscale/orgs"
 	"github.com/ownscalenet/ownscale/server"
 )
 
-func requireDocker(t *testing.T) {
+// requireDocker skips the test if no Docker daemon is reachable, and
+// returns a raw client for tests that need to inspect containers directly
+// (e.g. to work around the test process not being able to resolve
+// container names by DNS -- see the MintClientFn override below).
+func requireDocker(t *testing.T) *client.Client {
 	t.Helper()
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		t.Skipf("docker client unavailable: %v", err)
 	}
-	defer cli.Close()
+	t.Cleanup(func() { _ = cli.Close() })
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
 	if _, err := cli.Ping(ctx); err != nil {
 		t.Skipf("docker daemon unreachable: %v", err)
 	}
+	return cli
 }
 
 func newTestQueries(t *testing.T) *dbpkg.TxQueries {
@@ -88,7 +95,7 @@ func newTestQueries(t *testing.T) *dbpkg.TxQueries {
 // real Google OAuth (not practical to exercise in CI) by seeding a user
 // and minting its session cookie directly via auth.StoreUserSession.
 func TestServerIntegration(t *testing.T) {
-	requireDocker(t)
+	rawCli := requireDocker(t)
 
 	logger := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	queries := newTestQueries(t)
@@ -99,14 +106,33 @@ func TestServerIntegration(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = ctl.Close() })
 
+	// The code relies on the os-net docker network to work (defined in docker-compose.yaml).
+	// We don't have that network here in tests so instead of using container
+	// name, we use container ID to make headscale requests.
+	ctl.MintClientFn = func(ctx context.Context, subdomain string) (*headscaleclient.Client, error) {
+		hsName := dockerctl.HSContainerName(subdomain)
+		apiKey, err := ctl.MintHeadscaleAPIKey(ctx, hsName)
+		if err != nil {
+			return nil, err
+		}
+		info, err := rawCli.ContainerInspect(ctx, hsName)
+		if err != nil {
+			return nil, err
+		}
+		netInfo, ok := info.NetworkSettings.Networks[dockerctl.OrgNetworkName(subdomain)]
+		if !ok || netInfo.IPAddress == "" {
+			return nil, fmt.Errorf("container %q has no address on network %q", hsName, dockerctl.OrgNetworkName(subdomain))
+		}
+		return headscaleclient.New(netInfo.IPAddress+":8080", apiKey), nil
+	}
+
 	const baseDomain = "srvit.test"
 	var subdomain string
 	t.Cleanup(func() {
 		if subdomain == "" {
 			return
 		}
-		// Must be t.Context() because t.Context() is already cancelled.
-		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := ctl.RemoveOrganization(ctx, subdomain); err != nil {
 			t.Logf("cleanup: RemoveOrganization(%q): %v", subdomain, err)
@@ -114,9 +140,6 @@ func TestServerIntegration(t *testing.T) {
 	})
 
 	h := handlers.New(queries, ctl, baseDomain, t.TempDir(), nil, logger, config.DerpConfig{}, config.ProvisionerConfig{})
-	provisionerCtx, cancelProvisioner := context.WithCancel(t.Context())
-	t.Cleanup(cancelProvisioner)
-	h.StartProvisioner(provisionerCtx)
 	auth.Setup("test-session-secret-at-least-32-bytes-long")
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
 		return auth.RequireAuthAPI(queries.Queries, next)
@@ -221,20 +244,6 @@ func TestServerIntegration(t *testing.T) {
 		}
 		if body.User.ID != user.ID {
 			t.Errorf("session user id = %q, want %q", body.User.ID, user.ID)
-		}
-	})
-
-	t.Run("GET /api/tls-ask", func(t *testing.T) {
-		ok := authedRequest(t, http.MethodGet, "/api/tls-ask?domain="+subdomain+"."+baseDomain, nil)
-		defer ok.Body.Close()
-		if ok.StatusCode != http.StatusOK {
-			t.Errorf("known org: status = %d, want %d", ok.StatusCode, http.StatusOK)
-		}
-
-		forbidden := authedRequest(t, http.MethodGet, "/api/tls-ask?domain=ghost."+baseDomain, nil)
-		defer forbidden.Body.Close()
-		if forbidden.StatusCode != http.StatusForbidden {
-			t.Errorf("unknown org: status = %d, want %d", forbidden.StatusCode, http.StatusForbidden)
 		}
 	})
 

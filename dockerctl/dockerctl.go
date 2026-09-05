@@ -314,14 +314,6 @@ func (c *Ctl) findOwnscaleContainer(ctx context.Context) (_ string, err error) {
 // This is what lets the Go backend (headscaleclient) call
 // http://hs-<subdomain>:8080 directly to manage that organization's nodes,
 // the same way Caddy reaches it to proxy https://<subdomain>.<baseDomain>.
-//
-// It's idempotent, and exported so callers can reconcile this on ownscale
-// process startup (per organization), not just when that organization is
-// first created -- mirroring EnsureCaddyNetworkAliasForOrg. If the ownscale
-// container isn't found (e.g. running outside docker-compose, as in most
-// tests), this logs a warning and returns nil rather than failing
-// organization creation: it only means the org's Machines tab can't reach
-// headscale, not that the organization itself failed to provision.
 func (c *Ctl) EnsureOwnscaleNetworkForOrg(ctx context.Context, subdomain string) (err error) {
 	defer derrors.Wrap(&err, "c.EnsureOwnscaleNetworkForOrg(%q)", subdomain)
 

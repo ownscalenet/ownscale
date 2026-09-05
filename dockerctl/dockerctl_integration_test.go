@@ -8,6 +8,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"os"
@@ -24,6 +25,7 @@ import (
 
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/dockerctl"
+	"github.com/ownscalenet/ownscale/headscaleclient"
 )
 
 // tarFileContents reads name's contents out of the tar stream r (as
@@ -87,6 +89,29 @@ func TestDockerctlIntegration(t *testing.T) {
 	}
 	t.Cleanup(func() { _ = ctl.Close() })
 
+	// This test runs as a plain host process, not inside the "os-net"
+	// docker network, so it can't resolve a headscale container by its
+	// plain container name the way production ownscale can.
+	// Override MintClientFn to dial the container's Docker-assigned IP address
+	// instead, which is routable from the host even though the container's
+	// name isn't resolvable there.
+	ctl.MintClientFn = func(ctx context.Context, subdomain string) (*headscaleclient.Client, error) {
+		hsName := dockerctl.HSContainerName(subdomain)
+		apiKey, err := ctl.MintHeadscaleAPIKey(ctx, hsName)
+		if err != nil {
+			return nil, err
+		}
+		info, err := rawCli.ContainerInspect(ctx, hsName)
+		if err != nil {
+			return nil, err
+		}
+		netInfo, ok := info.NetworkSettings.Networks[dockerctl.OrgNetworkName(subdomain)]
+		if !ok || netInfo.IPAddress == "" {
+			return nil, fmt.Errorf("container %q has no address on network %q", hsName, dockerctl.OrgNetworkName(subdomain))
+		}
+		return headscaleclient.New(netInfo.IPAddress+":8080", apiKey), nil
+	}
+
 	const baseDomain = "it.test"
 	subdomain := randomSubdomain(t)
 
@@ -97,8 +122,8 @@ func TestDockerctlIntegration(t *testing.T) {
 	// already-running organizations on this host (EnsureNetwork's
 	// idempotency is exercised below instead).
 	t.Cleanup(func() {
-		// Must be t.Context() because t.Context() is already cancelled.
-		ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
+		// Must be context.Background(), not t.Context().
+		ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 		defer cancel()
 		if err := ctl.RemoveOrganization(ctx, subdomain); err != nil {
 			t.Logf("cleanup: RemoveOrganization(%q): %v", subdomain, err)

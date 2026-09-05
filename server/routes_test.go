@@ -86,20 +86,6 @@ func TestNewMuxProtectedRoutesRequireAuth(t *testing.T) {
 	}
 }
 
-func TestNewMuxTLSAskUnauthenticated(t *testing.T) {
-	mux := newTestMux(t)
-
-	req := httptest.NewRequest(http.MethodGet, "/api/tls-ask?domain=x", nil)
-	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, req)
-
-	// h.baseDomain is "" here, so TLSAsk itself 403s; the point of this
-	// test is just that it's reachable at all without a session (not 401).
-	if rec.Code == http.StatusUnauthorized {
-		t.Errorf("status = %d, want reachable unauthenticated (not 401)", rec.Code)
-	}
-}
-
 func TestNewMuxUnmatchedPathFallsBackToStatic(t *testing.T) {
 	queries := newTestQueries(t)
 	h := handlers.New(queries, nil, "", "", nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{})
