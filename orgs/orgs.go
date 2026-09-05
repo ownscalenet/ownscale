@@ -104,6 +104,10 @@ func (s *Service) Provision(ctx context.Context, orgID string) (err error) {
 	}
 
 	if err := s.provision(ctx, org); err != nil {
+		// Clean up whatever provision managed to create.
+		if cleanupErr := s.ctl.RemoveOrganization(ctx, org.Subdomain); cleanupErr != nil {
+			err = fmt.Errorf("%w (also failed to clean up partially-provisioned resources: %w)", err, cleanupErr)
+		}
 		if _, statusErr := s.queries.UpdateOrganizationStatus(ctx, sqlcgen.UpdateOrganizationStatusParams{
 			ID:     orgID,
 			Status: "failed",

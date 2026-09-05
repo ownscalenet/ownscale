@@ -15,6 +15,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -155,6 +156,60 @@ func TestServiceCreateCreatesOIDCClient(t *testing.T) {
 	}
 	if !strings.Contains(hsCfg, `issuer: "https://auth.example.com"`) {
 		t.Fatalf("headscale config missing issuer:\n%s", hsCfg)
+	}
+}
+
+func TestServiceProvisionRemovesContainerOnFailure(t *testing.T) {
+	queries := newTestQueries(t)
+	var removed []string
+	api := &dockerfake.API{
+		ContainerCreateFn: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+			return container.CreateResponse{ID: containerName}, nil
+		},
+		// Simulate the container never becoming healthy, so
+		// dockerctl.Ctl.waitForHealthy (and thus CreateOrganization) fails.
+		ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+			return container.InspectResponse{
+				ContainerJSONBase: &container.ContainerJSONBase{
+					State: &container.State{
+						Status: "running",
+						Health: &container.Health{Status: container.Unhealthy},
+					},
+				},
+			}, nil
+		},
+		ContainerRemoveFn: func(ctx context.Context, containerID string, options container.RemoveOptions) error {
+			removed = append(removed, containerID)
+			return nil
+		},
+	}
+	dataDir := t.TempDir()
+	ctl, err := dockerctl.NewWithClient(api, dataDir, "", slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("dockerctl.NewWithClient: %v", err)
+	}
+	t.Cleanup(func() { ctl.Close() })
+
+	svc := NewService(queries, ctl, "example.com", "https://auth.example.com", config.DerpConfig{})
+	org, err := svc.CreatePending(t.Context(), "acme")
+	if err != nil {
+		t.Fatalf("CreatePending: %v", err)
+	}
+	if err := svc.Provision(t.Context(), org.ID); err == nil {
+		t.Fatal("Provision: want error when the container never becomes healthy, got nil")
+	}
+
+	got, err := queries.GetOrganization(t.Context(), org.ID)
+	if err != nil {
+		t.Fatalf("GetOrganization: %v", err)
+	}
+	if got.Status != "failed" {
+		t.Errorf("org.Status = %q, want %q", got.Status, "failed")
+	}
+
+	wantContainer := dockerctl.HSContainerName("acme")
+	if !slices.Contains(removed, wantContainer) {
+		t.Errorf("ContainerRemove calls = %v, want it to include %q (no zombie container should survive a failed Provision)", removed, wantContainer)
 	}
 }
 

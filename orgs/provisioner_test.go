@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net"
 	"reflect"
+	"sync"
 	"testing"
 	"time"
 
@@ -178,4 +179,128 @@ func TestProvisionerRunStopsOnContextCancel(t *testing.T) {
 
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+// TestProvisionerCircuitBreakerBacksOffAfterConsecutiveFailures checks
+// that Run's replenish loop switches from the short retryBackoff to the
+// long, fixed longBackoff once failureThreshold consecutive failures was reached.
+func TestProvisionerCircuitBreakerBacksOffAfterConsecutiveFailures(t *testing.T) {
+	queries := newTestQueries(t)
+
+	// The DB is seeded (via migration 000008) with 6 pending organizations
+	// that recoverPending provisions once, up front, outside of the
+	// breaker-governed replenish loop. Remove them so only the
+	// replenish-loop attempts below are tracked.
+	seeded, err := queries.ListPendingOrganizations(t.Context())
+	if err != nil {
+		t.Fatalf("ListPendingOrganizations: %v", err)
+	}
+	for _, org := range seeded {
+		if err := queries.DeleteOrganization(t.Context(), org.ID); err != nil {
+			t.Fatalf("DeleteOrganization(%q): %v", org.ID, err)
+		}
+	}
+
+	// attempt i (0-indexed, in creation order) fails if failAt[i] is true.
+	// fail, fail, succeed, fail, succeed: exercises the breaker tripping
+	// after 2 consecutive failures, then resetting after the success.
+	failAt := []bool{true, true, false, true, false}
+
+	var mu sync.Mutex
+	var attemptTimes []time.Time
+	healthyContainer := make(map[string]bool)
+
+	api := &dockerfake.API{
+		ContainerCreateFn: func(ctx context.Context, cfg *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
+			mu.Lock()
+			defer mu.Unlock()
+			i := len(attemptTimes)
+			attemptTimes = append(attemptTimes, time.Now())
+			healthyContainer[containerName] = i >= len(failAt) || !failAt[i]
+			return container.CreateResponse{ID: containerName}, nil
+		},
+		ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+			mu.Lock()
+			healthy := healthyContainer[containerID]
+			mu.Unlock()
+			status := container.Healthy
+			if !healthy {
+				status = container.Unhealthy
+			}
+			return container.InspectResponse{
+				ContainerJSONBase: &container.ContainerJSONBase{
+					State: &container.State{Status: "running", Health: &container.Health{Status: status}},
+				},
+			}, nil
+		},
+		ContainerExecCreateFn: func(ctx context.Context, containerID string, options container.ExecOptions) (container.ExecCreateResponse, error) {
+			return container.ExecCreateResponse{ID: xid.New().String()}, nil
+		},
+		ContainerExecAttachFn: func(ctx context.Context, execID string, options container.ExecAttachOptions) (types.HijackedResponse, error) {
+			clientConn, serverConn := net.Pipe()
+			go func() {
+				w := stdcopy.NewStdWriter(serverConn, stdcopy.Stdout)
+				_, _ = w.Write([]byte("headscale-api-key\n"))
+				_ = serverConn.Close()
+			}()
+			return types.NewHijackedResponse(clientConn, ""), nil
+		},
+		ContainerExecInspectFn: func(ctx context.Context, execID string) (container.ExecInspect, error) {
+			return container.ExecInspect{ExitCode: 0}, nil
+		},
+	}
+
+	ctl, err := dockerctl.NewWithClient(api, t.TempDir(), "", discardLogger())
+	if err != nil {
+		t.Fatalf("dockerctl.NewWithClient: %v", err)
+	}
+	ctl.MintClientFn = func(ctx context.Context, subdomain string) (*headscaleclient.Client, error) {
+		return newFakePolicyClient(t), nil
+	}
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	svc := NewService(queries, ctl, "example.com", "https://auth.example.com", config.DerpConfig{})
+
+	const (
+		retryBackoff = 30 * time.Millisecond
+		longBackoff  = 300 * time.Millisecond
+	)
+	p := NewProvisioner(svc, discardLogger(), retryBackoff, 1)
+	p.failureThreshold = 2
+	p.longBackoff = longBackoff
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	go func() { p.Run(ctx) }()
+
+	if _, err := p.Take(ctx); err != nil {
+		t.Fatalf("first Take (after the breaker trips and resets): %v", err)
+	}
+	if _, err := p.Take(ctx); err != nil {
+		t.Fatalf("second Take (after the breaker resets): %v", err)
+	}
+
+	mu.Lock()
+	times := append([]time.Time(nil), attemptTimes...)
+	mu.Unlock()
+	if len(times) < len(failAt) {
+		t.Fatalf("got %d provisioning attempts, want at least %d", len(times), len(failAt))
+	}
+
+	gap := func(i, j int) time.Duration { return times[j].Sub(times[i]) }
+
+	// attempt 0 -> 1: only 1 consecutive failure so far, short backoff.
+	if g := gap(0, 1); g >= longBackoff {
+		t.Errorf("gap between attempts 1 and 2 = %s, want well under longBackoff (%s): breaker should not have tripped yet", g, longBackoff)
+	}
+	// attempt 1 -> 2: 2 consecutive failures reached failureThreshold, so
+	// the breaker should have tripped to longBackoff.
+	if g := gap(1, 2); g < longBackoff {
+		t.Errorf("gap between attempts 2 and 3 = %s, want at least longBackoff (%s): breaker should have tripped", g, longBackoff)
+	}
+	// attempt 3 -> 4: attempt 2 succeeded and reset the failure counter, so
+	// the single new failure (attempt 3) uses the short backoff again.
+	if g := gap(3, 4); g >= longBackoff {
+		t.Errorf("gap between attempts 4 and 5 = %s, want well under longBackoff (%s): breaker should have reset after the success", g, longBackoff)
+	}
 }

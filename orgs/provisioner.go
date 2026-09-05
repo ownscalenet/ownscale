@@ -10,19 +10,23 @@ import (
 )
 
 const (
-	defaultQueueCapacity = 4
-	defaultRetryBackoff  = 5 * time.Second
-	provisionTimeout     = 2 * time.Minute
-	maxSubdomainAttempts = 5
+	defaultQueueCapacity    = 4
+	defaultRetryBackoff     = 5 * time.Second
+	provisionTimeout        = 2 * time.Minute
+	maxSubdomainAttempts    = 5
+	defaultFailureThreshold = 3
+	defaultLongBackoff      = 10 * time.Minute
 )
 
 // Provisioner keeps a small pool of fully-provisioned, not-yet-assigned
 // organizations ready to hand out.
 type Provisioner struct {
-	svc          *Service
-	logger       *slog.Logger
-	retryBackoff time.Duration
-	ready        chan sqlcgen.Organization
+	svc              *Service
+	logger           *slog.Logger
+	retryBackoff     time.Duration
+	failureThreshold int
+	longBackoff      time.Duration
+	ready            chan sqlcgen.Organization
 }
 
 func NewProvisioner(svc *Service, logger *slog.Logger, retryBackoff time.Duration, queueCapacity int) *Provisioner {
@@ -33,10 +37,12 @@ func NewProvisioner(svc *Service, logger *slog.Logger, retryBackoff time.Duratio
 		queueCapacity = defaultQueueCapacity
 	}
 	return &Provisioner{
-		svc:          svc,
-		logger:       logger,
-		retryBackoff: retryBackoff,
-		ready:        make(chan sqlcgen.Organization, queueCapacity),
+		svc:              svc,
+		logger:           logger,
+		retryBackoff:     retryBackoff,
+		failureThreshold: defaultFailureThreshold,
+		longBackoff:      defaultLongBackoff,
+		ready:            make(chan sqlcgen.Organization, queueCapacity),
 	}
 }
 
@@ -62,17 +68,30 @@ func (p *Provisioner) Run(ctx context.Context) error {
 		return err
 	}
 
+	var consecutiveFailures int
 	for {
 		if err := p.replenishOne(ctx); err != nil {
 			if ctx.Err() != nil {
 				return nil
 			}
-			p.logger.Error("replenish organization pool", "error", err)
+			consecutiveFailures++
+			p.logger.Error("replenish organization pool", "error", err, "consecutive_failures", consecutiveFailures)
+
+			backoff := p.retryBackoff
+			if consecutiveFailures >= p.failureThreshold {
+				backoff = p.longBackoff
+				p.logger.Error("provisioner circuit breaker tripped; backing off",
+					"consecutive_failures", consecutiveFailures, "backoff", backoff)
+			}
 			select {
 			case <-ctx.Done():
 				return nil
-			case <-time.After(p.retryBackoff):
+			case <-time.After(backoff):
 			}
+		} else if consecutiveFailures > 0 {
+			p.logger.Info("provisioner recovered after consecutive failures; resuming normal cadence",
+				"consecutive_failures", consecutiveFailures)
+			consecutiveFailures = 0
 		}
 		if ctx.Err() != nil {
 			return nil
