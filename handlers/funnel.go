@@ -16,12 +16,7 @@ import (
 
 // funnelLabelRe matches a valid funnel-route label: alphanumeric only, no
 // hyphens or dots. The label and org subdomain are joined by "-" into the
-// single-DNS-label public funnel hostname "<label>-<org-subdomain>.{base}"
-// (see etc/caddy/Caddyfile and funnelproxy.ParseHost), which reuses the
-// same "*.{$BASE_DOMAIN}" wildcard as plain org subdomains. Caddy's
-// hostname-shape routing (a blind regex map, no DB access) distinguishes
-// the two shapes by splitting on the first "-", so the label must never
-// contain one -- unlike the subdomain part, which safely can.
+// single-DNS-label public funnel hostname "<label>-<org-subdomain>.{base}".
 var funnelLabelRe = regexp.MustCompile(`^[a-z0-9]{1,63}$`)
 
 func validateFunnelLabel(label string) string {
@@ -31,12 +26,6 @@ func validateFunnelLabel(label string) string {
 	return ""
 }
 
-// funnelRouteResponse mirrors frontend/src/api.ts's FunnelRoute interface
-// field-for-field. Hostname is precomputed here (rather than left for the
-// frontend to build) so the UI always shows a copyable, correct-by-
-// construction full public URL -- serve's UI showed a bare hostname
-// without its required port, which turned out to be a real source of user
-// confusion.
 type funnelRouteResponse struct {
 	ID                string `json:"id"`
 	Label             string `json:"label"`
