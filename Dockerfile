@@ -23,9 +23,6 @@ COPY --from=litestream/litestream:0.5.16 /usr/local/bin/litestream /usr/local/bi
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
-# ownscale listens on 8080; this is intentionally not published as a host
-# port in docker-compose.yml -- it's reachable only via the shared os-net
-# Docker network (e.g. by Caddy at ownscale:8080).
-EXPOSE 8080
+EXPOSE 80
 
 ENTRYPOINT ["/app/entrypoint.sh"]

@@ -4,9 +4,10 @@
 # (go:embed needs real files at Go build time), so run `make frontend`
 # whenever frontend/ changes and commit the updated webui/dist.
 
-.PHONY: build frontend backend osa restore test test-integration coverage migration archive docker-image rm-orphans purge ci docs load-cert e2e
+.PHONY: build frontend backend osa restore test test-integration coverage migration archive docker-image caddy-image rm-orphans purge ci docs load-cert e2e
 
 DOCKER_IMAGE := ownscale:latest
+CADDY_IMAGE := ownscale-caddy:latest
 
 build: frontend backend
 
@@ -84,10 +85,13 @@ coverage:
 docker-image:
 	docker build -t $(DOCKER_IMAGE) .
 
+caddy-image:
+	docker build -t $(CADDY_IMAGE) ./etc/caddy
+
 # ghetto deploy script
-# Send the ownscale image and repo files to remote.
-archive: docker-image
-	docker save $(DOCKER_IMAGE) | gzip | ssh az 'gzip -d | docker load'
+# Send the ownscale and caddy images and repo files to remote.
+archive: docker-image caddy-image
+	docker save $(DOCKER_IMAGE) $(CADDY_IMAGE) | gzip | ssh az 'gzip -d | docker load'
 	# delete existing go files
 	ssh az rm -rf ownscale/internal ownscale/cmd
 	tar czf - \

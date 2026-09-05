@@ -113,7 +113,7 @@ func TestServerIntegration(t *testing.T) {
 		}
 	})
 
-	h := handlers.New(queries, ctl, baseDomain, nil, logger, config.DerpConfig{}, config.ProvisionerConfig{})
+	h := handlers.New(queries, ctl, baseDomain, t.TempDir(), nil, logger, config.DerpConfig{}, config.ProvisionerConfig{})
 	provisionerCtx, cancelProvisioner := context.WithCancel(t.Context())
 	t.Cleanup(cancelProvisioner)
 	h.StartProvisioner(provisionerCtx)

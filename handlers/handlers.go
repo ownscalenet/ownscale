@@ -13,6 +13,7 @@ import (
 	"github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/dockerctl"
+	"github.com/ownscalenet/ownscale/funnelproxy"
 	"github.com/ownscalenet/ownscale/headscaleclient"
 	"github.com/ownscalenet/ownscale/orgs"
 )
@@ -25,17 +26,22 @@ type Handlers struct {
 	baseDomain  string
 	oidc        *oidcprovider.Storage
 	logger      *slog.Logger
+	funnel      *funnelproxy.Pool
 }
 
 // New builds the Handlers, wiring queries/ctl/baseDomain into the
 // orgs.Service used for organization creation and the orgs.Provisioner
-// that runs provisioning in the background.
-func New(queries *db.TxQueries, ctl *dockerctl.Ctl, baseDomain string, oidc *oidcprovider.Storage, logger *slog.Logger, derpCfg config.DerpConfig, provisionerCfg config.ProvisionerConfig) *Handlers {
+// that runs provisioning in the background. dataDir is used only to give
+// the funnel proxy's per-organization tsnet.Server instances a stable
+// state directory (see funnelproxy.NewPool); pass "" in tests that never
+// exercise funnel routing.
+func New(queries *db.TxQueries, ctl *dockerctl.Ctl, baseDomain, dataDir string, oidc *oidcprovider.Storage, logger *slog.Logger, derpCfg config.DerpConfig, provisionerCfg config.ProvisionerConfig) *Handlers {
 	issuer := ""
 	if oidc != nil {
 		issuer = oidc.Issuer()
 	}
 	orgSvc := orgs.NewService(queries, ctl, baseDomain, issuer, derpCfg)
+	hs := headscaleclient.NewRegistry(ctl)
 	return &Handlers{
 		queries:     queries,
 		baseDomain:  baseDomain,
@@ -43,8 +49,33 @@ func New(queries *db.TxQueries, ctl *dockerctl.Ctl, baseDomain string, oidc *oid
 		logger:      logger,
 		orgs:        orgSvc,
 		provisioner: orgs.NewProvisioner(orgSvc, logger, 0, provisionerCfg.QueueCapacity),
-		hs:          headscaleclient.NewRegistry(ctl),
+		hs:          hs,
+		funnel:      funnelproxy.NewPool(queries, hs, dataDir, logger),
 	}
+}
+
+// Close releases resources held by Handlers across the process's
+// lifetime. Intended to be called once, at process shutdown.
+func (h *Handlers) Close() {
+	h.funnel.Close()
+}
+
+// ServeFunnelIfMatched serves r via the funnel proxy and returns true if
+// r.Host is shaped like a funnel hostname ("<label>-<subdomain>.{base}",
+// see etc/caddy/Caddyfile's "*.{$BASE_DOMAIN}" site block that routes
+// these to the ownscale container and funnelproxy.ParseHost); otherwise
+// it does nothing and returns false, so the caller (server.NewMux) can
+// fall through to the normal API/SPA mux.
+func (h *Handlers) ServeFunnelIfMatched(w http.ResponseWriter, r *http.Request) bool {
+	if h.baseDomain == "" {
+		return false
+	}
+	label, subdomain, ok := funnelproxy.ParseHost(r.Host, h.baseDomain)
+	if !ok {
+		return false
+	}
+	h.funnel.ServeHTTP(w, r, label, subdomain)
+	return true
 }
 
 // StartProvisioner launches the background organization provisioner (see

@@ -95,7 +95,7 @@ func newTestHandlers(t *testing.T, withOrgs bool) (*Handlers, *dbpkg.TxQueries) 
 		ctl = newTestCtl(t, noopDockerAPI())
 		baseDomain = testBaseDomain
 	}
-	return New(queries, ctl, baseDomain, nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{}), queries
+	return New(queries, ctl, baseDomain, t.TempDir(), nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{}), queries
 }
 
 // withActiveOrg attaches (caller, org) to req's context, as RequireActiveOrg

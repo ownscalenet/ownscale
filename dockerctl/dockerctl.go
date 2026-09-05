@@ -952,7 +952,7 @@ func (c *Ctl) StopAll(ctx context.Context, timeout time.Duration) (err error) {
 	return errors.Join(errs...)
 }
 
-var subdomainRe = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$`)
+var subdomainRe = regexp.MustCompile(`^[a-z0-9]{4,63}$`)
 
 // reservedSubdomains are single DNS labels that organizations may not use,
 // because they're reserved for fixed, non-organization Caddy site blocks:
@@ -975,10 +975,7 @@ func ValidateSubdomain(s string) (err error) {
 	defer derrors.Wrap(&err, "dockerctl.ValidateSubdomain(%q)", s)
 
 	if !subdomainRe.MatchString(s) {
-		return fmt.Errorf("must be a DNS label (lowercase letters, digits, hyphens)")
-	}
-	if len(s) < 4 {
-		return fmt.Errorf("must be at least 4 characters")
+		return fmt.Errorf("must contain only lowercase letters and digits, at least 4 characters")
 	}
 	if reservedSubdomains[strings.ToLower(s)] {
 		return fmt.Errorf("%q is a reserved subdomain and cannot be used for an organization", s)

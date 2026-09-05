@@ -9,6 +9,16 @@ import (
 	"time"
 )
 
+type FunnelRoute struct {
+	ID             string
+	OrganizationID string
+	Label          string
+	TargetNodeID   string
+	TargetPort     int64
+	CreatedBy      string
+	CreatedAt      time.Time
+}
+
 type Invite struct {
 	ID               string
 	OrganizationID   string

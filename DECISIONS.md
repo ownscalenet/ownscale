@@ -42,3 +42,8 @@ By default docker only allows 32 networks, so at max there are 32 organizations.
 To increase, edit /etc/docker/daemon.json and reload docker.
 
 ### 8. TODO: remember why derper server is separate and not using headscale's embedded one
+
+### 9. Funnels create their own subdomains
+To keep routing simple, organization subdomains can only be alphanumeric. When a
+funnel is created, its subdomain will be funnelname-orgname.example.com. TLS is
+done with wildcards.

@@ -1,8 +1,7 @@
 // stack.ts: helpers for resetting and starting the real docker-compose
 // stack (ownscale + dex + caddy) that these e2e tests run against, plus
 // polling for it to be ready. Intentionally shells out to `docker compose`
-// and `go run ./cmd/osa` rather than mocking anything -- see plan.md /
-// e2e/README.md for why.
+// and `go run ./cmd/osa` rather than mocking anything.
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { existsSync } from 'node:fs'
@@ -39,11 +38,10 @@ async function removeOrgContainers(): Promise<void> {
 // resetDatabase deletes the SQLite database file (plus WAL/SHM sidecars)
 // under data/, so every run starts from an empty, then-migrated schema.
 // Safe/expected here: this suite is explicitly allowed to reset local dev
-// data (see plan.md). The files are owned by root (created by the
-// containerized server, which runs as root against the bind-mounted
-// data/ dir), so removing them needs a privilege escalation; `sudo` is
-// used rather than Node's fs so this works the same whether or not the
-// current user happens to own the files.
+// data. The files are owned by root (created by the containerized server,
+// which runs as root against the bind-mounted data/ dir), so removing them
+// needs a privilege escalation; `sudo` is used rather than Node's fs so this
+// works the same whether or not the current user happens to own the files.
 async function resetDatabase(): Promise<void> {
   const dataDir = path.join(REPO_ROOT, 'data')
   const files = ['', '-wal', '-shm']

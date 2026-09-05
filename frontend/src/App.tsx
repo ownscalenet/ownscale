@@ -7,6 +7,7 @@ import Users from './pages/Users'
 import AccessControl from './pages/AccessControl'
 import AuthRestrictions from './pages/AuthRestrictions'
 import DNS from './pages/DNS'
+import Funnel from './pages/Funnel'
 import Settings from './pages/Settings'
 import CreateOrganization from './pages/CreateOrganization'
 import AcceptInvite from './pages/AcceptInvite'
@@ -78,6 +79,7 @@ function AppRoutes() {
         <Route path="access-control" element={<AccessControl />} />
         <Route path="auth-restrictions" element={<AuthRestrictions />} />
         <Route path="dns" element={<DNS />} />
+        <Route path="funnel" element={<Funnel />} />
 
         <Route path="settings" element={<Settings />} />
       </Route>

@@ -325,3 +325,40 @@ export function createAuthKey(params: CreateAuthKeyParams) {
 export function expireAuthKey(id: string) {
   return request<{ ok: boolean }>(`/api/auth-keys/${id}/expire`, { method: 'POST' })
 }
+
+export interface FunnelRoute {
+  id: string
+  label: string
+  hostname: string
+  targetNodeId: string
+  targetNodeName: string
+  targetNodeMissing: boolean
+  targetPort: number
+  createdAt: string
+}
+
+export interface FunnelRoutesResponse {
+  funnelRoutes: FunnelRoute[]
+  canManage: boolean
+}
+
+export function listFunnelRoutes() {
+  return request<FunnelRoutesResponse>('/api/funnel')
+}
+
+export interface CreateFunnelRouteParams {
+  label: string
+  targetNodeId: string
+  targetPort: number
+}
+
+export function createFunnelRoute(params: CreateFunnelRouteParams) {
+  return request<{ funnelRoute: FunnelRoute }>('/api/funnel', {
+    method: 'POST',
+    body: JSON.stringify(params),
+  })
+}
+
+export function deleteFunnelRoute(id: string) {
+  return request<{ ok: boolean }>(`/api/funnel/${id}`, { method: 'DELETE' })
+}

@@ -60,6 +60,11 @@ export default function Layout() {
               </NavLink>
             </li>
             <li>
+              <NavLink to="/funnel" className={({ isActive }) => (isActive ? 'active' : '')}>
+                Funnel
+              </NavLink>
+            </li>
+            <li>
               <NavLink to="/settings" className={({ isActive }) => (isActive ? 'active' : '')}>
                 Settings
               </NavLink>

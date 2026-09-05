@@ -1,7 +1,10 @@
 {
-	# Ask the Ownscale console before issuing a certificate for a subdomain.
-	on_demand_tls {
-		ask http://ownscale:8080/api/tls-ask
+	acme_dns azure {
+		subscription_id {$AZURE_SUBSCRIPTION_ID}
+		resource_group_name {$AZURE_RESOURCE_GROUP_NAME}
+		tenant_id {$AZURE_TENANT_ID}
+		client_id {$AZURE_CLIENT_ID}
+		client_secret {$AZURE_CLIENT_SECRET}
 	}
 
 	# Set CADDY_LOCAL_CERTS=local_certs in .env whenever BASE_DOMAIN isn't a
@@ -43,9 +46,6 @@
 }
 
 docs.{$BASE_DOMAIN} {
-	tls {
-		on_demand
-	}
 	root * /srv/site
 	file_server
 }
@@ -59,19 +59,16 @@ docs.{$BASE_DOMAIN} {
 # needed -- and it reuses the same local-CA trust story as every other
 # subdomain here.
 dex.{$BASE_DOMAIN} {
-	tls {
-		on_demand
-	}
 	reverse_proxy dex:5556
 }
 
 # Route https://<sub>.{$BASE_DOMAIN} to the hs-<sub> container, and
+# https://<label>-<sub>.{$BASE_DOMAIN} (funnel) to the ownscale container
+# itself, which proxies the request into the org's tailnet via an
+# in-process tsnet client.
 *.{$BASE_DOMAIN} {
-	tls {
-		on_demand
-	}
-
 	map {host} {backend} {
+		~^([a-z0-9]+)-([a-z0-9-]+)\. "ownscale:8080"
 		~^([a-z0-9-]+)\. "hs-${1}:8080"
 	}
 

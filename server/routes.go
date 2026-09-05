@@ -56,9 +56,9 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	mux.HandleFunc("GET /api/dns", requireAuthAPI(h.RequireActiveOrg(h.GetDNSSettings)))
 	mux.HandleFunc("PUT /api/dns", requireAuthAPI(h.RequireActiveOrg(h.UpdateDNSSettings)))
 
-	// Caddy's on-demand TLS "ask" endpoint; unauthenticated (checked by
-	// TLSAsk itself against known organizations/subdomains).
-	mux.HandleFunc("GET /api/tls-ask", h.TLSAsk)
+	mux.HandleFunc("GET /api/funnel", requireAuthAPI(h.RequireActiveOrg(h.RequireMachinesClient(h.ListFunnelRoutes))))
+	mux.HandleFunc("POST /api/funnel", requireAuthAPI(h.RequireActiveOrg(h.RequireMachinesClient(h.CreateFunnelRoute))))
+	mux.HandleFunc("DELETE /api/funnel/{id}", requireAuthAPI(h.RequireActiveOrg(h.DeleteFunnelRoute)))
 
 	// Browser-driven OAuth flow: real redirects, not JSON.
 	mux.HandleFunc("GET /auth/{provider}/callback", h.AuthCallback)
@@ -88,5 +88,14 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	// client-side routes (/, /login, /machines, ...).
 	mux.Handle("/", static)
 
-	return loggingMiddleware(logger, securityHeadersMiddleware(mux))
+	// Requests whose Host header is a funnel hostname
+	// ("<label>--<sub>.{base}", forwarded here by Caddy's map block.
+	dispatch := func(w http.ResponseWriter, r *http.Request) {
+		if h.ServeFunnelIfMatched(w, r) {
+			return
+		}
+		mux.ServeHTTP(w, r)
+	}
+
+	return loggingMiddleware(logger, securityHeadersMiddleware(http.HandlerFunc(dispatch)))
 }

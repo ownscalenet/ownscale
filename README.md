@@ -123,6 +123,12 @@ copy step is skipped entirely. It similarly changes how ownscale itself
 trusts its own configured `auth.upstream_oidc.issuer` (e.g. the bundled Dex
 instance): see `auth.RegisterUpstreamOIDC`.
 
+### Wildcard TLS certificate (production, via Azure DNS-01)
+
+For organizations names and funnels we use separate subdomains. TLS is done with
+a wildcard certificate. That needs API support and a caddy plugin. Because ownscale
+is deployed on azure, only azure is supported now.
+
 ## Trust Caddy local dev certs
 
 The pre-generated root CA cert lives at `${OWNSCALE_DATA_DIR}/local-ca/root.crt`

@@ -102,7 +102,9 @@ services:
     restart: unless-stopped
 
   caddy:
-    image: caddy:2
+    image: ownscale-caddy:latest
+    build:
+      context: ./etc/caddy
     depends_on:
       local-ca-init:
         condition: service_completed_successfully
@@ -110,6 +112,11 @@ services:
       BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
       CADDY_LOG_LEVEL: ${CADDY_LOG_LEVEL:-debug}
       CADDY_LOCAL_CERTS: ${CADDY_LOCAL_CERTS:-}
+      AZURE_SUBSCRIPTION_ID: ${AZURE_SUBSCRIPTION_ID:-}
+      AZURE_RESOURCE_GROUP_NAME: ${AZURE_RESOURCE_GROUP_NAME:-}
+      AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
+      AZURE_CLIENT_ID: ${AZURE_CLIENT_ID:-}
+      AZURE_CLIENT_SECRET: ${AZURE_CLIENT_SECRET:-}
     ports:
       - "${CADDY_LISTEN_IP:-0.0.0.0}:80:80"
       - "${CADDY_LISTEN_IP:-0.0.0.0}:443:443"

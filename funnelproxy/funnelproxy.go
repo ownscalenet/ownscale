@@ -1,0 +1,268 @@
+// Package funnelproxy implements the "funnel" feature's public-internet
+// side: an in-process reverse proxy that terminates funnel requests
+// forwarded by Caddy (see etc/caddy/Caddyfile's "*.*.{$BASE_DOMAIN}" site
+// block) and forwards them into the target organization's tailnet, using
+// an embedded tailscale.com/tsnet client in place of a real device's own
+// tailscaled.
+package funnelproxy
+
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"log/slog"
+	"net"
+	"net/http"
+	"net/http/httputil"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"sync"
+	"time"
+
+	"tailscale.com/tsnet"
+
+	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/derrors"
+	"github.com/ownscalenet/ownscale/dockerctl"
+	"github.com/ownscalenet/ownscale/headscaleclient"
+)
+
+// funnelHeadscaleUserName is the fixed headscale user name the proxy
+// registers its per-org tsnet nodes under. It's not tied to any ownscale user.
+// TODO: should this be hidden in the UI?
+const funnelHeadscaleUserName = "ownscale-funnel"
+
+// Queries is the narrow subset of *db.TxQueries the proxy needs.
+type Queries interface {
+	GetFunnelRouteBySubdomainAndLabel(ctx context.Context, arg sqlcgen.GetFunnelRouteBySubdomainAndLabelParams) (sqlcgen.FunnelRoute, error)
+}
+
+// HeadscaleClients is the narrow subset of *headscaleclient.Registry the proxy needs.
+type HeadscaleClients interface {
+	Client(ctx context.Context, subdomain string) (*headscaleclient.Client, error)
+}
+
+// Pool proxies incoming funnel HTTP requests into the target
+// organization's tailnet. It lazily starts, and caches for the process's
+// lifetime, one tsnet.Server per organization subdomain that has ever
+// received a funnel request.
+type Pool struct {
+	queries Queries
+	hs      HeadscaleClients
+	dataDir string
+	logger  *slog.Logger
+
+	mu      sync.Mutex
+	servers map[string]*tsnet.Server // keyed by organization subdomain
+}
+
+// NewPool builds a Pool. dataDir is the same directory dockerctl.Ctl uses
+// for its own per-organization host state (each tsnet.Server gets its own
+// subdirectory under dataDir/funnel-tsnet/<subdomain>, so it registers as
+// a stable node across process restarts instead of re-registering on
+// every request).
+func NewPool(queries Queries, hs HeadscaleClients, dataDir string, logger *slog.Logger) *Pool {
+	return &Pool{
+		queries: queries,
+		hs:      hs,
+		dataDir: dataDir,
+		logger:  logger,
+		servers: make(map[string]*tsnet.Server),
+	}
+}
+
+// Close shuts down every cached tsnet.Server. Intended to be called once,
+// at process shutdown.
+func (p *Pool) Close() {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	for subdomain, srv := range p.servers {
+		if err := srv.Close(); err != nil {
+			p.logger.Warn("close funnel tsnet server", "subdomain", subdomain, "error", err)
+		}
+	}
+	p.servers = make(map[string]*tsnet.Server)
+}
+
+// ParseHost splits a funnel request's Host header (already stripped of
+// any port) into (label, subdomain, ok), given base -- the same
+// "label-subdomain.{base}" single-DNS-label scheme handlers/funnel.go
+// computes and validates. ok is false if host isn't shaped like a funnel
+// hostname at all.
+func ParseHost(host, base string) (label, subdomain string, ok bool) {
+	host = strings.ToLower(host)
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	sub, ok := strings.CutSuffix(host, "."+base)
+	if !ok || sub == "" {
+		return "", "", false
+	}
+	label, subdomain, ok = strings.Cut(sub, "-")
+	if !ok || label == "" || subdomain == "" {
+		return "", "", false
+	}
+	return label, subdomain, true
+}
+
+// ServeHTTP handles a single funnel request: r.Host is expected to already
+// have been matched by ParseHost by the caller (see server/routes.go).
+func (p *Pool) ServeHTTP(w http.ResponseWriter, r *http.Request, label, subdomain string) {
+	ctx := r.Context()
+
+	route, err := p.queries.GetFunnelRouteBySubdomainAndLabel(ctx, sqlcgen.GetFunnelRouteBySubdomainAndLabelParams{
+		Subdomain: subdomain,
+		Label:     label,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		http.NotFound(w, r)
+		return
+	}
+	if err != nil {
+		p.logger.Error("funnel: look up route", "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	client, err := p.hs.Client(ctx, subdomain)
+	if err != nil {
+		p.logger.Error("funnel: resolve headscale client", "subdomain", subdomain, "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	targetIP, err := targetNodeIP(ctx, client, route.TargetNodeID)
+	if err != nil {
+		p.logger.Warn("funnel: target node unreachable", "subdomain", subdomain, "target_node_id", route.TargetNodeID, "error", err)
+		http.Error(w, "target machine not found", http.StatusBadGateway)
+		return
+	}
+
+	srv, err := p.getOrCreateServer(ctx, subdomain, client)
+	if err != nil {
+		p.logger.Error("funnel: start tsnet server", "subdomain", subdomain, "error", err)
+		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	targetAddr := net.JoinHostPort(targetIP, strconv.FormatInt(route.TargetPort, 10))
+	proxy := &httputil.ReverseProxy{
+		Rewrite: func(pr *httputil.ProxyRequest) {
+			pr.Out.URL.Scheme = "http"
+			pr.Out.URL.Host = targetAddr
+			// Preserve the public-facing Host header rather than
+			// overwriting it with targetAddr -- matches how Caddy's own
+			// reverse_proxy to hs-<sub> already behaves, and how a
+			// target app listening on a fixed port has no reason to
+			// expect anything else.
+			pr.Out.Host = pr.In.Host
+		},
+		Transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				return srv.Dial(ctx, network, addr)
+			},
+		},
+	}
+	proxy.ServeHTTP(w, r)
+}
+
+func targetNodeIP(ctx context.Context, client *headscaleclient.Client, nodeID string) (string, error) {
+	nodes, err := client.ListNodes(ctx)
+	if err != nil {
+		return "", err
+	}
+	for _, n := range nodes {
+		if n.ID != nodeID {
+			continue
+		}
+		for _, addr := range n.IPAddresses {
+			if !strings.Contains(addr, ":") { // prefer the IPv4 address
+				return addr, nil
+			}
+		}
+		if len(n.IPAddresses) > 0 {
+			return n.IPAddresses[0], nil
+		}
+		return "", fmt.Errorf("node %q has no IP addresses", nodeID)
+	}
+	return "", fmt.Errorf("node %q not found", nodeID)
+}
+
+// getOrCreateServer returns the cached tsnet.Server for subdomain,
+// starting (and registering, via a freshly minted pre-auth key) one on
+// first use.
+func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *headscaleclient.Client) (_ *tsnet.Server, err error) {
+	defer derrors.Wrap(&err, "p.getOrCreateServer(%q)", subdomain)
+
+	p.mu.Lock()
+	if srv, ok := p.servers[subdomain]; ok {
+		p.mu.Unlock()
+		return srv, nil
+	}
+	p.mu.Unlock()
+
+	authKey, err := ensureFunnelAuthKey(ctx, client)
+	if err != nil {
+		return nil, fmt.Errorf("mint pre-auth key: %w", err)
+	}
+
+	srv := &tsnet.Server{
+		Dir:        filepath.Join(p.dataDir, "funnel-tsnet", subdomain),
+		Hostname:   "funnel-" + subdomain,
+		AuthKey:    authKey,
+		ControlURL: "http://" + dockerctl.HSContainerName(subdomain) + ":8080",
+	}
+	if _, err := srv.Up(ctx); err != nil {
+		_ = srv.Close()
+		return nil, fmt.Errorf("tsnet server up: %w", err)
+	}
+
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	// A concurrent request for the same subdomain might have raced us;
+	// keep whichever registered first and close the loser (both are
+	// equally valid tsnet nodes, but there's no reason to keep two alive).
+	if existing, ok := p.servers[subdomain]; ok {
+		_ = srv.Close()
+		return existing, nil
+	}
+	p.servers[subdomain] = srv
+	return srv, nil
+}
+
+const funnelAuthKeyValidity = 100 * 365 * 24 * time.Hour
+
+func ensureFunnelAuthKey(ctx context.Context, client *headscaleclient.Client) (string, error) {
+	// TODO: This listing might be inefficient.
+	users, err := client.ListUsers(ctx)
+	if err != nil {
+		return "", err
+	}
+	var userID string
+	for _, u := range users {
+		if u.Name == funnelHeadscaleUserName {
+			userID = u.ID
+			break
+		}
+	}
+	if userID == "" {
+		created, err := client.CreateUser(ctx, headscaleclient.CreateUserParams{Name: funnelHeadscaleUserName})
+		if err != nil {
+			return "", err
+		}
+		userID = created.ID
+	}
+
+	key, err := client.CreatePreAuthKey(ctx, headscaleclient.CreatePreAuthKeyParams{
+		UserID:     userID,
+		Reusable:   true,
+		Ephemeral:  false,
+		Expiration: time.Now().Add(funnelAuthKeyValidity),
+	})
+	if err != nil {
+		return "", err
+	}
+	return key.Key, nil
+}

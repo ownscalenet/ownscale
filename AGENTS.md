@@ -73,3 +73,5 @@ For tests that rely on a database, use a temporary sqlite which had the migratio
 applied. When testing, try not to assert that some expected functions have been
 called a number of times with specific arguments. Instead assert the results and
 side-effects (but avoid code that relies on side-effects.)
+For testing functions that need a logger injected, make sure to use a slog instance
+that discards the outputs so that tests are not spammed with logs.

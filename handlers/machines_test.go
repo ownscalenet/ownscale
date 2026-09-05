@@ -182,7 +182,7 @@ func activeOrgUser(t *testing.T, h *Handlers, queries *dbpkg.TxQueries) (sqlcgen
 func newMachinesTestHandlers(t *testing.T) (*Handlers, *dbpkg.TxQueries) {
 	t.Helper()
 	queries := newTestQueries(t)
-	h := New(queries, nil, "", nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{})
+	h := New(queries, nil, "", "", nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{})
 	return h, queries
 }
 

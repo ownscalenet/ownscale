@@ -5,3 +5,5 @@
 - check how .env and config.yaml can be collapsed into one
 - requirements for the admin:
   - a name, (can't be admin?)
+- TLS for DNS providers other than Azure
+- when deleting a node, how to warn users of funnels that rely on the node
