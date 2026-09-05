@@ -105,17 +105,13 @@ func (p *Provisioner) recoverPending(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	provisioned := make([]sqlcgen.Organization, 0, len(pending))
 	for _, org := range pending {
-		org, err := p.provisionOne(ctx, org.ID)
+		provisioned, err := p.provisionOne(ctx, org.ID)
 		if err != nil {
 			p.logger.Error("recover pending organization", "organization_id", org.ID, "error", err)
 			continue
 		}
-		provisioned = append(provisioned, org)
-	}
-	for _, org := range provisioned {
-		if err := p.push(ctx, org); err != nil {
+		if err := p.push(ctx, provisioned); err != nil {
 			return err
 		}
 	}

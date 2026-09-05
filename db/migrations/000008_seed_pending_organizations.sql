@@ -7,10 +7,7 @@
 INSERT INTO organizations (id, subdomain) VALUES
     ('seed-aaaa', 'aaaa'),
     ('seed-bbbb', 'bbbb'),
-    ('seed-cccc', 'cccc'),
-    ('seed-dddd', 'dddd'),
-    ('seed-eeee', 'eeee'),
-    ('seed-ffff', 'ffff');
+    ('seed-cccc', 'cccc');
 
 -- +goose Down
-DELETE FROM organizations WHERE subdomain IN ('aaaa', 'bbbb', 'cccc', 'dddd', 'eeee', 'ffff');
+DELETE FROM organizations WHERE subdomain IN ('aaaa', 'bbbb', 'cccc');

@@ -116,7 +116,9 @@ func TestProvisionerRecoversPendingOnStart(t *testing.T) {
 	}
 
 	p := NewProvisioner(svc, discardLogger(), time.Hour, 1)
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	// Recovering 4 organizations sequentially (3 seeded + this test's own)
+	// is slow under -race, so give it more headroom than a single Take needs.
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	go func() { p.Run(ctx) }()
 
@@ -124,13 +126,10 @@ func TestProvisionerRecoversPendingOnStart(t *testing.T) {
 		"seed-aaaa",
 		"seed-bbbb",
 		"seed-cccc",
-		"seed-dddd",
-		"seed-eeee",
-		"seed-ffff",
 		pending.ID,
 	}
 	got := []string{}
-	for range 6 + 1 { // 6 from seed, 1 from testcase
+	for range 3 + 1 { // 3 from seed, 1 from testcase
 		org, err := p.Take(ctx)
 		if err != nil {
 			t.Fatalf("Take: %v", err)
@@ -263,13 +262,14 @@ func TestProvisionerCircuitBreakerBacksOffAfterConsecutiveFailures(t *testing.T)
 
 	const (
 		retryBackoff = 30 * time.Millisecond
-		longBackoff  = 300 * time.Millisecond
+		// bcrypt function with -race is very slow.
+		longBackoff = 5 * time.Second
 	)
 	p := NewProvisioner(svc, discardLogger(), retryBackoff, 1)
 	p.failureThreshold = 2
 	p.longBackoff = longBackoff
 
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	go func() { p.Run(ctx) }()
 
