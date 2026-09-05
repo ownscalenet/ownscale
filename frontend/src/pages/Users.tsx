@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../auth'
+import { usePageTitle } from '../hooks/usePageTitle'
 import {
   ROLES,
   createInvite,
@@ -22,6 +23,7 @@ function roleLabel(role: string): string {
 }
 
 export default function Users() {
+  usePageTitle('Users')
   const { user } = useAuth()
   const [members, setMembers] = useState<Member[]>([])
   const [canManage, setCanManage] = useState(false)

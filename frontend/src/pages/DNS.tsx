@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { getDNSSettings, updateDNSSettings, ApiError, type DNSConfig, type DNSRecord } from '../api'
+import { usePageTitle } from '../hooks/usePageTitle'
 
 const RECORD_TYPES = ['A', 'AAAA', 'CNAME']
 
@@ -71,6 +72,7 @@ function ListEditor({
 }
 
 export default function DNS() {
+  usePageTitle('DNS')
   const [dns, setDns] = useState<DNSConfig | null>(null)
   const [savedDns, setSavedDns] = useState<DNSConfig | null>(null)
   const [canManage, setCanManage] = useState(false)

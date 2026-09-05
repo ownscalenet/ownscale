@@ -8,8 +8,10 @@ import {
   type FunnelRoute,
   type Machine,
 } from '../api'
+import { usePageTitle } from '../hooks/usePageTitle'
 
 export default function Funnel() {
+  usePageTitle('Funnel')
   const [routes, setRoutes] = useState<FunnelRoute[]>([])
   const [machines, setMachines] = useState<Machine[]>([])
   const [canManage, setCanManage] = useState(false)

@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { getAuthRestrictions, updateAuthRestrictions, formatHuJSON, ApiError } from '../api'
 import DiffModal from '../components/DiffModal'
 import LineNumberedTextarea from '../components/LineNumberedTextarea'
+import { usePageTitle } from '../hooks/usePageTitle'
 
 // cheatsheet is a static reference for the OIDC login allowlist's HuJSON
 // shape, rendered alongside the editor, mirroring AccessControl.tsx's
@@ -53,6 +54,7 @@ function Cheatsheet() {
 }
 
 export default function AuthRestrictions() {
+  usePageTitle('Auth Restrictions')
   const [content, setContent] = useState('')
   const [savedContent, setSavedContent] = useState('')
   const [canManage, setCanManage] = useState(false)

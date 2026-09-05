@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../auth'
 import { acceptInvite, getInvitePreview, type InvitePreview } from '../api'
+import { usePageTitle } from '../hooks/usePageTitle'
 
 // AcceptInvite is the /invite/:token landing page. An unauthenticated
 // visitor is sent through /login?next=/invite/:token (mirroring Login.tsx's
@@ -9,6 +10,7 @@ import { acceptInvite, getInvitePreview, type InvitePreview } from '../api'
 // signed in; a visitor who already belongs to an organization can't accept
 // (ownscale supports one organization per user today).
 export default function AcceptInvite() {
+  usePageTitle('Accept Invite')
   const { token } = useParams<{ token: string }>()
   const { user, organization, loading, refresh } = useAuth()
   const navigate = useNavigate()

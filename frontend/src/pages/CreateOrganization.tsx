@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 // How often to re-check the organization's provisioning status once it's
 // been created. Provisioning normally finishes in a few seconds (it's
@@ -10,6 +11,7 @@ import { useAuth } from "../auth";
 const STATUS_POLL_INTERVAL_MS = 1500;
 
 export default function CreateOrganization() {
+  usePageTitle("Create Organization");
   const { organization, refresh } = useAuth();
   const navigate = useNavigate();
 

@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 import { Navigate } from "react-router-dom";
 import { useAuth } from "../auth";
+import { usePageTitle } from "../hooks/usePageTitle";
 
 // isSafeRelativeNext guards against open redirects: only a same-origin,
 // path-absolute URL (no scheme-relative "//host" tricks) is followed.
@@ -9,6 +10,7 @@ function isSafeRelativeNext(next: string | null): next is string {
 }
 
 export default function Login() {
+  usePageTitle("Login");
   const { user, loading } = useAuth();
   const next = new URLSearchParams(window.location.search).get("next");
   const nextParam = next ? `?next=${encodeURIComponent(next)}` : "";

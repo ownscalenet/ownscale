@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth'
+import { usePageTitle } from '../hooks/usePageTitle'
 import {
   ApiError,
   deleteMachine,
@@ -64,6 +65,7 @@ function downloadCsv(filename: string, csv: string) {
 }
 
 export default function Machines() {
+  usePageTitle('Machines')
   const [searchParams, setSearchParams] = useSearchParams()
   const q = searchParams.get('q') ?? ''
   const userFilter = searchParams.get('user') ?? ''

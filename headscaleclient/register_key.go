@@ -25,7 +25,6 @@ var bareTokenPattern = regexp.MustCompile(`^[A-Za-z0-9_-]{16,}$`)
 // output (a full "https://.../register/<token>" URL, a bare token, an
 // already-prefixed "hskey-authreq-<token>" key, or a legacy "mkey:..."
 // key) into the exact key form headscale's register endpoint expects.
-// Mirrors headplane's utils/register-key.ts normalizeRegistrationKey.
 func NormalizeRegistrationKey(value string) (string, error) {
 	value = strings.TrimSpace(value)
 	if value == "" {

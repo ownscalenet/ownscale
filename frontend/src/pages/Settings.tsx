@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth'
 import { createAuthKey, expireAuthKey, listAuthKeys, ApiError, type HeadscaleUser, type PreAuthKey } from '../api'
+import { usePageTitle } from '../hooks/usePageTitle'
 
 const TAG_ONLY = '__tag_only__'
 
@@ -41,6 +42,7 @@ function matchesUser(k: PreAuthKey, userFilter: string): boolean {
 }
 
 export default function Settings() {
+  usePageTitle('Settings')
   const [searchParams, setSearchParams] = useSearchParams()
   const userFilter = searchParams.get('user') ?? ''
   const status = searchParams.get('status') ?? ''

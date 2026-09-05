@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { getAccessControlPolicy, updateAccessControlPolicy, formatHuJSON, ApiError } from '../api'
 import DiffModal from '../components/DiffModal'
 import LineNumberedTextarea from '../components/LineNumberedTextarea'
+import { usePageTitle } from '../hooks/usePageTitle'
 
 // cheatsheet is a static reference for headscale's HuJSON ACL policy
 // syntax (https://headscale.net/stable/ref/acls/). It never calls the API
@@ -74,6 +75,7 @@ function Cheatsheet() {
 }
 
 export default function AccessControl() {
+  usePageTitle('Access Control')
   const [content, setContent] = useState('')
   const [savedContent, setSavedContent] = useState('')
   const [canManage, setCanManage] = useState(false)
