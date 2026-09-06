@@ -295,10 +295,8 @@ function RegisterMachineDialog({
           </div>
         )}
         <form className="space-y-4" onSubmit={(e) => void handleSubmit(e)}>
-          <div className="form-control">
-            <label className="label" htmlFor="register-machine-key">
-              <span className="label-text">Registration key or URL</span>
-            </label>
+          <fieldset className="fieldset">
+            <legend className="fieldset-legend">Registration key or URL</legend>
             <input
               id="register-machine-key"
               type="text"
@@ -308,14 +306,12 @@ function RegisterMachineDialog({
               onChange={(e) => setKey(e.target.value)}
               required
             />
-            <span className="label-text-alt opacity-60 mt-1">
+            <span className="opacity-60 mt-1 text-sm">
               Printed by the command above once the device is waiting to register.
             </span>
-          </div>
-          <div className="form-control">
-            <label className="label" htmlFor="register-machine-user">
-              <span className="label-text">Owner</span>
-            </label>
+          </fieldset>
+          <fieldset className="fieldset">
+            <legend className="fieldset-legend">Owner</legend>
             <select
               id="register-machine-user"
               className="select select-bordered w-full"
@@ -332,7 +328,7 @@ function RegisterMachineDialog({
                 </option>
               ))}
             </select>
-          </div>
+          </fieldset>
           <div className="modal-action">
             <button type="submit" className="btn btn-primary" disabled={busy}>
               Register
@@ -546,8 +542,8 @@ function MachineRow({
               {availableRoutes.length > 0 ? (
                 <ul className="space-y-2">
                   {availableRoutes.map((route) => (
-                    <li key={route} className="form-control">
-                      <label className="label cursor-pointer justify-start gap-3">
+                    <li key={route}>
+                      <label className="fieldset-label cursor-pointer gap-3">
                         <input
                           type="checkbox"
                           className="checkbox checkbox-sm"

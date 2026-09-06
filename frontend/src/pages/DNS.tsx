@@ -283,7 +283,7 @@ export default function DNS() {
               Automatically register domain names for each device on the tailnet. Devices are
               accessible at <code>[device].{dns.baseDomain}</code> when Magic DNS is enabled.
             </p>
-            <label className="label cursor-pointer justify-start gap-3">
+            <label className="fieldset-label cursor-pointer gap-3">
               <input
                 type="checkbox"
                 className="toggle toggle-primary"

@@ -351,7 +351,7 @@ function CreateAuthKeyDialog({
               </div>
             )}
             <form className="space-y-4" onSubmit={(e) => void handleSubmit(e)}>
-              <label className="label cursor-pointer justify-start gap-3">
+              <label className="fieldset-label cursor-pointer gap-3">
                 <input
                   type="checkbox"
                   className="checkbox checkbox-sm"
@@ -362,10 +362,8 @@ function CreateAuthKeyDialog({
               </label>
 
               {!tagOnly && (
-                <div className="form-control">
-                  <label className="label">
-                    <span className="label-text">User</span>
-                  </label>
+                <fieldset className="fieldset">
+                  <legend className="fieldset-legend">User</legend>
                   <select
                     className="select select-bordered w-full"
                     value={userId}
@@ -379,13 +377,11 @@ function CreateAuthKeyDialog({
                       </option>
                     ))}
                   </select>
-                </div>
+                </fieldset>
               )}
 
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text">ACL tags{tagOnly && ' (required)'}</span>
-                </label>
+              <fieldset className="fieldset">
+                <legend className="fieldset-legend">ACL tags{tagOnly && ' (required)'}</legend>
                 <input
                   type="text"
                   className="input input-bordered w-full font-mono"
@@ -396,12 +392,10 @@ function CreateAuthKeyDialog({
                 <p className="text-sm opacity-60 mt-1">
                   Comma-separated. The <code>tag:</code> prefix is added automatically.
                 </p>
-              </div>
+              </fieldset>
 
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text">Expires in (days)</span>
-                </label>
+              <fieldset className="fieldset">
+                <legend className="fieldset-legend">Expires in (days)</legend>
                 <input
                   type="number"
                   min={1}
@@ -410,9 +404,9 @@ function CreateAuthKeyDialog({
                   onChange={(e) => setExpiryDays(Number(e.target.value))}
                   required
                 />
-              </div>
+              </fieldset>
 
-              <label className="label cursor-pointer justify-start gap-3">
+              <label className="fieldset-label cursor-pointer gap-3">
                 <input
                   type="checkbox"
                   className="checkbox checkbox-sm"
@@ -421,7 +415,7 @@ function CreateAuthKeyDialog({
                 />
                 <span>Reusable</span>
               </label>
-              <label className="label cursor-pointer justify-start gap-3">
+              <label className="fieldset-label cursor-pointer gap-3">
                 <input
                   type="checkbox"
                   className="checkbox checkbox-sm"

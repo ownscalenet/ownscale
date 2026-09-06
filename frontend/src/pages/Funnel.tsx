@@ -161,10 +161,8 @@ export default function Funnel() {
               </div>
             )}
             <form className="flex flex-wrap gap-2 items-end" onSubmit={(e) => void handleCreate(e)}>
-              <div className="form-control">
-                <label className="label" htmlFor="funnel-label">
-                  <span className="label-text">Label</span>
-                </label>
+              <fieldset className="fieldset">
+                <legend className="fieldset-legend">Label</legend>
                 <input
                   id="funnel-label"
                   type="text"
@@ -173,11 +171,9 @@ export default function Funnel() {
                   value={label}
                   onChange={(e) => setLabel(e.target.value)}
                 />
-              </div>
-              <div className="form-control">
-                <label className="label" htmlFor="funnel-machine">
-                  <span className="label-text">Machine</span>
-                </label>
+              </fieldset>
+              <fieldset className="fieldset">
+                <legend className="fieldset-legend">Machine</legend>
                 <select
                   id="funnel-machine"
                   className="select select-bordered select-sm"
@@ -191,11 +187,9 @@ export default function Funnel() {
                     </option>
                   ))}
                 </select>
-              </div>
-              <div className="form-control">
-                <label className="label" htmlFor="funnel-port">
-                  <span className="label-text">Port</span>
-                </label>
+              </fieldset>
+              <fieldset className="fieldset">
+                <legend className="fieldset-legend">Port</legend>
                 <input
                   id="funnel-port"
                   type="number"
@@ -206,7 +200,7 @@ export default function Funnel() {
                   value={targetPort}
                   onChange={(e) => setTargetPort(e.target.value)}
                 />
-              </div>
+              </fieldset>
               <button
                 type="submit"
                 className="btn btn-primary btn-sm"

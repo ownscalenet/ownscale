@@ -218,10 +218,8 @@ export default function Users() {
                 })
               }}
             >
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text">Email (optional, for your reference only)</span>
-                </label>
+              <fieldset className="fieldset">
+                <legend className="fieldset-legend">Email (optional, for your reference only)</legend>
                 <input
                   type="email"
                   className="input input-bordered w-full"
@@ -234,11 +232,9 @@ export default function Users() {
                   data-form-type="other"
                   data-protonpass-ignore
                 />
-              </div>
-              <div className="form-control">
-                <label className="label">
-                  <span className="label-text">Role</span>
-                </label>
+              </fieldset>
+              <fieldset className="fieldset">
+                <legend className="fieldset-legend">Role</legend>
                 <select
                   className="select select-bordered w-full"
                   value={inviteRole}
@@ -250,7 +246,7 @@ export default function Users() {
                     </option>
                   ))}
                 </select>
-              </div>
+              </fieldset>
               <div className="modal-action">
                 <button type="submit" className="btn btn-primary" disabled={busy}>
                   Create invite link
