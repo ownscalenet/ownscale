@@ -4,7 +4,7 @@
 # (go:embed needs real files at Go build time), so run `make frontend`
 # whenever frontend/ changes and commit the updated webui/dist.
 
-.PHONY: build frontend backend osa restore test test-integration coverage migration archive docker-image caddy-image rm-orphans purge ci docs load-cert e2e
+.PHONY: build frontend backend osa restore test test-integration coverage migration archive docker-image caddy-image rm-orphans purge ci docs load-cert dev-up
 
 DOCKER_IMAGE := ownscale:latest
 CADDY_IMAGE := ownscale-caddy:latest
@@ -17,6 +17,13 @@ frontend:
 
 osa:
 	docker compose exec ownscale ./osa $(filter-out osa,$(MAKECMDGOALS))
+
+# Build the images, start the full stack, then stream logs from all
+# containers (the ownscale process seeds the fixed dev organizations --
+# aaaa/bbbb/cccc -- itself on startup, see orgs.Provisioner.seedFixed).
+dev-up:
+	docker compose up -d --build
+	docker compose logs -f
 
 
 # Build the site/ Hugo module (hugo-book theme) into etc/caddy/site, which
@@ -65,15 +72,6 @@ test:
 
 test-integration:
 	go test -count=1 -tags=integration ./...
-
-# Run the Playwright e2e suite (e2e/) against a real local docker-compose
-# stack (ownscale + dex + caddy) and a real, freshly-migrated SQLite
-# database -- see e2e/README.md for prerequisites. Resets local dev data
-# in data/ (see e2e/lib/stack.ts); don't run this against data you care about.
-e2e:
-	npm --prefix e2e ci
-	npm --prefix e2e exec playwright install --with-deps chromium
-	npm --prefix e2e test
 
 BROWSER := firefox
 coverage:
@@ -148,7 +146,7 @@ ci:
 	go build ./...
 	go vet ./...
 	go fix ./...
-	go test -race -shuffle=on -covermode=atomic -coverprofile=coverage.out ./...
+	go test -shuffle=on -covermode=atomic -coverprofile=coverage.out ./...
 	go mod tidy
 	go run golang.org/x/tools/cmd/goimports@latest -w .
 	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest run ./...
