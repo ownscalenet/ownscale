@@ -126,8 +126,36 @@ func newOrganizationCommand(rootFlags *ff.FlagSet) *ff.Command {
 		newOrganizationListCommand(organizationFlags),
 		newOrganizationStartCommand(organizationFlags),
 		newOrganizationStopCommand(organizationFlags),
+		newOrganizationSeedPoolCommand(organizationFlags),
 	)
 	return organizationCmd
+}
+
+// defaultSeedPoolSubdomains is used by "osa organization seed-pool" when no
+// subdomains are given on the command line.
+var defaultSeedPoolSubdomains = []string{"aaaa", "bbbb", "cccc"}
+
+func newOrganizationSeedPoolCommand(parent *ff.FlagSet) *ff.Command {
+	flags := ff.NewFlagSet("organization seed-pool").SetParent(parent)
+	return &ff.Command{
+		Name:      "seed-pool",
+		Usage:     "osa organization seed-pool [FLAGS] [subdomain...]",
+		ShortHelp: "create pending organizations for the provisioner's warm pool to pick up",
+		Flags:     flags,
+		Exec: func(ctx context.Context, args []string) error {
+			subdomains := args
+			if len(subdomains) == 0 {
+				subdomains = defaultSeedPoolSubdomains
+			}
+			res, cleanup, err := newOrgResources(true, false)
+			defer cleanup()
+			if err != nil {
+				return err
+			}
+			svc := orgs.NewService(res.queries, nil, "", "", res.cfg.Derp)
+			return seedPool(ctx, os.Stdout, svc, subdomains)
+		},
+	}
 }
 
 func newOrganizationCreateCommand(parent *ff.FlagSet) *ff.Command {
@@ -260,6 +288,16 @@ func createOrganization(ctx context.Context, out io.Writer, svc *orgs.Service, s
 	domain := svc.BaseDomain()
 	_, _ = fmt.Fprintf(out, "created organization %s.%s (container %s)\n", subdomain, domain, dockerctl.HSContainerName(subdomain))
 	_, _ = fmt.Fprintf(out, "headscale will be reachable at https://%s.%s once Caddy is running\n", subdomain, domain)
+	return nil
+}
+
+func seedPool(ctx context.Context, out io.Writer, svc *orgs.Service, subdomains []string) error {
+	for _, subdomain := range subdomains {
+		if _, err := svc.CreatePending(ctx, subdomain); err != nil {
+			return err
+		}
+		_, _ = fmt.Fprintf(out, "seeded pending organization %s\n", subdomain)
+	}
 	return nil
 }
 

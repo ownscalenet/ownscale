@@ -57,12 +57,6 @@ func newTestDB(t *testing.T) (*sql.DB, *dbpkg.TxQueries) {
 	if _, err := provider.Up(t.Context()); err != nil {
 		t.Fatalf("apply migrations: %v", err)
 	}
-	// Migration 000008 seeds placeholder organizations (aaaa..ffff) so a real
-	// deployment's provisioner has something to recover at startup; tests
-	// assume a clean organizations table, so remove them here.
-	if _, err := pool.ExecContext(t.Context(), `DELETE FROM organizations WHERE id LIKE 'seed-%'`); err != nil {
-		t.Fatalf("clear seeded organizations: %v", err)
-	}
 
 	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
 	return pool, dbpkg.New(pool, logger)
