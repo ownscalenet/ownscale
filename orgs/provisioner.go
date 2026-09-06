@@ -2,6 +2,7 @@ package orgs
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"log/slog"
 	"time"
@@ -17,6 +18,9 @@ const (
 	defaultFailureThreshold = 3
 	defaultLongBackoff      = 10 * time.Minute
 )
+
+// DefaultSeedSubdomains is a predictable list of orgs.
+var DefaultSeedSubdomains = []string{"aaaa", "bbbb", "cccc"}
 
 // Provisioner keeps a small pool of fully-provisioned, not-yet-assigned
 // organizations ready to hand out.
@@ -58,9 +62,15 @@ func (p *Provisioner) Take(ctx context.Context) (sqlcgen.Organization, error) {
 	}
 }
 
-// Run recovers any organizations left "pending" from a previous restart
-// (provisioning and pooling each of them), then replenishes the pool forever.
+// Run recovers any organizations left "pending" from a previous restart,
+// then replenishes the pool forever.
 func (p *Provisioner) Run(ctx context.Context) error {
+	if err := p.seedFixed(ctx); err != nil {
+		if ctx.Err() != nil {
+			return nil
+		}
+		return err
+	}
 	if err := p.recoverPending(ctx); err != nil {
 		if ctx.Err() != nil {
 			return nil
@@ -97,6 +107,26 @@ func (p *Provisioner) Run(ctx context.Context) error {
 			return nil
 		}
 	}
+}
+
+// seedFixed makes sure every subdomain in DefaultSeedSubdomains has an
+// organization record, creating it (as "pending", for recoverPending to
+// pick up) if missing. Safe to call on every restart: existing
+// organizations (in any status) are left untouched.
+func (p *Provisioner) seedFixed(ctx context.Context) error {
+	for _, subdomain := range DefaultSeedSubdomains {
+		_, err := p.svc.queries.GetOrganizationBySubdomain(ctx, subdomain)
+		if err == nil {
+			continue
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		if _, err := p.svc.CreatePending(ctx, subdomain); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 // recoverPending provisions every organization left "pending" in the database.

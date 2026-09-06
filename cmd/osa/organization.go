@@ -132,8 +132,10 @@ func newOrganizationCommand(rootFlags *ff.FlagSet) *ff.Command {
 }
 
 // defaultSeedPoolSubdomains is used by "osa organization seed-pool" when no
-// subdomains are given on the command line.
-var defaultSeedPoolSubdomains = []string{"aaaa", "bbbb", "cccc"}
+// subdomains are given on the command line. Shares its list with
+// orgs.Provisioner, which seeds the same subdomains automatically at
+// startup.
+var defaultSeedPoolSubdomains = orgs.DefaultSeedSubdomains
 
 func newOrganizationSeedPoolCommand(parent *ff.FlagSet) *ff.Command {
 	flags := ff.NewFlagSet("organization seed-pool").SetParent(parent)

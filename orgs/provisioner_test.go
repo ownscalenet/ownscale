@@ -169,29 +169,14 @@ func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-// TestProvisionerCircuitBreakerBacksOffAfterConsecutiveFailures checks
-// that Run's replenish loop switches from the short retryBackoff to the
-// long, fixed longBackoff once failureThreshold consecutive failures was reached.
 func TestProvisionerCircuitBreakerBacksOffAfterConsecutiveFailures(t *testing.T) {
 	queries := newTestQueries(t)
 
-	// The DB is seeded (via migration 000008) with 6 pending organizations
-	// that recoverPending provisions once, up front, outside of the
-	// breaker-governed replenish loop. Remove them so only the
-	// replenish-loop attempts below are tracked.
-	seeded, err := queries.ListPendingOrganizations(t.Context())
-	if err != nil {
-		t.Fatalf("ListPendingOrganizations: %v", err)
-	}
-	for _, org := range seeded {
-		if err := queries.DeleteOrganization(t.Context(), org.ID); err != nil {
-			t.Fatalf("DeleteOrganization(%q): %v", org.ID, err)
-		}
+	fixedContainers := make(map[string]bool)
+	for _, subdomain := range DefaultSeedSubdomains {
+		fixedContainers[dockerctl.HSContainerName(subdomain)] = true
 	}
 
-	// attempt i (0-indexed, in creation order) fails if failAt[i] is true.
-	// fail, fail, succeed, fail, succeed: exercises the breaker tripping
-	// after 2 consecutive failures, then resetting after the success.
 	failAt := []bool{true, true, false, true, false}
 
 	var mu sync.Mutex
@@ -202,6 +187,10 @@ func TestProvisionerCircuitBreakerBacksOffAfterConsecutiveFailures(t *testing.T)
 		ContainerCreateFn: func(ctx context.Context, cfg *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
 			mu.Lock()
 			defer mu.Unlock()
+			if fixedContainers[containerName] {
+				healthyContainer[containerName] = true
+				return container.CreateResponse{ID: containerName}, nil
+			}
 			i := len(attemptTimes)
 			attemptTimes = append(attemptTimes, time.Now())
 			healthyContainer[containerName] = i >= len(failAt) || !failAt[i]
@@ -261,6 +250,15 @@ func TestProvisionerCircuitBreakerBacksOffAfterConsecutiveFailures(t *testing.T)
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	go func() { p.Run(ctx) }()
+
+	// Drain the fixed dev subdomains recoverPending provisions up front
+	// (capacity 1 forces each push to wait for a Take, same as the
+	// replenish-loop attempts below) before measuring the breaker timing.
+	for range DefaultSeedSubdomains {
+		if _, err := p.Take(ctx); err != nil {
+			t.Fatalf("Take (draining fixed seed organizations): %v", err)
+		}
+	}
 
 	if _, err := p.Take(ctx); err != nil {
 		t.Fatalf("first Take (after the breaker trips and resets): %v", err)
