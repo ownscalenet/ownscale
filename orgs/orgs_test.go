@@ -7,7 +7,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"maps"
 	"net"
@@ -24,12 +23,12 @@ import (
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/pkg/stdcopy"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/pressly/goose/v3"
 	"github.com/rs/xid"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/ownscalenet/ownscale/config"
 	dbpkg "github.com/ownscalenet/ownscale/db"
+	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/dockerctl"
 	"github.com/ownscalenet/ownscale/dockerctl/dockerfake"
 	"github.com/ownscalenet/ownscale/headscaleclient"
@@ -54,27 +53,13 @@ func newFakePolicyClient(t *testing.T) *headscaleclient.Client {
 	return headscaleclient.New(host, "test-api-key")
 }
 
+// newTestQueries returns queries backed by a copy of the shared, already
+// migrated dbtest template (see db/dbtest), avoiding a full goose run per
+// test.
 func newTestQueries(t *testing.T) *dbpkg.TxQueries {
 	t.Helper()
-	dbPath := filepath.Join(t.TempDir(), "test.sqlite")
-	pool, err := dbpkg.Connect(dbPath)
-	if err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	t.Cleanup(func() { _ = pool.Close() })
-
-	sub, err := fs.Sub(dbpkg.MigrationsFS, "migrations")
-	if err != nil {
-		t.Fatalf("migrations sub fs: %v", err)
-	}
-	provider, err := goose.NewProvider(goose.DialectSQLite3, pool, sub)
-	if err != nil {
-		t.Fatalf("goose provider: %v", err)
-	}
-	if _, err := provider.Up(t.Context()); err != nil {
-		t.Fatalf("apply migrations: %v", err)
-	}
-	return dbpkg.New(pool, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	_, queries := dbtest.New(t)
+	return queries
 }
 
 func TestServiceCreateCreatesOIDCClient(t *testing.T) {

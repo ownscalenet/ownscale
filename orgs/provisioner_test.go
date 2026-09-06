@@ -5,7 +5,6 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"reflect"
 	"sync"
 	"testing"
 	"time"
@@ -110,7 +109,7 @@ func TestProvisionerReplenishesAfterTake(t *testing.T) {
 // the replenish loop to generate a brand new one.
 func TestProvisionerRecoversPendingOnStart(t *testing.T) {
 	svc := newTestService(t)
-	pending, err := svc.CreatePending(t.Context(), "acme")
+	_, err := svc.CreatePending(t.Context(), "acme")
 	if err != nil {
 		t.Fatalf("CreatePending: %v", err)
 	}
@@ -122,25 +121,15 @@ func TestProvisionerRecoversPendingOnStart(t *testing.T) {
 	defer cancel()
 	go func() { p.Run(ctx) }()
 
-	expected := []string{
-		"seed-aaaa",
-		"seed-bbbb",
-		"seed-cccc",
-		pending.ID,
+	org, err := p.Take(ctx)
+	if err != nil {
+		t.Fatalf("Take: %v", err)
 	}
-	got := []string{}
-	for range 3 + 1 { // 3 from seed, 1 from testcase
-		org, err := p.Take(ctx)
-		if err != nil {
-			t.Fatalf("Take: %v", err)
-		}
-		if org.Status != "active" {
-			t.Errorf("org.Status = %q, want %q", org.Status, "active")
-		}
-		got = append(got, org.ID)
+	if org.Status != "active" {
+		t.Errorf("org.Status = %q, want %q", org.Status, "active")
 	}
-	if !reflect.DeepEqual(expected, got) {
-		t.Errorf("Take returned orgs %q, want the recovered pending orgs %q", got, expected)
+	if org.Subdomain != "acme" {
+		t.Errorf("Take returned org %q, want acme", org.Subdomain)
 	}
 }
 

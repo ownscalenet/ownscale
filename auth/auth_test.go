@@ -1,52 +1,27 @@
 package auth
 
 import (
-	"io"
-	"io/fs"
-	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"testing"
 
 	"github.com/gorilla/sessions"
 	"github.com/markbates/goth"
 	"github.com/markbates/goth/gothic"
-	"github.com/pressly/goose/v3"
 	"github.com/rs/xid"
 
-	dbpkg "github.com/ownscalenet/ownscale/db"
+	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
 
-// newTestQueries opens a temp-file SQLite database and applies the real
-// embedded migrations via goose, mirroring cmd/osa's newTestDB helper, so
-// these tests exercise the middleware against a real *sqlcgen.Queries
-// backed by real SQL rather than a hand-rolled fake.
+// newTestQueries returns queries backed by a copy of the shared, already
+// migrated dbtest template (see db/dbtest), avoiding a full goose run per
+// test, so these tests exercise the middleware against a real
+// *sqlcgen.Queries backed by real SQL rather than a hand-rolled fake.
 func newTestQueries(t *testing.T) *sqlcgen.Queries {
 	t.Helper()
-
-	dbPath := filepath.Join(t.TempDir(), "test.sqlite")
-	pool, err := dbpkg.Connect(dbPath)
-	if err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	t.Cleanup(func() { _ = pool.Close() })
-
-	sub, err := fs.Sub(dbpkg.MigrationsFS, "migrations")
-	if err != nil {
-		t.Fatalf("migrations sub fs: %v", err)
-	}
-	provider, err := goose.NewProvider(goose.DialectSQLite3, pool, sub)
-	if err != nil {
-		t.Fatalf("goose provider: %v", err)
-	}
-	if _, err := provider.Up(t.Context()); err != nil {
-		t.Fatalf("apply migrations: %v", err)
-	}
-
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return dbpkg.New(pool, logger).Queries
+	_, queries := dbtest.New(t)
+	return queries.Queries
 }
 
 // insertUser inserts a user row directly and returns it.

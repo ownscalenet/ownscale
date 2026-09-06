@@ -4,48 +4,27 @@ import (
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
-	"io"
-	"io/fs"
-	"log/slog"
 	"os"
 	"path/filepath"
 	"reflect"
 	"testing"
 	"time"
 
-	"github.com/pressly/goose/v3"
 	"github.com/rs/xid"
 	"golang.org/x/crypto/bcrypt"
 
-	dbpkg "github.com/ownscalenet/ownscale/db"
+	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/zitadel/oidc/v3/pkg/oidc"
 )
 
+// newTestQueries returns queries backed by a copy of the shared, already
+// migrated dbtest template (see db/dbtest), avoiding a full goose run per
+// test.
 func newTestQueries(t *testing.T) *sqlcgen.Queries {
 	t.Helper()
-
-	dbPath := filepath.Join(t.TempDir(), "test.sqlite")
-	pool, err := dbpkg.Connect(dbPath)
-	if err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	t.Cleanup(func() { _ = pool.Close() })
-
-	sub, err := fs.Sub(dbpkg.MigrationsFS, "migrations")
-	if err != nil {
-		t.Fatalf("migrations sub fs: %v", err)
-	}
-	provider, err := goose.NewProvider(goose.DialectSQLite3, pool, sub)
-	if err != nil {
-		t.Fatalf("goose provider: %v", err)
-	}
-	if _, err := provider.Up(t.Context()); err != nil {
-		t.Fatalf("apply migrations: %v", err)
-	}
-
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return dbpkg.New(pool, logger).Queries
+	_, queries := dbtest.New(t)
+	return queries.Queries
 }
 
 func testStorage(t *testing.T) (*Storage, *sqlcgen.Queries) {

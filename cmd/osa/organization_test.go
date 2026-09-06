@@ -6,11 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -18,11 +16,11 @@ import (
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/network"
 	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/pressly/goose/v3"
 	"github.com/rs/xid"
 
 	"github.com/ownscalenet/ownscale/config"
 	dbpkg "github.com/ownscalenet/ownscale/db"
+	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/dockerctl"
 	"github.com/ownscalenet/ownscale/dockerctl/dockerfake"
@@ -30,36 +28,15 @@ import (
 	"github.com/ownscalenet/ownscale/orgs"
 )
 
-// newTestDB opens a temp-file SQLite database and applies the real embedded
-// migrations via goose (the same ones used in production and by `osa
-// migrate`), returning the pool and sqlcgen queries against it. Using a
-// real database (rather than faking sqlcgen.Queries) means these tests
-// exercise real SQL behavior (uniqueness constraints, transaction rollback,
-// etc.), matching the direction to fake only the Docker dependency.
+// newTestDB returns a pool and queries backed by a copy of the shared,
+// already migrated dbtest template (see db/dbtest), avoiding a full goose
+// run per test. Using a real database (rather than faking sqlcgen.Queries)
+// means these tests exercise real SQL behavior (uniqueness constraints,
+// transaction rollback, etc.), matching the direction to fake only the
+// Docker dependency.
 func newTestDB(t *testing.T) (*sql.DB, *dbpkg.TxQueries) {
 	t.Helper()
-
-	dbPath := filepath.Join(t.TempDir(), "test.sqlite")
-	pool, err := dbpkg.Connect(dbPath)
-	if err != nil {
-		t.Fatalf("connect: %v", err)
-	}
-	t.Cleanup(func() { _ = pool.Close() })
-
-	sub, err := fs.Sub(dbpkg.MigrationsFS, "migrations")
-	if err != nil {
-		t.Fatalf("migrations sub fs: %v", err)
-	}
-	provider, err := goose.NewProvider(goose.DialectSQLite3, pool, sub)
-	if err != nil {
-		t.Fatalf("goose provider: %v", err)
-	}
-	if _, err := provider.Up(t.Context()); err != nil {
-		t.Fatalf("apply migrations: %v", err)
-	}
-
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return pool, dbpkg.New(pool, logger)
+	return dbtest.New(t)
 }
 
 func discardLogger() *slog.Logger {
