@@ -5,11 +5,11 @@ bin/
 .env
 /coverage.out
 
-e2e/node_modules/
-e2e/.auth/
-e2e/test-results/
-e2e/playwright-report/
-e2e/blob-report/
+e2e/frontend/node_modules/
+e2e/frontend/tests/.auth/
+e2e/frontend/test-results/
+e2e/frontend/playwright-report/
+e2e/frontend/blob-report/
 
 # Hugo build cache/artifacts for the site/ docs module. The actual built
 # output that gets served lives at etc/caddy/site/ and IS committed; only

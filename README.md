@@ -15,6 +15,12 @@ docker compose up -d --build   # builds and starts ownscale + caddy
 docker compose exec ownscale /app/osa organization list
 ```
 
+### Frontend end-to-end tests
+
+`make e2e-frontend` runs a Playwright suite against a real, already-running
+`make dev-up` stack (real HTTPS, Dex, and headscale -- no mocking). See
+`e2e/README.md`.
+
 `make archive`  builds the `ownscale:latest` image locally, ships it to the
 remote host via `docker save | ssh ... docker load`, then syncs the rest of
 the repo over the same SSH connection. Afterwards, `docker compose up -d`
