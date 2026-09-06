@@ -1,7 +1,14 @@
 import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth'
-import { createAuthKey, expireAuthKey, listAuthKeys, ApiError, type HeadscaleUser, type PreAuthKey } from '../api'
+import {
+  createAuthKey,
+  expireAuthKey,
+  listAuthKeys,
+  ApiError,
+  type HeadscaleUser,
+  type PreAuthKey,
+} from '../api'
 import { usePageTitle } from '../hooks/usePageTitle'
 
 const TAG_ONLY = '__tag_only__'
@@ -139,7 +146,11 @@ export default function Settings() {
                 <option value="ephemeral">Ephemeral</option>
               </select>
               {filtered && (
-                <button type="button" className="btn btn-sm btn-ghost" onClick={() => setSearchParams({})}>
+                <button
+                  type="button"
+                  className="btn btn-sm btn-ghost"
+                  onClick={() => setSearchParams({})}
+                >
                   Clear
                 </button>
               )}
@@ -192,7 +203,8 @@ function AuthKeyRow({ authKey: k, onChange }: { authKey: PreAuthKey; onChange: (
   const expired = isExpired(k)
 
   const handleExpire = async () => {
-    if (!confirm('Expire this pre-auth key? It will no longer be usable to register new machines.')) return
+    if (!confirm('Expire this pre-auth key? It will no longer be usable to register new machines.'))
+      return
     setBusy(true)
     try {
       await expireAuthKey(k.id)
@@ -205,7 +217,9 @@ function AuthKeyRow({ authKey: k, onChange }: { authKey: PreAuthKey; onChange: (
   return (
     <tr>
       <td className="font-mono text-sm whitespace-nowrap">{k.key}</td>
-      <td className="whitespace-nowrap">{k.user?.name ?? <span className="opacity-60">(Tag Only)</span>}</td>
+      <td className="whitespace-nowrap">
+        {k.user?.name ?? <span className="opacity-60">(Tag Only)</span>}
+      </td>
       <td>
         <div className="flex flex-wrap gap-1">
           {aclTags(k).map((t) => (
@@ -227,7 +241,12 @@ function AuthKeyRow({ authKey: k, onChange }: { authKey: PreAuthKey; onChange: (
         )}
       </td>
       <td className="text-right whitespace-nowrap">
-        <button type="button" className="btn btn-sm btn-ghost text-error" disabled={expired || busy} onClick={() => void handleExpire()}>
+        <button
+          type="button"
+          className="btn btn-sm btn-ghost text-error"
+          disabled={expired || busy}
+          onClick={() => void handleExpire()}
+        >
           Expire Key
         </button>
       </td>

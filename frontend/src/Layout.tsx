@@ -17,8 +17,19 @@ export default function Layout() {
       <div className="drawer-content flex flex-col">
         <div className="navbar bg-base-100 shadow-sm lg:hidden">
           <label htmlFor="sidebar-drawer" className="btn btn-square btn-ghost drawer-button">
-            <svg xmlns="http://www.w3.org/2000/svg" className="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 6h16M4 12h16M4 18h16" />
+            <svg
+              xmlns="http://www.w3.org/2000/svg"
+              className="h-6 w-6"
+              fill="none"
+              viewBox="0 0 24 24"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 6h16M4 12h16M4 18h16"
+              />
             </svg>
           </label>
           <span className="text-lg font-bold px-2">Ownscale console</span>
@@ -30,7 +41,11 @@ export default function Layout() {
       </div>
 
       <div className="drawer-side">
-        <label htmlFor="sidebar-drawer" aria-label="close sidebar" className="drawer-overlay"></label>
+        <label
+          htmlFor="sidebar-drawer"
+          aria-label="close sidebar"
+          className="drawer-overlay"
+        ></label>
         <aside className="bg-base-100 min-h-full w-64">
           <div className="p-4 text-xl font-bold border-b border-base-200">Ownscale console</div>
           <ul className="menu p-4 w-full">
@@ -45,12 +60,18 @@ export default function Layout() {
               </NavLink>
             </li>
             <li>
-              <NavLink to="/access-control" className={({ isActive }) => (isActive ? 'active' : '')}>
+              <NavLink
+                to="/access-control"
+                className={({ isActive }) => (isActive ? 'active' : '')}
+              >
                 Access Control
               </NavLink>
             </li>
             <li>
-              <NavLink to="/auth-restrictions" className={({ isActive }) => (isActive ? 'active' : '')}>
+              <NavLink
+                to="/auth-restrictions"
+                className={({ isActive }) => (isActive ? 'active' : '')}
+              >
                 Auth Restrictions
               </NavLink>
             </li>
@@ -90,7 +111,11 @@ export default function Layout() {
                   </span>
                 </div>
               )}
-              <button type="button" className="btn btn-sm btn-outline w-full mt-2" onClick={handleLogout}>
+              <button
+                type="button"
+                className="btn btn-sm btn-outline w-full mt-2"
+                onClick={handleLogout}
+              >
                 Logout
               </button>
             </div>

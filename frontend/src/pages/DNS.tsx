@@ -30,7 +30,9 @@ function ListEditor({
   return (
     <div>
       <div className="flex flex-wrap gap-2 mb-3">
-        {items.length === 0 && <span className="text-sm text-base-content/60">None configured</span>}
+        {items.length === 0 && (
+          <span className="text-sm text-base-content/60">None configured</span>
+        )}
         {items.map((item) => (
           <span key={item} className="badge badge-lg gap-2">
             {item}
@@ -111,7 +113,9 @@ export default function DNS() {
       setSuccess(true)
     } catch (err) {
       setDns(savedDns)
-      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err))
+      setError(
+        err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err),
+      )
     } finally {
       setSaving(false)
     }
@@ -138,7 +142,9 @@ export default function DNS() {
   const removeRecord = (target: DNSRecord) => {
     void save({
       ...dns,
-      extraRecords: dns.extraRecords.filter((r) => !(r.name === target.name && r.type === target.type && r.value === target.value)),
+      extraRecords: dns.extraRecords.filter(
+        (r) => !(r.name === target.name && r.type === target.type && r.value === target.value),
+      ),
     })
   }
 

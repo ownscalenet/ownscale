@@ -22,9 +22,20 @@ export default function DiffModal({
             <span className="text-base-content/60">No changes.</span>
           ) : (
             parts.map((part, i) => {
-              const lines = part.value.endsWith('\n') ? part.value.slice(0, -1).split('\n') : part.value.split('\n')
+              const lines = part.value.endsWith('\n')
+                ? part.value.slice(0, -1).split('\n')
+                : part.value.split('\n')
               return (
-                <span key={i} className={part.added ? 'bg-success/20 text-success-content block' : part.removed ? 'bg-error/20 text-error-content block' : 'block'}>
+                <span
+                  key={i}
+                  className={
+                    part.added
+                      ? 'bg-success/20 text-success-content block'
+                      : part.removed
+                        ? 'bg-error/20 text-error-content block'
+                        : 'block'
+                  }
+                >
                   {lines.map((line, li) => (
                     <span key={li} className="block">
                       {part.added ? '+ ' : part.removed ? '- ' : '  '}

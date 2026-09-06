@@ -1,23 +1,23 @@
-import { useEffect } from "react";
-import { Navigate } from "react-router-dom";
-import { useAuth } from "../auth";
-import { usePageTitle } from "../hooks/usePageTitle";
+import { useEffect } from 'react'
+import { Navigate } from 'react-router-dom'
+import { useAuth } from '../auth'
+import { usePageTitle } from '../hooks/usePageTitle'
 
 // isSafeRelativeNext guards against open redirects: only a same-origin,
 // path-absolute URL (no scheme-relative "//host" tricks) is followed.
 function isSafeRelativeNext(next: string | null): next is string {
-  return !!next && next.startsWith("/") && !next.startsWith("//");
+  return !!next && next.startsWith('/') && !next.startsWith('//')
 }
 
 export default function Login() {
-  usePageTitle("Login");
-  const { user, loading } = useAuth();
-  const next = new URLSearchParams(window.location.search).get("next");
-  const nextParam = next ? `?next=${encodeURIComponent(next)}` : "";
-  const href = `/auth/oidc${nextParam}`;
-  const googleHref = `/auth/google${nextParam}`;
-  const microsoftHref = `/auth/microsoft${nextParam}`;
-  const alreadyAuthed = !loading && !!user;
+  usePageTitle('Login')
+  const { user, loading } = useAuth()
+  const next = new URLSearchParams(window.location.search).get('next')
+  const nextParam = next ? `?next=${encodeURIComponent(next)}` : ''
+  const href = `/auth/oidc${nextParam}`
+  const googleHref = `/auth/google${nextParam}`
+  const microsoftHref = `/auth/microsoft${nextParam}`
+  const alreadyAuthed = !loading && !!user
 
   // `next` may point at a backend-only route such as
   // /authorize/callback?id=... (used by the OIDC provider to finish an
@@ -30,15 +30,15 @@ export default function Login() {
   // as an in-app client-side redirect to "/".
   useEffect(() => {
     if (alreadyAuthed && isSafeRelativeNext(next)) {
-      window.location.replace(next);
+      window.location.replace(next)
     }
-  }, [alreadyAuthed, next]);
+  }, [alreadyAuthed, next])
 
   if (alreadyAuthed) {
     if (isSafeRelativeNext(next)) {
-      return null;
+      return null
     }
-    return <Navigate to="/" replace />;
+    return <Navigate to="/" replace />
   }
 
   return (
@@ -61,5 +61,5 @@ export default function Login() {
         </div>
       </div>
     </div>
-  );
+  )
 }

@@ -192,7 +192,12 @@ export default function Users() {
                 Share this link with the person you&rsquo;re inviting. It expires in 7 days.
               </p>
               <div className="join w-full">
-                <input type="text" readOnly className="input input-bordered join-item w-full" value={inviteLink} />
+                <input
+                  type="text"
+                  readOnly
+                  className="input input-bordered join-item w-full"
+                  value={inviteLink}
+                />
                 <button
                   type="button"
                   className="btn join-item"
@@ -219,7 +224,9 @@ export default function Users() {
               }}
             >
               <fieldset className="fieldset">
-                <legend className="fieldset-legend">Email (optional, for your reference only)</legend>
+                <legend className="fieldset-legend">
+                  Email (optional, for your reference only)
+                </legend>
                 <input
                   type="email"
                   className="input input-bordered w-full"
@@ -251,7 +258,11 @@ export default function Users() {
                 <button type="submit" className="btn btn-primary" disabled={busy}>
                   Create invite link
                 </button>
-                <button type="button" className="btn btn-ghost" onClick={() => inviteRef.current?.close()}>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => inviteRef.current?.close()}
+                >
                   Cancel
                 </button>
               </div>

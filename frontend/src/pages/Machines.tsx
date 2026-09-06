@@ -142,10 +142,7 @@ export default function Machines() {
         </div>
       ) : (
         <>
-          <form
-            className="flex flex-wrap gap-2 mb-4"
-            onSubmit={(e) => e.preventDefault()}
-          >
+          <form className="flex flex-wrap gap-2 mb-4" onSubmit={(e) => e.preventDefault()}>
             <input
               type="text"
               placeholder="Search by name or IP…"
@@ -176,7 +173,11 @@ export default function Machines() {
               <option value="expired">Expired</option>
             </select>
             {filtered && (
-              <button type="button" className="btn btn-sm btn-ghost" onClick={() => setSearchParams({})}>
+              <button
+                type="button"
+                className="btn btn-sm btn-ghost"
+                onClick={() => setSearchParams({})}
+              >
                 Clear
               </button>
             )}
@@ -218,7 +219,9 @@ export default function Machines() {
                 </div>
               ) : (
                 <div className="p-8 text-center opacity-60">
-                  {filtered ? 'No machines match the current filters.' : 'No machines registered yet.'}
+                  {filtered
+                    ? 'No machines match the current filters.'
+                    : 'No machines registered yet.'}
                 </div>
               )}
             </div>
@@ -346,13 +349,7 @@ function RegisterMachineDialog({
   )
 }
 
-function MachineRow({
-  machine: m,
-  onChange,
-}: {
-  machine: Machine
-  onChange: () => void
-}) {
+function MachineRow({ machine: m, onChange }: { machine: Machine; onChange: () => void }) {
   const renameRef = useRef<HTMLDialogElement>(null)
   const tagsRef = useRef<HTMLDialogElement>(null)
   const routesRef = useRef<HTMLDialogElement>(null)
@@ -411,7 +408,10 @@ function MachineRow({
           <button tabIndex={0} className="btn btn-sm btn-ghost">
             ⋯
           </button>
-          <ul tabIndex={0} className="dropdown-content menu bg-base-100 rounded-box z-10 w-56 p-2 shadow">
+          <ul
+            tabIndex={0}
+            className="dropdown-content menu bg-base-100 rounded-box z-10 w-56 p-2 shadow"
+          >
             <li>
               <button type="button" onClick={() => renameRef.current?.showModal()}>
                 Edit machine name
@@ -479,7 +479,11 @@ function MachineRow({
                 <button type="submit" className="btn btn-primary" disabled={busy}>
                   Rename
                 </button>
-                <button type="button" className="btn btn-ghost" onClick={() => renameRef.current?.close()}>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => renameRef.current?.close()}
+                >
                   Cancel
                 </button>
               </div>
@@ -518,7 +522,11 @@ function MachineRow({
                 <button type="submit" className="btn btn-primary" disabled={busy}>
                   Save
                 </button>
-                <button type="button" className="btn btn-ghost" onClick={() => tagsRef.current?.close()}>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => tagsRef.current?.close()}
+                >
                   Cancel
                 </button>
               </div>
@@ -536,7 +544,9 @@ function MachineRow({
               className="space-y-4"
               onSubmit={(e) => {
                 e.preventDefault()
-                void run(() => setMachineRoutes(m.id, selectedRoutes)).then(() => routesRef.current?.close())
+                void run(() => setMachineRoutes(m.id, selectedRoutes)).then(() =>
+                  routesRef.current?.close(),
+                )
               }}
             >
               {availableRoutes.length > 0 ? (
@@ -560,13 +570,23 @@ function MachineRow({
                   ))}
                 </ul>
               ) : (
-                <p className="text-sm opacity-60">This machine hasn&rsquo;t advertised any routes.</p>
+                <p className="text-sm opacity-60">
+                  This machine hasn&rsquo;t advertised any routes.
+                </p>
               )}
               <div className="modal-action">
-                <button type="submit" className="btn btn-primary" disabled={busy || availableRoutes.length === 0}>
+                <button
+                  type="submit"
+                  className="btn btn-primary"
+                  disabled={busy || availableRoutes.length === 0}
+                >
                   Save
                 </button>
-                <button type="button" className="btn btn-ghost" onClick={() => routesRef.current?.close()}>
+                <button
+                  type="button"
+                  className="btn btn-ghost"
+                  onClick={() => routesRef.current?.close()}
+                >
                   Cancel
                 </button>
               </div>

@@ -293,7 +293,6 @@ export function updateDNSSettings(dns: DNSConfig) {
   })
 }
 
-
 export interface PreAuthKey {
   id: string
   key: string

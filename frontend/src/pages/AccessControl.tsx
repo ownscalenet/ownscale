@@ -13,7 +13,15 @@ function Cheatsheet() {
       <div className="card-body">
         <h2 className="card-title">Cheatsheet</h2>
         <p className="text-sm text-base-content/70">
-          The policy is <a className="link" href="https://headscale.net/stable/ref/acls/" target="_blank" rel="noreferrer">HuJSON</a>{' '}
+          The policy is{' '}
+          <a
+            className="link"
+            href="https://headscale.net/stable/ref/acls/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            HuJSON
+          </a>{' '}
           (JSON with comments and trailing commas allowed).
         </p>
 
@@ -21,33 +29,41 @@ function Cheatsheet() {
         <dl className="text-sm space-y-2">
           <div>
             <dt className="font-semibold">groups</dt>
-            <dd className="text-base-content/70">Named lists of users, e.g. <code>"group:eng": ["alice@", "bob@"]</code></dd>
+            <dd className="text-base-content/70">
+              Named lists of users, e.g. <code>"group:eng": ["alice@", "bob@"]</code>
+            </dd>
           </div>
           <div>
             <dt className="font-semibold">tagOwners</dt>
-            <dd className="text-base-content/70">Who can assign a tag, e.g. <code>"tag:server": ["group:eng"]</code></dd>
+            <dd className="text-base-content/70">
+              Who can assign a tag, e.g. <code>"tag:server": ["group:eng"]</code>
+            </dd>
           </div>
           <div>
             <dt className="font-semibold">hosts</dt>
-            <dd className="text-base-content/70">Named IP/CIDR aliases, e.g. <code>"internal": "10.0.0.0/8"</code></dd>
+            <dd className="text-base-content/70">
+              Named IP/CIDR aliases, e.g. <code>"internal": "10.0.0.0/8"</code>
+            </dd>
           </div>
           <div>
             <dt className="font-semibold">acls</dt>
             <dd className="text-base-content/70">
-              List of rules: <code>action</code> (<code>"accept"</code>), <code>src</code>, <code>dst</code> (host:port).
+              List of rules: <code>action</code> (<code>"accept"</code>), <code>src</code>,{' '}
+              <code>dst</code> (host:port).
             </dd>
           </div>
           <div>
             <dt className="font-semibold">ssh</dt>
             <dd className="text-base-content/70">
-              SSH access rules: <code>action</code>, <code>src</code>, <code>dst</code>, <code>users</code>.
+              SSH access rules: <code>action</code>, <code>src</code>, <code>dst</code>,{' '}
+              <code>users</code>.
             </dd>
           </div>
         </dl>
 
         <div className="divider my-2">Example</div>
         <pre className="text-xs bg-base-200 rounded p-3 overflow-x-auto whitespace-pre-wrap">
-{`{
+          {`{
   "groups": {
     "group:eng": ["alice@", "bob@"],
   },
@@ -63,11 +79,21 @@ function Cheatsheet() {
 
         <div className="divider my-2">Selectors</div>
         <ul className="text-sm text-base-content/70 list-disc list-inside space-y-1">
-          <li><code>*</code> - everyone / everything</li>
-          <li><code>tag:name</code> - nodes with a tag</li>
-          <li><code>group:name</code> - a defined group</li>
-          <li><code>user@</code> - a specific user</li>
-          <li><code>host:port</code> or <code>host:*</code> - a destination</li>
+          <li>
+            <code>*</code> - everyone / everything
+          </li>
+          <li>
+            <code>tag:name</code> - nodes with a tag
+          </li>
+          <li>
+            <code>group:name</code> - a defined group
+          </li>
+          <li>
+            <code>user@</code> - a specific user
+          </li>
+          <li>
+            <code>host:port</code> or <code>host:*</code> - a destination
+          </li>
         </ul>
       </div>
     </div>
@@ -116,7 +142,9 @@ export default function AccessControl() {
       setSavedContent(content)
       setSuccess(true)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err))
+      setError(
+        err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err),
+      )
     } finally {
       setSaving(false)
     }
@@ -130,7 +158,9 @@ export default function AccessControl() {
       const res = await formatHuJSON(content)
       setContent(res.content)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err))
+      setError(
+        err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err),
+      )
     } finally {
       setFormatting(false)
     }
@@ -152,7 +182,9 @@ export default function AccessControl() {
 
       {notConfigured && (
         <div className="alert alert-warning mb-4">
-          <span>Your organization isn't active yet, so its access control policy can't be edited.</span>
+          <span>
+            Your organization isn't active yet, so its access control policy can't be edited.
+          </span>
         </div>
       )}
 
@@ -174,15 +206,15 @@ export default function AccessControl() {
               <div className="flex items-center justify-between mb-2">
                 <h2 className="card-title">Policy file (acl.hujson)</h2>
                 <div className="flex items-center gap-2">
-                {canManage && (
+                  {canManage && (
                     <button
-                        type="button"
-                        className="btn btn-ghost btn-sm"
-                        disabled={!dirty}
-                        onClick={() => diffRef.current?.showModal()}
-                      >
-                        View diff
-                      </button>
+                      type="button"
+                      className="btn btn-ghost btn-sm"
+                      disabled={!dirty}
+                      onClick={() => diffRef.current?.showModal()}
+                    >
+                      View diff
+                    </button>
                   )}
                   {canManage && (
                     <button
@@ -191,7 +223,9 @@ export default function AccessControl() {
                       disabled={formatting || notConfigured}
                       onClick={() => void handleFormat()}
                     >
-                      {formatting ? <span className="loading loading-spinner loading-xs"></span> : null}
+                      {formatting ? (
+                        <span className="loading loading-spinner loading-xs"></span>
+                      ) : null}
                       Format
                     </button>
                   )}
@@ -208,13 +242,11 @@ export default function AccessControl() {
                   )}
                 </div>
               </div>
-              <LineNumberedTextarea
-                value={content}
-                readOnly={!canManage}
-                onChange={setContent}
-              />
+              <LineNumberedTextarea value={content} readOnly={!canManage} onChange={setContent} />
               {!canManage && (
-                <p className="text-sm text-base-content/60 mt-2">Only owners and admins can edit the access control policy.</p>
+                <p className="text-sm text-base-content/60 mt-2">
+                  Only owners and admins can edit the access control policy.
+                </p>
               )}
               <DiffModal dialogRef={diffRef} savedContent={savedContent} content={content} />
             </div>

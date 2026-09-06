@@ -7,6 +7,8 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "lint": "oxlint",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -24,6 +26,8 @@
     "@vitejs/plugin-react": "^6.0.4",
     "daisyui": "^5.7.16",
     "oxlint": "^1.75.0",
+    "prettier": "^3.9.6",
+    "prettier": "^3.9.6",
     "tailwindcss": "^4.3.3",
     "typescript": "~6.0.2",
     "vite": "^8.2.0"

@@ -13,30 +13,36 @@ function Cheatsheet() {
       <div className="card-body">
         <h2 className="card-title">Cheatsheet</h2>
         <p className="text-sm text-base-content/70">
-          The allowlist is HuJSON (JSON with comments and trailing commas allowed). It
-          restricts which OIDC-authenticated users can join this organization. Leave a list
-          empty (or omit its key) to not restrict on that field.
+          The allowlist is HuJSON (JSON with comments and trailing commas allowed). It restricts
+          which OIDC-authenticated users can join this organization. Leave a list empty (or omit its
+          key) to not restrict on that field.
         </p>
 
         <div className="divider my-2">Top-level keys</div>
         <dl className="text-sm space-y-2">
           <div>
             <dt className="font-semibold">domains</dt>
-            <dd className="text-base-content/70">Allowed email domains, e.g. <code>"example.com"</code></dd>
+            <dd className="text-base-content/70">
+              Allowed email domains, e.g. <code>"example.com"</code>
+            </dd>
           </div>
           <div>
             <dt className="font-semibold">groups</dt>
-            <dd className="text-base-content/70">Allowed IdP-provided groups, e.g. <code>"group:eng"</code></dd>
+            <dd className="text-base-content/70">
+              Allowed IdP-provided groups, e.g. <code>"group:eng"</code>
+            </dd>
           </div>
           <div>
             <dt className="font-semibold">users</dt>
-            <dd className="text-base-content/70">Allowed specific email addresses, e.g. <code>"alice@example.com"</code></dd>
+            <dd className="text-base-content/70">
+              Allowed specific email addresses, e.g. <code>"alice@example.com"</code>
+            </dd>
           </div>
         </dl>
 
         <div className="divider my-2">Example</div>
         <pre className="text-xs bg-base-200 rounded p-3 overflow-x-auto whitespace-pre-wrap">
-{`{
+          {`{
   "domains": ["example.com"],
   "groups": ["group:eng"],
   "users": ["alice@example.com"],
@@ -45,7 +51,9 @@ function Cheatsheet() {
 
         <div className="divider my-2">Semantics</div>
         <ul className="text-sm text-base-content/70 list-disc list-inside space-y-1">
-          <li>A user may join if they match <em>any</em> domain, group, or user entry.</li>
+          <li>
+            A user may join if they match <em>any</em> domain, group, or user entry.
+          </li>
           <li>All three lists empty means anyone can sign in.</li>
         </ul>
       </div>
@@ -95,7 +103,9 @@ export default function AuthRestrictions() {
       setSavedContent(content)
       setSuccess(true)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err))
+      setError(
+        err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err),
+      )
     } finally {
       setSaving(false)
     }
@@ -109,7 +119,9 @@ export default function AuthRestrictions() {
       const res = await formatHuJSON(content)
       setContent(res.content)
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err))
+      setError(
+        err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err),
+      )
     } finally {
       setFormatting(false)
     }
@@ -131,7 +143,9 @@ export default function AuthRestrictions() {
 
       {notConfigured && (
         <div className="alert alert-warning mb-4">
-          <span>Your organization isn't active yet, so its authentication restrictions can't be edited.</span>
+          <span>
+            Your organization isn't active yet, so its authentication restrictions can't be edited.
+          </span>
         </div>
       )}
 
@@ -170,7 +184,9 @@ export default function AuthRestrictions() {
                       disabled={formatting || notConfigured}
                       onClick={() => void handleFormat()}
                     >
-                      {formatting ? <span className="loading loading-spinner loading-xs"></span> : null}
+                      {formatting ? (
+                        <span className="loading loading-spinner loading-xs"></span>
+                      ) : null}
                       Format
                     </button>
                   )}
@@ -187,13 +203,11 @@ export default function AuthRestrictions() {
                   )}
                 </div>
               </div>
-              <LineNumberedTextarea
-                value={content}
-                readOnly={!canManage}
-                onChange={setContent}
-              />
+              <LineNumberedTextarea value={content} readOnly={!canManage} onChange={setContent} />
               {!canManage && (
-                <p className="text-sm text-base-content/60 mt-2">Only owners and admins can edit authentication restrictions.</p>
+                <p className="text-sm text-base-content/60 mt-2">
+                  Only owners and admins can edit authentication restrictions.
+                </p>
               )}
               <DiffModal dialogRef={diffRef} savedContent={savedContent} content={content} />
             </div>

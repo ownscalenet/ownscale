@@ -54,7 +54,9 @@ export default function Funnel() {
       setTargetPort('')
       await load()
     } catch (err) {
-      setCreateError(err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err))
+      setCreateError(
+        err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err),
+      )
     } finally {
       setCreating(false)
     }
@@ -83,9 +85,10 @@ export default function Funnel() {
 
       <div role="alert" className="alert alert-warning mb-4">
         <span>
-          Funnel exposes a machine&apos;s port to the <strong>entire public internet</strong>, not just this
-          tailnet. Anyone with the URL below can reach it, without needing to join this tailnet at all. Only
-          create a funnel route for a service you intend to be publicly reachable.
+          Funnel exposes a machine&apos;s port to the <strong>entire public internet</strong>, not
+          just this tailnet. Anyone with the URL below can reach it, without needing to join this
+          tailnet at all. Only create a funnel route for a service you intend to be publicly
+          reachable.
         </span>
       </div>
 
@@ -138,7 +141,11 @@ export default function Funnel() {
                     <td className="font-mono">{r.targetPort}</td>
                     {canManage && (
                       <td>
-                        <button type="button" className="btn btn-ghost btn-xs" onClick={() => void handleDelete(r.id)}>
+                        <button
+                          type="button"
+                          className="btn btn-ghost btn-xs"
+                          onClick={() => void handleDelete(r.id)}
+                        >
                           Remove
                         </button>
                       </td>

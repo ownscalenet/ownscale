@@ -69,7 +69,8 @@ export default function AcceptInvite() {
 
           {alreadyInOrg ? (
             <p className="text-base-content/70">
-              You already belong to an organization. You must leave it before accepting a new invite.
+              You already belong to an organization. You must leave it before accepting a new
+              invite.
             </p>
           ) : preview ? (
             preview.valid ? (
@@ -78,7 +79,12 @@ export default function AcceptInvite() {
                   You&rsquo;ve been invited to join <strong>{preview.organizationName}</strong> as{' '}
                   <strong>{preview.role.replace('_', ' ')}</strong>.
                 </p>
-                <button type="button" className="btn btn-primary" disabled={accepting} onClick={() => void handleAccept()}>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={accepting}
+                  onClick={() => void handleAccept()}
+                >
                   Accept invite
                 </button>
               </>
