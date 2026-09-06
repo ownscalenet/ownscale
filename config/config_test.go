@@ -1,26 +1,13 @@
 package config
 
 import (
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 )
 
-// withDir chdir's into a fresh temp directory for the duration of the test,
-// so DefaultPath ("config.yaml") lookups are hermetic and don't ever touch a
-// real /etc/ownscale/config.yaml or a repo-relative file.
-func withDir(t *testing.T) string {
-	t.Helper()
-	dir := t.TempDir()
-	t.Chdir(dir)
-	return dir
-}
-
 func TestLoadDefaultsOnly(t *testing.T) {
-	withDir(t)
-
-	cfg, err := Load("")
+	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -39,62 +26,13 @@ func TestLoadDefaultsOnly(t *testing.T) {
 	}
 }
 
-func TestLoadYAMLOverridesDefaults(t *testing.T) {
-	dir := withDir(t)
-
-	yaml := `
-addr: ":9090"
-base_domain: example.com
-data_dir: mydata
-log:
-  level: debug
-  format: text
-`
-	path := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	cfg, err := Load("")
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if cfg.Addr != ":9090" {
-		t.Errorf("Addr = %q, want %q", cfg.Addr, ":9090")
-	}
-	if cfg.BaseDomain != "example.com" {
-		t.Errorf("BaseDomain = %q, want %q", cfg.BaseDomain, "example.com")
-	}
-	if cfg.Log.Level != "debug" || cfg.Log.Format != "text" {
-		t.Errorf("Log = %+v, want {debug text}", cfg.Log)
-	}
-	wantDataDir, err := filepath.Abs("mydata")
-	if err != nil {
-		t.Fatalf("Abs: %v", err)
-	}
-	if cfg.DataDir != wantDataDir {
-		t.Errorf("DataDir = %q, want %q", cfg.DataDir, wantDataDir)
-	}
-}
-
-func TestLoadEnvOverridesYAMLAndDefaults(t *testing.T) {
-	dir := withDir(t)
-
-	yaml := `
-addr: ":9090"
-base_domain: example.com
-`
-	path := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
+func TestLoadEnvOverridesDefaults(t *testing.T) {
 	t.Setenv("OWNSCALE_ADDR", ":7070")
 	t.Setenv("OWNSCALE_BASE_DOMAIN", "override.example.com")
 	t.Setenv("OWNSCALE_LOG_LEVEL", "warn")
 	t.Setenv("OWNSCALE_LOCAL_CA_DIR", "custom-local-ca")
 
-	cfg, err := Load("")
+	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -113,31 +51,10 @@ base_domain: example.com
 	}
 }
 
-func TestLoadMissingDefaultPathFallsBack(t *testing.T) {
-	withDir(t)
-	// No config.yaml written; Load("") should silently proceed with
-	// defaults + env vars rather than error.
-	cfg, err := Load("")
-	if err != nil {
-		t.Fatalf("Load: %v", err)
-	}
-	if cfg.Addr != ":8080" {
-		t.Errorf("Addr = %q, want default %q", cfg.Addr, ":8080")
-	}
-}
-
 func TestLoadOIDCProviderDefaults(t *testing.T) {
-	dir := withDir(t)
+	t.Setenv("OWNSCALE_BASE_DOMAIN", "example.com")
 
-	yaml := `
-base_domain: example.com
-`
-	path := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	cfg, err := Load("")
+	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -157,20 +74,10 @@ base_domain: example.com
 }
 
 func TestLoadOIDCProviderIssuerExplicitOverride(t *testing.T) {
-	dir := withDir(t)
+	t.Setenv("OWNSCALE_BASE_DOMAIN", "example.com")
+	t.Setenv("OWNSCALE_AUTH_OIDC_PROVIDER_ISSUER", "https://custom-issuer.example.org")
 
-	yaml := `
-base_domain: example.com
-auth:
-  oidc_provider:
-    issuer: "https://custom-issuer.example.org"
-`
-	path := filepath.Join(dir, "config.yaml")
-	if err := os.WriteFile(path, []byte(yaml), 0o600); err != nil {
-		t.Fatalf("WriteFile: %v", err)
-	}
-
-	cfg, err := Load("")
+	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
@@ -179,28 +86,24 @@ auth:
 	}
 }
 
-// TestLoadGoogleConfig covers auth.google, which is disabled when unset
-// and enabled with its three fields set when configured.
+// TestLoadGoogleConfig covers auth.google (OWNSCALE_AUTH_GOOGLE_*), which is
+// disabled when unset and enabled with its three fields set when configured.
 func TestLoadGoogleConfig(t *testing.T) {
 	cases := []struct {
 		name string
-		yaml string
+		env  map[string]string
 		want GoogleConfig
 	}{
 		{
 			name: "unset is disabled",
-			yaml: "base_domain: example.com\n",
 		},
 		{
 			name: "configured",
-			yaml: `
-base_domain: example.com
-auth:
-  google:
-    client_id: "google-client-id"
-    client_secret: "google-client-secret"
-    callback_url: "https://example.com/auth/google/callback"
-`,
+			env: map[string]string{
+				"OWNSCALE_AUTH_GOOGLE_CLIENT_ID":     "google-client-id",
+				"OWNSCALE_AUTH_GOOGLE_CLIENT_SECRET": "google-client-secret",
+				"OWNSCALE_AUTH_GOOGLE_CALLBACK_URL":  "https://example.com/auth/google/callback",
+			},
 			want: GoogleConfig{
 				ClientID:     "google-client-id",
 				ClientSecret: "google-client-secret",
@@ -210,13 +113,11 @@ auth:
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			dir := withDir(t)
-			path := filepath.Join(dir, "config.yaml")
-			if err := os.WriteFile(path, []byte(tc.yaml), 0o600); err != nil {
-				t.Fatalf("WriteFile: %v", err)
+			for k, v := range tc.env {
+				t.Setenv(k, v)
 			}
 
-			cfg, err := Load("")
+			cfg, err := Load()
 			if err != nil {
 				t.Fatalf("Load: %v", err)
 			}
@@ -231,29 +132,25 @@ auth:
 	}
 }
 
-// TestLoadMicrosoftConfig covers auth.microsoft, which follows the same
-// "disabled when unset, enabled with these fields when configured" shape
-// as TestLoadGoogleConfig.
+// TestLoadMicrosoftConfig covers auth.microsoft (OWNSCALE_AUTH_MICROSOFT_*),
+// which follows the same "disabled when unset, enabled with these fields
+// when configured" shape as TestLoadGoogleConfig.
 func TestLoadMicrosoftConfig(t *testing.T) {
 	cases := []struct {
 		name string
-		yaml string
+		env  map[string]string
 		want MicrosoftConfig
 	}{
 		{
 			name: "unset is disabled",
-			yaml: "base_domain: example.com\n",
 		},
 		{
 			name: "configured",
-			yaml: `
-base_domain: example.com
-auth:
-  microsoft:
-    client_id: "microsoft-client-id"
-    client_secret: "microsoft-client-secret"
-    callback_url: "https://example.com/auth/microsoft/callback"
-`,
+			env: map[string]string{
+				"OWNSCALE_AUTH_MICROSOFT_CLIENT_ID":     "microsoft-client-id",
+				"OWNSCALE_AUTH_MICROSOFT_CLIENT_SECRET": "microsoft-client-secret",
+				"OWNSCALE_AUTH_MICROSOFT_CALLBACK_URL":  "https://example.com/auth/microsoft/callback",
+			},
 			want: MicrosoftConfig{
 				ClientID:     "microsoft-client-id",
 				ClientSecret: "microsoft-client-secret",
@@ -263,13 +160,11 @@ auth:
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			dir := withDir(t)
-			path := filepath.Join(dir, "config.yaml")
-			if err := os.WriteFile(path, []byte(tc.yaml), 0o600); err != nil {
-				t.Fatalf("WriteFile: %v", err)
+			for k, v := range tc.env {
+				t.Setenv(k, v)
 			}
 
-			cfg, err := Load("")
+			cfg, err := Load()
 			if err != nil {
 				t.Fatalf("Load: %v", err)
 			}
@@ -284,26 +179,23 @@ auth:
 	}
 }
 
-// TestLoadDerpConfig covers derp.*, which is a no-op when unset, fills in
-// defaults for optional fields when only hostname is set, and preserves
-// any explicitly-set fields.
+// TestLoadDerpConfig covers derp.* (OWNSCALE_DERP_*), which is a no-op when
+// unset, fills in defaults for optional fields when only hostname is set,
+// and preserves any explicitly-set fields.
 func TestLoadDerpConfig(t *testing.T) {
 	cases := []struct {
 		name string
-		yaml string
+		env  map[string]string
 		want DerpConfig
 	}{
 		{
 			name: "unset is a no-op",
-			yaml: "base_domain: example.com\n",
 		},
 		{
 			name: "fills defaults when hostname set",
-			yaml: `
-base_domain: example.com
-derp:
-  hostname: derp.example.com
-`,
+			env: map[string]string{
+				"OWNSCALE_DERP_HOSTNAME": "derp.example.com",
+			},
 			want: DerpConfig{
 				Hostname:   "derp.example.com",
 				STUNPort:   3478,
@@ -314,17 +206,15 @@ derp:
 		},
 		{
 			name: "explicit overrides preserved",
-			yaml: `
-base_domain: example.com
-derp:
-  hostname: derp.example.com
-  ipv4: "198.51.100.1"
-  ipv6: "2001:db8::1"
-  stun_port: 4000
-  region_id: 901
-  region_code: "myderp"
-  region_name: "My DERP"
-`,
+			env: map[string]string{
+				"OWNSCALE_DERP_HOSTNAME":    "derp.example.com",
+				"OWNSCALE_DERP_IPV4":        "198.51.100.1",
+				"OWNSCALE_DERP_IPV6":        "2001:db8::1",
+				"OWNSCALE_DERP_STUN_PORT":   "4000",
+				"OWNSCALE_DERP_REGION_ID":   "901",
+				"OWNSCALE_DERP_REGION_CODE": "myderp",
+				"OWNSCALE_DERP_REGION_NAME": "My DERP",
+			},
 			want: DerpConfig{
 				Hostname:   "derp.example.com",
 				IPv4:       "198.51.100.1",
@@ -338,13 +228,11 @@ derp:
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			dir := withDir(t)
-			path := filepath.Join(dir, "config.yaml")
-			if err := os.WriteFile(path, []byte(tc.yaml), 0o600); err != nil {
-				t.Fatalf("WriteFile: %v", err)
+			for k, v := range tc.env {
+				t.Setenv(k, v)
 			}
 
-			cfg, err := Load("")
+			cfg, err := Load()
 			if err != nil {
 				t.Fatalf("Load: %v", err)
 			}
@@ -354,54 +242,6 @@ derp:
 			}
 			if cfg.Derp != tc.want {
 				t.Errorf("Derp = %+v, want %+v", cfg.Derp, tc.want)
-			}
-		})
-	}
-}
-
-// TestLoadErrors covers the ways Load can fail: an explicit --config path
-// that doesn't exist, malformed YAML, and an unknown YAML field (rejected
-// by KnownFields).
-func TestLoadErrors(t *testing.T) {
-	cases := []struct {
-		name string
-		// path returns the path to pass to Load, writing any file it
-		// needs under dir first.
-		path func(t *testing.T, dir string) string
-	}{
-		{
-			name: "explicit missing path",
-			path: func(t *testing.T, dir string) string {
-				return "/does/not/exist/config.yaml"
-			},
-		},
-		{
-			name: "malformed YAML",
-			path: func(t *testing.T, dir string) string {
-				path := filepath.Join(dir, "bad.yaml")
-				if err := os.WriteFile(path, []byte("addr: [unterminated"), 0o600); err != nil {
-					t.Fatalf("WriteFile: %v", err)
-				}
-				return path
-			},
-		},
-		{
-			name: "unknown YAML field",
-			path: func(t *testing.T, dir string) string {
-				path := filepath.Join(dir, "config.yaml")
-				if err := os.WriteFile(path, []byte("not_a_real_field: true"), 0o600); err != nil {
-					t.Fatalf("WriteFile: %v", err)
-				}
-				return path
-			},
-		},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			dir := withDir(t)
-			_, err := Load(tc.path(t, dir))
-			if err == nil {
-				t.Error("Load: want error, got nil")
 			}
 		})
 	}
@@ -459,15 +299,15 @@ func TestValidate(t *testing.T) {
 		breakF func(*Config)
 		want   string
 	}{
-		{"base_domain", func(c *Config) { c.BaseDomain = "" }, "base_domain"},
-		{"data_dir", func(c *Config) { c.DataDir = "" }, "data_dir"},
-		{"auth.session_secret", func(c *Config) { c.Auth.SessionSecret = "" }, "auth.session_secret"},
-		{"auth.upstream_oidc.issuer", func(c *Config) { c.Auth.UpstreamOIDC.Issuer = "" }, "auth.upstream_oidc.issuer"},
-		{"auth.upstream_oidc.client_id", func(c *Config) { c.Auth.UpstreamOIDC.ClientID = "" }, "auth.upstream_oidc.client_id"},
-		{"auth.upstream_oidc.client_secret", func(c *Config) { c.Auth.UpstreamOIDC.ClientSecret = "" }, "auth.upstream_oidc.client_secret"},
-		{"auth.upstream_oidc.callback_url", func(c *Config) { c.Auth.UpstreamOIDC.CallbackURL = "" }, "auth.upstream_oidc.callback_url"},
-		{"auth.oidc_provider.issuer", func(c *Config) { c.Auth.OIDCProvider.Issuer = "" }, "auth.oidc_provider.issuer"},
-		{"auth.oidc_provider.signing_key_path", func(c *Config) { c.Auth.OIDCProvider.SigningKeyPath = "" }, "auth.oidc_provider.signing_key_path"},
+		{"OWNSCALE_BASE_DOMAIN", func(c *Config) { c.BaseDomain = "" }, "OWNSCALE_BASE_DOMAIN"},
+		{"OWNSCALE_DATA_DIR", func(c *Config) { c.DataDir = "" }, "OWNSCALE_DATA_DIR"},
+		{"OWNSCALE_AUTH_SESSION_SECRET", func(c *Config) { c.Auth.SessionSecret = "" }, "OWNSCALE_AUTH_SESSION_SECRET"},
+		{"OWNSCALE_AUTH_UPSTREAM_OIDC_ISSUER", func(c *Config) { c.Auth.UpstreamOIDC.Issuer = "" }, "OWNSCALE_AUTH_UPSTREAM_OIDC_ISSUER"},
+		{"OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_ID", func(c *Config) { c.Auth.UpstreamOIDC.ClientID = "" }, "OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_ID"},
+		{"OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_SECRET", func(c *Config) { c.Auth.UpstreamOIDC.ClientSecret = "" }, "OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_SECRET"},
+		{"OWNSCALE_AUTH_UPSTREAM_OIDC_CALLBACK_URL", func(c *Config) { c.Auth.UpstreamOIDC.CallbackURL = "" }, "OWNSCALE_AUTH_UPSTREAM_OIDC_CALLBACK_URL"},
+		{"OWNSCALE_AUTH_OIDC_PROVIDER_ISSUER", func(c *Config) { c.Auth.OIDCProvider.Issuer = "" }, "OWNSCALE_AUTH_OIDC_PROVIDER_ISSUER"},
+		{"OWNSCALE_AUTH_OIDC_PROVIDER_SIGNING_KEY_PATH", func(c *Config) { c.Auth.OIDCProvider.SigningKeyPath = "" }, "OWNSCALE_AUTH_OIDC_PROVIDER_SIGNING_KEY_PATH"},
 	}
 	for _, f := range fields {
 		t.Run("missing "+f.name, func(t *testing.T) {

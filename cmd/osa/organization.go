@@ -21,12 +21,12 @@ import (
 	"github.com/ownscalenet/ownscale/orgs"
 )
 
-// loadConfigAndLogger reads the config file at *configPath (or the
-// default path) and builds a logger from its Log settings. It's called
+// loadConfigAndLogger reads the config from OWNSCALE_* environment
+// variables and builds a logger from its Log settings. It's called
 // at the start of every organization subcommand's Exec, since each
 // subcommand runs as its own short-lived process invocation.
-func loadConfigAndLogger(configPath *string) (*config.Config, *slog.Logger, error) {
-	cfg, err := config.Load(*configPath)
+func loadConfigAndLogger() (*config.Config, *slog.Logger, error) {
+	cfg, err := config.Load()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -44,7 +44,7 @@ func loadConfigAndLogger(configPath *string) (*config.Config, *slog.Logger, erro
 // same reason config.Config.Validate rejects it (see there for why).
 func baseDomain(cfg *config.Config) (string, error) {
 	if cfg.BaseDomain == "" {
-		return "", errors.New("base_domain must be set (e.g. via config.yaml or OWNSCALE_BASE_DOMAIN=example.com)")
+		return "", errors.New("base_domain must be set (e.g. via OWNSCALE_BASE_DOMAIN=example.com)")
 	}
 	if strings.EqualFold(cfg.BaseDomain, "localhost") {
 		return "", errors.New(`base_domain must not be "localhost" -- use a dedicated local dev domain instead ` +
@@ -74,7 +74,7 @@ type orgResources struct {
 // never touches the database). The returned cleanup func closes whichever
 // of those were actually opened, in reverse order; it's always non-nil and
 // safe to defer, even if newOrgResources returns an error.
-func newOrgResources(configPath *string, withDB, withDocker bool) (_ *orgResources, cleanup func(), err error) {
+func newOrgResources(withDB, withDocker bool) (_ *orgResources, cleanup func(), err error) {
 	var closers []func() error
 	cleanup = func() {
 		for _, closer := range slices.Backward(closers) {
@@ -82,7 +82,7 @@ func newOrgResources(configPath *string, withDB, withDocker bool) (_ *orgResourc
 		}
 	}
 
-	cfg, logger, err := loadConfigAndLogger(configPath)
+	cfg, logger, err := loadConfigAndLogger()
 	if err != nil {
 		return nil, cleanup, err
 	}
@@ -110,9 +110,8 @@ func newOrgResources(configPath *string, withDB, withDocker bool) (_ *orgResourc
 }
 
 // newOrganizationCommand builds the "organization" subcommand group
-// (create/delete/list/start/stop), parented under rootFlags so every
-// subcommand also accepts the root --config flag.
-func newOrganizationCommand(rootFlags *ff.FlagSet, configPath *string) *ff.Command {
+// (create/delete/list/start/stop), parented under rootFlags.
+func newOrganizationCommand(rootFlags *ff.FlagSet) *ff.Command {
 	organizationFlags := ff.NewFlagSet("organization").SetParent(rootFlags)
 	organizationCmd := &ff.Command{
 		Name:      "organization",
@@ -122,16 +121,16 @@ func newOrganizationCommand(rootFlags *ff.FlagSet, configPath *string) *ff.Comma
 	}
 
 	organizationCmd.Subcommands = append(organizationCmd.Subcommands,
-		newOrganizationCreateCommand(organizationFlags, configPath),
-		newOrganizationDeleteCommand(organizationFlags, configPath),
-		newOrganizationListCommand(organizationFlags, configPath),
-		newOrganizationStartCommand(organizationFlags, configPath),
-		newOrganizationStopCommand(organizationFlags, configPath),
+		newOrganizationCreateCommand(organizationFlags),
+		newOrganizationDeleteCommand(organizationFlags),
+		newOrganizationListCommand(organizationFlags),
+		newOrganizationStartCommand(organizationFlags),
+		newOrganizationStopCommand(organizationFlags),
 	)
 	return organizationCmd
 }
 
-func newOrganizationCreateCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
+func newOrganizationCreateCommand(parent *ff.FlagSet) *ff.Command {
 	flags := ff.NewFlagSet("organization create").SetParent(parent)
 	return &ff.Command{
 		Name:      "create",
@@ -142,7 +141,7 @@ func newOrganizationCreateCommand(parent *ff.FlagSet, configPath *string) *ff.Co
 			if len(args) != 1 {
 				return errors.New("usage: osa organization create <subdomain>")
 			}
-			res, cleanup, err := newOrgResources(configPath, true, true)
+			res, cleanup, err := newOrgResources(true, true)
 			defer cleanup()
 			if err != nil {
 				return err
@@ -157,7 +156,7 @@ func newOrganizationCreateCommand(parent *ff.FlagSet, configPath *string) *ff.Co
 	}
 }
 
-func newOrganizationDeleteCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
+func newOrganizationDeleteCommand(parent *ff.FlagSet) *ff.Command {
 	flags := ff.NewFlagSet("organization delete").SetParent(parent)
 	return &ff.Command{
 		Name:      "delete",
@@ -168,7 +167,7 @@ func newOrganizationDeleteCommand(parent *ff.FlagSet, configPath *string) *ff.Co
 			if len(args) != 1 {
 				return errors.New("usage: osa organization delete <subdomain>")
 			}
-			res, cleanup, err := newOrgResources(configPath, true, true)
+			res, cleanup, err := newOrgResources(true, true)
 			defer cleanup()
 			if err != nil {
 				return err
@@ -178,7 +177,7 @@ func newOrganizationDeleteCommand(parent *ff.FlagSet, configPath *string) *ff.Co
 	}
 }
 
-func newOrganizationListCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
+func newOrganizationListCommand(parent *ff.FlagSet) *ff.Command {
 	flags := ff.NewFlagSet("organization list").SetParent(parent)
 	return &ff.Command{
 		Name:      "list",
@@ -189,7 +188,7 @@ func newOrganizationListCommand(parent *ff.FlagSet, configPath *string) *ff.Comm
 			if len(args) != 0 {
 				return errors.New("usage: osa organization list")
 			}
-			res, cleanup, err := newOrgResources(configPath, true, true)
+			res, cleanup, err := newOrgResources(true, true)
 			defer cleanup()
 			if err != nil {
 				return err
@@ -199,7 +198,7 @@ func newOrganizationListCommand(parent *ff.FlagSet, configPath *string) *ff.Comm
 	}
 }
 
-func newOrganizationStartCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
+func newOrganizationStartCommand(parent *ff.FlagSet) *ff.Command {
 	flags := ff.NewFlagSet("organization start").SetParent(parent)
 	return &ff.Command{
 		Name:      "start",
@@ -210,7 +209,7 @@ func newOrganizationStartCommand(parent *ff.FlagSet, configPath *string) *ff.Com
 			if len(args) != 0 {
 				return errors.New("usage: osa organization start")
 			}
-			res, cleanup, err := newOrgResources(configPath, true, true)
+			res, cleanup, err := newOrgResources(true, true)
 			defer cleanup()
 			if err != nil {
 				return err
@@ -224,7 +223,7 @@ func newOrganizationStartCommand(parent *ff.FlagSet, configPath *string) *ff.Com
 	}
 }
 
-func newOrganizationStopCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
+func newOrganizationStopCommand(parent *ff.FlagSet) *ff.Command {
 	flags := ff.NewFlagSet("organization stop").SetParent(parent)
 	timeout := flags.DurationLong("timeout", 10*time.Second, "graceful stop timeout")
 	return &ff.Command{
@@ -236,7 +235,7 @@ func newOrganizationStopCommand(parent *ff.FlagSet, configPath *string) *ff.Comm
 			if len(args) != 0 {
 				return errors.New("usage: osa organization stop [--timeout <duration>]")
 			}
-			res, cleanup, err := newOrgResources(configPath, false, true)
+			res, cleanup, err := newOrgResources(false, true)
 			defer cleanup()
 			if err != nil {
 				return err

@@ -1,18 +1,18 @@
 ### Local development
 
 ```sh
-cp config.example.yaml config.yaml   # edit base_domain, auth.*, database, etc.
+cp .env.example .env   # edit BASE_DOMAIN, OWNSCALE_AUTH_*, etc.
 make build              # builds frontend/ into webui/dist, then `go build`
-./bin/ownscale --config config.yaml   # start server on :8080
+set -a; source .env; set +a
+./bin/ownscale   # start server on :8080
 ```
 
 ### Deployment (docker compose)
 
 ```sh
-cp config.example.yaml config.yaml   # edit base_domain, auth.*, database, etc.
-echo "BASE_DOMAIN=example.com" > .env
+cp .env.example .env   # edit BASE_DOMAIN, OWNSCALE_AUTH_*, etc.
 docker compose up -d --build   # builds and starts ownscale + caddy
-docker compose exec ownscale /app/osa -config /etc/ownscale/config.yaml organization list
+docker compose exec ownscale /app/osa organization list
 ```
 
 `make archive`  builds the `ownscale:latest` image locally, ships it to the
@@ -24,13 +24,13 @@ the repo over the same SSH connection. Afterwards, `docker compose up -d`
 `ownscale` service on the shared `os-net` Docker network, with **no host
 port published** (Caddy reaches it at `ownscale:8080` by container name;
 
-Config is loaded from `/etc/ownscale/config.yaml` by default, or from the path given
-with `--config <path>`. See `config.example.yaml`. Any value can be overridden with an
-`OWNSCALE_*` environment variable (e.g. `OWNSCALE_ADDR`)
+Config is loaded from built-in defaults, overridden by any `OWNSCALE_*`
+environment variable (e.g. `OWNSCALE_ADDR`, `OWNSCALE_BASE_DOMAIN`). See
+`.env.example` for the full list.
 
-### Data directory (`data_dir` / `OWNSCALE_DATA_DIR`)
+### Data directory (`OWNSCALE_DATA_DIR`)
 
-All SQLite dbs are gathered under a single directory, `data_dir`. This allows us
+All SQLite dbs are gathered under a single directory, `OWNSCALE_DATA_DIR`. This allows us
 to have all dbs replicated with a litestream directory watcher.
 
 
@@ -40,7 +40,7 @@ required (e.g. `s3://my-backup-bucket/ownscale`); `LITESTREAM_ACCESS_KEY_ID`/
 `LITESTREAM_ENDPOINT` (for S3-compatible backends) are optional. The
 actual litestream config lives in `etc/litestream/litestream.yml`, which
 follows the same "static file + env var expansion" pattern as
-`etc/caddy/Caddyfile` — it's not generated from `config.yaml`.
+`etc/caddy/Caddyfile` — it's not generated from ownscale's own config.
 
 For local-only backups (no S3), set `LITESTREAM_REPLICA_URL` to
 `file:///var/lib/litestream/backups` — the only `file://` path docker-compose.yml
@@ -57,8 +57,7 @@ on restart.
 Sign in at `https://<base_domain>/login` (ownscale — Ownscale console, login,
 and OIDC provider — is bound to the bare base domain; the documentation
 site lives at `https://docs.<base_domain>`). ownscale federates the initial
-login to a configurable upstream OIDC provider (`auth.upstream_oidc` in
-`config.yaml`) — any standard OIDC issuer works: Google, Okta, Dex, etc. —
+login to a configurable upstream OIDC provider (`OWNSCALE_AUTH_UPSTREAM_OIDC_*`) — any standard OIDC issuer works: Google, Okta, Dex, etc. —
 then acts as its own OIDC provider so each organization's Headscale
 container trusts it as a relying party: one upstream login covers the
 Ownscale console and every organization's tailnet. See
@@ -67,10 +66,10 @@ Ownscale console and every organization's tailnet. See
 For local dev, `docker-compose.yml` bundles a
 [Dex](https://dexidp.io/) instance (see the `dex` service and
 `etc/dex/config.yaml`) as a lightweight, zero-external-account-setup
-upstream provider — `config.yaml`'s `auth.upstream_oidc.*` defaults point
+upstream provider — `.env.example`'s `OWNSCALE_AUTH_UPSTREAM_OIDC_*` defaults point
 at it already. It seeds one test login: `admin@ownscale.test` /
 `ownscale`. Add more entries to `etc/dex/config.yaml`'s `staticPasswords`
-to test with additional users. In production, point `auth.upstream_oidc.*`
+to test with additional users. In production, point `OWNSCALE_AUTH_UPSTREAM_OIDC_*`
 at a real IdP instead and simply omit the `dex` service — ownscale's own
 code never references Dex specifically, only generic OIDC discovery.
 
@@ -87,14 +86,14 @@ Prerequisites:
 - Docker running locally (the standard `DOCKER_HOST` env vars are honored)
 - the `caddy` compose service running for HTTPS (see below)
 
-`base_domain` must not be `"localhost"`: every OS and container resolves
+`OWNSCALE_BASE_DOMAIN` must not be `"localhost"`: every OS and container resolves
 that exact name from a built-in loopback entry (`/etc/hosts`'s
 `127.0.0.1 localhost`) before ever consulting DNS, which silently defeats
 the Docker-network-alias routing organization containers rely on to reach
-Caddy (`ownscale`/`osa` reject `base_domain: localhost` outright).
+Caddy (`ownscale`/`osa` reject `OWNSCALE_BASE_DOMAIN=localhost` outright).
 
 For local dev, use a private, [RFC 2606](https://www.rfc-editor.org/rfc/rfc2606)-reserved
-TLD like **`ownscale.test`** (the default in `config.example.yaml`/`.env.example`):
+TLD like **`ownscale.test`** (the default in `.env.example`):
 since ownscale's own upstream OIDC login no longer has to be a real,
 publicly-trusted IdP (see "Single sign-on" above), there's nothing left
 requiring a real public domain like the previously-used `lvh.me`. Unlike

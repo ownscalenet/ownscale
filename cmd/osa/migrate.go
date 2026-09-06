@@ -15,9 +15,9 @@ import (
 
 // newMigrateCommand builds the "migrate" subcommand group (up/down/status),
 // which applies schema migrations (embedded from db/migrations)
-// against the sqlite database configured in config.yaml, using goose as a
-// library. It mirrors what used to be the standalone cmd/migrate binary.
-func newMigrateCommand(rootFlags *ff.FlagSet, configPath *string) *ff.Command {
+// against the sqlite database configured via OWNSCALE_* env vars, using
+// goose as a library. It mirrors what used to be the standalone cmd/migrate binary.
+func newMigrateCommand(rootFlags *ff.FlagSet) *ff.Command {
 	migrateFlags := ff.NewFlagSet("migrate").SetParent(rootFlags)
 	migrateCmd := &ff.Command{
 		Name:      "migrate",
@@ -27,9 +27,9 @@ func newMigrateCommand(rootFlags *ff.FlagSet, configPath *string) *ff.Command {
 	}
 
 	migrateCmd.Subcommands = append(migrateCmd.Subcommands,
-		newMigrateUpCommand(migrateFlags, configPath),
-		newMigrateDownCommand(migrateFlags, configPath),
-		newMigrateStatusCommand(migrateFlags, configPath),
+		newMigrateUpCommand(migrateFlags),
+		newMigrateDownCommand(migrateFlags),
+		newMigrateStatusCommand(migrateFlags),
 	)
 	return migrateCmd
 }
@@ -37,8 +37,8 @@ func newMigrateCommand(rootFlags *ff.FlagSet, configPath *string) *ff.Command {
 // newGooseProvider loads config, builds a logger, connects to the DB, and
 // constructs a goose.Provider over the embedded migrations. It's called at
 // the start of every migrate subcommand's Exec.
-func newGooseProvider(configPath *string) (*goose.Provider, *slog.Logger, error) {
-	cfg, logger, err := loadConfigAndLogger(configPath)
+func newGooseProvider() (*goose.Provider, *slog.Logger, error) {
+	cfg, logger, err := loadConfigAndLogger()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -60,7 +60,7 @@ func newGooseProvider(configPath *string) (*goose.Provider, *slog.Logger, error)
 	return provider, logger, nil
 }
 
-func newMigrateUpCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
+func newMigrateUpCommand(parent *ff.FlagSet) *ff.Command {
 	flags := ff.NewFlagSet("migrate up").SetParent(parent)
 	return &ff.Command{
 		Name:      "up",
@@ -71,7 +71,7 @@ func newMigrateUpCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
 			if len(args) != 0 {
 				return fmt.Errorf("usage: osa migrate up")
 			}
-			provider, _, err := newGooseProvider(configPath)
+			provider, _, err := newGooseProvider()
 			if err != nil {
 				return err
 			}
@@ -80,7 +80,7 @@ func newMigrateUpCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
 	}
 }
 
-func newMigrateDownCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
+func newMigrateDownCommand(parent *ff.FlagSet) *ff.Command {
 	flags := ff.NewFlagSet("migrate down").SetParent(parent)
 	return &ff.Command{
 		Name:      "down",
@@ -91,7 +91,7 @@ func newMigrateDownCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
 			if len(args) != 0 {
 				return fmt.Errorf("usage: osa migrate down")
 			}
-			provider, _, err := newGooseProvider(configPath)
+			provider, _, err := newGooseProvider()
 			if err != nil {
 				return err
 			}
@@ -100,7 +100,7 @@ func newMigrateDownCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
 	}
 }
 
-func newMigrateStatusCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
+func newMigrateStatusCommand(parent *ff.FlagSet) *ff.Command {
 	flags := ff.NewFlagSet("migrate status").SetParent(parent)
 	return &ff.Command{
 		Name:      "status",
@@ -111,7 +111,7 @@ func newMigrateStatusCommand(parent *ff.FlagSet, configPath *string) *ff.Command
 			if len(args) != 0 {
 				return fmt.Errorf("usage: osa migrate status")
 			}
-			provider, _, err := newGooseProvider(configPath)
+			provider, _, err := newGooseProvider()
 			if err != nil {
 				return err
 			}

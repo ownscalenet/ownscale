@@ -5,7 +5,7 @@ Tailscale/headscale nodes use when a direct peer-to-peer connection can't be
 established. By default, every organization's headscale container (see
 `dockerctl`) uses Tailscale's own public DERP relay map. This
 directory lets you run your own instead, and have every organization's
-headscale point at it (see `derp:` in `config.example.yaml`).
+headscale point at it (see `OWNSCALE_DERP_*` in `.env.example`).
 
 ## Why a separate server?
 
@@ -37,8 +37,8 @@ public DNS name.
 
 ## Wiring it into ownscale
 
-Once running, set the `derp:` section in ownscale's own `config.yaml` (see
-`config.example.yaml`) to this server's hostname/region info. On next
+Once running, set the `OWNSCALE_DERP_*` env vars (see
+`.env.example`) to this server's hostname/region info. On next
 organization provisioning (or reconciliation), every org's headscale
 container will be configured with a custom DERP map pointing at this relay
 instead of Tailscale's public one.

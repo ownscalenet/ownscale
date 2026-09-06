@@ -2,7 +2,6 @@
 - Check if abs can have automatic regular snapshots/backups
 - Check if litestream container logs can be changed from text to json
 - dockerfile user and permissions
-- check how .env and config.yaml can be collapsed into one
 - requirements for the admin:
   - a name, (can't be admin?)
 - TLS for DNS providers other than Azure

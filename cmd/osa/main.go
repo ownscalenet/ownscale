@@ -12,13 +12,10 @@ import (
 
 	"github.com/peterbourgon/ff/v4"
 	"github.com/peterbourgon/ff/v4/ffhelp"
-
-	"github.com/ownscalenet/ownscale/config"
 )
 
 func main() {
 	rootFlags := ff.NewFlagSet("osa")
-	configPath := rootFlags.StringLong("config", "", "path to config file (default: "+config.DefaultPath+")")
 
 	rootCmd := &ff.Command{
 		Name:      "osa",
@@ -27,12 +24,12 @@ func main() {
 		Flags:     rootFlags,
 	}
 	rootCmd.Subcommands = append(rootCmd.Subcommands,
-		newOrganizationCommand(rootFlags, configPath),
-		newUserCommand(rootFlags, configPath),
-		newMigrateCommand(rootFlags, configPath),
-		newGenLocalCACommand(rootFlags, configPath),
-		newRestoreCommand(rootFlags, configPath),
-		newVerifyCommand(rootFlags, configPath),
+		newOrganizationCommand(rootFlags),
+		newUserCommand(rootFlags),
+		newMigrateCommand(rootFlags),
+		newGenLocalCACommand(rootFlags),
+		newRestoreCommand(rootFlags),
+		newVerifyCommand(rootFlags),
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

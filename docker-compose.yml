@@ -7,12 +7,11 @@ services:
     image: ownscale:latest
     build: .
     entrypoint: ["/app/osa"]
-    command: ["gen-local-ca", "--config", "/etc/ownscale/config.yaml", "--caddy-data-dir", "/caddy-data"]
+    command: ["gen-local-ca", "--caddy-data-dir", "/caddy-data"]
     environment:
       OWNSCALE_DATA_DIR: ${OWNSCALE_DATA_DIR:?set OWNSCALE_DATA_DIR to an absolute host path in .env}
     volumes:
       - ${OWNSCALE_DATA_DIR}:${OWNSCALE_DATA_DIR}
-      - ./config.yaml:/etc/ownscale/config.yaml:ro
       - caddy-data:/caddy-data
     networks:
       - os-net
@@ -26,9 +25,36 @@ services:
       dex:
         condition: service_healthy
     environment:
+      OWNSCALE_ADDR: ${OWNSCALE_ADDR:-:8080}
       OWNSCALE_BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
       OWNSCALE_DATA_DIR: ${OWNSCALE_DATA_DIR:?set OWNSCALE_DATA_DIR to an absolute host path in .env}
+      OWNSCALE_LOCAL_CA_DIR: ${OWNSCALE_LOCAL_CA_DIR:-local-ca}
       SSL_CERT_DIR: /etc/ssl/certs:/etc/pki/tls/certs:${OWNSCALE_DATA_DIR}/local-ca
+      OWNSCALE_AUTH_SESSION_SECRET: ${OWNSCALE_AUTH_SESSION_SECRET:?set OWNSCALE_AUTH_SESSION_SECRET in .env}
+      OWNSCALE_AUTH_UPSTREAM_OIDC_ISSUER: ${OWNSCALE_AUTH_UPSTREAM_OIDC_ISSUER:-}
+      OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_ID: ${OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_ID:-}
+      OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_SECRET: ${OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_SECRET:-}
+      OWNSCALE_AUTH_UPSTREAM_OIDC_CALLBACK_URL: ${OWNSCALE_AUTH_UPSTREAM_OIDC_CALLBACK_URL:-}
+      OWNSCALE_AUTH_GOOGLE_CLIENT_ID: ${OWNSCALE_AUTH_GOOGLE_CLIENT_ID:-}
+      OWNSCALE_AUTH_GOOGLE_CLIENT_SECRET: ${OWNSCALE_AUTH_GOOGLE_CLIENT_SECRET:-}
+      OWNSCALE_AUTH_GOOGLE_CALLBACK_URL: ${OWNSCALE_AUTH_GOOGLE_CALLBACK_URL:-}
+      OWNSCALE_AUTH_MICROSOFT_CLIENT_ID: ${OWNSCALE_AUTH_MICROSOFT_CLIENT_ID:-}
+      OWNSCALE_AUTH_MICROSOFT_CLIENT_SECRET: ${OWNSCALE_AUTH_MICROSOFT_CLIENT_SECRET:-}
+      OWNSCALE_AUTH_MICROSOFT_CALLBACK_URL: ${OWNSCALE_AUTH_MICROSOFT_CALLBACK_URL:-}
+      OWNSCALE_AUTH_OIDC_PROVIDER_ISSUER: ${OWNSCALE_AUTH_OIDC_PROVIDER_ISSUER:-}
+      OWNSCALE_AUTH_OIDC_PROVIDER_SIGNING_KEY_PATH: ${OWNSCALE_AUTH_OIDC_PROVIDER_SIGNING_KEY_PATH:-oidc_signing_key.pem}
+      OWNSCALE_AUTH_OIDC_PROVIDER_ACCESS_TOKEN_LIFETIME: ${OWNSCALE_AUTH_OIDC_PROVIDER_ACCESS_TOKEN_LIFETIME:-5m}
+      OWNSCALE_AUTH_OIDC_PROVIDER_ID_TOKEN_LIFETIME: ${OWNSCALE_AUTH_OIDC_PROVIDER_ID_TOKEN_LIFETIME:-1h}
+      OWNSCALE_LOG_LEVEL: ${OWNSCALE_LOG_LEVEL:-info}
+      OWNSCALE_LOG_FORMAT: ${OWNSCALE_LOG_FORMAT:-json}
+      OWNSCALE_DERP_HOSTNAME: ${OWNSCALE_DERP_HOSTNAME:-}
+      OWNSCALE_DERP_IPV4: ${OWNSCALE_DERP_IPV4:-}
+      OWNSCALE_DERP_IPV6: ${OWNSCALE_DERP_IPV6:-}
+      OWNSCALE_DERP_STUN_PORT: ${OWNSCALE_DERP_STUN_PORT:-3478}
+      OWNSCALE_DERP_REGION_ID: ${OWNSCALE_DERP_REGION_ID:-900}
+      OWNSCALE_DERP_REGION_CODE: ${OWNSCALE_DERP_REGION_CODE:-custom}
+      OWNSCALE_DERP_REGION_NAME: ${OWNSCALE_DERP_REGION_NAME:-Ownscale DERP}
+      OWNSCALE_PROVISIONER_QUEUE_CAPACITY: ${OWNSCALE_PROVISIONER_QUEUE_CAPACITY:-0}
       # Inject litestream's vars too because we use litestream to verify dbs
       # against the replication backups (an to restore, in case they're missing/dirty)
       LITESTREAM_REPLICA_URL: ${LITESTREAM_REPLICA_URL:-}
@@ -40,7 +66,6 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${OWNSCALE_DATA_DIR}:${OWNSCALE_DATA_DIR}
-      - ./config.yaml:/etc/ownscale/config.yaml:ro
     networks:
       - os-net
     restart: unless-stopped

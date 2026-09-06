@@ -24,9 +24,8 @@ import (
 const testAuthProvider = "test"
 
 // newUserCommand builds the "user" subcommand group (currently just
-// "list"), parented under rootFlags so every subcommand also accepts the
-// root --config flag.
-func newUserCommand(rootFlags *ff.FlagSet, configPath *string) *ff.Command {
+// "list"), parented under rootFlags.
+func newUserCommand(rootFlags *ff.FlagSet) *ff.Command {
 	userFlags := ff.NewFlagSet("user").SetParent(rootFlags)
 	userCmd := &ff.Command{
 		Name:      "user",
@@ -36,14 +35,14 @@ func newUserCommand(rootFlags *ff.FlagSet, configPath *string) *ff.Command {
 	}
 
 	userCmd.Subcommands = append(userCmd.Subcommands,
-		newUserListCommand(userFlags, configPath),
-		newUserDeleteCommand(userFlags, configPath),
-		newUserLoginCommand(userFlags, configPath),
+		newUserListCommand(userFlags),
+		newUserDeleteCommand(userFlags),
+		newUserLoginCommand(userFlags),
 	)
 	return userCmd
 }
 
-func newUserListCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
+func newUserListCommand(parent *ff.FlagSet) *ff.Command {
 	flags := ff.NewFlagSet("user list").SetParent(parent)
 	return &ff.Command{
 		Name:      "list",
@@ -54,7 +53,7 @@ func newUserListCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
 			if len(args) != 0 {
 				return errors.New("usage: osa user list")
 			}
-			res, cleanup, err := newOrgResources(configPath, true, false)
+			res, cleanup, err := newOrgResources(true, false)
 			defer cleanup()
 			if err != nil {
 				return err
@@ -99,7 +98,7 @@ func listUsers(ctx context.Context, out io.Writer, queries *db.TxQueries) error 
 	return nil
 }
 
-func newUserDeleteCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
+func newUserDeleteCommand(parent *ff.FlagSet) *ff.Command {
 	flags := ff.NewFlagSet("user delete").SetParent(parent)
 	return &ff.Command{
 		Name:      "delete",
@@ -110,7 +109,7 @@ func newUserDeleteCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
 			if len(args) != 1 {
 				return errors.New("usage: osa user delete <user_id>")
 			}
-			res, cleanup, err := newOrgResources(configPath, true, false)
+			res, cleanup, err := newOrgResources(true, false)
 			defer cleanup()
 			if err != nil {
 				return err
@@ -138,7 +137,7 @@ func deleteUser(ctx context.Context, out io.Writer, queries *db.TxQueries, userI
 	return nil
 }
 
-func newUserLoginCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
+func newUserLoginCommand(parent *ff.FlagSet) *ff.Command {
 	flags := ff.NewFlagSet("user login").SetParent(parent)
 	name := flags.StringLong("name", "", "display name for a newly created user (defaults to the email)")
 	org := flags.StringLong("org", "", "attach the user to this already-active organization's subdomain (only if they don't already belong to one)")
@@ -152,7 +151,7 @@ func newUserLoginCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
 			if len(args) != 1 {
 				return errors.New("usage: osa user login [--org <subdomain>] [--role <role>] [--name <name>] <email>")
 			}
-			res, cleanup, err := newOrgResources(configPath, true, false)
+			res, cleanup, err := newOrgResources(true, false)
 			defer cleanup()
 			if err != nil {
 				return err

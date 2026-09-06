@@ -10,7 +10,7 @@ its API.
 ## Prerequisites
 
 - Docker running locally, and the repo's usual local-dev setup already in
-  place: `config.yaml` and `.env` present (see the repo root `README.md`),
+  place: `.env` present (see the repo root `README.md`),
   the `ownscale:latest` image built (or let `--build` handle it, which
   takes longer).
 - `/etc/hosts` entries for `ownscale.test`, `dex.ownscale.test`, and

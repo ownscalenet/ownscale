@@ -87,7 +87,7 @@ func restoreOrganizations(ctx context.Context, out io.Writer, run restoreRunner,
 // used by entrypoint.sh on every container start to recover from litestream
 // backup any database that's missing locally (e.g. after data loss),
 // without disturbing databases that are already present.
-func newRestoreCommand(rootFlags *ff.FlagSet, configPath *string) *ff.Command {
+func newRestoreCommand(rootFlags *ff.FlagSet) *ff.Command {
 	restoreFlags := ff.NewFlagSet("restore").SetParent(rootFlags)
 	restoreCmd := &ff.Command{
 		Name:      "restore",
@@ -96,13 +96,13 @@ func newRestoreCommand(rootFlags *ff.FlagSet, configPath *string) *ff.Command {
 		Flags:     restoreFlags,
 	}
 	restoreCmd.Subcommands = append(restoreCmd.Subcommands,
-		newRestoreDBCommand(restoreFlags, configPath),
-		newRestoreOrganizationsCommand(restoreFlags, configPath),
+		newRestoreDBCommand(restoreFlags),
+		newRestoreOrganizationsCommand(restoreFlags),
 	)
 	return restoreCmd
 }
 
-func newRestoreDBCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
+func newRestoreDBCommand(parent *ff.FlagSet) *ff.Command {
 	flags := ff.NewFlagSet("restore db").SetParent(parent)
 	return &ff.Command{
 		Name:      "db",
@@ -113,7 +113,7 @@ func newRestoreDBCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
 			if len(args) != 0 {
 				return errors.New("usage: osa restore db")
 			}
-			cfg, _, err := loadConfigAndLogger(configPath)
+			cfg, _, err := loadConfigAndLogger()
 			if err != nil {
 				return err
 			}
@@ -123,7 +123,7 @@ func newRestoreDBCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
 	}
 }
 
-func newRestoreOrganizationsCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
+func newRestoreOrganizationsCommand(parent *ff.FlagSet) *ff.Command {
 	flags := ff.NewFlagSet("restore organizations").SetParent(parent)
 	return &ff.Command{
 		Name:      "organizations",
@@ -134,7 +134,7 @@ func newRestoreOrganizationsCommand(parent *ff.FlagSet, configPath *string) *ff.
 			if len(args) != 0 {
 				return errors.New("usage: osa restore organizations")
 			}
-			res, cleanup, err := newOrgResources(configPath, true, false)
+			res, cleanup, err := newOrgResources(true, false)
 			defer cleanup()
 			if err != nil {
 				return err

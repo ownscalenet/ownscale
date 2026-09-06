@@ -11,7 +11,7 @@ import (
 
 // Generate a self-signed CA for local development, to have https on a domain
 // such as *.test
-func newGenLocalCACommand(rootFlags *ff.FlagSet, configPath *string) *ff.Command {
+func newGenLocalCACommand(rootFlags *ff.FlagSet) *ff.Command {
 	flags := ff.NewFlagSet("gen-local-ca").SetParent(rootFlags)
 	var caddyDataDir string
 	flags.StringVar(&caddyDataDir, 0, "caddy-data-dir", "", "path to Caddy's data volume (see docker-compose.yml's caddy-data); if set and a new CA was just generated, wipes Caddy's own cached PKI state under it so it doesn't keep signing certs from a now-orphaned intermediate CA tied to the old root")
@@ -24,12 +24,12 @@ func newGenLocalCACommand(rootFlags *ff.FlagSet, configPath *string) *ff.Command
 			if len(args) != 0 {
 				return fmt.Errorf("usage: osa gen-local-ca")
 			}
-			cfg, _, err := loadConfigAndLogger(configPath)
+			cfg, _, err := loadConfigAndLogger()
 			if err != nil {
 				return err
 			}
 			if cfg.LocalCADir == "" {
-				return fmt.Errorf("local_ca_dir must be set (e.g. via config.yaml or OWNSCALE_LOCAL_CA_DIR)")
+				return fmt.Errorf("local_ca_dir must be set (e.g. via OWNSCALE_LOCAL_CA_DIR)")
 			}
 			generated, err := localca.LoadOrGenerate(cfg.LocalCADir)
 			if err != nil {

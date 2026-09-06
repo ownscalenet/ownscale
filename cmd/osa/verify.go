@@ -140,7 +140,7 @@ func verifyOrganizationsHealthy(ctx context.Context,
 // app runs) if a database looks unhealthy despite an existing backup.
 // Unlike "restore", this never modifies anything -- recovering from a
 // failure here is a manual `osa restore` invocation.
-func newVerifyCommand(rootFlags *ff.FlagSet, configPath *string) *ff.Command {
+func newVerifyCommand(rootFlags *ff.FlagSet) *ff.Command {
 	verifyFlags := ff.NewFlagSet("verify").SetParent(rootFlags)
 	verifyCmd := &ff.Command{
 		Name:      "verify",
@@ -149,13 +149,13 @@ func newVerifyCommand(rootFlags *ff.FlagSet, configPath *string) *ff.Command {
 		Flags:     verifyFlags,
 	}
 	verifyCmd.Subcommands = append(verifyCmd.Subcommands,
-		newVerifyDBCommand(verifyFlags, configPath),
-		newVerifyOrganizationsCommand(verifyFlags, configPath),
+		newVerifyDBCommand(verifyFlags),
+		newVerifyOrganizationsCommand(verifyFlags),
 	)
 	return verifyCmd
 }
 
-func newVerifyDBCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
+func newVerifyDBCommand(parent *ff.FlagSet) *ff.Command {
 	flags := ff.NewFlagSet("verify db").SetParent(parent)
 	return &ff.Command{
 		Name:      "db",
@@ -166,7 +166,7 @@ func newVerifyDBCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
 			if len(args) != 0 {
 				return errors.New("usage: osa verify db")
 			}
-			cfg, _, err := loadConfigAndLogger(configPath)
+			cfg, _, err := loadConfigAndLogger()
 			if err != nil {
 				return err
 			}
@@ -176,7 +176,7 @@ func newVerifyDBCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
 	}
 }
 
-func newVerifyOrganizationsCommand(parent *ff.FlagSet, configPath *string) *ff.Command {
+func newVerifyOrganizationsCommand(parent *ff.FlagSet) *ff.Command {
 	flags := ff.NewFlagSet("verify organizations").SetParent(parent)
 	return &ff.Command{
 		Name:      "organizations",
@@ -187,7 +187,7 @@ func newVerifyOrganizationsCommand(parent *ff.FlagSet, configPath *string) *ff.C
 			if len(args) != 0 {
 				return errors.New("usage: osa verify organizations")
 			}
-			res, cleanup, err := newOrgResources(configPath, true, false)
+			res, cleanup, err := newOrgResources(true, false)
 			defer cleanup()
 			if err != nil {
 				return err

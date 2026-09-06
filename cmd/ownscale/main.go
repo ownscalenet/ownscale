@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"log/slog"
 	"net"
@@ -41,11 +40,7 @@ func main() {
 // os.Exit) on failure so every deferred cleanup (closing the DB pool, the
 // Docker client, etc.) always runs.
 func run() error {
-	var configPath string
-	flag.StringVar(&configPath, "config", "", "path to config file (default: "+config.DefaultPath+")")
-	flag.Parse()
-
-	cfg, err := config.Load(configPath)
+	cfg, err := config.Load()
 	if err != nil {
 		return err
 	}

@@ -38,11 +38,11 @@ generate-headscale-client:
 
 # Usage: make migration up | make migration status
 migration:
-	go run ./cmd/osa --config config.yaml migrate $(filter-out migration,$(MAKECMDGOALS))
+	go run ./cmd/osa migrate $(filter-out migration,$(MAKECMDGOALS))
 
 
 restore:
-	docker compose run --rm --entrypoint /app/osa ownscale --config /etc/ownscale/config.yaml restore $(filter-out restore,$(MAKECMDGOALS))
+	docker compose run --rm --entrypoint /app/osa ownscale restore $(filter-out restore,$(MAKECMDGOALS))
 
 up down status:
 	@:
@@ -96,7 +96,6 @@ archive: docker-image caddy-image
 	ssh az rm -rf ownscale/internal ownscale/cmd
 	tar czf - \
 		--exclude='.git' \
-		--exclude='$(notdir $(CURDIR))/config.yaml' \
 		--exclude='.env' \
 		--exclude='data' \
 		--exclude='node_modules' \
