@@ -63,6 +63,13 @@ export class ApiError extends Error {
 // leaving the current page stuck showing a raw "unauthorized" error.
 export const UNAUTHORIZED_EVENT = 'ownscale:unauthorized'
 
+// True for the error fetch() throws when an in-flight request is aborted via
+// AbortController -- callers use this to skip setError() on an intentional
+// cancellation (e.g. unmount, or a newer request superseding an older one).
+export function isAbortError(err: unknown): boolean {
+  return err instanceof DOMException && err.name === 'AbortError'
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     credentials: 'same-origin',
@@ -96,13 +103,16 @@ export interface MachinesResponse {
   total: number
 }
 
-export function listMachines(params: { q?: string; user?: string; status?: string }) {
+export function listMachines(
+  params: { q?: string; user?: string; status?: string },
+  signal?: AbortSignal,
+) {
   const qs = new URLSearchParams()
   if (params.q) qs.set('q', params.q)
   if (params.user) qs.set('user', params.user)
   if (params.status) qs.set('status', params.status)
   const suffix = qs.toString() ? `?${qs.toString()}` : ''
-  return request<MachinesResponse>(`/api/machines${suffix}`)
+  return request<MachinesResponse>(`/api/machines${suffix}`, { signal })
 }
 
 export function registerMachine(user: string, key: string) {
@@ -160,8 +170,8 @@ export interface MembersResponse {
   callerRole: Role
 }
 
-export function listMembers() {
-  return request<MembersResponse>('/api/members')
+export function listMembers(signal?: AbortSignal) {
+  return request<MembersResponse>('/api/members', { signal })
 }
 
 export function updateMemberRole(id: string, role: Role) {
@@ -191,8 +201,8 @@ export interface Invite {
   expiresAt: string
 }
 
-export function listInvites() {
-  return request<{ invites: Invite[] }>('/api/invites')
+export function listInvites(signal?: AbortSignal) {
+  return request<{ invites: Invite[] }>('/api/invites', { signal })
 }
 
 export function createInvite(email: string, role: Role) {
@@ -212,8 +222,8 @@ export interface InvitePreview {
   role: Role
 }
 
-export function getInvitePreview(token: string) {
-  return request<InvitePreview>(`/api/invites/${token}`)
+export function getInvitePreview(token: string, signal?: AbortSignal) {
+  return request<InvitePreview>(`/api/invites/${token}`, { signal })
 }
 
 export function acceptInvite(token: string) {
@@ -225,8 +235,8 @@ export interface AccessControlResponse {
   canManage: boolean
 }
 
-export function getAccessControlPolicy() {
-  return request<AccessControlResponse>('/api/access-control')
+export function getAccessControlPolicy(signal?: AbortSignal) {
+  return request<AccessControlResponse>('/api/access-control', { signal })
 }
 
 export function updateAccessControlPolicy(content: string) {
@@ -248,8 +258,8 @@ export interface AuthRestrictionsResponse {
   canManage: boolean
 }
 
-export function getAuthRestrictions() {
-  return request<AuthRestrictionsResponse>('/api/auth-restrictions')
+export function getAuthRestrictions(signal?: AbortSignal) {
+  return request<AuthRestrictionsResponse>('/api/auth-restrictions', { signal })
 }
 
 export function updateAuthRestrictions(content: string) {
@@ -282,8 +292,8 @@ export interface DNSSettingsResponse {
   canManage: boolean
 }
 
-export function getDNSSettings() {
-  return request<DNSSettingsResponse>('/api/dns')
+export function getDNSSettings(signal?: AbortSignal) {
+  return request<DNSSettingsResponse>('/api/dns', { signal })
 }
 
 export function updateDNSSettings(dns: DNSConfig) {
@@ -310,8 +320,8 @@ export interface AuthKeysResponse {
   users: HeadscaleUser[]
 }
 
-export function listAuthKeys() {
-  return request<AuthKeysResponse>('/api/auth-keys')
+export function listAuthKeys(signal?: AbortSignal) {
+  return request<AuthKeysResponse>('/api/auth-keys', { signal })
 }
 
 export interface CreateAuthKeyParams {
@@ -349,8 +359,8 @@ export interface FunnelRoutesResponse {
   canManage: boolean
 }
 
-export function listFunnelRoutes() {
-  return request<FunnelRoutesResponse>('/api/funnel')
+export function listFunnelRoutes(signal?: AbortSignal) {
+  return request<FunnelRoutesResponse>('/api/funnel', { signal })
 }
 
 export interface CreateFunnelRouteParams {

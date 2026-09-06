@@ -1,5 +1,12 @@
 import { useEffect, useState } from 'react'
-import { getDNSSettings, updateDNSSettings, ApiError, type DNSConfig, type DNSRecord } from '../api'
+import {
+  getDNSSettings,
+  updateDNSSettings,
+  ApiError,
+  isAbortError,
+  type DNSConfig,
+  type DNSRecord,
+} from '../api'
 import { usePageTitle } from '../hooks/usePageTitle'
 
 const RECORD_TYPES = ['A', 'AAAA', 'CNAME']
@@ -88,18 +95,21 @@ export default function DNS() {
   const [newRecordValue, setNewRecordValue] = useState('')
 
   useEffect(() => {
+    const controller = new AbortController()
     void (async () => {
       try {
-        const res = await getDNSSettings()
+        const res = await getDNSSettings(controller.signal)
         setDns(res.dns)
         setSavedDns(res.dns)
         setCanManage(res.canManage)
       } catch (err) {
+        if (isAbortError(err)) return
         setError(err instanceof Error ? err.message : String(err))
       } finally {
-        setLoading(false)
+        if (!controller.signal.aborted) setLoading(false)
       }
     })()
+    return () => controller.abort()
   }, [])
 
   const save = async (next: DNSConfig) => {

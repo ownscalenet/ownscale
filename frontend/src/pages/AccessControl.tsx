@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
-import { getAccessControlPolicy, updateAccessControlPolicy, formatHuJSON, ApiError } from '../api'
+import {
+  getAccessControlPolicy,
+  updateAccessControlPolicy,
+  formatHuJSON,
+  ApiError,
+  isAbortError,
+} from '../api'
 import DiffModal from '../components/DiffModal'
 import LineNumberedTextarea from '../components/LineNumberedTextarea'
 import { usePageTitle } from '../hooks/usePageTitle'
@@ -114,23 +120,26 @@ export default function AccessControl() {
   const diffRef = useRef<HTMLDialogElement>(null)
 
   useEffect(() => {
+    const controller = new AbortController()
     void (async () => {
       try {
-        const res = await getAccessControlPolicy()
+        const res = await getAccessControlPolicy(controller.signal)
         setContent(res.content)
         setSavedContent(res.content)
         setCanManage(res.canManage)
         setNotConfigured(false)
       } catch (err) {
+        if (isAbortError(err)) return
         if (err instanceof ApiError && err.status === 409) {
           setNotConfigured(true)
         } else {
           setError(err instanceof Error ? err.message : String(err))
         }
       } finally {
-        setLoading(false)
+        if (!controller.signal.aborted) setLoading(false)
       }
     })()
+    return () => controller.abort()
   }, [])
 
   const handleSave = async () => {

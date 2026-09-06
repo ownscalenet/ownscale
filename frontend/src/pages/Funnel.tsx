@@ -5,6 +5,7 @@ import {
   deleteFunnelRoute,
   listMachines,
   ApiError,
+  isAbortError,
   type FunnelRoute,
   type Machine,
 } from '../api'
@@ -24,21 +25,27 @@ export default function Funnel() {
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
 
-  const load = async () => {
+  const load = async (signal?: AbortSignal) => {
     try {
-      const [funnelRes, machinesRes] = await Promise.all([listFunnelRoutes(), listMachines({})])
+      const [funnelRes, machinesRes] = await Promise.all([
+        listFunnelRoutes(signal),
+        listMachines({}, signal),
+      ])
       setRoutes(funnelRes.funnelRoutes)
       setCanManage(funnelRes.canManage)
       setMachines(machinesRes.machines)
     } catch (err) {
+      if (isAbortError(err)) return
       setError(err instanceof Error ? err.message : String(err))
     } finally {
-      setLoading(false)
+      if (!signal?.aborted) setLoading(false)
     }
   }
 
   useEffect(() => {
-    void load()
+    const controller = new AbortController()
+    void load(controller.signal)
+    return () => controller.abort()
   }, [])
 
   const handleCreate = async (e: React.FormEvent) => {

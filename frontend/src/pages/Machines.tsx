@@ -6,6 +6,7 @@ import {
   ApiError,
   deleteMachine,
   expireMachine,
+  isAbortError,
   listMachines,
   registerMachine,
   renameMachine,
@@ -79,15 +80,16 @@ export default function Machines() {
   const [error, setError] = useState<string | null>(null)
   const registerRef = useRef<HTMLDialogElement>(null)
 
-  const load = async () => {
+  const load = async (signal?: AbortSignal) => {
     try {
-      const res = await listMachines({ q, user: userFilter, status })
+      const res = await listMachines({ q, user: userFilter, status }, signal)
       setMachines(res.machines ?? [])
       setUsers(res.users ?? [])
       setTotal(res.total)
       setNotConfigured(false)
       setError(null)
     } catch (err) {
+      if (isAbortError(err)) return
       if (err instanceof ApiError && err.status === 409) {
         setNotConfigured(true)
         setError(null)
@@ -98,7 +100,9 @@ export default function Machines() {
   }
 
   useEffect(() => {
-    void load()
+    const controller = new AbortController()
+    void load(controller.signal)
+    return () => controller.abort()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, userFilter, status])
 

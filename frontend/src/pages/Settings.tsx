@@ -6,6 +6,7 @@ import {
   expireAuthKey,
   listAuthKeys,
   ApiError,
+  isAbortError,
   type HeadscaleUser,
   type PreAuthKey,
 } from '../api'
@@ -61,14 +62,15 @@ export default function Settings() {
   const [error, setError] = useState<string | null>(null)
   const createRef = useRef<HTMLDialogElement>(null)
 
-  const load = async () => {
+  const load = async (signal?: AbortSignal) => {
     try {
-      const res = await listAuthKeys()
+      const res = await listAuthKeys(signal)
       setAuthKeys(res.authKeys ?? [])
       setUsers(res.users ?? [])
       setNotConfigured(false)
       setError(null)
     } catch (err) {
+      if (isAbortError(err)) return
       if (err instanceof ApiError && err.status === 409) {
         setNotConfigured(true)
         setError(null)
@@ -79,7 +81,9 @@ export default function Settings() {
   }
 
   useEffect(() => {
-    void load()
+    const controller = new AbortController()
+    void load(controller.signal)
+    return () => controller.abort()
   }, [])
 
   const updateFilter = (key: string, value: string) => {

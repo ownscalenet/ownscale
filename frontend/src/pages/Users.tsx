@@ -5,6 +5,7 @@ import {
   ROLES,
   createInvite,
   deleteInvite,
+  isAbortError,
   listInvites,
   listMembers,
   removeMember,
@@ -37,30 +38,34 @@ export default function Users() {
   const [inviteLink, setInviteLink] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
 
-  const loadMembers = async () => {
+  const loadMembers = async (signal?: AbortSignal) => {
     try {
-      const res = await listMembers()
+      const res = await listMembers(signal)
       setMembers(res.members)
       setCanManage(res.canManage)
       setCallerRole(res.callerRole)
       setError(null)
     } catch (err) {
+      if (isAbortError(err)) return
       setError(err instanceof Error ? err.message : String(err))
     }
   }
 
-  const loadInvites = async () => {
+  const loadInvites = async (signal?: AbortSignal) => {
     try {
-      const res = await listInvites()
+      const res = await listInvites(signal)
       setInvites(res.invites ?? [])
-    } catch {
+    } catch (err) {
+      if (isAbortError(err)) return
       // Non-managers get a 403 here; just leave the list empty.
     }
   }
 
   useEffect(() => {
-    void loadMembers()
-    void loadInvites()
+    const controller = new AbortController()
+    void loadMembers(controller.signal)
+    void loadInvites(controller.signal)
+    return () => controller.abort()
   }, [])
 
   const run = async (fn: () => Promise<unknown>) => {

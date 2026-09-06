@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../auth'
-import { acceptInvite, getInvitePreview, type InvitePreview } from '../api'
+import { acceptInvite, getInvitePreview, isAbortError, type InvitePreview } from '../api'
 import { usePageTitle } from '../hooks/usePageTitle'
 
 // AcceptInvite is the /invite/:token landing page. An unauthenticated
@@ -21,9 +21,14 @@ export default function AcceptInvite() {
 
   useEffect(() => {
     if (!token) return
-    getInvitePreview(token)
+    const controller = new AbortController()
+    getInvitePreview(token, controller.signal)
       .then(setPreview)
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+      .catch((err) => {
+        if (isAbortError(err)) return
+        setError(err instanceof Error ? err.message : String(err))
+      })
+    return () => controller.abort()
   }, [token])
 
   if (loading) {
