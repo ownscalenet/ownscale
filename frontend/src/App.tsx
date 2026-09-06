@@ -1,4 +1,4 @@
-import { Navigate, Route, Routes } from 'react-router-dom'
+import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth'
 import Layout from './Layout'
 import Login from './pages/Login'
@@ -11,9 +11,11 @@ import Funnel from './pages/Funnel'
 import Settings from './pages/Settings'
 import CreateOrganization from './pages/CreateOrganization'
 import AcceptInvite from './pages/AcceptInvite'
+import NotFound from './pages/NotFound'
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
   const { user, organization, loading } = useAuth()
+  const location = useLocation()
   if (loading) {
     return (
       <div className="min-h-screen flex items-center justify-center">
@@ -22,7 +24,8 @@ function RequireAuth({ children }: { children: React.ReactElement }) {
     )
   }
   if (!user) {
-    return <Navigate to="/login" replace />
+    const next = encodeURIComponent(location.pathname + location.search)
+    return <Navigate to={`/login?next=${next}`} replace />
   }
   // A user whose organization isn't active yet (no org, still pending, or
   // failed) belongs on the create-organization page: that's also where the
@@ -83,6 +86,7 @@ function AppRoutes() {
 
         <Route path="settings" element={<Settings />} />
       </Route>
+      <Route path="*" element={<NotFound />} />
     </Routes>
   )
 }

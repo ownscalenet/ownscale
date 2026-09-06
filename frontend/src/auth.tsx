@@ -1,5 +1,5 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
-import { ApiError, getSession, type Organization, type User } from './api'
+import { ApiError, getSession, UNAUTHORIZED_EVENT, type Organization, type User } from './api'
 
 interface AuthState {
   user: User | null
@@ -41,6 +41,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     void refresh()
+  }, [])
+
+  // A 401 on any other API call means the session expired mid-page; clear it
+  // here so RequireAuth's existing "no user -> redirect to /login" logic
+  // kicks in, instead of leaving stale user state around.
+  useEffect(() => {
+    const onUnauthorized = () => {
+      setUser(null)
+      setOrganization(null)
+    }
+    window.addEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, onUnauthorized)
   }, [])
 
   return (

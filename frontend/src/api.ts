@@ -58,6 +58,11 @@ export class ApiError extends Error {
   }
 }
 
+// Dispatched on any 401 other than /api/session itself, so AuthProvider can
+// clear the stale session and let the router redirect to /login instead of
+// leaving the current page stuck showing a raw "unauthorized" error.
+export const UNAUTHORIZED_EVENT = 'ownscale:unauthorized'
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const res = await fetch(path, {
     credentials: 'same-origin',
@@ -69,6 +74,9 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   }
   const body = await res.json().catch(() => ({}))
   if (!res.ok) {
+    if (res.status === 401 && path !== '/api/session') {
+      window.dispatchEvent(new CustomEvent(UNAUTHORIZED_EVENT))
+    }
     throw new ApiError(res.status, body?.error ?? res.statusText)
   }
   return body as T
