@@ -1,18 +1,28 @@
+import { useRef } from 'react'
 import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from './auth'
 import { logout } from './api'
 
 export default function Layout() {
   const { user, organization, refresh } = useAuth()
+  const drawerToggleRef = useRef<HTMLInputElement>(null)
 
   const handleLogout = async () => {
     await logout()
     await refresh()
   }
 
+  // Closes the mobile drawer after a nav click; lg:drawer-open keeps it
+  // permanently open on desktop, where this is a no-op.
+  const closeDrawer = () => {
+    if (drawerToggleRef.current) {
+      drawerToggleRef.current.checked = false
+    }
+  }
+
   return (
     <div className="drawer lg:drawer-open">
-      <input id="sidebar-drawer" type="checkbox" className="drawer-toggle" />
+      <input id="sidebar-drawer" ref={drawerToggleRef} type="checkbox" className="drawer-toggle" />
 
       <div className="drawer-content flex flex-col">
         <div className="navbar bg-base-100 shadow-sm lg:hidden">
@@ -48,7 +58,7 @@ export default function Layout() {
         ></label>
         <aside className="bg-base-100 min-h-full w-64">
           <div className="p-4 text-xl font-bold border-b border-base-200">Ownscale console</div>
-          <ul className="menu p-4 w-full">
+          <ul className="menu p-4 w-full" onClick={closeDrawer}>
             <li>
               <NavLink to="/machines" className={({ isActive }) => (isActive ? 'active' : '')}>
                 Machines
