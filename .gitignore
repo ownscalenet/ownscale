@@ -18,3 +18,5 @@ e2e/frontend/blob-report/
 /site/resources/_gen/
 /site/.hugo_build.lock
 
+
+webui/dist/assets
