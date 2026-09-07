@@ -10,6 +10,16 @@ DOCKER_IMAGE := ownscale:latest
 CADDY_IMAGE := ownscale-caddy:latest
 DEVBOX_IMAGE := ownscale-devbox:latest
 
+# Ensure containers run with same host user.
+export HOST_UID := $(shell id -u)
+export HOST_GID := $(shell id -g)
+export HOST_DOCKER_GID := $(shell getent group docker 2>/dev/null | cut -d: -f3)
+
+# Resolved the same way BASE_DOMAIN is below, so dev-up works without
+# requiring OWNSCALE_DATA_DIR to already be exported into the shell.
+DATA_DIR := $(shell grep -m1 '^OWNSCALE_DATA_DIR=' .env 2>/dev/null | cut -d= -f2)
+DATA_DIR := $(if $(DATA_DIR),$(DATA_DIR),$(CURDIR)/data)
+
 build: frontend backend
 
 frontend:
@@ -22,7 +32,11 @@ osa:
 # Build the images, start the full stack, then stream logs from all
 # containers (the ownscale process seeds the fixed dev organizations --
 # aaaa/bbbb/cccc -- itself on startup, see orgs.Provisioner.seedFixed).
+#
+# Pre-creates .litestream-backups as the host user before compose runs, so it's
+# not created later as root.
 dev-up:
+	mkdir -p "$(DATA_DIR)/.litestream-backups"
 	docker compose up -d --build
 	docker compose logs -f
 

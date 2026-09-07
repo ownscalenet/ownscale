@@ -6,8 +6,11 @@ services:
   local-ca-init:
     image: ownscale:latest
     build: .
-    entrypoint: ["/app/osa"]
-    command: ["gen-local-ca", "--caddy-data-dir", "/caddy-data"]
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        /app/osa gen-local-ca --caddy-data-dir /caddy-data &&
+        chown -R "${HOST_UID:-0}:${HOST_GID:-0}" "$$OWNSCALE_DATA_DIR/local-ca"
     environment:
       OWNSCALE_DATA_DIR: ${OWNSCALE_DATA_DIR:?set OWNSCALE_DATA_DIR to an absolute host path in .env}
     volumes:
@@ -24,6 +27,10 @@ services:
         condition: service_completed_successfully
       dex:
         condition: service_healthy
+    user: "${HOST_UID:-0}:${HOST_GID:-0}"
+    # grant access to /var/run/docker.sock
+    group_add:
+      - "${HOST_DOCKER_GID:-0}"
     environment:
       OWNSCALE_ADDR: ${OWNSCALE_ADDR:-:8080}
       OWNSCALE_BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
@@ -107,6 +114,7 @@ services:
   litestream:
     image: litestream/litestream:0.5.16
     command: ["replicate", "-config", "/etc/litestream/config.yaml"]
+    user: "${HOST_UID:-0}:${HOST_GID:-0}"
     environment:
       OWNSCALE_DATA_DIR: ${PWD}/data
       LITESTREAM_REPLICA_URL: ${LITESTREAM_REPLICA_URL:-}

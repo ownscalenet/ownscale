@@ -455,7 +455,9 @@ dns:
     global:
       - 1.1.1.1
 
-unix_socket: /var/run/headscale/headscale.sock
+# Under /var/lib/headscale rather than headscale's own default /var/run/headscale,
+# which isn't writable once the container runs as a non-root uid.
+unix_socket: /var/lib/headscale/headscale.sock
 unix_socket_permission: "0770"
 
 policy:
@@ -723,6 +725,7 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 			Image: Image,
 			Cmd:   []string{"serve"},
 			Env:   env,
+			User:  fmt.Sprintf("%d:%d", os.Getuid(), os.Getgid()),
 			Labels: map[string]string{
 				"ownscale.organization": "true",
 				"ownscale.subdomain":    subdomain,
