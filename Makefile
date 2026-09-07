@@ -4,10 +4,11 @@
 # (go:embed needs real files at Go build time), so run `make frontend`
 # whenever frontend/ changes and commit the updated webui/dist.
 
-.PHONY: build frontend backend osa restore test test-integration coverage migration archive docker-image caddy-image rm-orphans purge ci docs load-cert dev-up e2e-frontend
+.PHONY: build frontend backend osa restore test test-integration coverage migration archive docker-image caddy-image rm-orphans purge ci docs load-cert dev-up devbox e2e-frontend
 
 DOCKER_IMAGE := ownscale:latest
 CADDY_IMAGE := ownscale-caddy:latest
+DEVBOX_IMAGE := ownscale-devbox:latest
 
 build: frontend backend
 
@@ -25,6 +26,41 @@ dev-up:
 	docker compose up -d --build
 	docker compose logs -f
 
+# Spin up a throwaway ubuntu container running tailscaled, auto-join it to
+# an org's headscale server (ORG, default aaaa -- see
+# orgs.DefaultSeedSubdomains) via a freshly-minted ephemeral pre-auth key,
+# then drop into an interactive shell in that container. Requires
+# `make dev-up` already running.
+ORG ?= aaaa
+BASE_DOMAIN := $(shell grep -m1 '^BASE_DOMAIN=' .env 2>/dev/null | cut -d= -f2)
+BASE_DOMAIN := $(if $(BASE_DOMAIN),$(BASE_DOMAIN),ownscale.test)
+
+devbox:
+	@command -v jq >/dev/null 2>&1 || { echo "jq is required -- please install it"; exit 1; }
+	@docker inspect hs-$(ORG) >/dev/null 2>&1 || { echo "hs-$(ORG) is not running -- run 'make dev-up' first (or make devbox ORG=<subdomain>)"; exit 1; }
+	@test -f $(CERT) || { echo "$(CERT) not found -- start docker compose (local-ca-init) first"; exit 1; }
+	@docker image inspect $(DEVBOX_IMAGE) >/dev/null 2>&1 || docker build -t $(DEVBOX_IMAGE) e2e/devbox
+	@echo "minting a pre-auth key against hs-$(ORG)..."
+	@user_id=$$(docker exec hs-$(ORG) headscale users list -o json | jq -r '.[0].id // empty'); \
+	if [ -z "$$user_id" ]; then \
+		docker exec hs-$(ORG) headscale users create devbox >/dev/null; \
+		user_id=$$(docker exec hs-$(ORG) headscale users list -o json | jq -r '.[0].id // empty'); \
+	fi; \
+	authkey=$$(docker exec hs-$(ORG) headscale preauthkeys create -u $$user_id --ephemeral -e 10m -o json | jq -r '.key // empty'); \
+	test -n "$$authkey" || { echo "failed to mint a pre-auth key"; exit 1; }; \
+	echo "connecting to https://$(ORG).$(BASE_DOMAIN) as devbox-$(ORG)..."; \
+	docker run --rm -it \
+		--cap-add=NET_ADMIN --cap-add=NET_RAW --device=/dev/net/tun \
+		--add-host=$(ORG).$(BASE_DOMAIN):host-gateway \
+		-v $(abspath $(CERT)):/usr/local/share/ca-certificates/ownscale-local-ca.crt:ro \
+		$(DEVBOX_IMAGE) bash -c "\
+			set -e; \
+			update-ca-certificates >/dev/null; \
+			mkdir -p /var/run/tailscale; \
+			tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/var/run/tailscale/tailscaled.sock >/var/log/tailscaled.log 2>&1 & \
+			for i in \$$(seq 1 20); do [ -S /var/run/tailscale/tailscaled.sock ] && break; sleep 0.5; done; \
+			tailscale --socket=/var/run/tailscale/tailscaled.sock up --login-server=https://$(ORG).$(BASE_DOMAIN) --authkey=$$authkey --hostname=devbox-$(ORG) --accept-dns=false; \
+			exec bash"
 
 # Build the site/ Hugo module (hugo-book theme) into etc/caddy/site, which
 # Caddy serves at {$BASE_DOMAIN}. The generated output is committed to the
