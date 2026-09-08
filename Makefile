@@ -35,8 +35,19 @@ osa:
 #
 # Pre-creates .litestream-backups as the host user before compose runs, so it's
 # not created later as root.
+#
+# Also upserts HOST_UID/HOST_GID/HOST_DOCKER_GID into .env: docker-compose.yml's
+# user: "${HOST_UID:-0}:${HOST_GID:-0}" only sees these if they're in the shell
+# env or in .env -- persisting them to .env means a bare `docker compose ...`
+# (bypassing make) still runs containers as the host user instead of
+# silently falling back to root.
 dev-up:
 	mkdir -p "$(DATA_DIR)/.litestream-backups"
+	@touch .env
+	@for kv in HOST_UID=$(HOST_UID) HOST_GID=$(HOST_GID) HOST_DOCKER_GID=$(HOST_DOCKER_GID); do \
+		key=$${kv%%=*}; \
+		grep -q "^$$key=" .env && sed -i "s|^$$key=.*|$$kv|" .env || echo "$$kv" >> .env; \
+	done
 	docker compose up --build
 
 # Spin up a throwaway ubuntu container running tailscaled, auto-join it to
