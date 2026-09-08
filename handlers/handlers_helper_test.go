@@ -90,11 +90,11 @@ func withTestUser(req *http.Request, user sqlcgen.User) *http.Request {
 	return req.WithContext(auth.WithUser(req.Context(), &user))
 }
 
-// withMachinesClient attaches client to req's context, as
-// RequireMachinesClient would for an authenticated request whose
+// withHeadscaleClient attaches client to req's context, as
+// RequireHeadscaleClient would for an authenticated request whose
 // organization's headscale is reachable.
-func withMachinesClient(req *http.Request, client *headscaleclient.Client) *http.Request {
-	ctx := context.WithValue(req.Context(), machinesClientContextKey, client)
+func withHeadscaleClient(req *http.Request, client *headscaleclient.Client) *http.Request {
+	ctx := context.WithValue(req.Context(), headscaleClientContextKey, client)
 	return req.WithContext(ctx)
 }
 

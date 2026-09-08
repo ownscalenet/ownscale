@@ -59,11 +59,11 @@ func (h *Handlers) toFunnelRouteResponse(route sqlcgen.FunnelRoute, subdomain st
 }
 
 // ListFunnelRoutes handles GET /api/funnel. RequireActiveOrg/
-// RequireMachinesClient guarantee the org is active and its headscale
+// RequireHeadscaleClient guarantee the org is active and its headscale
 // client is resolved.
 func (h *Handlers) ListFunnelRoutes(w http.ResponseWriter, r *http.Request) {
 	caller, org, _ := orgFromContext(r)
-	client, _ := machinesClientFromContext(r)
+	client, _ := headscaleClientFromContext(r)
 
 	routes, err := h.queries.ListFunnelRoutesByOrg(r.Context(), org.ID)
 	if err != nil {
@@ -98,7 +98,7 @@ func (h *Handlers) CreateFunnelRoute(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusForbidden, "only owners and admins can create funnel routes")
 		return
 	}
-	client, _ := machinesClientFromContext(r)
+	client, _ := headscaleClientFromContext(r)
 
 	var req struct {
 		Label        string `json:"label"`

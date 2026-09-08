@@ -12,7 +12,7 @@ type orgContextKey int
 
 const (
 	activeOrgContextKey orgContextKey = iota
-	machinesClientContextKey
+	headscaleClientContextKey
 )
 
 // activeOrgContext is the (caller, org) pair attached to the request
@@ -28,10 +28,10 @@ func orgFromContext(r *http.Request) (caller *sqlcgen.User, org sqlcgen.Organiza
 	return c.caller, c.org, ok
 }
 
-// machinesClientFromContext returns the client attached by
-// RequireMachinesClient.
-func machinesClientFromContext(r *http.Request) (*headscaleclient.Client, bool) {
-	c, ok := r.Context().Value(machinesClientContextKey).(*headscaleclient.Client)
+// headscaleClientFromContext returns the client attached by
+// RequireHeadscaleClient.
+func headscaleClientFromContext(r *http.Request) (*headscaleclient.Client, bool) {
+	c, ok := r.Context().Value(headscaleClientContextKey).(*headscaleclient.Client)
 	return c, ok
 }
 
@@ -54,12 +54,12 @@ func (h *Handlers) RequireActiveOrg(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// RequireMachinesClient wraps next so it only runs once the caller's
+// RequireHeadscaleClient wraps next so it only runs once the caller's
 // organization's headscale client is resolved, short-circuiting with
 // 409+notConfigured if the org isn't active or headscale isn't reachable.
-func (h *Handlers) RequireMachinesClient(next http.HandlerFunc) http.HandlerFunc {
+func (h *Handlers) RequireHeadscaleClient(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		client, notConfigured, err := h.resolveMachinesClient(r)
+		client, notConfigured, err := h.resolveHeadscaleClient(r)
 		if err != nil {
 			h.serverError(w, err)
 			return
@@ -68,7 +68,7 @@ func (h *Handlers) RequireMachinesClient(next http.HandlerFunc) http.HandlerFunc
 			h.writeJSON(w, http.StatusConflict, map[string]bool{"notConfigured": true})
 			return
 		}
-		ctx := context.WithValue(r.Context(), machinesClientContextKey, client)
+		ctx := context.WithValue(r.Context(), headscaleClientContextKey, client)
 		next(w, r.WithContext(ctx))
 	}
 }

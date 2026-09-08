@@ -27,7 +27,7 @@ func TestCreateFunnelRouteRequiresManager(t *testing.T) {
 	_, client, _ := newFakeHeadscaleServer(t)
 
 	body := `{"label":"web","targetNodeId":"1","targetPort":8080}`
-	req := withMachinesClient(withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPost, "/api/funnel", strings.NewReader(body)), member), member, org), client)
+	req := withHeadscaleClient(withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPost, "/api/funnel", strings.NewReader(body)), member), member, org), client)
 	rec := httptest.NewRecorder()
 	h.CreateFunnelRoute(rec, req)
 
@@ -54,7 +54,7 @@ func TestCreateFunnelRouteValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := withMachinesClient(withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPost, "/api/funnel", strings.NewReader(tt.body)), owner), owner, org), client)
+			req := withHeadscaleClient(withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPost, "/api/funnel", strings.NewReader(tt.body)), owner), owner, org), client)
 			rec := httptest.NewRecorder()
 			h.CreateFunnelRoute(rec, req)
 			if rec.Code != tt.want {
@@ -70,7 +70,7 @@ func TestCreateFunnelRouteSucceedsAndRejectsDuplicateLabel(t *testing.T) {
 	_, client, _ := newFakeHeadscaleServer(t)
 
 	body := `{"label":"web","targetNodeId":"1","targetPort":8080}`
-	req := withMachinesClient(withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPost, "/api/funnel", strings.NewReader(body)), owner), owner, org), client)
+	req := withHeadscaleClient(withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPost, "/api/funnel", strings.NewReader(body)), owner), owner, org), client)
 	rec := httptest.NewRecorder()
 	h.CreateFunnelRoute(rec, req)
 	if rec.Code != http.StatusOK {
@@ -98,7 +98,7 @@ func TestCreateFunnelRouteSucceedsAndRejectsDuplicateLabel(t *testing.T) {
 	}
 
 	// Duplicate label for the same org -> 409.
-	dupReq := withMachinesClient(withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPost, "/api/funnel", strings.NewReader(body)), owner), owner, org), client)
+	dupReq := withHeadscaleClient(withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPost, "/api/funnel", strings.NewReader(body)), owner), owner, org), client)
 	dupRec := httptest.NewRecorder()
 	h.CreateFunnelRoute(dupRec, dupReq)
 	if dupRec.Code != http.StatusConflict {
@@ -122,7 +122,7 @@ func TestListFunnelRoutesFlagsMissingTargetNode(t *testing.T) {
 		t.Fatalf("CreateFunnelRoute: %v", err)
 	}
 
-	req := withMachinesClient(withActiveOrg(withTestUser(httptest.NewRequest(http.MethodGet, "/api/funnel", nil), owner), owner, org), client)
+	req := withHeadscaleClient(withActiveOrg(withTestUser(httptest.NewRequest(http.MethodGet, "/api/funnel", nil), owner), owner, org), client)
 	rec := httptest.NewRecorder()
 	h.ListFunnelRoutes(rec, req)
 	if rec.Code != http.StatusOK {

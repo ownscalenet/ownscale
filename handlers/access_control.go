@@ -9,11 +9,11 @@ import (
 // GetAccessControlPolicy handles GET /api/access-control. It returns the
 // caller's organization's headscale ACL policy (HuJSON), plus whether the
 // caller can edit it (owner/admin, mirroring ListMembers' canManage).
-// RequireActiveOrg/RequireMachinesClient guarantee the org is active and
+// RequireActiveOrg/RequireHeadscaleClient guarantee the org is active and
 // its headscale client is resolved.
 func (h *Handlers) GetAccessControlPolicy(w http.ResponseWriter, r *http.Request) {
 	caller, _, _ := orgFromContext(r)
-	client, _ := machinesClientFromContext(r)
+	client, _ := headscaleClientFromContext(r)
 
 	content, err := client.GetPolicy(r.Context())
 	if err != nil {
@@ -36,7 +36,7 @@ func (h *Handlers) GetAccessControlPolicy(w http.ResponseWriter, r *http.Request
 // with a 400 and a parser error message; headscale itself may still reject
 // a syntactically valid policy (e.g. bad tag/user references), which is
 // also surfaced as a 400 rather than a 500. RequireActiveOrg/
-// RequireMachinesClient guarantee the org is active and its headscale
+// RequireHeadscaleClient guarantee the org is active and its headscale
 // client is resolved.
 func (h *Handlers) UpdateAccessControlPolicy(w http.ResponseWriter, r *http.Request) {
 	caller, _, _ := orgFromContext(r)
@@ -44,7 +44,7 @@ func (h *Handlers) UpdateAccessControlPolicy(w http.ResponseWriter, r *http.Requ
 		h.writeError(w, http.StatusForbidden, "only owners and admins can edit the access control policy")
 		return
 	}
-	client, _ := machinesClientFromContext(r)
+	client, _ := headscaleClientFromContext(r)
 
 	var req struct {
 		Content string `json:"content"`

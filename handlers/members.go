@@ -74,7 +74,7 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if client, notConfigured, err := h.resolveMachinesClient(r); err == nil && !notConfigured {
+	if client, notConfigured, err := h.resolveHeadscaleClient(r); err == nil && !notConfigured {
 		claimed := claimedHeadscaleUserIDs(users)
 		for i, u := range users {
 			if u.HeadscaleUserID.Valid {

@@ -146,10 +146,10 @@ func newFakeHeadscaleServer(t *testing.T) (*httptest.Server, *headscaleclient.Cl
 
 // activeOrgUser inserts a user with an "active" organization, wiring up
 // h.hs to a Registry backed by an httptest.Server fake headscale (used by
-// handlers that still call resolveMachinesClient directly, e.g.
+// handlers that still call resolveHeadscaleClient directly, e.g.
 // Session/ListMembers's best-effort linking). Returns the (refreshed,
 // org-attached) user, a client for the middleware-based handlers to
-// attach via withMachinesClient, and the recorded requests slice.
+// attach via withHeadscaleClient, and the recorded requests slice.
 func activeOrgUser(t *testing.T, h *Handlers, queries *dbpkg.TxQueries) (sqlcgen.User, *headscaleclient.Client, *[]*http.Request) {
 	t.Helper()
 	user := insertUser(t, queries)
@@ -190,7 +190,7 @@ func TestListMachinesReturnsNodesAndUsers(t *testing.T) {
 	h, queries := newMachinesTestHandlers(t)
 	user, client, _ := activeOrgUser(t, h, queries)
 
-	req := withMachinesClient(withTestUser(httptest.NewRequest(http.MethodGet, "/api/machines", nil), user), client)
+	req := withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodGet, "/api/machines", nil), user), client)
 	rec := httptest.NewRecorder()
 	h.ListMachines(rec, req)
 
@@ -231,7 +231,7 @@ func TestListMachinesFiltersByQUserStatus(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			req := withMachinesClient(withTestUser(httptest.NewRequest(http.MethodGet, "/api/machines?"+tc.qs, nil), user), client)
+			req := withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodGet, "/api/machines?"+tc.qs, nil), user), client)
 			rec := httptest.NewRecorder()
 			h.ListMachines(rec, req)
 
@@ -263,7 +263,7 @@ func TestRenameMachine(t *testing.T) {
 	user, client, requests := activeOrgUser(t, h, queries)
 
 	body := strings.NewReader(`{"name":"new-name"}`)
-	req := withPathValue(withMachinesClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/rename", body), user), client), "id", "1")
+	req := withPathValue(withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/rename", body), user), client), "id", "1")
 	rec := httptest.NewRecorder()
 	h.RenameMachine(rec, req)
 
@@ -281,7 +281,7 @@ func TestRenameMachineRejectsEmptyName(t *testing.T) {
 	user, client, _ := activeOrgUser(t, h, queries)
 
 	body := strings.NewReader(`{"name":""}`)
-	req := withPathValue(withMachinesClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/rename", body), user), client), "id", "1")
+	req := withPathValue(withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/rename", body), user), client), "id", "1")
 	rec := httptest.NewRecorder()
 	h.RenameMachine(rec, req)
 
@@ -295,7 +295,7 @@ func TestSetMachineTags(t *testing.T) {
 	user, client, requests := activeOrgUser(t, h, queries)
 
 	body := strings.NewReader(`{"tags":["tag:a","tag:b"]}`)
-	req := withPathValue(withMachinesClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/tags", body), user), client), "id", "1")
+	req := withPathValue(withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/tags", body), user), client), "id", "1")
 	rec := httptest.NewRecorder()
 	h.SetMachineTags(rec, req)
 
@@ -313,7 +313,7 @@ func TestSetMachineRoutes(t *testing.T) {
 	user, client, requests := activeOrgUser(t, h, queries)
 
 	body := strings.NewReader(`{"routes":["10.0.0.0/24"]}`)
-	req := withPathValue(withMachinesClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/routes", body), user), client), "id", "1")
+	req := withPathValue(withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/routes", body), user), client), "id", "1")
 	rec := httptest.NewRecorder()
 	h.SetMachineRoutes(rec, req)
 
@@ -330,7 +330,7 @@ func TestExpireMachine(t *testing.T) {
 	h, queries := newMachinesTestHandlers(t)
 	user, client, requests := activeOrgUser(t, h, queries)
 
-	req := withPathValue(withMachinesClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/expire", nil), user), client), "id", "1")
+	req := withPathValue(withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/expire", nil), user), client), "id", "1")
 	rec := httptest.NewRecorder()
 	h.ExpireMachine(rec, req)
 
@@ -347,7 +347,7 @@ func TestDeleteMachine(t *testing.T) {
 	h, queries := newMachinesTestHandlers(t)
 	user, client, requests := activeOrgUser(t, h, queries)
 
-	req := withPathValue(withMachinesClient(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/machines/1", nil), user), client), "id", "1")
+	req := withPathValue(withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/machines/1", nil), user), client), "id", "1")
 	rec := httptest.NewRecorder()
 	h.DeleteMachine(rec, req)
 
@@ -412,7 +412,7 @@ func TestRegisterMachine(t *testing.T) {
 			h, queries := newMachinesTestHandlers(t)
 			user, client, requests := activeOrgUser(t, h, queries)
 
-			req := withMachinesClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/register", strings.NewReader(tc.body)), user), client)
+			req := withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/register", strings.NewReader(tc.body)), user), client)
 			rec := httptest.NewRecorder()
 			h.RegisterMachine(rec, req)
 

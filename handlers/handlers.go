@@ -161,7 +161,7 @@ func (h *Handlers) ensureCallerHeadscaleUser(r *http.Request, user *sqlcgen.User
 	if user.HeadscaleUserID.Valid || org.Status != "active" {
 		return
 	}
-	client, notConfigured, err := h.resolveMachinesClient(r)
+	client, notConfigured, err := h.resolveHeadscaleClient(r)
 	if err != nil || notConfigured {
 		return
 	}

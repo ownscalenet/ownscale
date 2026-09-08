@@ -23,17 +23,17 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	mux.HandleFunc("GET /api/session", requireAuthAPI(h.Session))
 	mux.HandleFunc("POST /api/logout", requireAuthAPI(h.APILogout))
 
-	mux.HandleFunc("GET /api/machines", requireAuthAPI(h.RequireMachinesClient(h.ListMachines)))
-	mux.HandleFunc("POST /api/machines/register", requireAuthAPI(h.RequireMachinesClient(h.RegisterMachine)))
-	mux.HandleFunc("POST /api/machines/{id}/rename", requireAuthAPI(h.RequireMachinesClient(h.RenameMachine)))
-	mux.HandleFunc("POST /api/machines/{id}/tags", requireAuthAPI(h.RequireMachinesClient(h.SetMachineTags)))
-	mux.HandleFunc("POST /api/machines/{id}/routes", requireAuthAPI(h.RequireMachinesClient(h.SetMachineRoutes)))
-	mux.HandleFunc("POST /api/machines/{id}/expire", requireAuthAPI(h.RequireMachinesClient(h.ExpireMachine)))
-	mux.HandleFunc("DELETE /api/machines/{id}", requireAuthAPI(h.RequireMachinesClient(h.DeleteMachine)))
+	mux.HandleFunc("GET /api/machines", requireAuthAPI(h.RequireHeadscaleClient(h.ListMachines)))
+	mux.HandleFunc("POST /api/machines/register", requireAuthAPI(h.RequireHeadscaleClient(h.RegisterMachine)))
+	mux.HandleFunc("POST /api/machines/{id}/rename", requireAuthAPI(h.RequireHeadscaleClient(h.RenameMachine)))
+	mux.HandleFunc("POST /api/machines/{id}/tags", requireAuthAPI(h.RequireHeadscaleClient(h.SetMachineTags)))
+	mux.HandleFunc("POST /api/machines/{id}/routes", requireAuthAPI(h.RequireHeadscaleClient(h.SetMachineRoutes)))
+	mux.HandleFunc("POST /api/machines/{id}/expire", requireAuthAPI(h.RequireHeadscaleClient(h.ExpireMachine)))
+	mux.HandleFunc("DELETE /api/machines/{id}", requireAuthAPI(h.RequireHeadscaleClient(h.DeleteMachine)))
 
-	mux.HandleFunc("GET /api/auth-keys", requireAuthAPI(h.RequireMachinesClient(h.ListAuthKeys)))
-	mux.HandleFunc("POST /api/auth-keys", requireAuthAPI(h.RequireMachinesClient(h.CreateAuthKey)))
-	mux.HandleFunc("POST /api/auth-keys/{id}/expire", requireAuthAPI(h.RequireMachinesClient(h.ExpireAuthKey)))
+	mux.HandleFunc("GET /api/auth-keys", requireAuthAPI(h.RequireHeadscaleClient(h.ListAuthKeys)))
+	mux.HandleFunc("POST /api/auth-keys", requireAuthAPI(h.RequireHeadscaleClient(h.CreateAuthKey)))
+	mux.HandleFunc("POST /api/auth-keys/{id}/expire", requireAuthAPI(h.RequireHeadscaleClient(h.ExpireAuthKey)))
 
 	mux.HandleFunc("GET /api/members", requireAuthAPI(h.ListMembers))
 	mux.HandleFunc("POST /api/members/transfer-ownership", requireAuthAPI(h.TransferOwnership))
@@ -46,8 +46,8 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	mux.HandleFunc("GET /api/invites/{token}", h.GetInvitePreview) // public: preview before login
 	mux.HandleFunc("POST /api/invites/{token}/accept", requireAuthAPI(h.AcceptInvite))
 
-	mux.HandleFunc("GET /api/access-control", requireAuthAPI(h.RequireActiveOrg(h.RequireMachinesClient(h.GetAccessControlPolicy))))
-	mux.HandleFunc("PUT /api/access-control", requireAuthAPI(h.RequireActiveOrg(h.RequireMachinesClient(h.UpdateAccessControlPolicy))))
+	mux.HandleFunc("GET /api/access-control", requireAuthAPI(h.RequireActiveOrg(h.RequireHeadscaleClient(h.GetAccessControlPolicy))))
+	mux.HandleFunc("PUT /api/access-control", requireAuthAPI(h.RequireActiveOrg(h.RequireHeadscaleClient(h.UpdateAccessControlPolicy))))
 	mux.HandleFunc("POST /api/hujson/format", requireAuthAPI(h.FormatHuJSON))
 
 	mux.HandleFunc("GET /api/auth-restrictions", requireAuthAPI(h.RequireActiveOrg(h.GetAuthRestrictions)))
@@ -56,8 +56,8 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	mux.HandleFunc("GET /api/dns", requireAuthAPI(h.RequireActiveOrg(h.GetDNSSettings)))
 	mux.HandleFunc("PUT /api/dns", requireAuthAPI(h.RequireActiveOrg(h.UpdateDNSSettings)))
 
-	mux.HandleFunc("GET /api/funnel", requireAuthAPI(h.RequireActiveOrg(h.RequireMachinesClient(h.ListFunnelRoutes))))
-	mux.HandleFunc("POST /api/funnel", requireAuthAPI(h.RequireActiveOrg(h.RequireMachinesClient(h.CreateFunnelRoute))))
+	mux.HandleFunc("GET /api/funnel", requireAuthAPI(h.RequireActiveOrg(h.RequireHeadscaleClient(h.ListFunnelRoutes))))
+	mux.HandleFunc("POST /api/funnel", requireAuthAPI(h.RequireActiveOrg(h.RequireHeadscaleClient(h.CreateFunnelRoute))))
 	mux.HandleFunc("DELETE /api/funnel/{id}", requireAuthAPI(h.RequireActiveOrg(h.DeleteFunnelRoute)))
 
 	// Browser-driven OAuth flow: real redirects, not JSON.

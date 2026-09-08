@@ -180,7 +180,7 @@ func TestProvisionerStopsReplenishingAtMaxOrgs(t *testing.T) {
 
 	// Drain exactly maxOrgs organizations: the 3 fixed seeds plus one
 	// replenished org, all of which should be produced normally.
-	for i := 0; i < maxOrgs; i++ {
+	for i := range maxOrgs {
 		if _, err := p.Take(ctx); err != nil {
 			t.Fatalf("Take %d: %v", i, err)
 		}

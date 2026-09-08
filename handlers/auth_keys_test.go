@@ -14,7 +14,7 @@ func TestListAuthKeysReturnsKeysAndUsers(t *testing.T) {
 	h, queries := newMachinesTestHandlers(t)
 	user, client, _ := activeOrgUser(t, h, queries)
 
-	req := withMachinesClient(withTestUser(httptest.NewRequest(http.MethodGet, "/api/auth-keys", nil), user), client)
+	req := withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodGet, "/api/auth-keys", nil), user), client)
 	rec := httptest.NewRecorder()
 	h.ListAuthKeys(rec, req)
 
@@ -52,7 +52,7 @@ func TestCreateAuthKeyValidation(t *testing.T) {
 			h, queries := newMachinesTestHandlers(t)
 			user, client, _ := activeOrgUser(t, h, queries)
 
-			req := withMachinesClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/auth-keys", strings.NewReader(tc.body)), user), client)
+			req := withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/auth-keys", strings.NewReader(tc.body)), user), client)
 			rec := httptest.NewRecorder()
 			h.CreateAuthKey(rec, req)
 
@@ -68,7 +68,7 @@ func TestCreateAuthKeySuccess(t *testing.T) {
 	user, client, requests := activeOrgUser(t, h, queries)
 
 	body := strings.NewReader(`{"userId":"1","reusable":true,"expiryDays":90,"aclTags":["tag:server"]}`)
-	req := withMachinesClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/auth-keys", body), user), client)
+	req := withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/auth-keys", body), user), client)
 	rec := httptest.NewRecorder()
 	h.CreateAuthKey(rec, req)
 
@@ -95,7 +95,7 @@ func TestCreateAuthKeyTagOnly(t *testing.T) {
 	user, client, _ := activeOrgUser(t, h, queries)
 
 	body := strings.NewReader(`{"aclTags":["tag:server"],"expiryDays":90}`)
-	req := withMachinesClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/auth-keys", body), user), client)
+	req := withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/auth-keys", body), user), client)
 	rec := httptest.NewRecorder()
 	h.CreateAuthKey(rec, req)
 
@@ -108,7 +108,7 @@ func TestExpireAuthKey(t *testing.T) {
 	h, queries := newMachinesTestHandlers(t)
 	user, client, requests := activeOrgUser(t, h, queries)
 
-	req := withPathValue(withMachinesClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/auth-keys/1/expire", nil), user), client), "id", "1")
+	req := withPathValue(withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/auth-keys/1/expire", nil), user), client), "id", "1")
 	rec := httptest.NewRecorder()
 	h.ExpireAuthKey(rec, req)
 

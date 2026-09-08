@@ -10,11 +10,11 @@ import (
 	"github.com/ownscalenet/ownscale/headscaleclient"
 )
 
-// resolveMachinesClient returns the calling user's organization's
+// resolveHeadscaleClient returns the calling user's organization's
 // headscaleclient.Client. notConfigured is true (nil client, nil error)
 // when the user has no org, the org isn't active yet, or minting/reaching
 // its headscale API key failed. Other failures are returned as err.
-func (h *Handlers) resolveMachinesClient(r *http.Request) (_ *headscaleclient.Client, notConfigured bool, err error) {
+func (h *Handlers) resolveHeadscaleClient(r *http.Request) (_ *headscaleclient.Client, notConfigured bool, err error) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok || !user.OrganizationID.Valid {
 		return nil, true, nil
@@ -82,10 +82,10 @@ func matchesFilters(m headscaleclient.Node, q, userFilter, status string) bool {
 
 // ListMachines handles GET /api/machines. It returns every machine
 // (headscale node) for the caller's organization, applying the optional
-// q/user/status query-string filters. requireMachinesClient guarantees
+// q/user/status query-string filters. requireHeadscaleClient guarantees
 // the client is reachable.
 func (h *Handlers) ListMachines(w http.ResponseWriter, r *http.Request) {
-	client, _ := machinesClientFromContext(r)
+	client, _ := headscaleClientFromContext(r)
 
 	nodes, err := client.ListNodes(r.Context())
 	if err != nil {
@@ -119,9 +119,9 @@ func (h *Handlers) ListMachines(w http.ResponseWriter, r *http.Request) {
 // RegisterMachine handles POST /api/machines/register. It registers a
 // machine that's waiting at its interactive registration key/URL (i.e.
 // ran `tailscale up --login-server=...`) to the given user.
-// requireMachinesClient guarantees the client is reachable.
+// requireHeadscaleClient guarantees the client is reachable.
 func (h *Handlers) RegisterMachine(w http.ResponseWriter, r *http.Request) {
-	client, _ := machinesClientFromContext(r)
+	client, _ := headscaleClientFromContext(r)
 
 	var req struct {
 		User string `json:"user"`
@@ -149,9 +149,9 @@ func (h *Handlers) RegisterMachine(w http.ResponseWriter, r *http.Request) {
 }
 
 // machineIDAndClient extracts the {id} path value and the caller's
-// organization's headscale client (attached by requireMachinesClient).
+// organization's headscale client (attached by requireHeadscaleClient).
 func (h *Handlers) machineIDAndClient(r *http.Request) (client *headscaleclient.Client, id string) {
-	client, _ = machinesClientFromContext(r)
+	client, _ = headscaleClientFromContext(r)
 	return client, r.PathValue("id")
 }
 

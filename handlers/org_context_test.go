@@ -102,10 +102,10 @@ func TestRequireActiveOrgCallsNextForActiveOrg(t *testing.T) {
 	}
 }
 
-// TestRequireMachinesClientShortCircuits covers RequireMachinesClient's
+// TestRequireHeadscaleClientShortCircuits covers RequireHeadscaleClient's
 // guard: no organization and a mint-key failure both short-circuit with
 // 409+notConfigured without calling next.
-func TestRequireMachinesClientShortCircuits(t *testing.T) {
+func TestRequireHeadscaleClientShortCircuits(t *testing.T) {
 	t.Run("no organization", func(t *testing.T) {
 		h, queries := newMachinesTestHandlers(t)
 		h.hs = headscaleclient.NewRegistry(&fakeClientMinter{})
@@ -116,7 +116,7 @@ func TestRequireMachinesClientShortCircuits(t *testing.T) {
 
 		req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/machines", nil), user)
 		rec := httptest.NewRecorder()
-		h.RequireMachinesClient(next)(rec, req)
+		h.RequireHeadscaleClient(next)(rec, req)
 
 		if rec.Code != http.StatusConflict {
 			t.Errorf("status = %d, want 409, body=%s", rec.Code, rec.Body.String())
@@ -136,7 +136,7 @@ func TestRequireMachinesClientShortCircuits(t *testing.T) {
 
 		req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/machines", nil), user)
 		rec := httptest.NewRecorder()
-		h.RequireMachinesClient(next)(rec, req)
+		h.RequireHeadscaleClient(next)(rec, req)
 
 		if rec.Code != http.StatusConflict {
 			t.Errorf("status = %d, want 409, body=%s", rec.Code, rec.Body.String())
@@ -147,19 +147,19 @@ func TestRequireMachinesClientShortCircuits(t *testing.T) {
 	})
 }
 
-func TestRequireMachinesClientCallsNextWithClient(t *testing.T) {
+func TestRequireHeadscaleClientCallsNextWithClient(t *testing.T) {
 	h, queries := newMachinesTestHandlers(t)
 	user, _, _ := activeOrgUser(t, h, queries)
 
 	var gotClient bool
 	next := func(w http.ResponseWriter, r *http.Request) {
-		_, gotClient = machinesClientFromContext(r)
+		_, gotClient = headscaleClientFromContext(r)
 		w.WriteHeader(http.StatusOK)
 	}
 
 	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/machines", nil), user)
 	rec := httptest.NewRecorder()
-	h.RequireMachinesClient(next)(rec, req)
+	h.RequireHeadscaleClient(next)(rec, req)
 
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200, body=%s", rec.Code, rec.Body.String())
