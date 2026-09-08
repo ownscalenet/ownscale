@@ -7,6 +7,8 @@ const baseURL = process.env.E2E_BASE_URL ?? 'https://ownscale.test'
 
 export default defineConfig({
   testDir: './tests',
+  testIgnore: '**/connectivity/**',
+  globalSetup: './run-guard.ts',
   fullyParallel: true,
   // The backend under test is a single local dev instance (SQLite +
   // per-request `docker exec` calls into headscale containers), not built

@@ -4,7 +4,7 @@
 # (go:embed needs real files at Go build time), so run `make frontend`
 # whenever frontend/ changes and commit the updated webui/dist.
 
-.PHONY: build frontend backend osa restore test test-integration coverage migration archive docker-image caddy-image rm-orphans purge ci docs load-cert dev-up devbox e2e-frontend
+.PHONY: build frontend backend osa restore test test-integration coverage migration archive docker-image caddy-image rm-orphans purge ci docs load-cert dev-up devbox e2e-frontend e2e-connectivity
 
 DOCKER_IMAGE := ownscale:latest
 CADDY_IMAGE := ownscale-caddy:latest
@@ -90,6 +90,12 @@ e2e-frontend:
 	npm --prefix e2e/frontend ci
 	npx --prefix e2e/frontend playwright install chromium
 	npm --prefix e2e/frontend test
+
+# Uses the existing stack without resetting it. Install frontend test
+# dependencies and Chromium once using the e2e README instructions.
+e2e-connectivity:
+	mkdir -p bin/connectivity-work
+	TMPDIR="$(CURDIR)/bin/connectivity-work" npm --prefix e2e/frontend run test:connectivity
 
 # Regenerate the headscale API client in headscaleclient/hscodegen
 # from the vendored OpenAPI spec (headscale.swagger.json). The generated

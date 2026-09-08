@@ -1,0 +1,321 @@
+package bridge
+
+import (
+	"context"
+	"errors"
+	"io"
+	"log/slog"
+	"net"
+	"net/netip"
+	"net/url"
+	"strings"
+	"syscall"
+	"time"
+
+	"github.com/ownscalenet/ownscale/e2e/connectivity/tscl"
+	"tailscale.com/ipn/ipnstate"
+	"tailscale.com/net/tsaddr"
+)
+
+type node interface {
+	Status(context.Context) (*ipnstate.Status, error)
+	ServeHTTP(uint16) (*tscl.HTTPService, error)
+	ProbeHTTP(context.Context, string, string) (tscl.ProbeResult, error)
+	Close() error
+}
+
+type ownedNode struct {
+	client   node
+	hostname string
+	closed   bool
+}
+
+type dispatcher struct {
+	nodes    map[string]*ownedNode
+	services map[string]*tscl.HTTPService
+	ids      map[string]bool
+	newNode  func(context.Context, tscl.Config) (node, error)
+}
+
+func newDispatcher() *dispatcher {
+	return &dispatcher{
+		nodes: make(map[string]*ownedNode), services: make(map[string]*tscl.HTTPService),
+		ids:     make(map[string]bool),
+		newNode: func(ctx context.Context, cfg tscl.Config) (node, error) { return tscl.New(ctx, cfg) },
+	}
+}
+
+type nodeResult struct {
+	Node         string   `json:"node"`
+	Hostname     string   `json:"hostname"`
+	Addresses    []string `json:"addresses"`
+	BackendState string   `json:"backendState"`
+}
+
+type serviceResult struct {
+	Node      string   `json:"node"`
+	Service   string   `json:"service"`
+	Identity  string   `json:"identity"`
+	Addresses []string `json:"addresses"`
+	Port      uint16   `json:"port"`
+}
+
+type probeResult struct {
+	OK         bool           `json:"ok"`
+	StatusCode int            `json:"statusCode"`
+	Identity   string         `json:"identity"`
+	DurationMs int64          `json:"durationMs"`
+	Error      *protocolError `json:"error,omitempty"`
+}
+
+func (d *dispatcher) dispatch(parent context.Context, req request) (any, error) {
+	if req.Version != version {
+		return nil, failure("unsupported_version")
+	}
+	if !handlePattern.MatchString(req.ID) || d.ids[req.ID] || len(d.ids) >= maxRequests ||
+		req.TimeoutMs < 1 || req.TimeoutMs > maxTimeoutMs {
+		return nil, failure("invalid_command")
+	}
+	d.ids[req.ID] = true
+	ctx, cancel := context.WithTimeout(parent, time.Duration(req.TimeoutMs)*time.Millisecond)
+	defer cancel()
+	switch req.Op {
+	case "hello", "shutdown":
+		if err := decode(req.Args, &struct{}{}); err != nil {
+			return nil, err
+		}
+		if req.Op == "shutdown" {
+			if err := d.close(); err != nil {
+				return nil, failure("bridge_failure")
+			}
+			return struct {
+				Closed bool `json:"closed"`
+			}{true}, nil
+		}
+		return struct {
+			Ready         bool `json:"ready"`
+			MaxTimeoutMs  int  `json:"maxTimeoutMs"`
+			MaxFrameBytes int  `json:"maxFrameBytes"`
+		}{true, maxTimeoutMs, maxFrameBytes}, nil
+	case "create":
+		var args struct {
+			Node       string `json:"node"`
+			Hostname   string `json:"hostname"`
+			ControlURL string `json:"controlURL"`
+			AuthKey    string `json:"authKey"`
+		}
+		if err := decode(req.Args, &args); err != nil {
+			return nil, err
+		}
+		u, err := url.Parse(args.ControlURL)
+		if !handlePattern.MatchString(args.Node) || !handlePattern.MatchString(args.Hostname) ||
+			strings.TrimSpace(args.AuthKey) == "" || len(args.AuthKey) > 4096 ||
+			len(args.ControlURL) > 2048 || err != nil || u.Hostname() == "" ||
+			(u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.Fragment != "" ||
+			u.RawQuery != "" {
+			return nil, failure("invalid_command")
+		}
+		if d.reserved(args.Node) {
+			return nil, failure("duplicate_handle")
+		}
+		if len(d.nodes) >= maxNodes {
+			return nil, failure("invalid_command")
+		}
+		client, err := d.newNode(ctx, tscl.Config{
+			Hostname: args.Hostname, ControlURL: args.ControlURL, AuthKey: args.AuthKey,
+			StartupTimeout: time.Duration(req.TimeoutMs) * time.Millisecond,
+			ProbeTimeout:   5 * time.Second,
+			Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		})
+		if err != nil {
+			return nil, err
+		}
+		d.nodes[args.Node] = &ownedNode{client: client, hostname: args.Hostname}
+		result, err := d.status(ctx, args.Node)
+		if err != nil {
+			d.nodes[args.Node].closed = true
+			if closeErr := client.Close(); closeErr != nil {
+				return nil, failure("bridge_failure")
+			}
+			return nil, err
+		}
+		return result, nil
+	case "status", "close":
+		var args struct {
+			Node string `json:"node"`
+		}
+		if err := decode(req.Args, &args); err != nil {
+			return nil, err
+		}
+		n, err := d.lookup(args.Node)
+		if err != nil {
+			return nil, err
+		}
+		if req.Op == "status" {
+			return d.status(ctx, args.Node)
+		}
+		n.closed = true
+		if err := n.client.Close(); err != nil {
+			return nil, failure("bridge_failure")
+		}
+		return struct {
+			Node   string `json:"node"`
+			Closed bool   `json:"closed"`
+		}{args.Node, true}, nil
+	case "serve":
+		var args struct {
+			Node    string `json:"node"`
+			Service string `json:"service"`
+			Port    *int   `json:"port"`
+		}
+		if err := decode(req.Args, &args); err != nil {
+			return nil, err
+		}
+		if !handlePattern.MatchString(args.Service) || args.Port == nil || *args.Port < 0 || *args.Port > 65535 {
+			return nil, failure("invalid_command")
+		}
+		n, err := d.lookup(args.Node)
+		if err != nil {
+			return nil, err
+		}
+		if d.reserved(args.Service) {
+			return nil, failure("duplicate_handle")
+		}
+		if len(d.services) >= maxServices {
+			return nil, failure("invalid_command")
+		}
+		if err := ctx.Err(); err != nil {
+			return nil, err
+		}
+		service, err := n.client.ServeHTTP(uint16(*args.Port))
+		if err != nil {
+			return nil, err
+		}
+		d.services[args.Service] = service
+		result := serviceResult{Node: args.Node, Service: args.Service, Identity: service.Identity(), Addresses: []string{}}
+		for _, addr := range service.Addresses() {
+			result.Addresses = append(result.Addresses, addr.String())
+			result.Port = addr.Port()
+		}
+		return result, nil
+	case "probe":
+		var args struct {
+			Node             string `json:"node"`
+			URL              string `json:"url"`
+			ExpectedIdentity string `json:"expectedIdentity"`
+		}
+		if err := decode(req.Args, &args); err != nil {
+			return nil, err
+		}
+		n, err := d.lookup(args.Node)
+		if err != nil {
+			return nil, err
+		}
+		u, err := url.Parse(args.URL)
+		if err != nil || len(args.URL) > 2048 || len(args.ExpectedIdentity) == 0 ||
+			len(args.ExpectedIdentity) > 256 || u.Scheme != "http" || u.User != nil ||
+			u.Fragment != "" || u.RawQuery != "" || (u.Path != "" && u.Path != "/") {
+			return nil, failure("invalid_command")
+		}
+		address := u.Host
+		if u.Port() == "" {
+			address = net.JoinHostPort(u.Hostname(), "80")
+		}
+		ap, err := netip.ParseAddrPort(address)
+		if err != nil || ap.Port() == 0 || ap.Addr().Zone() != "" || !tsaddr.IsTailscaleIP(ap.Addr()) {
+			return nil, failure("invalid_command")
+		}
+		observed, err := n.client.ProbeHTTP(ctx, args.URL, args.ExpectedIdentity)
+		result := probeResult{
+			OK: err == nil, StatusCode: observed.StatusCode,
+			Identity: observed.Identity, DurationMs: observed.Duration.Milliseconds(),
+		}
+		if err != nil {
+			result.Error = classify(err)
+		}
+		return result, nil
+	default:
+		return nil, failure("invalid_command")
+	}
+}
+
+func (d *dispatcher) reserved(handle string) bool {
+	_, exists := d.nodes[handle]
+	_, serviceExists := d.services[handle]
+	return exists || serviceExists
+}
+
+func (d *dispatcher) lookup(handle string) (*ownedNode, error) {
+	if !handlePattern.MatchString(handle) {
+		return nil, failure("invalid_command")
+	}
+	n, ok := d.nodes[handle]
+	if !ok {
+		return nil, failure("unknown_handle")
+	}
+	if n.closed {
+		return nil, failure("closed_node")
+	}
+	return n, nil
+}
+
+func (d *dispatcher) status(ctx context.Context, handle string) (nodeResult, error) {
+	n := d.nodes[handle]
+	status, err := n.client.Status(ctx)
+	if err != nil {
+		return nodeResult{}, err
+	}
+	if status == nil {
+		return nodeResult{}, failure("bridge_failure")
+	}
+	result := nodeResult{Node: handle, Hostname: n.hostname, Addresses: []string{}, BackendState: status.BackendState}
+	for _, ip := range status.TailscaleIPs {
+		result.Addresses = append(result.Addresses, ip.String())
+	}
+	return result, nil
+}
+
+func (d *dispatcher) close() error {
+	var err error
+	for _, n := range d.nodes {
+		n.closed = true
+		err = errors.Join(err, n.client.Close())
+	}
+	if err != nil {
+		return failure("bridge_failure")
+	}
+	return nil
+}
+
+func classify(err error) *protocolError {
+	var protocol *protocolError
+	var network net.Error
+	var operation *net.OpError
+	switch {
+	case errors.As(err, &protocol):
+		return protocol
+	case errors.Is(err, tscl.ErrCleanup):
+		return failure("bridge_failure")
+	case errors.Is(err, context.Canceled):
+		return failure("cancelled")
+	case errors.Is(err, net.ErrClosed):
+		return failure("closed_node")
+	case errors.Is(err, context.DeadlineExceeded):
+		return failure("timeout")
+	case errors.As(err, &network) && network.Timeout():
+		return failure("timeout")
+	case errors.Is(err, syscall.ECONNREFUSED):
+		return failure("refused")
+	case errors.Is(err, syscall.ENETUNREACH), errors.Is(err, syscall.EHOSTUNREACH),
+		errors.Is(err, syscall.ECONNRESET), errors.Is(err, syscall.EPIPE), errors.Is(err, tscl.ErrUnreachable):
+		return failure("unreachable")
+	case errors.Is(err, tscl.ErrInvalidResponse):
+		return failure("invalid_response")
+	case errors.Is(err, tscl.ErrIdentityMismatch):
+		return failure("identity_mismatch")
+	case errors.As(err, &operation) && operation.Op == "dial":
+		return failure("unreachable")
+	default:
+		return failure("bridge_failure")
+	}
+}

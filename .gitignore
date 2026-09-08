@@ -10,6 +10,8 @@ e2e/frontend/tests/.auth/
 e2e/frontend/test-results/
 e2e/frontend/playwright-report/
 e2e/frontend/blob-report/
+e2e/.frontend-run.lock
+e2e/.connectivity-private/
 
 # Hugo build cache/artifacts for the site/ docs module. The actual built
 # output that gets served lives at etc/caddy/site/ and IS committed; only
