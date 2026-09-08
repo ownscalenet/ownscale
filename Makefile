@@ -73,6 +73,9 @@ devbox:
 			tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/var/run/tailscale/tailscaled.sock >/var/log/tailscaled.log 2>&1 & \
 			for i in \$$(seq 1 20); do [ -S /var/run/tailscale/tailscaled.sock ] && break; sleep 0.5; done; \
 			tailscale --socket=/var/run/tailscale/tailscaled.sock up --login-server=https://$(ORG).$(BASE_DOMAIN) --authkey=$$authkey --hostname=devbox-$(ORG) --accept-dns=false; \
+			mkdir -p /var/www; \
+			echo '<html><body><h1>devbox-$(ORG)</h1></body></html>' > /var/www/index.html; \
+			python3 -m http.server 80 --directory /var/www >/var/log/httpserver.log 2>&1 & \
 			exec bash"
 
 # Build the site/ Hugo module (hugo-book theme) into etc/caddy/site, which
