@@ -31,9 +31,11 @@ type Provisioner struct {
 	failureThreshold int
 	longBackoff      time.Duration
 	ready            chan sqlcgen.Organization
+	maxOrgs          int
+	provisioned      int
 }
 
-func NewProvisioner(svc *Service, logger *slog.Logger, retryBackoff time.Duration, queueCapacity int) *Provisioner {
+func NewProvisioner(svc *Service, logger *slog.Logger, retryBackoff time.Duration, queueCapacity, maxOrgs int) *Provisioner {
 	if retryBackoff <= 0 {
 		retryBackoff = defaultRetryBackoff
 	}
@@ -47,6 +49,7 @@ func NewProvisioner(svc *Service, logger *slog.Logger, retryBackoff time.Duratio
 		failureThreshold: defaultFailureThreshold,
 		longBackoff:      defaultLongBackoff,
 		ready:            make(chan sqlcgen.Organization, queueCapacity),
+		maxOrgs:          maxOrgs,
 	}
 }
 
@@ -80,6 +83,12 @@ func (p *Provisioner) Run(ctx context.Context) error {
 
 	var consecutiveFailures int
 	for {
+		// See OWNSCALE_PROVISIONER_MAX_ORGS.
+		if p.maxOrgs > 0 && p.provisioned >= p.maxOrgs {
+			p.logger.Info("provisioner reached max_orgs; no longer replenishing", "max_orgs", p.maxOrgs)
+			<-ctx.Done()
+			return nil
+		}
 		if err := p.replenishOne(ctx); err != nil {
 			if ctx.Err() != nil {
 				return nil
@@ -98,10 +107,13 @@ func (p *Provisioner) Run(ctx context.Context) error {
 				return nil
 			case <-time.After(backoff):
 			}
-		} else if consecutiveFailures > 0 {
-			p.logger.Info("provisioner recovered after consecutive failures; resuming normal cadence",
-				"consecutive_failures", consecutiveFailures)
-			consecutiveFailures = 0
+		} else {
+			p.provisioned++
+			if consecutiveFailures > 0 {
+				p.logger.Info("provisioner recovered after consecutive failures; resuming normal cadence",
+					"consecutive_failures", consecutiveFailures)
+				consecutiveFailures = 0
+			}
 		}
 		if ctx.Err() != nil {
 			return nil
@@ -144,6 +156,7 @@ func (p *Provisioner) recoverPending(ctx context.Context) error {
 		if err := p.push(ctx, provisioned); err != nil {
 			return err
 		}
+		p.provisioned++
 	}
 	return nil
 }

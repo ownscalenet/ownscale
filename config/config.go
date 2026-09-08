@@ -120,6 +120,7 @@ func (d DerpConfig) Enabled() bool { return d.Hostname != "" }
 // organizations ready to be assigned to new users on login.
 type ProvisionerConfig struct {
 	QueueCapacity int `env:"OWNSCALE_PROVISIONER_QUEUE_CAPACITY"`
+	MaxOrgs       int `env:"OWNSCALE_PROVISIONER_MAX_ORGS"`
 }
 
 func defaults() *Config {

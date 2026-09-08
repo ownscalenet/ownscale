@@ -48,7 +48,7 @@ func New(queries *db.TxQueries, ctl *dockerctl.Ctl, baseDomain, dataDir string, 
 		oidc:        oidc,
 		logger:      logger,
 		orgs:        orgSvc,
-		provisioner: orgs.NewProvisioner(orgSvc, logger, 0, provisionerCfg.QueueCapacity),
+		provisioner: orgs.NewProvisioner(orgSvc, logger, 0, provisionerCfg.QueueCapacity, provisionerCfg.MaxOrgs),
 		hs:          hs,
 		funnel:      funnelproxy.NewPool(queries, hs, dataDir, logger),
 	}

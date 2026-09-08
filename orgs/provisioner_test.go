@@ -61,7 +61,7 @@ func newTestService(t *testing.T) *Service {
 
 func TestProvisionerTakeReturnsProvisionedOrganization(t *testing.T) {
 	svc := newTestService(t)
-	p := NewProvisioner(svc, discardLogger(), time.Hour, 1)
+	p := NewProvisioner(svc, discardLogger(), time.Hour, 1, 0)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()
@@ -81,7 +81,7 @@ func TestProvisionerTakeReturnsProvisionedOrganization(t *testing.T) {
 // configured capacity.
 func TestProvisionerReplenishesAfterTake(t *testing.T) {
 	svc := newTestService(t)
-	p := NewProvisioner(svc, discardLogger(), time.Hour, 1)
+	p := NewProvisioner(svc, discardLogger(), time.Hour, 1, 0)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
@@ -114,7 +114,7 @@ func TestProvisionerRecoversPendingOnStart(t *testing.T) {
 		t.Fatalf("CreatePending: %v", err)
 	}
 
-	p := NewProvisioner(svc, discardLogger(), time.Hour, 1)
+	p := NewProvisioner(svc, discardLogger(), time.Hour, 1, 0)
 	// Recovering 4 organizations sequentially (3 seeded + this test's own)
 	// is slow under -race, so give it more headroom than a single Take needs.
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
@@ -137,7 +137,7 @@ func TestProvisionerTakeReturnsContextErrorWhenPoolEmpty(t *testing.T) {
 	svc := newTestService(t)
 	// A Provisioner that's never Run: the pool never fills, so Take must
 	// return once ctx is done instead of blocking forever.
-	p := NewProvisioner(svc, discardLogger(), time.Hour, 1)
+	p := NewProvisioner(svc, discardLogger(), time.Hour, 1, 0)
 
 	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
 	defer cancel()
@@ -148,7 +148,7 @@ func TestProvisionerTakeReturnsContextErrorWhenPoolEmpty(t *testing.T) {
 
 func TestProvisionerRunStopsOnContextCancel(t *testing.T) {
 	svc := newTestService(t)
-	p := NewProvisioner(svc, discardLogger(), time.Hour, 1)
+	p := NewProvisioner(svc, discardLogger(), time.Hour, 1, 0)
 
 	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan error, 1)
@@ -167,6 +167,32 @@ func TestProvisionerRunStopsOnContextCancel(t *testing.T) {
 
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+func TestProvisionerStopsReplenishingAtMaxOrgs(t *testing.T) {
+	svc := newTestService(t)
+	maxOrgs := len(DefaultSeedSubdomains) + 1
+	p := NewProvisioner(svc, discardLogger(), time.Hour, 1, maxOrgs)
+
+	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
+	defer cancel()
+	go func() { _ = p.Run(ctx) }()
+
+	// Drain exactly maxOrgs organizations: the 3 fixed seeds plus one
+	// replenished org, all of which should be produced normally.
+	for i := 0; i < maxOrgs; i++ {
+		if _, err := p.Take(ctx); err != nil {
+			t.Fatalf("Take %d: %v", i, err)
+		}
+	}
+
+	// The cap is now reached, so no further organization should ever be
+	// produced: Take should time out instead of returning one.
+	shortCtx, shortCancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
+	defer shortCancel()
+	if _, err := p.Take(shortCtx); err == nil {
+		t.Fatal("Take after reaching max_orgs: want a context error, got an organization")
+	}
 }
 
 func TestProvisionerCircuitBreakerBacksOffAfterConsecutiveFailures(t *testing.T) {
@@ -243,7 +269,7 @@ func TestProvisionerCircuitBreakerBacksOffAfterConsecutiveFailures(t *testing.T)
 		// bcrypt function with -race is very slow.
 		longBackoff = 5 * time.Second
 	)
-	p := NewProvisioner(svc, discardLogger(), retryBackoff, 1)
+	p := NewProvisioner(svc, discardLogger(), retryBackoff, 1, 0)
 	p.failureThreshold = 2
 	p.longBackoff = longBackoff
 

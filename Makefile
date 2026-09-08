@@ -37,8 +37,7 @@ osa:
 # not created later as root.
 dev-up:
 	mkdir -p "$(DATA_DIR)/.litestream-backups"
-	docker compose up -d --build
-	docker compose logs -f
+	docker compose up --build
 
 # Spin up a throwaway ubuntu container running tailscaled, auto-join it to
 # an org's headscale server (ORG, default aaaa -- see
