@@ -509,6 +509,7 @@ function MachineRow({ machine: m, onChange }: { machine: Machine; onChange: () =
                   .split(',')
                   .map((t) => t.trim())
                   .filter(Boolean)
+                  .map((t) => (t.startsWith('tag:') ? t : `tag:${t}`))
                 void run(() => setMachineTags(m.id, parsed)).then(() => tagsRef.current?.close())
               }}
             >

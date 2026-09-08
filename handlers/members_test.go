@@ -171,7 +171,7 @@ func TestListMembersAutoLinksByEmail(t *testing.T) {
 		t.Fatalf("UpdateUserProfile: %v", err)
 	}
 
-	_, client, _ := newFakeHeadscaleServer(t)
+	_, client, _, _, _ := newFakeHeadscaleServer(t)
 	h.hs = headscaleclient.NewRegistry(&fakeClientMinter{client: client})
 
 	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/members", nil), owner)
@@ -218,7 +218,7 @@ func TestListMembersDoesNotRelinkAlreadyLinkedMember(t *testing.T) {
 		t.Fatalf("LinkUserHeadscaleUser: %v", err)
 	}
 
-	_, client, _ := newFakeHeadscaleServer(t)
+	_, client, _, _, _ := newFakeHeadscaleServer(t)
 	h.hs = headscaleclient.NewRegistry(&fakeClientMinter{client: client})
 
 	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/members", nil), owner)
@@ -268,7 +268,7 @@ func TestListMembersDifferentProvidersSameEmailGetDistinctHeadscaleUsers(t *test
 		}
 	}
 
-	_, client, _ := newFakeHeadscaleServer(t)
+	_, client, _, _, _ := newFakeHeadscaleServer(t)
 	h.hs = headscaleclient.NewRegistry(&fakeClientMinter{client: client})
 
 	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/members", nil), owner)

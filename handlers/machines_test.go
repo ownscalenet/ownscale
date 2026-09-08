@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -8,6 +9,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -36,10 +38,14 @@ func (f *fakeClientMinter) MintClient(_ context.Context, _ string) (*headscalecl
 
 // newFakeHeadscaleServer builds an httptest.Server implementing enough of
 // headscale's management API to exercise the /api/machines handlers, and
-// a *headscaleclient.Client pointed at it.
-func newFakeHeadscaleServer(t *testing.T) (*httptest.Server, *headscaleclient.Client, *[]*http.Request) {
+// a *headscaleclient.Client pointed at it. The returned *string is the
+// in-memory ACL policy GetPolicy/SetPolicy serve/mutate, starting out with
+// no "tagOwners" section (matching a freshly provisioned org).
+func newFakeHeadscaleServer(t *testing.T) (*httptest.Server, *headscaleclient.Client, *[]*http.Request, *string, *[]string) {
 	t.Helper()
 	var requests []*http.Request
+	policy := `{"acls":[{"action":"accept","src":["*"],"dst":["*:*"]}]}`
+	var lastTags []string
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/node", func(w http.ResponseWriter, r *http.Request) {
@@ -87,6 +93,11 @@ func newFakeHeadscaleServer(t *testing.T) (*httptest.Server, *headscaleclient.Cl
 	mux.HandleFunc("/api/v1/node/1/tags", func(w http.ResponseWriter, r *http.Request) {
 		requests = append(requests, r)
 		w.Header().Set("Content-Type", "application/json")
+		var body struct {
+			Tags []string `json:"tags"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		lastTags = body.Tags
 		fmt.Fprint(w, `{"node":{"id":"1"}}`)
 	})
 	mux.HandleFunc("/api/v1/node/1/approve_routes", func(w http.ResponseWriter, r *http.Request) {
@@ -103,6 +114,20 @@ func newFakeHeadscaleServer(t *testing.T) (*httptest.Server, *headscaleclient.Cl
 		requests = append(requests, r)
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{}`)
+	})
+	mux.HandleFunc("/api/v1/policy", func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r)
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodPut {
+			var body struct {
+				Policy string `json:"policy"`
+			}
+			_ = json.NewDecoder(r.Body).Decode(&body)
+			policy = body.Policy
+			fmt.Fprint(w, `{}`)
+			return
+		}
+		fmt.Fprintf(w, `{"policy":%q}`, policy)
 	})
 	mux.HandleFunc("/api/v1/preauthkey", func(w http.ResponseWriter, r *http.Request) {
 		requests = append(requests, r)
@@ -141,7 +166,7 @@ func newFakeHeadscaleServer(t *testing.T) (*httptest.Server, *headscaleclient.Cl
 	t.Cleanup(srv.Close)
 	host := strings.TrimPrefix(srv.URL, "http://")
 	client := headscaleclient.New(host, "test-key")
-	return srv, client, &requests
+	return srv, client, &requests, &policy, &lastTags
 }
 
 // activeOrgUser inserts a user with an "active" organization, wiring up
@@ -151,6 +176,16 @@ func newFakeHeadscaleServer(t *testing.T) (*httptest.Server, *headscaleclient.Cl
 // org-attached) user, a client for the middleware-based handlers to
 // attach via withHeadscaleClient, and the recorded requests slice.
 func activeOrgUser(t *testing.T, h *Handlers, queries *dbpkg.TxQueries) (sqlcgen.User, *headscaleclient.Client, *[]*http.Request) {
+	t.Helper()
+	user, client, requests, _, _ := activeOrgUserWithPolicy(t, h, queries)
+	return user, client, requests
+}
+
+// activeOrgUserWithPolicy is activeOrgUser plus a pointer to the fake
+// server's in-memory ACL policy and to the tags from the most recent
+// .../tags request, for tests exercising SetMachineTags's normalization
+// and tagOwners auto-provisioning.
+func activeOrgUserWithPolicy(t *testing.T, h *Handlers, queries *dbpkg.TxQueries) (sqlcgen.User, *headscaleclient.Client, *[]*http.Request, *string, *[]string) {
 	t.Helper()
 	user := insertUser(t, queries)
 
@@ -173,10 +208,10 @@ func activeOrgUser(t *testing.T, h *Handlers, queries *dbpkg.TxQueries) (sqlcgen
 		t.Fatalf("GetUserByID: %v", err)
 	}
 
-	_, client, requests := newFakeHeadscaleServer(t)
+	_, client, requests, policy, lastTags := newFakeHeadscaleServer(t)
 	h.hs = headscaleclient.NewRegistry(&fakeClientMinter{client: client})
 
-	return user, client, requests
+	return user, client, requests, policy, lastTags
 }
 
 func newMachinesTestHandlers(t *testing.T) (*Handlers, *dbpkg.TxQueries) {
@@ -290,11 +325,68 @@ func TestRenameMachineRejectsEmptyName(t *testing.T) {
 	}
 }
 
-func TestSetMachineTags(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
-	user, client, requests := activeOrgUser(t, h, queries)
+// TestSetMachineTagsNormalization covers normalizeTags: the frontend's
+// dialog claims it adds the "tag:" prefix automatically, so the backend
+// must actually do it (defense in depth for any API caller), regardless of
+// case, whitespace, or duplicate/empty entries.
+func TestSetMachineTagsNormalization(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    []string
+		wantTags []string
+	}{
+		{"already prefixed", []string{"tag:a", "tag:b"}, []string{"tag:a", "tag:b"}},
+		{"missing prefix is added", []string{"a", "tag:b"}, []string{"tag:a", "tag:b"}},
+		{"whitespace and case are normalized", []string{" Tag:A ", "B"}, []string{"tag:a", "tag:b"}},
+		{"empty and duplicate entries are dropped", []string{"a", "tag:a", "", "  "}, []string{"tag:a"}},
+	}
 
-	body := strings.NewReader(`{"tags":["tag:a","tag:b"]}`)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, queries := newMachinesTestHandlers(t)
+			user, client, requests, _, lastTags := activeOrgUserWithPolicy(t, h, queries)
+
+			payload, err := json.Marshal(map[string][]string{"tags": tt.input})
+			if err != nil {
+				t.Fatalf("json.Marshal: %v", err)
+			}
+			req := withPathValue(withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/tags", bytes.NewReader(payload)), user), client), "id", "1")
+			rec := httptest.NewRecorder()
+			h.SetMachineTags(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+			}
+			var tagsReqSeen bool
+			for _, r := range *requests {
+				if strings.HasSuffix(r.URL.Path, "/tags") {
+					tagsReqSeen = true
+				}
+			}
+			if !tagsReqSeen {
+				t.Fatal("no request sent to .../tags")
+			}
+			if !slices.Equal(*lastTags, tt.wantTags) {
+				t.Errorf("tags sent to headscale = %v, want %v", *lastTags, tt.wantTags)
+			}
+		})
+	}
+}
+
+// TestSetMachineTagsProvisionsTagOwners covers ensureTagOwners: headscale
+// rejects any tag missing from the ACL policy's tagOwners map (see
+// hscontrol/state.State.SetNodeTags in headscale's source), and ownscale's
+// seeded default policy never declares any tag -- so the handler must add
+// missing tags to tagOwners itself before calling SetTags.
+func TestSetMachineTagsProvisionsTagOwners(t *testing.T) {
+	h, queries := newMachinesTestHandlers(t)
+	user, client, _, policy, _ := activeOrgUserWithPolicy(t, h, queries)
+
+	if strings.Contains(*policy, "tagOwners") {
+		t.Fatalf("test fixture precondition failed: policy already has tagOwners: %s", *policy)
+	}
+
+	body := strings.NewReader(`{"tags":["tag:server"]}`)
 	req := withPathValue(withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/tags", body), user), client), "id", "1")
 	rec := httptest.NewRecorder()
 	h.SetMachineTags(rec, req)
@@ -302,9 +394,39 @@ func TestSetMachineTags(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
-	last := (*requests)[len(*requests)-1]
-	if !strings.HasSuffix(last.URL.Path, "/tags") {
-		t.Errorf("unexpected upstream request path: %s", last.URL.Path)
+
+	var parsed struct {
+		TagOwners map[string][]string `json:"tagOwners"`
+	}
+	if err := json.Unmarshal([]byte(*policy), &parsed); err != nil {
+		t.Fatalf("policy sent to SetPolicy is not valid JSON: %v: %s", err, *policy)
+	}
+	owners, ok := parsed.TagOwners["tag:server"]
+	if !ok || len(owners) == 0 {
+		t.Fatalf("policy tagOwners missing/empty entry for tag:server: %+v", parsed.TagOwners)
+	}
+}
+
+// TestSetMachineTagsSkipsPolicyUpdateWhenTagAlreadyOwned covers the case
+// where every requested tag is already declared: ensureTagOwners must not
+// call SetPolicy needlessly.
+func TestSetMachineTagsSkipsPolicyUpdateWhenTagAlreadyOwned(t *testing.T) {
+	h, queries := newMachinesTestHandlers(t)
+	user, client, requests, policy, _ := activeOrgUserWithPolicy(t, h, queries)
+	*policy = `{"acls":[{"action":"accept","src":["*"],"dst":["*:*"]}],"tagOwners":{"tag:server":["alice"]}}`
+
+	body := strings.NewReader(`{"tags":["tag:server"]}`)
+	req := withPathValue(withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/tags", body), user), client), "id", "1")
+	rec := httptest.NewRecorder()
+	h.SetMachineTags(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	for _, r := range *requests {
+		if r.URL.Path == "/api/v1/policy" && r.Method == http.MethodPut {
+			t.Fatal("SetPolicy should not be called when every tag is already in tagOwners")
+		}
 	}
 }
 

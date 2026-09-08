@@ -24,7 +24,7 @@ func newFunnelTestHandlers(t *testing.T, roles ...string) (*Handlers, sqlcgen.Or
 func TestCreateFunnelRouteRequiresManager(t *testing.T) {
 	h, org, users := newFunnelTestHandlers(t, RoleMember)
 	member := users[0]
-	_, client, _ := newFakeHeadscaleServer(t)
+	_, client, _, _, _ := newFakeHeadscaleServer(t)
 
 	body := `{"label":"web","targetNodeId":"1","targetPort":8080}`
 	req := withHeadscaleClient(withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPost, "/api/funnel", strings.NewReader(body)), member), member, org), client)
@@ -39,7 +39,7 @@ func TestCreateFunnelRouteRequiresManager(t *testing.T) {
 func TestCreateFunnelRouteValidation(t *testing.T) {
 	h, org, users := newFunnelTestHandlers(t, RoleOwner)
 	owner := users[0]
-	_, client, _ := newFakeHeadscaleServer(t)
+	_, client, _, _, _ := newFakeHeadscaleServer(t)
 
 	tests := []struct {
 		name string
@@ -67,7 +67,7 @@ func TestCreateFunnelRouteValidation(t *testing.T) {
 func TestCreateFunnelRouteSucceedsAndRejectsDuplicateLabel(t *testing.T) {
 	h, org, users := newFunnelTestHandlers(t, RoleOwner)
 	owner := users[0]
-	_, client, _ := newFakeHeadscaleServer(t)
+	_, client, _, _, _ := newFakeHeadscaleServer(t)
 
 	body := `{"label":"web","targetNodeId":"1","targetPort":8080}`
 	req := withHeadscaleClient(withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPost, "/api/funnel", strings.NewReader(body)), owner), owner, org), client)
@@ -109,7 +109,7 @@ func TestCreateFunnelRouteSucceedsAndRejectsDuplicateLabel(t *testing.T) {
 func TestListFunnelRoutesFlagsMissingTargetNode(t *testing.T) {
 	h, org, users := newFunnelTestHandlers(t, RoleOwner)
 	owner := users[0]
-	_, client, _ := newFakeHeadscaleServer(t)
+	_, client, _, _, _ := newFakeHeadscaleServer(t)
 
 	if _, err := h.queries.CreateFunnelRoute(t.Context(), sqlcgen.CreateFunnelRouteParams{
 		ID:             xid.New().String(),

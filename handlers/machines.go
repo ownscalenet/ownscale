@@ -1,13 +1,17 @@
 package handlers
 
 import (
+	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/headscaleclient"
+	"github.com/tailscale/hujson"
 )
 
 // resolveHeadscaleClient returns the calling user's organization's
@@ -185,6 +189,93 @@ func (h *Handlers) RenameMachine(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
+// normalizeTags trims, lower-cases, prepends the required "tag:" prefix if
+// missing, drops empties, and de-duplicates.
+// TODO: could this use a typed struct? What about any comments in the file?
+func normalizeTags(tags []string) []string {
+	seen := make(map[string]bool, len(tags))
+	out := make([]string, 0, len(tags))
+	for _, t := range tags {
+		t = strings.ToLower(strings.TrimSpace(t))
+		if t == "" {
+			continue
+		}
+		if !strings.HasPrefix(t, "tag:") {
+			t = "tag:" + t
+		}
+		if seen[t] {
+			continue
+		}
+		seen[t] = true
+		out = append(out, t)
+	}
+	return out
+}
+
+// ensureTagOwners fetches client's ACL policy and adds any of tags not
+// already declared as a "tagOwners" key.
+func ensureTagOwners(ctx context.Context, client *headscaleclient.Client, tags []string) (err error) {
+	content, err := client.GetPolicy(ctx)
+	if err != nil {
+		return err
+	}
+
+	standardized, err := hujson.Standardize([]byte(content))
+	if err != nil {
+		return err
+	}
+
+	policy := map[string]any{}
+	if len(bytes.TrimSpace(standardized)) > 0 {
+		if err := json.Unmarshal(standardized, &policy); err != nil {
+			return err
+		}
+	}
+
+	tagOwners, _ := policy["tagOwners"].(map[string]any)
+	if tagOwners == nil {
+		tagOwners = map[string]any{}
+	}
+
+	missing := make([]string, 0, len(tags))
+	for _, tag := range tags {
+		if _, ok := tagOwners[tag]; !ok {
+			missing = append(missing, tag)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+
+	users, err := client.ListUsers(ctx)
+	if err != nil {
+		return err
+	}
+	// headscale's ACL policy requires bare (domain-less) usernames to be
+	// written with a trailing "@" (e.g. "alice@"), stripped again before
+	// matching against the user's Name/Email.
+	owners := make([]any, 0, len(users))
+	for _, u := range users {
+		if u.Name != "" {
+			owners = append(owners, u.Name+"@")
+		}
+	}
+	if len(owners) == 0 {
+		return errors.New("no headscale users available to own new tags")
+	}
+
+	for _, tag := range missing {
+		tagOwners[tag] = owners
+	}
+	policy["tagOwners"] = tagOwners
+
+	updated, err := json.MarshalIndent(policy, "", "  ")
+	if err != nil {
+		return err
+	}
+	return client.SetPolicy(ctx, string(updated))
+}
+
 // SetMachineTags handles POST /api/machines/{id}/tags.
 func (h *Handlers) SetMachineTags(w http.ResponseWriter, r *http.Request) {
 	client, id := h.machineIDAndClient(r)
@@ -194,8 +285,15 @@ func (h *Handlers) SetMachineTags(w http.ResponseWriter, r *http.Request) {
 	if !h.decodeJSONBody(w, r, &req) {
 		return
 	}
-	if err := client.SetTags(r.Context(), id, req.Tags); err != nil {
-		h.serverError(w, err)
+	tags := normalizeTags(req.Tags)
+	if len(tags) > 0 {
+		if err := ensureTagOwners(r.Context(), client, tags); err != nil {
+			h.writeError(w, http.StatusBadRequest, "failed to update ACL policy for new tags: "+err.Error())
+			return
+		}
+	}
+	if err := client.SetTags(r.Context(), id, tags); err != nil {
+		h.writeError(w, http.StatusBadRequest, "headscale rejected tags: "+err.Error())
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

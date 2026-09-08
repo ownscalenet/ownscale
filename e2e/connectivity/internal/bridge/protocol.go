@@ -68,8 +68,8 @@ func decode(raw []byte, target any) error {
 	}
 	fields := make(map[string]bool)
 	structure := reflect.TypeOf(target).Elem()
-	for i := range structure.NumField() {
-		fields[structure.Field(i).Tag.Get("json")] = true
+	for field := range structure.Fields() {
+		fields[field.Tag.Get("json")] = true
 	}
 	keys := json.NewDecoder(bytes.NewReader(raw))
 	if _, err := keys.Token(); err != nil {

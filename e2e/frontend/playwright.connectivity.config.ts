@@ -3,7 +3,7 @@ import { baseURL } from './tests/connectivity/environment'
 
 export default defineConfig({
   testDir: './tests/connectivity',
-  testMatch: 'connectivity.spec.ts',
+  testMatch: ['connectivity.spec.ts', 'tags.spec.ts'],
   globalSetup: './tests/connectivity/preflight.ts',
   fullyParallel: false,
   workers: 1,
