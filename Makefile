@@ -181,6 +181,8 @@ purge:
 	# rm all except data/local-ca
 	sudo rm -rf data/headscale data/.litestream-backups data/.ownscale.sqlite-litestream
 	sudo rm -rf data/backup
+	sudo rm -rf data/funnel-tsnet
+	sudo rm -rf data/headscale-config
 	sudo rm -f data/*.*
 	docker ps -aq --filter "label=ownscale.organization=true" | xargs -r docker stop | xargs -r docker rm
 
