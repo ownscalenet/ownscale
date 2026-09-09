@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -213,33 +212,34 @@ func normalizeTags(tags []string) []string {
 }
 
 // ensureTagOwners fetches client's ACL policy and adds any of tags not
-// already declared as a "tagOwners" key.
+// already declared as a "tagOwners" key. It edits the policy's HuJSON AST.
 func ensureTagOwners(ctx context.Context, client *headscaleclient.Client, tags []string) (err error) {
 	content, err := client.GetPolicy(ctx)
 	if err != nil {
 		return err
 	}
 
-	standardized, err := hujson.Standardize([]byte(content))
+	root, err := hujson.Parse([]byte(content))
 	if err != nil {
 		return err
 	}
 
-	policy := map[string]any{}
-	if len(bytes.TrimSpace(standardized)) > 0 {
-		if err := json.Unmarshal(standardized, &policy); err != nil {
-			return err
+	existing := map[string]bool{}
+	tagOwnersExists := false
+	if tagOwners := root.Find("/tagOwners"); tagOwners != nil {
+		tagOwnersExists = true
+		if obj, ok := tagOwners.Value.(*hujson.Object); ok {
+			for _, m := range obj.Members {
+				if name, ok := m.Name.Value.(hujson.Literal); ok {
+					existing[name.String()] = true
+				}
+			}
 		}
-	}
-
-	tagOwners, _ := policy["tagOwners"].(map[string]any)
-	if tagOwners == nil {
-		tagOwners = map[string]any{}
 	}
 
 	missing := make([]string, 0, len(tags))
 	for _, tag := range tags {
-		if _, ok := tagOwners[tag]; !ok {
+		if !existing[tag] {
 			missing = append(missing, tag)
 		}
 	}
@@ -254,7 +254,7 @@ func ensureTagOwners(ctx context.Context, client *headscaleclient.Client, tags [
 	// headscale's ACL policy requires bare (domain-less) usernames to be
 	// written with a trailing "@" (e.g. "alice@"), stripped again before
 	// matching against the user's Name/Email.
-	owners := make([]any, 0, len(users))
+	owners := make([]string, 0, len(users))
 	for _, u := range users {
 		if u.Name != "" {
 			owners = append(owners, u.Name+"@")
@@ -264,16 +264,36 @@ func ensureTagOwners(ctx context.Context, client *headscaleclient.Client, tags [
 		return errors.New("no headscale users available to own new tags")
 	}
 
-	for _, tag := range missing {
-		tagOwners[tag] = owners
+	type patchOp struct {
+		Op    string `json:"op"`
+		Path  string `json:"path"`
+		Value any    `json:"value,omitempty"`
 	}
-	policy["tagOwners"] = tagOwners
+	var ops []patchOp
+	if !tagOwnersExists {
+		ops = append(ops, patchOp{Op: "add", Path: "/tagOwners", Value: map[string]any{}})
+	}
+	for _, tag := range missing {
+		ops = append(ops, patchOp{Op: "add", Path: "/tagOwners/" + jsonPointerEscape(tag), Value: owners})
+	}
 
-	updated, err := json.MarshalIndent(policy, "", "  ")
+	patch, err := json.Marshal(ops)
 	if err != nil {
 		return err
 	}
-	return client.SetPolicy(ctx, string(updated))
+	if err := root.Patch(patch); err != nil {
+		return err
+	}
+	root.Format()
+
+	return client.SetPolicy(ctx, root.String())
+}
+
+// jsonPointerEscape escapes s for use as a single JSON Pointer (RFC 6901)
+// reference token.
+func jsonPointerEscape(s string) string {
+	s = strings.ReplaceAll(s, "~", "~0")
+	return strings.ReplaceAll(s, "/", "~1")
 }
 
 // SetMachineTags handles POST /api/machines/{id}/tags.

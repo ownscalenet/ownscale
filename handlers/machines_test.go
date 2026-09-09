@@ -14,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/rs/xid"
+	"github.com/tailscale/hujson"
 
 	"github.com/ownscalenet/ownscale/config"
 	dbpkg "github.com/ownscalenet/ownscale/db"
@@ -427,6 +428,51 @@ func TestSetMachineTagsSkipsPolicyUpdateWhenTagAlreadyOwned(t *testing.T) {
 		if r.URL.Path == "/api/v1/policy" && r.Method == http.MethodPut {
 			t.Fatal("SetPolicy should not be called when every tag is already in tagOwners")
 		}
+	}
+}
+
+// TestSetMachineTagsPreservesPolicyCommentsAndFormatting covers the actual
+// bug: ensureTagOwners used to decode the policy into a map and re-encode
+// it, which silently dropped comments and reordered/reformatted everything.
+// It must now only patch in the new tagOwners entry, leaving the rest of
+// the HuJSON document byte-for-byte untouched.
+func TestSetMachineTagsPreservesPolicyCommentsAndFormatting(t *testing.T) {
+	h, queries := newMachinesTestHandlers(t)
+	user, client, _, policy, _ := activeOrgUserWithPolicy(t, h, queries)
+	original := "{\n" +
+		"  // keep this comment\n" +
+		"  \"acls\": [\n" +
+		"    {\"action\": \"accept\", \"src\": [\"*\"], \"dst\": [\"*:*\"]},\n" +
+		"  ],\n" +
+		"}\n"
+	*policy = original
+
+	body := strings.NewReader(`{"tags":["tag:server"]}`)
+	req := withPathValue(withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/tags", body), user), client), "id", "1")
+	rec := httptest.NewRecorder()
+	h.SetMachineTags(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(*policy, "// keep this comment") {
+		t.Fatalf("policy sent to SetPolicy dropped the original comment: %s", *policy)
+	}
+	if !strings.Contains(*policy, `"action": "accept"`) {
+		t.Fatalf("policy sent to SetPolicy reformatted the original acls entry: %s", *policy)
+	}
+	var parsed struct {
+		TagOwners map[string][]string `json:"tagOwners"`
+	}
+	standardized, err := hujson.Standardize([]byte(*policy))
+	if err != nil {
+		t.Fatalf("policy sent to SetPolicy is not valid HuJSON: %v: %s", err, *policy)
+	}
+	if err := json.Unmarshal(standardized, &parsed); err != nil {
+		t.Fatalf("policy sent to SetPolicy is not valid JSON: %v: %s", err, *policy)
+	}
+	if owners := parsed.TagOwners["tag:server"]; len(owners) == 0 {
+		t.Fatalf("policy tagOwners missing/empty entry for tag:server: %+v", parsed.TagOwners)
 	}
 }
 
