@@ -185,6 +185,25 @@ purge:
 	sudo rm -rf data/headscale-config
 	sudo rm -f data/*.*
 	docker ps -aq --filter "label=ownscale.organization=true" | xargs -r docker stop | xargs -r docker rm
+	# org DB is gone (wiped above), so every org-<subdomain>-net network
+	# (see dockerctl.OrgNetworkName) left behind by past orgs is orphaned;
+	# list them and their br-* bridge interfaces, then remove them.
+	@nets="$$(docker network ls --format '{{.Name}}' | grep -E '^org-.*-net$$' || true)"; \
+	if [ -z "$$nets" ]; then \
+		echo "no leftover per-org Docker networks to remove"; \
+	else \
+		echo "removing leftover per-org Docker networks (and their bridge interfaces):"; \
+		for net in $$nets; do \
+			id=$$(docker network inspect -f '{{.Id}}' "$$net" 2>/dev/null | cut -c1-12); \
+			echo "  $$net (br-$$id)"; \
+		done; \
+		for net in $$nets; do \
+			for c in $$(docker network inspect -f '{{range .Containers}}{{.Name}} {{end}}' "$$net" 2>/dev/null); do \
+				docker network disconnect -f "$$net" "$$c" >/dev/null 2>&1 || true; \
+			done; \
+			docker network rm "$$net" >/dev/null 2>&1 || true; \
+		done; \
+	fi
 
 rm-orphans:
 	docker ps -aq --filter "label=ownscale.organization=true" | xargs -r docker stop | xargs -r docker rm
