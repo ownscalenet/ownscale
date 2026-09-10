@@ -35,7 +35,9 @@ test('setting a machine\'s ACL tags succeeds with or without the tag: prefix, ev
     await expect(row.getByText('tag:e2etagwithprefix', { exact: true })).toBeVisible()
 
     const policy = await org.policy()
-    const parsed = JSON.parse(policy.replace(/\/\/.*$/gm, '')) as { tagOwners?: Record<string, string[]> }
+    const withoutComments = policy.replace(/\/\/.*$/gm, '')
+    const withoutTrailingCommas = withoutComments.replace(/,(\s*[}\]])/g, '$1')
+    const parsed = JSON.parse(withoutTrailingCommas) as { tagOwners?: Record<string, string[]> }
     expect(parsed.tagOwners?.['tag:e2etagwithprefix'], 'ACL policy must declare the new tag in tagOwners').toBeTruthy()
   })
 
