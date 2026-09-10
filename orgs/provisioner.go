@@ -32,7 +32,6 @@ type Provisioner struct {
 	longBackoff      time.Duration
 	ready            chan sqlcgen.Organization
 	maxOrgs          int
-	provisioned      int
 }
 
 func NewProvisioner(svc *Service, logger *slog.Logger, retryBackoff time.Duration, queueCapacity, maxOrgs int) *Provisioner {
@@ -83,11 +82,21 @@ func (p *Provisioner) Run(ctx context.Context) error {
 
 	var consecutiveFailures int
 	for {
-		// See OWNSCALE_PROVISIONER_MAX_ORGS.
-		if p.maxOrgs > 0 && p.provisioned >= p.maxOrgs {
-			p.logger.Info("provisioner reached max_orgs; no longer replenishing", "max_orgs", p.maxOrgs)
-			<-ctx.Done()
-			return nil
+		// See OWNSCALE_PROVISIONER_MAX_ORGS. Counted from the database
+		// (not an in-memory field) so the cap survives process restarts.
+		if p.maxOrgs > 0 {
+			active, err := p.svc.queries.CountActiveOrganizations(ctx)
+			if err != nil {
+				if ctx.Err() != nil {
+					return nil
+				}
+				return err
+			}
+			if active >= int64(p.maxOrgs) {
+				p.logger.Info("provisioner reached max_orgs; no longer replenishing", "max_orgs", p.maxOrgs)
+				<-ctx.Done()
+				return nil
+			}
 		}
 		if err := p.replenishOne(ctx); err != nil {
 			if ctx.Err() != nil {
@@ -108,7 +117,6 @@ func (p *Provisioner) Run(ctx context.Context) error {
 			case <-time.After(backoff):
 			}
 		} else {
-			p.provisioned++
 			if consecutiveFailures > 0 {
 				p.logger.Info("provisioner recovered after consecutive failures; resuming normal cadence",
 					"consecutive_failures", consecutiveFailures)
@@ -156,7 +164,6 @@ func (p *Provisioner) recoverPending(ctx context.Context) error {
 		if err := p.push(ctx, provisioned); err != nil {
 			return err
 		}
-		p.provisioned++
 	}
 	return nil
 }

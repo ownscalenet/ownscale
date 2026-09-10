@@ -9,6 +9,17 @@ import (
 	"context"
 )
 
+const countActiveOrganizations = `-- name: CountActiveOrganizations :one
+SELECT COUNT(*) FROM organizations WHERE status = 'active'
+`
+
+func (q *Queries) CountActiveOrganizations(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countActiveOrganizations)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createOrganization = `-- name: CreateOrganization :one
 INSERT INTO organizations (id, subdomain)
 VALUES (?, ?)
