@@ -74,7 +74,12 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${OWNSCALE_DATA_DIR}:${OWNSCALE_DATA_DIR}
     networks:
-      - os-net
+      os-net:
+        # the ownscale container joins organization containers when those are
+        # provisioned and if all these networks have the same priority, then
+        # they're prioritised alphabetically. Give os-net a bigger priority to
+        # keep it consistent.
+        gw_priority: 1000
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/"]
@@ -171,6 +176,11 @@ services:
         # has no real DNS at all.
         aliases:
           - dex.${BASE_DOMAIN:-ownscale.test}
+        # See ownscale service's os-net entry above: pins the default
+        # gateway to os-net instead of letting it drift to whichever
+        # per-org network (see dockerctl.ensureCaddyNetworkAlias) sorts
+        # first alphabetically.
+        gw_priority: 1000
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:2019/config/"]
       interval: 10s

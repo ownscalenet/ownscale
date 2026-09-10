@@ -38,6 +38,9 @@ const (
 
 	// Caddy self-signed CA is mounted here for organization containers.
 	LocalCAMountTarget = "/etc/ownscale-local-ca"
+
+	// orgNetworkGwPriority is low to avoid conflict with the os-net network.
+	orgNetworkGwPriority = -1
 )
 
 func HSContainerName(subdomain string) string { return "hs-" + subdomain }
@@ -341,7 +344,9 @@ func (c *Ctl) EnsureOwnscaleNetworkForOrg(ctx context.Context, subdomain string)
 		}
 	}
 
-	if err := c.cli.NetworkConnect(ctx, netName, ownscaleID, nil); err != nil {
+	if err := c.cli.NetworkConnect(
+		ctx, netName, ownscaleID,
+		&network.EndpointSettings{GwPriority: orgNetworkGwPriority}); err != nil {
 		return fmt.Errorf("connect ownscale to %s: %w", netName, err)
 	}
 	return nil
@@ -397,7 +402,15 @@ func (c *Ctl) ensureCaddyNetworkAlias(ctx context.Context, networkName, baseDoma
 			return fmt.Errorf("disconnect caddy from %s: %w", networkName, err)
 		}
 	}
-	if err := c.cli.NetworkConnect(ctx, networkName, caddyID, &network.EndpointSettings{Aliases: aliases}); err != nil {
+	settings := &network.EndpointSettings{Aliases: aliases}
+	if networkName != ownscaleNetwork {
+		settings.GwPriority = orgNetworkGwPriority
+	} else if existing != nil {
+		// Reconnecting to ownscaleNetwork itself (os-net): preserve its
+		// existing gw_priority.
+		settings.GwPriority = existing.GwPriority
+	}
+	if err := c.cli.NetworkConnect(ctx, networkName, caddyID, settings); err != nil {
 		return fmt.Errorf("connect caddy to %s with alias %q: %w", networkName, baseDomain, err)
 	}
 	return nil
