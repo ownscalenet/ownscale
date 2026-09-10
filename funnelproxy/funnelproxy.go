@@ -21,6 +21,8 @@ import (
 	"sync"
 	"time"
 
+	"golang.org/x/sync/singleflight"
+	"tailscale.com/net/netns"
 	"tailscale.com/tsnet"
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
@@ -56,6 +58,16 @@ type Pool struct {
 
 	mu      sync.Mutex
 	servers map[string]*tsnet.Server // keyed by organization subdomain
+
+	// sf de-duplicates concurrent getOrCreateServer calls for the same
+	// subdomain, so a burst of near-simultaneous requests for a
+	// brand-new funnel never mints more than one preauth key or starts more
+	// than one tsnet.Server against the same on-disk state directory.
+	sf        singleflight.Group
+	upTimeout time.Duration
+	// controlURL builds the tsnet ControlURL for a subdomain; defaults
+	// to headscale's real container address via NewPool
+	controlURL func(subdomain string) string
 }
 
 // NewPool builds a Pool. dataDir is the same directory dockerctl.Ctl uses
@@ -64,12 +76,27 @@ type Pool struct {
 // a stable node across process restarts instead of re-registering on
 // every request).
 func NewPool(queries Queries, hs HeadscaleClients, dataDir string, logger *slog.Logger) *Pool {
+	// Every tsnet.Server we run uses a fake, no-op tun device (there's no
+	// real OS route through Tailscale to loop back into), so netns's
+	// default-route-interface binding -- meant to stop a *real* tailscaled
+	// from routing its own control-plane traffic back through its own tun
+	// -- only causes harm here: this container has one Docker network per
+	// organization, so it forces every tsnet control-client dial through
+	// whichever org happens to currently own the container's default
+	// route, breaking connectivity to every other org's headscale.
+	// The symptoms are: only funnels from one org work, all others timeout.
+	netns.SetEnabled(false)
+
 	return &Pool{
-		queries: queries,
-		hs:      hs,
-		dataDir: dataDir,
-		logger:  logger,
-		servers: make(map[string]*tsnet.Server),
+		queries:   queries,
+		hs:        hs,
+		dataDir:   dataDir,
+		logger:    logger,
+		servers:   make(map[string]*tsnet.Server),
+		upTimeout: funnelUpTimeout,
+		controlURL: func(subdomain string) string {
+			return "http://" + dockerctl.HSContainerName(subdomain) + ":8080"
+		},
 	}
 }
 
@@ -84,6 +111,13 @@ func (p *Pool) Close() {
 		}
 	}
 	p.servers = make(map[string]*tsnet.Server)
+}
+
+// tsnetLogf adapts a tsnet.Server's Logf to the app's structured logger.
+func tsnetLogf(logger *slog.Logger, subdomain string) func(format string, args ...any) {
+	return func(format string, args ...any) {
+		logger.Debug("tsnet", "subdomain", subdomain, "msg", fmt.Sprintf(format, args...))
+	}
 }
 
 // ParseHost splits a funnel request's Host header (already stripped of
@@ -190,6 +224,10 @@ func targetNodeIP(ctx context.Context, client *headscaleclient.Client, nodeID st
 	return "", fmt.Errorf("node %q not found", nodeID)
 }
 
+// funnelUpTimeout is how long a tsnet.Server may take to register and
+// reach the Running state.
+const funnelUpTimeout = 45 * time.Second
+
 // getOrCreateServer returns the cached tsnet.Server for subdomain,
 // starting (and registering, via a freshly minted pre-auth key) one on
 // first use.
@@ -203,33 +241,52 @@ func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *
 	}
 	p.mu.Unlock()
 
-	authKey, err := ensureFunnelAuthKey(ctx, client)
+	// singleflight.Do serializes concurrent callers for the same
+	// subdomain: only one of them mints a preauth key and starts a
+	// tsnet.Server, and the rest wait for and share its result.
+	// Without this, concurrent tsnet.Servers would work with and corrupt
+	// the same state on disk.
+	v, err, _ := p.sf.Do(subdomain, func() (any, error) {
+		p.mu.Lock()
+		if srv, ok := p.servers[subdomain]; ok {
+			p.mu.Unlock()
+			return srv, nil
+		}
+		p.mu.Unlock()
+
+		authKey, err := ensureFunnelAuthKey(ctx, client)
+		if err != nil {
+			return nil, fmt.Errorf("mint pre-auth key: %w", err)
+		}
+
+		srv := &tsnet.Server{
+			Dir:        filepath.Join(p.dataDir, "funnel-tsnet", subdomain),
+			Hostname:   "funnel-" + subdomain,
+			AuthKey:    authKey,
+			ControlURL: p.controlURL(subdomain),
+			Logf:       tsnetLogf(p.logger, subdomain),
+			UserLogf:   tsnetLogf(p.logger, subdomain),
+		}
+
+		upCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.upTimeout)
+		defer cancel()
+		if _, err := srv.Up(upCtx); err != nil {
+			_ = srv.Close()
+			if errors.Is(upCtx.Err(), context.DeadlineExceeded) {
+				return nil, fmt.Errorf("tsnet server up: timed out after %s: %w", p.upTimeout, err)
+			}
+			return nil, fmt.Errorf("tsnet server up: %w", err)
+		}
+
+		p.mu.Lock()
+		p.servers[subdomain] = srv
+		p.mu.Unlock()
+		return srv, nil
+	})
 	if err != nil {
-		return nil, fmt.Errorf("mint pre-auth key: %w", err)
+		return nil, err
 	}
-
-	srv := &tsnet.Server{
-		Dir:        filepath.Join(p.dataDir, "funnel-tsnet", subdomain),
-		Hostname:   "funnel-" + subdomain,
-		AuthKey:    authKey,
-		ControlURL: "http://" + dockerctl.HSContainerName(subdomain) + ":8080",
-	}
-	if _, err := srv.Up(ctx); err != nil {
-		_ = srv.Close()
-		return nil, fmt.Errorf("tsnet server up: %w", err)
-	}
-
-	p.mu.Lock()
-	defer p.mu.Unlock()
-	// A concurrent request for the same subdomain might have raced us;
-	// keep whichever registered first and close the loser (both are
-	// equally valid tsnet nodes, but there's no reason to keep two alive).
-	if existing, ok := p.servers[subdomain]; ok {
-		_ = srv.Close()
-		return existing, nil
-	}
-	p.servers[subdomain] = srv
-	return srv, nil
+	return v.(*tsnet.Server), nil
 }
 
 const funnelAuthKeyValidity = 100 * 365 * 24 * time.Hour

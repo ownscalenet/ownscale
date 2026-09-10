@@ -10,7 +10,9 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/headscaleclient"
@@ -208,4 +210,67 @@ func newFakeUserPreAuthKeyServer(t *testing.T, existingUsers string) (*headscale
 	t.Cleanup(server.Close)
 	host := strings.TrimPrefix(server.URL, "http://")
 	return headscaleclient.New(host, "test-api-key"), &preAuthKeyBodies
+}
+
+// TestGetOrCreateServerConcurrentDedup guards against the race where a
+// burst of simultaneous requests for a brand-new funnel each
+// mint their own preauth key and start their own tsnet.Server against the
+// same on-disk state directory.
+func TestGetOrCreateServerConcurrentDedup(t *testing.T) {
+	client, preAuthKeyBodies := newFakeUserPreAuthKeyServer(t, `{"users":[]}`)
+	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{client: client}, t.TempDir(), discardLogger())
+	pool.upTimeout = 2 * time.Second
+
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+
+	const concurrency = 8
+	errs := make([]error, concurrency)
+	var wg sync.WaitGroup
+	wg.Add(concurrency)
+	for i := range concurrency {
+		go func() {
+			defer wg.Done()
+			_, err := pool.getOrCreateServer(ctx, "acme", client)
+			errs[i] = err
+		}()
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err == nil {
+			t.Errorf("getOrCreateServer[%d]: got nil error, want a dial/lookup failure (ControlURL is unreachable in this test)", i)
+		}
+	}
+	if got := len(*preAuthKeyBodies); got != 1 {
+		t.Errorf("preauthkey minted %d times across %d concurrent callers, want exactly 1 (dedup failed)", got, concurrency)
+	}
+}
+
+// TestGetOrCreateServerUpTimeout guards against a stuck tsnet registration
+// hanging getOrCreateServer.
+func TestGetOrCreateServerUpTimeout(t *testing.T) {
+	blockServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-r.Context().Done() // never respond; only unblocks when the client gives up
+	}))
+	t.Cleanup(blockServer.Close)
+
+	client, _ := newFakeUserPreAuthKeyServer(t, `{"users":[]}`)
+	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{client: client}, t.TempDir(), discardLogger())
+	pool.upTimeout = 200 * time.Millisecond
+	pool.controlURL = func(subdomain string) string { return blockServer.URL }
+
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+
+	start := time.Now()
+	_, err := pool.getOrCreateServer(ctx, "bbbb", client)
+	elapsed := time.Since(start)
+
+	if err == nil {
+		t.Fatal("getOrCreateServer: got nil error, want a bounded timeout error (ControlURL never responds)")
+	}
+	if elapsed > 5*time.Second {
+		t.Errorf("getOrCreateServer took %s to return, want well under upTimeout=%s plus overhead (it should not hang indefinitely)", elapsed, pool.upTimeout)
+	}
 }
