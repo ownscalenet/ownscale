@@ -9,17 +9,10 @@ export default defineConfig({
   testDir: './tests',
   testIgnore: '**/connectivity/**',
   globalSetup: './run-guard.ts',
-  fullyParallel: true,
-  // The backend under test is a single local dev instance (SQLite +
-  // per-request `docker exec` calls into headscale containers), not built
-  // to absorb many simultaneous logins/API calls -- keeping worker count
-  // low avoids the login/session race that heavy parallel load against
-  // that single instance can trigger. Prioritizes reliability over speed.
-  workers: process.env.CI ? 2 : 3,
-  // Retries make transient network hiccups against the local dev stack
-  // non-fatal without masking real bugs -- CI isn't wired up yet (local-only
-  // suite), so this only matters for local runs.
-  retries: 1,
+  fullyParallel: false,
+  workers: 1,
+  retries: 0,
+  maxFailures: 1,
   reporter: [['list'], ['html', { open: 'never' }]],
   use: {
     baseURL,

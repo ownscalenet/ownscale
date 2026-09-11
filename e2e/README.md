@@ -14,11 +14,19 @@ Playwright and its browser binaries never weigh down the production
    "Deployment" sections) with `BASE_DOMAIN=ownscale.test` (the default in
    `.env.example`), including the `/etc/hosts` entries it documents.
 2. Node.js (matching `frontend/`'s toolchain).
+3. Go and the repository's Go dependencies, plus an `/etc/hosts` entry for
+   `aaaa.<base-domain>` (e.g. `127.0.0.1 aaaa.ownscale.test`) -- required
+   only by `machines-lifecycle.spec.ts` and `funnel.spec.ts`, which build
+   and launch `bin/tscl-bridge` (the same tsnet-backed real-device client
+   used by the connectivity suite below) to register one real, ephemeral
+   device per test. See "Browser-driven connectivity" below for the full
+   host-entry list if you're already set up for `make e2e-connectivity`.
 
 These tests run against whatever is already in your local dev stack and
 will create/modify real data there (pre-auth keys, invites, ACL policy
-edits that are reverted at the end of the spec) -- mingling with your local
-dev deployment is expected and fine.
+edits that are reverted at the end of the spec, real ephemeral devices
+that are deregistered at the end of their spec) -- mingling with your
+local dev deployment is expected and fine.
 
 ## Running
 
@@ -58,6 +66,11 @@ Other useful commands (from `e2e/frontend/`):
   `tests/.auth/admin.json` (gitignored); every other spec starts already
   authenticated. Specs that need to exercise the login/logout flow itself
   (`login.spec.ts`, `onboarding.spec.ts`) opt out of that cached state.
+  That same setup also self-registers a fixed `passkey@ownscale.test`
+  identity via passkey, claiming seed org `dddd`, and caches its WebAuthn
+  credential in `tests/.auth/passkey-credential.json` (gitignored) so
+  `passkey.spec.ts` can sign back in as that identity without registering
+  another brand-new user/org.
 - This suite is local-only for now (like `make test-integration`) and
   isn't wired into GitHub Actions CI.
 

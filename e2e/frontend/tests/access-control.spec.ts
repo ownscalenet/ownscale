@@ -14,12 +14,13 @@ test('editing and saving the ACL policy round-trips through Format and Save', as
   await page.getByRole('button', { name: 'Format' }).click()
   await expect(editor).toContainText(marker)
 
+  const savedBanner = page.getByText('Policy saved. Headscale is restarting to apply it.')
   await page.getByRole('button', { name: 'Save' }).click()
-  await expect(page.getByText('Policy saved. Headscale is restarting to apply it.')).toBeVisible()
+  await expect(savedBanner).toBeVisible()
 
   // Restore the original policy so repeat local runs (and other specs)
   // aren't left with an ever-growing pile of e2e markers.
   await editor.fill(original)
   await page.getByRole('button', { name: 'Save' }).click()
-  await expect(page.getByText('Policy saved. Headscale is restarting to apply it.')).toBeVisible()
+  await expect(savedBanner).toBeVisible()
 })

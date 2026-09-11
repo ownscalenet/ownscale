@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/rs/xid"
 	"github.com/tailscale/hujson"
@@ -16,6 +17,11 @@ import (
 	"github.com/ownscalenet/ownscale/derrors"
 	"github.com/ownscalenet/ownscale/dockerctl"
 )
+
+// applyHeadscaleConfigTimeout bounds the background context used for
+// applyHeadscaleConfig's write/restart tail (see SetAuthRestrictions/
+// SetDNSSettings), once decoupled from the HTTP request's context.
+const applyHeadscaleConfigTimeout = 30 * time.Second
 
 // OrgService holds methods for operating with a single organization.
 type OrgService struct {
@@ -134,13 +140,23 @@ func (o *OrgService) SetAuthRestrictions(ctx context.Context, content string) (e
 	cfg.OIDC.AllowedGroups = r.Groups
 	cfg.OIDC.AllowedUsers = r.Users
 
-	txQueries, commit, rollback, err := o.queries.StartTx(ctx)
+	// From here on, content is validated and the write/restart is
+	// committed-or-rolled-back atomically -- decouple from ctx (the HTTP
+	// request's context) with a bounded timeout so a client-side
+	// disconnect/network blip (e.g. the request's own fetch getting
+	// aborted by the headscale container restart's brief interface churn)
+	// can't abort an already-validated save partway through, forcing the
+	// caller to redo it. See applyHeadscaleConfig's restart step.
+	applyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), applyHeadscaleConfigTimeout)
+	defer cancel()
+
+	txQueries, commit, rollback, err := o.queries.StartTx(applyCtx)
 	if err != nil {
 		return fmt.Errorf("start transaction: %w", err)
 	}
 	defer rollback()
 
-	if _, err := txQueries.UpsertOrgConfig(ctx, sqlcgen.UpsertOrgConfigParams{
+	if _, err := txQueries.UpsertOrgConfig(applyCtx, sqlcgen.UpsertOrgConfigParams{
 		ID:             xid.New().String(),
 		OrganizationID: o.orgID,
 		Path:           AuthRestrictionsConfigKey,
@@ -149,7 +165,7 @@ func (o *OrgService) SetAuthRestrictions(ctx context.Context, content string) (e
 		return err
 	}
 
-	if err := o.applyHeadscaleConfig(ctx, txQueries, cfg); err != nil {
+	if err := o.applyHeadscaleConfig(applyCtx, txQueries, cfg); err != nil {
 		return err
 	}
 
@@ -194,13 +210,19 @@ func (o *OrgService) SetDNSSettings(ctx context.Context, dns dockerctl.DNSConfig
 	}
 	cfg.DNS = dns
 
-	txQueries, commit, rollback, err := o.queries.StartTx(ctx)
+	// See SetAuthRestrictions: decouple the write/restart tail from the
+	// HTTP request's context so a client-side network blip can't abort an
+	// already-validated save.
+	applyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), applyHeadscaleConfigTimeout)
+	defer cancel()
+
+	txQueries, commit, rollback, err := o.queries.StartTx(applyCtx)
 	if err != nil {
 		return fmt.Errorf("start transaction: %w", err)
 	}
 	defer rollback()
 
-	if err := o.applyHeadscaleConfig(ctx, txQueries, cfg); err != nil {
+	if err := o.applyHeadscaleConfig(applyCtx, txQueries, cfg); err != nil {
 		return err
 	}
 

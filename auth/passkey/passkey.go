@@ -62,7 +62,7 @@ func (u User) WebAuthnCredentials() []webauthn.Credential {
 // go-webauthn library's in-memory Credential representation.
 func RowToCredential(row sqlcgen.WebauthnCredential) webauthn.Credential {
 	var transports []protocol.AuthenticatorTransport
-	for _, t := range strings.Split(row.Transports, ",") {
+	for t := range strings.SplitSeq(row.Transports, ",") {
 		if t == "" {
 			continue
 		}

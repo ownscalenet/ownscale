@@ -1,34 +1,20 @@
+import { readFileSync } from 'node:fs'
 import { expect, test } from '@playwright/test'
+import { addVirtualAuthenticator, importCredential } from './support/webauthn'
 
-// addVirtualAuthenticator wires up Chrome DevTools Protocol's WebAuthn
-// domain so the browser answers navigator.credentials.create()/.get()
-// itself, without a real security key or platform authenticator. The
-// authenticator is configured as a resident-key-capable, pre-verified
-// "platform" authenticator so both the register (createPasskey) and the
-// discoverable/usernameless login (getPasskey) ceremonies succeed without
-// any UI prompt.
-async function addVirtualAuthenticator(page: import('@playwright/test').Page) {
-  const client = await page.context().newCDPSession(page)
-  await client.send('WebAuthn.enable')
-  await client.send('WebAuthn.addVirtualAuthenticator', {
-    options: {
-      protocol: 'ctap2',
-      transport: 'internal',
-      hasResidentKey: true,
-      hasUserVerification: true,
-      isUserVerified: true,
-      automaticPresenceSimulation: true,
-    },
-  })
-}
+const PASSKEY_IDENTITY_EMAIL = 'passkey@ownscale.test'
+const PASSKEY_CREDENTIAL_STATE = 'tests/.auth/passkey-credential.json'
 
 // This test adds a passkey to the already-provisioned admin account from
 // Settings, then uses it to sign back in. It deliberately reuses the
 // "chromium" project's authenticated storageState (unlike login.spec.ts)
-// rather than exercising brand-new self-registration, since that path (see
-// the test below) consumes one of the dev stack's fixed seed organizations.
-// The invite-skip-provisioning case is covered at the Go handler level in
-// handlers/passkey_test.go.
+// rather than exercising brand-new self-registration, since that path
+// consumes one of the dev stack's fixed seed organizations -- brand-new
+// passkey self-registration is instead exercised once, deterministically,
+// in global.setup.ts's bootstrap (see the test below, which signs back in
+// with that bootstrapped identity's passkey instead of registering
+// another). The invite-skip-provisioning case is covered at the Go handler
+// level in handlers/passkey_test.go.
 test('adding a passkey in Settings and signing in with it', async ({ page }) => {
   await addVirtualAuthenticator(page)
 
@@ -54,34 +40,42 @@ test('adding a passkey in Settings and signing in with it', async ({ page }) => 
   await expect(row).toBeHidden()
 })
 
-// Unauthenticated, brand-new-user self-registration via passkey. This
-// consumes one organization from the dev stack's fixed seed pool
-// (orgs.DefaultSeedSubdomains, now 6 wide specifically so this test can
-// coexist with the rest of the e2e suite without exhausting it -- see
-// e2e/README.md and orgs/provisioner.go).
+// Unauthenticated sign-in as the fixed passkey identity that
+// global.setup.ts's bootstrap self-registered into org "dddd" (see
+// PASSKEY_IDENTITY there). Rather than self-registering another brand-new
+// user here (which used to race other specs for a seed org and, with
+// retries enabled, could exhaust orgs.DefaultSeedSubdomains' fixed 6-org
+// pool), this replays the credential that bootstrap saved -- exercising
+// the discoverable/usernameless passkey login as "logging in again in
+// some other test" with the *same* passkey, consuming no additional org.
 //
 // Wrapped in its own describe block: test.use() applies to the whole file's
 // top-level suite when called at file scope, so without this it would also
 // clear the authenticated storageState for the "adding a passkey in
 // Settings" test above.
-test.describe('new-user registration', () => {
+test.describe('signing back in with the bootstrapped passkey', () => {
   test.use({ storageState: { cookies: [], origins: [] } })
 
-  test('a brand-new user can self-register with a passkey and gets a fresh org', async ({
-    page,
-  }) => {
-    // Provisioning a brand-new organization can take longer than
-    // Playwright's default 30s test timeout, so this is bumped explicitly
-    // (mirrors onboarding.spec.ts's equivalent OAuth self-registration test).
-    test.setTimeout(90_000)
-
-    await addVirtualAuthenticator(page)
+  test('the bootstrapped passkey user can sign back in with the same passkey', async ({ page }) => {
+    const auth = await addVirtualAuthenticator(page)
+    const saved = JSON.parse(readFileSync(PASSKEY_CREDENTIAL_STATE, 'utf-8'))
+    await importCredential(auth, saved.credential)
 
     await page.goto('/login')
-    await page.getByRole('button', { name: 'New here? Create an account with a passkey' }).click()
-    await page.locator('#passkey-email').fill(`e2e-passkey-${Date.now()}@ownscale.test`)
-    await page.getByRole('button', { name: 'Continue with passkey' }).click()
+    await page.getByRole('button', { name: 'Sign in with a passkey' }).click()
+    try {
+      await expect(page.getByRole('button', { name: 'Logout' })).toBeVisible({ timeout: 15_000 })
+    } catch (err) {
+      // This test relies on global.setup.ts's bootstrap having already
+      // registered PASSKEY_IDENTITY and saved a *currently valid* credential.
+      throw new Error(
+        `sign-in with the saved passkey credential failed; re-run global.setup.ts's bootstrap ` +
+        `(or delete ${PASSKEY_CREDENTIAL_STATE} to force it to re-register) if the backend's ` +
+        `database was reset since that credential was saved: ${err}`,
+      )
+    }
 
-    await expect(page.getByRole('button', { name: 'Logout' })).toBeVisible({ timeout: 60_000 })
+    const session = await page.request.get('/api/session').then(r => r.json())
+    expect(session.user?.Email).toBe(PASSKEY_IDENTITY_EMAIL)
   })
 })
