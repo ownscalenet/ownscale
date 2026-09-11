@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -166,6 +167,17 @@ func (h *Handlers) decodeJSONBody(w http.ResponseWriter, r *http.Request, v any)
 		return false
 	}
 	return true
+}
+
+func (h *Handlers) decodeJSONBodyOptional(r *http.Request, v any) error {
+	if r.Body == nil {
+		return nil
+	}
+	err := json.NewDecoder(r.Body).Decode(v)
+	if errors.Is(err, io.EOF) {
+		return nil
+	}
+	return err
 }
 
 // RenameMachine handles POST /api/machines/{id}/rename.

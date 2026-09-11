@@ -139,7 +139,10 @@ func TestServerIntegration(t *testing.T) {
 		}
 	})
 
-	h := handlers.New(queries, ctl, baseDomain, t.TempDir(), nil, logger, config.DerpConfig{}, config.ProvisionerConfig{})
+	h, err := handlers.New(queries, ctl, baseDomain, t.TempDir(), nil, logger, config.DerpConfig{}, config.ProvisionerConfig{})
+	if err != nil {
+		t.Fatalf("handlers.New: %v", err)
+	}
 	auth.Setup("test-session-secret-at-least-32-bytes-long")
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
 		return auth.RequireAuthAPI(queries.Queries, next)

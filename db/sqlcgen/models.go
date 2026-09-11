@@ -71,3 +71,18 @@ type User struct {
 	Role            string
 	HeadscaleUserID sql.NullString
 }
+
+type WebauthnCredential struct {
+	ID              string
+	UserID          string
+	CredentialID    []byte
+	PublicKey       []byte
+	AttestationType string
+	Transports      string
+	SignCount       int64
+	BackupEligible  int64
+	BackupState     int64
+	Name            string
+	CreatedAt       time.Time
+	LastUsedAt      sql.NullTime
+}

@@ -24,7 +24,10 @@ import (
 func newMembersTestHandlers(t *testing.T, roles ...string) (*Handlers, *dbpkg.TxQueries, []sqlcgen.User) {
 	t.Helper()
 	queries := newTestQueries(t)
-	h := New(queries, nil, "", "", nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{})
+	h, err := New(queries, nil, "", "", nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 	// Simulate headscale being unreachable; tests needing real linking
 	// override h.hs with a Registry wrapping a fakeClientMinter below.
 	h.hs = headscaleclient.NewRegistry(&fakeClientMinter{err: errors.New("headscale unreachable")})

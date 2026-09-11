@@ -41,7 +41,10 @@ func newTestQueries(t *testing.T) *dbpkg.TxQueries {
 func newTestMux(t *testing.T) http.Handler {
 	t.Helper()
 	queries := newTestQueries(t)
-	h := handlers.New(queries, nil, "", "", nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{})
+	h, err := handlers.New(queries, nil, "", "", nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{})
+	if err != nil {
+		t.Fatalf("handlers.New: %v", err)
+	}
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
 		return auth.RequireAuthAPI(queries.Queries, next)
 	}
@@ -69,7 +72,10 @@ func TestNewMuxProtectedRoutesRequireAuth(t *testing.T) {
 
 func TestNewMuxUnmatchedPathFallsBackToStatic(t *testing.T) {
 	queries := newTestQueries(t)
-	h := handlers.New(queries, nil, "", "", nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{})
+	h, err := handlers.New(queries, nil, "", "", nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{})
+	if err != nil {
+		t.Fatalf("handlers.New: %v", err)
+	}
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
 		return auth.RequireAuthAPI(queries.Queries, next)
 	}
@@ -95,7 +101,10 @@ func TestNewMuxUnmatchedPathFallsBackToStatic(t *testing.T) {
 
 func TestNewMuxAuthenticatedSession(t *testing.T) {
 	queries := newTestQueries(t)
-	h := handlers.New(queries, nil, "", "", nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{})
+	h, err := handlers.New(queries, nil, "", "", nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{})
+	if err != nil {
+		t.Fatalf("handlers.New: %v", err)
+	}
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
 		return auth.RequireAuthAPI(queries.Queries, next)
 	}

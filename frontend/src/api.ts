@@ -2,6 +2,13 @@
 // All calls are same-origin and rely on the session cookie set by the
 // server-driven OAuth flow (see /auth/{provider}).
 
+import type {
+  PublicKeyCredentialCreationOptionsJSON,
+  PublicKeyCredentialRequestOptionsJSON,
+  RegistrationResponseJSON,
+  AuthenticationResponseJSON,
+} from '@simplewebauthn/browser'
+
 export interface User {
   ID: string
   OrganizationID: { String: string; Valid: boolean }
@@ -378,4 +385,67 @@ export function createFunnelRoute(params: CreateFunnelRouteParams) {
 
 export function deleteFunnelRoute(id: string) {
   return request<{ ok: boolean }>(`/api/funnel/${id}`, { method: 'DELETE' })
+}
+
+export interface Passkey {
+  id: string
+  name: string
+  createdAt: string
+  lastUsedAt: string | null
+}
+
+export function listPasskeys(signal?: AbortSignal) {
+  return request<{ passkeys: Passkey[] }>('/api/passkeys', { signal })
+}
+
+export function deletePasskey(id: string) {
+  return request<{ ok: boolean }>(`/api/passkeys/${id}`, { method: 'DELETE' })
+}
+
+// The passkey register/login begin+finish endpoints return/accept the raw
+// go-webauthn JSON shapes (PublicKeyCredentialCreationOptions wrapped in
+// "publicKey", and the browser's attestation/assertion response
+// respectively) rather than an app-specific envelope, so they're typed as
+// unknown here and passed straight through to lib/webauthn.ts.
+
+export function passkeyRegisterBegin(email: string, next?: string) {
+  return request<{ publicKey: PublicKeyCredentialCreationOptionsJSON }>(
+    '/api/passkey/register/begin',
+    { method: 'POST', body: JSON.stringify({ email, next }) },
+  )
+}
+
+export function passkeyRegisterFinish(response: RegistrationResponseJSON) {
+  return request<void>('/api/passkey/register/finish', {
+    method: 'POST',
+    body: JSON.stringify(response),
+  })
+}
+
+export function passkeyLoginBegin(next?: string) {
+  return request<{ publicKey: PublicKeyCredentialRequestOptionsJSON }>('/api/passkey/login/begin', {
+    method: 'POST',
+    body: JSON.stringify({ next }),
+  })
+}
+
+export function passkeyLoginFinish(response: AuthenticationResponseJSON) {
+  return request<void>('/api/passkey/login/finish', {
+    method: 'POST',
+    body: JSON.stringify(response),
+  })
+}
+
+export function passkeyAddBegin(name: string) {
+  return request<{ publicKey: PublicKeyCredentialCreationOptionsJSON }>(
+    '/api/passkeys/register/begin',
+    { method: 'POST', body: JSON.stringify({ name }) },
+  )
+}
+
+export function passkeyAddFinish(response: RegistrationResponseJSON) {
+  return request<{ passkey: Passkey }>('/api/passkeys/register/finish', {
+    method: 'POST',
+    body: JSON.stringify(response),
+  })
 }

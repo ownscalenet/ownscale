@@ -20,7 +20,7 @@ const (
 )
 
 // DefaultSeedSubdomains is a predictable list of orgs.
-var DefaultSeedSubdomains = []string{"aaaa", "bbbb", "cccc"}
+var DefaultSeedSubdomains = []string{"aaaa", "bbbb", "cccc", "dddd", "eeee", "ffff"}
 
 // Provisioner keeps a small pool of fully-provisioned, not-yet-assigned
 // organizations ready to hand out.

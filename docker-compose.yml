@@ -62,6 +62,7 @@ services:
       OWNSCALE_DERP_REGION_CODE: ${OWNSCALE_DERP_REGION_CODE:-custom}
       OWNSCALE_DERP_REGION_NAME: ${OWNSCALE_DERP_REGION_NAME:-Ownscale DERP}
       OWNSCALE_PROVISIONER_QUEUE_CAPACITY: ${OWNSCALE_PROVISIONER_QUEUE_CAPACITY:-0}
+      OWNSCALE_PROVISIONER_MAX_ORGS: ${OWNSCALE_PROVISIONER_MAX_ORGS:-0}
       # Inject litestream's vars too because we use litestream to verify dbs
       # against the replication backups (an to restore, in case they're missing/dirty)
       LITESTREAM_REPLICA_URL: ${LITESTREAM_REPLICA_URL:-}

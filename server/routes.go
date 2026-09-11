@@ -46,6 +46,16 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	mux.HandleFunc("GET /api/invites/{token}", h.GetInvitePreview) // public: preview before login
 	mux.HandleFunc("POST /api/invites/{token}/accept", requireAuthAPI(h.AcceptInvite))
 
+	mux.HandleFunc("POST /api/passkey/register/begin", h.PasskeyRegisterBegin)
+	mux.HandleFunc("POST /api/passkey/register/finish", h.PasskeyRegisterFinish)
+	mux.HandleFunc("POST /api/passkey/login/begin", h.PasskeyLoginBegin)
+	mux.HandleFunc("POST /api/passkey/login/finish", h.PasskeyLoginFinish)
+
+	mux.HandleFunc("GET /api/passkeys", requireAuthAPI(h.ListPasskeys))
+	mux.HandleFunc("POST /api/passkeys/register/begin", requireAuthAPI(h.PasskeyAddBegin))
+	mux.HandleFunc("POST /api/passkeys/register/finish", requireAuthAPI(h.PasskeyAddFinish))
+	mux.HandleFunc("DELETE /api/passkeys/{id}", requireAuthAPI(h.DeletePasskey))
+
 	mux.HandleFunc("GET /api/access-control", requireAuthAPI(h.RequireActiveOrg(h.RequireHeadscaleClient(h.GetAccessControlPolicy))))
 	mux.HandleFunc("PUT /api/access-control", requireAuthAPI(h.RequireActiveOrg(h.RequireHeadscaleClient(h.UpdateAccessControlPolicy))))
 	mux.HandleFunc("POST /api/hujson/format", requireAuthAPI(h.FormatHuJSON))

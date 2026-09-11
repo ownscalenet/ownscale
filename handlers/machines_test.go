@@ -218,7 +218,10 @@ func activeOrgUserWithPolicy(t *testing.T, h *Handlers, queries *dbpkg.TxQueries
 func newMachinesTestHandlers(t *testing.T) (*Handlers, *dbpkg.TxQueries) {
 	t.Helper()
 	queries := newTestQueries(t)
-	h := New(queries, nil, "", "", nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{})
+	h, err := New(queries, nil, "", "", nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
 	return h, queries
 }
 

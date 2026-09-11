@@ -104,7 +104,10 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	h := handlers.New(queries, ctl, cfg.BaseDomain, cfg.DataDir, oidcStorage, logger, cfg.Derp, cfg.Provisioner)
+	h, err := handlers.New(queries, ctl, cfg.BaseDomain, cfg.DataDir, oidcStorage, logger, cfg.Derp, cfg.Provisioner)
+	if err != nil {
+		return err
+	}
 	defer h.Close()
 
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {

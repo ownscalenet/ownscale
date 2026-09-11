@@ -7,11 +7,14 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/go-webauthn/webauthn/webauthn"
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/auth/oidcprovider"
+	"github.com/ownscalenet/ownscale/auth/passkey"
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/derrors"
 	"github.com/ownscalenet/ownscale/dockerctl"
 	"github.com/ownscalenet/ownscale/funnelproxy"
 	"github.com/ownscalenet/ownscale/headscaleclient"
@@ -19,14 +22,16 @@ import (
 )
 
 type Handlers struct {
-	queries     *db.TxQueries
-	orgs        *orgs.Service
-	provisioner *orgs.Provisioner
-	hs          *headscaleclient.Registry
-	baseDomain  string
-	oidc        *oidcprovider.Storage
-	logger      *slog.Logger
-	funnel      *funnelproxy.Pool
+	queries         *db.TxQueries
+	orgs            *orgs.Service
+	provisioner     *orgs.Provisioner
+	hs              *headscaleclient.Registry
+	baseDomain      string
+	oidc            *oidcprovider.Storage
+	logger          *slog.Logger
+	funnel          *funnelproxy.Pool
+	webauthn        *webauthn.WebAuthn
+	passkeySessions *passkeyCeremonyStore
 }
 
 // New builds the Handlers, wiring queries/ctl/baseDomain into the
@@ -34,24 +39,51 @@ type Handlers struct {
 // that runs provisioning in the background. dataDir is used only to give
 // the funnel proxy's per-organization tsnet.Server instances a stable
 // state directory (see funnelproxy.NewPool); pass "" in tests that never
-// exercise funnel routing.
-func New(queries *db.TxQueries, ctl *dockerctl.Ctl, baseDomain, dataDir string, oidc *oidcprovider.Storage, logger *slog.Logger, derpCfg config.DerpConfig, provisionerCfg config.ProvisionerConfig) *Handlers {
+// exercise funnel routing. Returns an error if the WebAuthn relying party
+// cannot be configured.
+func New(
+	queries *db.TxQueries,
+	ctl *dockerctl.Ctl,
+	baseDomain, dataDir string,
+	oidc *oidcprovider.Storage,
+	logger *slog.Logger,
+	derpCfg config.DerpConfig,
+	provisionerCfg config.ProvisionerConfig) (_ *Handlers, err error) {
+	defer derrors.Wrap(&err, "handlers.New(%q)", baseDomain)
+
 	issuer := ""
 	if oidc != nil {
 		issuer = oidc.Issuer()
 	}
 	orgSvc := orgs.NewService(queries, ctl, baseDomain, issuer, derpCfg)
 	hs := headscaleclient.NewRegistry(ctl)
-	return &Handlers{
-		queries:     queries,
-		baseDomain:  baseDomain,
-		oidc:        oidc,
-		logger:      logger,
-		orgs:        orgSvc,
-		provisioner: orgs.NewProvisioner(orgSvc, logger, 0, provisionerCfg.QueueCapacity, provisionerCfg.MaxOrgs),
-		hs:          hs,
-		funnel:      funnelproxy.NewPool(queries, hs, dataDir, logger),
+
+	// The console is served on a single baseDomain (per-org subdomains are
+	// only used for headscale/tailnet traffic, not this admin UI), so one
+	// static WebAuthn Relying Party ID/origin covers every organization.
+	// Fall back to localhost for tests/dev that run without a configured
+	// baseDomain; WebAuthn permits http://localhost as a secure context.
+	rpID, rpOrigin := baseDomain, "https://"+baseDomain
+	if rpID == "" {
+		rpID, rpOrigin = "localhost", "http://localhost"
 	}
+	wa, err := passkey.New(rpID, "Ownscale", rpOrigin)
+	if err != nil {
+		return nil, err
+	}
+
+	return &Handlers{
+		queries:         queries,
+		baseDomain:      baseDomain,
+		oidc:            oidc,
+		logger:          logger,
+		orgs:            orgSvc,
+		provisioner:     orgs.NewProvisioner(orgSvc, logger, 0, provisionerCfg.QueueCapacity, provisionerCfg.MaxOrgs),
+		hs:              hs,
+		funnel:          funnelproxy.NewPool(queries, hs, dataDir, logger),
+		webauthn:        wa,
+		passkeySessions: newPasskeyCeremonyStore(),
+	}, nil
 }
 
 // Close releases resources held by Handlers across the process's

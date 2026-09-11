@@ -132,6 +132,14 @@ func (h *Handlers) AuthCallback(w http.ResponseWriter, r *http.Request) {
 		SameSite: http.SameSiteNoneMode,
 	})
 
+	h.finishLogin(w, r, user, next)
+}
+
+// finishLogin completes a login/registration for user, regardless of which
+// auth method produced it: OAuth callback, passkey registration, or passkey login.
+func (h *Handlers) finishLogin(w http.ResponseWriter, r *http.Request, user sqlcgen.User, next string) {
+	ctx := r.Context()
+
 	// Skip auto-assignment for a user who's mid-flow accepting an invite
 	// (see AcceptInvite.tsx's /login?next=/invite/{token} redirect):
 	// otherwise they'd land back on the invite page already owning a fresh
