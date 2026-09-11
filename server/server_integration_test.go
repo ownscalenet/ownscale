@@ -198,7 +198,7 @@ func TestServerIntegration(t *testing.T) {
 		// provisioner field is private) so this test can drive it exactly
 		// like AuthCallback would.
 		orgSvc := orgs.NewService(queries, ctl, baseDomain, "", config.DerpConfig{})
-		provisioner := orgs.NewProvisioner(orgSvc, logger, 0, 1)
+		provisioner := orgs.NewProvisioner(orgSvc, logger, 0, 1, 1)
 		poolCtx, cancelPool := context.WithCancel(t.Context())
 		defer cancelPool()
 		go func() { provisioner.Run(poolCtx) }()
