@@ -9,6 +9,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -258,7 +260,7 @@ func TestGetOrCreateServerUpTimeout(t *testing.T) {
 	client, _ := newFakeUserPreAuthKeyServer(t, `{"users":[]}`)
 	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{client: client}, t.TempDir(), discardLogger())
 	pool.upTimeout = 200 * time.Millisecond
-	pool.controlURL = func(subdomain string) string { return blockServer.URL }
+	pool.controlURL = func(_ context.Context, _ string) (string, error) { return blockServer.URL, nil }
 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()
@@ -272,5 +274,36 @@ func TestGetOrCreateServerUpTimeout(t *testing.T) {
 	}
 	if elapsed > 5*time.Second {
 		t.Errorf("getOrCreateServer took %s to return, want well under upTimeout=%s plus overhead (it should not hang indefinitely)", elapsed, pool.upTimeout)
+	}
+}
+
+// TestResolveControlURLReturnsIPLiteral guards against regressing back to
+// a bare-DNS-name ControlURL: tailscale's control-dial client only
+// disables its HTTPS/443 fallback path (see forceNoise443 in
+// control/controlhttp) for a ControlURL whose host is a literal
+// private/loopback IP address, never a DNS name that merely resolves to
+// one, so resolveControlURL must always hand back an IP literal.
+func TestResolveControlURLReturnsIPLiteral(t *testing.T) {
+	got, err := resolveControlURL(t.Context(), "localhost")
+	if err != nil {
+		t.Fatalf("resolveControlURL(%q) = _, %v, want nil error", "localhost", err)
+	}
+	u, err := url.Parse(got)
+	if err != nil {
+		t.Fatalf("resolveControlURL returned an unparseable URL %q: %v", got, err)
+	}
+	if u.Scheme != "http" || u.Port() != "8080" {
+		t.Errorf("resolveControlURL(%q) = %q, want scheme http and port 8080", "localhost", got)
+	}
+	if _, err := netip.ParseAddr(u.Hostname()); err != nil {
+		t.Errorf("resolveControlURL(%q) = %q, host %q is not an IP literal: %v", "localhost", got, u.Hostname(), err)
+	}
+}
+
+// TestResolveControlURLUnresolvableHost guards against silently returning
+// a broken ControlURL when the host doesn't resolve.
+func TestResolveControlURLUnresolvableHost(t *testing.T) {
+	if _, err := resolveControlURL(t.Context(), "this-host-does-not-exist.invalid"); err == nil {
+		t.Fatal("resolveControlURL: got nil error, want a DNS resolution failure")
 	}
 }

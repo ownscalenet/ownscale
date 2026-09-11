@@ -67,7 +67,7 @@ type Pool struct {
 	upTimeout time.Duration
 	// controlURL builds the tsnet ControlURL for a subdomain; defaults
 	// to headscale's real container address via NewPool
-	controlURL func(subdomain string) string
+	controlURL func(ctx context.Context, subdomain string) (string, error)
 }
 
 // NewPool builds a Pool. dataDir is the same directory dockerctl.Ctl uses
@@ -94,10 +94,43 @@ func NewPool(queries Queries, hs HeadscaleClients, dataDir string, logger *slog.
 		logger:    logger,
 		servers:   make(map[string]*tsnet.Server),
 		upTimeout: funnelUpTimeout,
-		controlURL: func(subdomain string) string {
-			return "http://" + dockerctl.HSContainerName(subdomain) + ":8080"
+		controlURL: func(ctx context.Context, subdomain string) (string, error) {
+			return resolveControlURL(ctx, dockerctl.HSContainerName(subdomain))
 		},
 	}
+}
+
+// resolveControlURL resolves host (a Docker-network container name) to its
+// current literal IP address and returns an "http://<ip>:8080" ControlURL
+// built from that IP rather than the bare DNS name.
+//
+// ts2021.NewClient has a fallback: if the request to a controlURL fails
+// and the controlURL is not a private/loopback IP address, then subsequent
+// requests are done on HTTPS/443. The internal address of headscale, ie
+// http://hs-aaaa:8080, is not a private/loopback IP, so tailscale client
+// switches to https/443 and continuously errors.
+func resolveControlURL(ctx context.Context, host string) (_ string, err error) {
+	defer derrors.Wrap(&err, "resolveControlURL(%q)", host)
+
+	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
+	if err != nil {
+		return "", err
+	}
+	// Prefer an IPv4 address to match the Docker bridge network's address
+	// family; fall back to IPv6 only if no IPv4 address was returned.
+	var ipv6 string
+	for _, addr := range addrs {
+		if ipv4 := addr.IP.To4(); ipv4 != nil {
+			return "http://" + net.JoinHostPort(ipv4.String(), "8080"), nil
+		}
+		if ipv6 == "" {
+			ipv6 = addr.IP.String()
+		}
+	}
+	if ipv6 == "" {
+		return "", fmt.Errorf("no addresses found for %q", host)
+	}
+	return "http://" + net.JoinHostPort(ipv6, "8080"), nil
 }
 
 // Close shuts down every cached tsnet.Server. Intended to be called once,
@@ -259,11 +292,16 @@ func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *
 			return nil, fmt.Errorf("mint pre-auth key: %w", err)
 		}
 
+		controlURL, err := p.controlURL(ctx, subdomain)
+		if err != nil {
+			return nil, fmt.Errorf("resolve control URL: %w", err)
+		}
+
 		srv := &tsnet.Server{
 			Dir:        filepath.Join(p.dataDir, "funnel-tsnet", subdomain),
 			Hostname:   "funnel-" + subdomain,
 			AuthKey:    authKey,
-			ControlURL: p.controlURL(subdomain),
+			ControlURL: controlURL,
 			Logf:       tsnetLogf(p.logger, subdomain),
 			UserLogf:   tsnetLogf(p.logger, subdomain),
 		}
