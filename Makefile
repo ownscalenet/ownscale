@@ -177,6 +177,7 @@ archive: docker-image caddy-image
 		| ssh az 'mkdir -p ownscale && tar -xzf - -C ownscale --strip-components=1'
 
 purge:
+	docker compose down
 	# rm all except data/local-ca
 	sudo rm -rf data/headscale data/.litestream-backups data/.ownscale.sqlite-litestream
 	sudo rm -rf data/backup
