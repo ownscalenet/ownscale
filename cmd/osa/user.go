@@ -17,6 +17,7 @@ import (
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 // testAuthProvider is the synthetic goth provider used by "osa user login"
@@ -199,7 +200,7 @@ func loginUser(ctx context.Context, out io.Writer, queries *db.TxQueries, email,
 		if err != nil {
 			return fmt.Errorf("get organization: %w", err)
 		}
-		if org.Status != "active" {
+		if org.Status != orgs.StatusActive {
 			return fmt.Errorf("organization %q is not active yet (status %q)", orgSubdomain, org.Status)
 		}
 		if err := queries.SetUserOrganizationAndRole(ctx, sqlcgen.SetUserOrganizationAndRoleParams{

@@ -14,6 +14,7 @@ import (
 
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 // insertUser inserts a user row directly via queries and returns it,
@@ -209,7 +210,7 @@ func TestLoginUser(t *testing.T) {
 		_, queries := newTestDB(t)
 		org := insertOrg(t, queries, "acme")
 		if _, err := queries.UpdateOrganizationStatus(t.Context(), sqlcgen.UpdateOrganizationStatusParams{
-			Status: "active",
+			Status: orgs.StatusActive,
 			ID:     org.ID,
 		}); err != nil {
 			t.Fatalf("UpdateOrganizationStatus: %v", err)
@@ -265,14 +266,14 @@ func TestLoginUser(t *testing.T) {
 		_, queries := newTestDB(t)
 		firstOrg := insertOrg(t, queries, "first-org")
 		if _, err := queries.UpdateOrganizationStatus(t.Context(), sqlcgen.UpdateOrganizationStatusParams{
-			Status: "active",
+			Status: orgs.StatusActive,
 			ID:     firstOrg.ID,
 		}); err != nil {
 			t.Fatalf("UpdateOrganizationStatus: %v", err)
 		}
 		secondOrg := insertOrg(t, queries, "second-org")
 		if _, err := queries.UpdateOrganizationStatus(t.Context(), sqlcgen.UpdateOrganizationStatusParams{
-			Status: "active",
+			Status: orgs.StatusActive,
 			ID:     secondOrg.ID,
 		}); err != nil {
 			t.Fatalf("UpdateOrganizationStatus: %v", err)

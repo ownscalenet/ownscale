@@ -11,6 +11,7 @@ import (
 
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/headscaleclient"
+	"github.com/ownscalenet/ownscale/orgs"
 	"github.com/tailscale/hujson"
 )
 
@@ -28,7 +29,7 @@ func (h *Handlers) resolveHeadscaleClient(r *http.Request) (_ *headscaleclient.C
 	if err != nil {
 		return nil, false, err
 	}
-	if org.Status != "active" {
+	if org.Status != orgs.StatusActive {
 		return nil, true, nil
 	}
 

@@ -171,8 +171,8 @@ func TestCreateOrganization(t *testing.T) {
 		if err != nil {
 			t.Fatalf("GetOrganizationBySubdomain: expected the row to still exist, got err %v", err)
 		}
-		if org.Status != "failed" {
-			t.Errorf("status = %q, want %q", org.Status, "failed")
+		if org.Status != orgs.StatusFailed {
+			t.Errorf("status = %q, want %q", org.Status, orgs.StatusFailed)
 		}
 	})
 

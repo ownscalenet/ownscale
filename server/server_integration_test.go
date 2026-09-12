@@ -211,8 +211,8 @@ func TestServerIntegration(t *testing.T) {
 		}
 		subdomain = org.Subdomain
 
-		if org.Status != "active" {
-			t.Errorf("organization.status = %q, want %q", org.Status, "active")
+		if org.Status != orgs.StatusActive {
+			t.Errorf("organization.status = %q, want %q", org.Status, orgs.StatusActive)
 		}
 		if err := queries.SetUserOrganizationAndRole(t.Context(), sqlcgen.SetUserOrganizationAndRoleParams{
 			OrganizationID: sql.NullString{String: org.ID, Valid: true},

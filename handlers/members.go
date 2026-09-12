@@ -6,6 +6,7 @@ import (
 
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 // member is the JSON shape of an org member returned by ListMembers. The
@@ -48,7 +49,7 @@ func (h *Handlers) resolveActiveOrg(w http.ResponseWriter, r *http.Request) (cal
 		h.serverError(w, err)
 		return nil, sqlcgen.Organization{}, false, false
 	}
-	if o.Status != "active" {
+	if o.Status != orgs.StatusActive {
 		return c, o, true, true
 	}
 	return c, o, false, true

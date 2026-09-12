@@ -188,8 +188,8 @@ func TestServiceProvisionRemovesContainerOnFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetOrganization: %v", err)
 	}
-	if got.Status != "failed" {
-		t.Errorf("org.Status = %q, want %q", got.Status, "failed")
+	if got.Status != StatusFailed {
+		t.Errorf("org.Status = %q, want %q", got.Status, StatusFailed)
 	}
 
 	wantContainer := dockerctl.HSContainerName("acme")

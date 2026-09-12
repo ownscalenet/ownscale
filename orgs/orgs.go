@@ -99,7 +99,7 @@ func (s *Service) Provision(ctx context.Context, orgID string) (err error) {
 	// (e.g. a duplicate Signal, or a signal racing a poll tick): once an
 	// organization is active (or has permanently failed), there's nothing
 	// left to do.
-	if org.Status != "pending" {
+	if org.Status != StatusPending {
 		return nil
 	}
 
@@ -110,7 +110,7 @@ func (s *Service) Provision(ctx context.Context, orgID string) (err error) {
 		}
 		if _, statusErr := s.queries.UpdateOrganizationStatus(ctx, sqlcgen.UpdateOrganizationStatusParams{
 			ID:     orgID,
-			Status: "failed",
+			Status: StatusFailed,
 		}); statusErr != nil {
 			return fmt.Errorf("%w (also failed to record failed status: %w)", err, statusErr)
 		}
@@ -119,7 +119,7 @@ func (s *Service) Provision(ctx context.Context, orgID string) (err error) {
 
 	if _, err := s.queries.UpdateOrganizationStatus(ctx, sqlcgen.UpdateOrganizationStatusParams{
 		ID:     orgID,
-		Status: "active",
+		Status: StatusActive,
 	}); err != nil {
 		return fmt.Errorf("mark organization active: %w", err)
 	}
@@ -210,7 +210,7 @@ func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organ
 	if err := s.Provision(ctx, org.ID); err != nil {
 		return org, err
 	}
-	org.Status = "active"
+	org.Status = StatusActive
 	return org, nil
 }
 
@@ -229,3 +229,16 @@ func randomAlphaNum(n int) (_ string, err error) {
 	}
 	return "os" + string(suffix), nil
 }
+
+// Organization lifecycle statuses. These must stay in sync with the CHECK
+// constraint added to that column in migrations.
+const (
+	// StatusPending is the initial status of an organization that has
+	// only been recorded in the database (see Service.CreatePending) but
+	// not yet provisioned.
+	StatusPending = "pending"
+	// StatusActive is set once an organization has been fully provisioned.
+	StatusActive = "active"
+	// StatusFailed is set if provisioning an organization fails permanently.
+	StatusFailed = "failed"
+)

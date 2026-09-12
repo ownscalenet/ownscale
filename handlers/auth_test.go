@@ -9,6 +9,7 @@ import (
 
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/orgs"
 
 	"github.com/markbates/goth"
 	"github.com/markbates/goth/gothic"
@@ -226,8 +227,8 @@ func TestAuthCallbackAutoAssignsOrganization(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetOrganization: %v", err)
 	}
-	if org.Status != "active" {
-		t.Errorf("organization status = %q, want %q", org.Status, "active")
+	if org.Status != orgs.StatusActive {
+		t.Errorf("organization status = %q, want %q", org.Status, orgs.StatusActive)
 	}
 	if !randomSubdomainRe.MatchString(org.Subdomain) {
 		t.Errorf("organization subdomain = %q, want match for %s", org.Subdomain, randomSubdomainRe)

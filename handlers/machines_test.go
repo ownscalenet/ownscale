@@ -20,6 +20,7 @@ import (
 	dbpkg "github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/headscaleclient"
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 // fakeClientMinter is a headscaleclient.ClientMinter test double that
@@ -195,7 +196,7 @@ func activeOrgUserWithPolicy(t *testing.T, h *Handlers, queries *dbpkg.TxQueries
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
-	if _, err := queries.UpdateOrganizationStatus(t.Context(), sqlcgen.UpdateOrganizationStatusParams{ID: org.ID, Status: "active"}); err != nil {
+	if _, err := queries.UpdateOrganizationStatus(t.Context(), sqlcgen.UpdateOrganizationStatusParams{ID: org.ID, Status: orgs.StatusActive}); err != nil {
 		t.Fatalf("UpdateOrganizationStatus: %v", err)
 	}
 	if err := queries.SetUserOrganization(t.Context(), sqlcgen.SetUserOrganizationParams{

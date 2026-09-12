@@ -71,8 +71,8 @@ func TestProvisionerTakeReturnsProvisionedOrganization(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Take: %v", err)
 	}
-	if org.Status != "active" {
-		t.Errorf("org.Status = %q, want %q", org.Status, "active")
+	if org.Status != StatusActive {
+		t.Errorf("org.Status = %q, want %q", org.Status, StatusActive)
 	}
 }
 
@@ -98,8 +98,8 @@ func TestProvisionerReplenishesAfterTake(t *testing.T) {
 	if first.ID == second.ID {
 		t.Errorf("second Take returned the same organization as the first: %q", first.ID)
 	}
-	if second.Status != "active" {
-		t.Errorf("second.Status = %q, want %q", second.Status, "active")
+	if second.Status != StatusActive {
+		t.Errorf("second.Status = %q, want %q", second.Status, StatusActive)
 	}
 }
 
@@ -125,8 +125,8 @@ func TestProvisionerRecoversPendingOnStart(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Take: %v", err)
 	}
-	if org.Status != "active" {
-		t.Errorf("org.Status = %q, want %q", org.Status, "active")
+	if org.Status != StatusActive {
+		t.Errorf("org.Status = %q, want %q", org.Status, StatusActive)
 	}
 	if org.Subdomain != "acme" {
 		t.Errorf("Take returned org %q, want acme", org.Subdomain)

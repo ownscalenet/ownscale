@@ -190,7 +190,7 @@ func (h *Handlers) Session(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) ensureCallerHeadscaleUser(r *http.Request, user *sqlcgen.User, org sqlcgen.Organization) {
-	if user.HeadscaleUserID.Valid || org.Status != "active" {
+	if user.HeadscaleUserID.Valid || org.Status != orgs.StatusActive {
 		return
 	}
 	client, notConfigured, err := h.resolveHeadscaleClient(r)
