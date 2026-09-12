@@ -963,6 +963,61 @@ func TestRestartHeadscaleRestartsTheRightContainer(t *testing.T) {
 	}
 }
 
+// TestRestartHeadscaleWaitsForHealthy verifies RestartHeadscale doesn't
+// return until the container reports Docker-healthy again after the
+// restart, not just "started".
+func TestRestartHeadscaleWaitsForHealthy(t *testing.T) {
+	var inspectCalls int
+	api := &dockerfake.API{
+		ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+			inspectCalls++
+			status := container.Starting
+			if inspectCalls >= 3 {
+				status = container.Healthy
+			}
+			return container.InspectResponse{
+				ContainerJSONBase: &container.ContainerJSONBase{
+					State: &container.State{Status: "running", Health: &container.Health{Status: status}},
+				},
+			}, nil
+		},
+	}
+	ctl := newTestCtl(t, api, t.TempDir(), "")
+	t.Cleanup(func() { _ = ctl.Close() })
+	ctl.healthCheckPollInterval = time.Millisecond
+
+	if err := ctl.RestartHeadscale(t.Context(), "acme"); err != nil {
+		t.Fatalf("RestartHeadscale: %v", err)
+	}
+	if inspectCalls < 3 {
+		t.Errorf("ContainerInspect called %d times, want at least 3 (waiting for healthy)", inspectCalls)
+	}
+}
+
+// TestRestartHeadscaleFailsWhenNeverHealthy verifies RestartHeadscale
+// returns an error if the container never becomes healthy again within
+// the health-check timeout, instead of returning as soon as it merely
+// restarts.
+func TestRestartHeadscaleFailsWhenNeverHealthy(t *testing.T) {
+	api := &dockerfake.API{
+		ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+			return container.InspectResponse{
+				ContainerJSONBase: &container.ContainerJSONBase{
+					State: &container.State{Status: "running", Health: &container.Health{Status: container.Starting}},
+				},
+			}, nil
+		},
+	}
+	ctl := newTestCtl(t, api, t.TempDir(), "")
+	t.Cleanup(func() { _ = ctl.Close() })
+	ctl.healthCheckPollInterval = time.Millisecond
+	ctl.healthCheckTimeout = 10 * time.Millisecond
+
+	if err := ctl.RestartHeadscale(t.Context(), "acme"); err == nil {
+		t.Fatal("RestartHeadscale: want error when container never becomes healthy, got nil")
+	}
+}
+
 // newProvisionedTestCtl provisions organization "acme" (so its
 // config.yaml exists on disk to patch) and returns a Ctl plus a pointer to
 // the list of restarted container names.

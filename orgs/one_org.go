@@ -20,8 +20,11 @@ import (
 
 // applyHeadscaleConfigTimeout bounds the background context used for
 // applyHeadscaleConfig's write/restart tail (see SetAuthRestrictions/
-// SetDNSSettings), once decoupled from the HTTP request's context.
-const applyHeadscaleConfigTimeout = 30 * time.Second
+// SetDNSSettings), once decoupled from the HTTP request's context. It
+// must comfortably cover WriteConfigYAML + ConfigTest + the DB write +
+// RestartHeadscale, which itself now blocks until headscale reports
+// healthy again after the restart.
+const applyHeadscaleConfigTimeout = 45 * time.Second
 
 // OrgService holds methods for operating with a single organization.
 type OrgService struct {

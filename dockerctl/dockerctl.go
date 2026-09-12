@@ -914,8 +914,12 @@ func (c *Ctl) StartOrganization(ctx context.Context, subdomain string) (err erro
 func (c *Ctl) RestartHeadscale(ctx context.Context, subdomain string) (err error) {
 	defer derrors.Wrap(&err, "c.RestartHeadscale(%q)", subdomain)
 
-	if err := c.cli.ContainerRestart(ctx, HSContainerName(subdomain), container.StopOptions{}); err != nil {
+	name := HSContainerName(subdomain)
+	if err := c.cli.ContainerRestart(ctx, name, container.StopOptions{}); err != nil {
 		return fmt.Errorf("restart container: %w", err)
+	}
+	if err := c.waitForHealthy(ctx, name); err != nil {
+		return fmt.Errorf("wait for healthy after restart: %w", err)
 	}
 	return nil
 }
