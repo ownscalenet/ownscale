@@ -19,9 +19,18 @@ function Cheatsheet() {
       <div className="card-body">
         <h2 className="card-title">Cheatsheet</h2>
         <p className="text-sm text-base-content/70">
-          The allowlist is HuJSON (JSON with comments and trailing commas allowed). It restricts
-          which OIDC-authenticated users can join this organization. Leave a list empty (or omit its
-          key) to not restrict on that field.
+          The allowlist is{' '}
+          <a
+            className="link"
+            href="https://nigeltao.github.io/blog/2021/json-with-commas-comments.html"
+            target="_blank"
+            rel="noreferrer"
+          >
+            JWCC
+          </a>{' '}
+          (JSON with comments and trailing commas allowed).
+          It restricts which OIDC-authenticated users can join this organization.
+          Leave a list empty (or omit its key) to not restrict on that field.
         </p>
 
         <div className="divider my-2">Top-level keys</div>

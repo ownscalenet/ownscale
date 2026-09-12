@@ -81,12 +81,12 @@ func (o *OrgService) applyHeadscaleConfig(ctx context.Context, txQueries *sqlcge
 const AuthRestrictionsConfigKey = "oidc_restrictions"
 
 const defaultAuthRestrictions = `{
-  // Lines starting with // are comments.
-  // Leave comments for future reference or explanations about the settings.
-  "domains": [],
-  "groups": [],
-  "users": [],
+	// Start a line with // to leave a comment.
+	"domains": [],
+	"groups":  [],
+	"users":   [],
 }
+
 `
 
 type authRestrictions struct {

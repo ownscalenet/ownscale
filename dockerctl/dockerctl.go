@@ -489,8 +489,7 @@ oidc:
 // defaultACLPolicy is the HuJSON access control policy shown as a placeholder
 // when an organization has no policy configured yet in headscale's database.
 const defaultACLPolicy = `{
-    // Lines starting with // are comments.
-    // Leave comments for future reference or explanations about the settings.
+    // Start a line with // to leave a comment.
 	// See https://headscale.net/stable/ref/acls/ for the full HuJSON syntax.
 	"acls": [
 		{

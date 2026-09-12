@@ -22,13 +22,23 @@ function Cheatsheet() {
           The policy is{' '}
           <a
             className="link"
-            href="https://headscale.net/stable/ref/acls/"
+            href="https://nigeltao.github.io/blog/2021/json-with-commas-comments.html"
             target="_blank"
             rel="noreferrer"
           >
-            HuJSON
+            JWCC
           </a>{' '}
           (JSON with comments and trailing commas allowed).
+          Check the{' '}
+          <a
+            className="link"
+            href="https://headscale.net/stable/ref/policy/"
+            target="_blank"
+            rel="noreferrer"
+          >
+            full reference
+          </a>{' '}
+            for what is achievable using policies
         </p>
 
         <div className="divider my-2">Top-level keys</div>

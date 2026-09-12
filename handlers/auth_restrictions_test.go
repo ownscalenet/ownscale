@@ -36,13 +36,13 @@ func TestGetAuthRestrictionsDefaultsToEmpty(t *testing.T) {
 		t.Errorf("couldn't parse: %v", err)
 	}
 	// For some reason, empty array has a leading space.
-	if c := content.Find("/domains").String(); c != " []" {
+	if c := content.Find("/domains").String(); strings.TrimSpace(c) != "[]" {
 		t.Errorf("expected domains [], got %v", c)
 	}
-	if c := content.Find("/groups").String(); c != " []" {
+	if c := content.Find("/groups").String(); strings.TrimSpace(c) != "[]" {
 		t.Errorf("expected groups [], got %v", c)
 	}
-	if c := content.Find("/users").String(); c != " []" {
+	if c := content.Find("/users").String(); strings.TrimSpace(c) != "[]" {
 		t.Errorf("expected users [], got %v", c)
 	}
 }
