@@ -1,7 +1,7 @@
 -- +goose Up
 CREATE TABLE users (
     id TEXT PRIMARY KEY,
-    organization_id TEXT REFERENCES organizations(id) ON DELETE SET NULL,
+    organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
     provider TEXT NOT NULL,
     provider_user_id TEXT NOT NULL,
     email TEXT NOT NULL,

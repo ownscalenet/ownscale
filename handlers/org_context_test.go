@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -13,9 +12,9 @@ import (
 )
 
 // TestRequireActiveOrgShortCircuits covers RequireActiveOrg's guard: an
-// unauthenticated caller gets 401, a caller with no organization gets 409
-// (from callerAndOrg), and a pending (not yet provisioned) organization
-// gets 409+notConfigured -- in all three cases next is never called.
+// unauthenticated caller gets 401, and a pending (not yet provisioned)
+// organization gets 409+notConfigured -- in both cases next is never
+// called.
 func TestRequireActiveOrgShortCircuits(t *testing.T) {
 	h, queries := newTestHandlers(t, true)
 
@@ -25,7 +24,7 @@ func TestRequireActiveOrgShortCircuits(t *testing.T) {
 	}
 	pendingUser := insertUser(t, queries)
 	if err := queries.SetUserOrganizationAndRole(t.Context(), sqlcgen.SetUserOrganizationAndRoleParams{
-		OrganizationID: sql.NullString{String: pendingOrg.ID, Valid: true},
+		OrganizationID: pendingOrg.ID,
 		Role:           RoleOwner,
 		ID:             pendingUser.ID,
 	}); err != nil {
@@ -36,8 +35,6 @@ func TestRequireActiveOrgShortCircuits(t *testing.T) {
 		t.Fatalf("GetUserByID: %v", err)
 	}
 
-	noOrgUser := insertUser(t, queries)
-
 	cases := []struct {
 		name       string
 		req        *http.Request
@@ -47,11 +44,6 @@ func TestRequireActiveOrgShortCircuits(t *testing.T) {
 			name:       "unauthenticated",
 			req:        httptest.NewRequest(http.MethodGet, "/api/access-control", nil),
 			wantStatus: http.StatusUnauthorized,
-		},
-		{
-			name:       "no organization",
-			req:        withTestUser(httptest.NewRequest(http.MethodGet, "/api/access-control", nil), noOrgUser),
-			wantStatus: http.StatusConflict,
 		},
 		{
 			name:       "pending organization",
@@ -133,48 +125,26 @@ func TestRequireActiveOrgCallsNextForActiveOrg(t *testing.T) {
 }
 
 // TestRequireHeadscaleClientShortCircuits covers RequireHeadscaleClient's
-// guard: no organization and a mint-key failure both short-circuit with
-// 409+notConfigured without calling next.
+// guard: a mint-key failure short-circuits with 409+notConfigured without
+// calling next.
 func TestRequireHeadscaleClientShortCircuits(t *testing.T) {
-	t.Run("no organization", func(t *testing.T) {
-		h, queries := newMachinesTestHandlers(t)
-		h.hs = headscaleclient.NewRegistry(&fakeClientMinter{})
-		user := insertUser(t, queries)
+	h, queries := newMachinesTestHandlers(t)
+	user, _, _ := activeOrgUser(t, h, queries)
+	h.hs = headscaleclient.NewRegistry(&fakeClientMinter{err: errors.New("mint failed")})
 
-		nextCalled := false
-		next := func(http.ResponseWriter, *http.Request) { nextCalled = true }
+	nextCalled := false
+	next := func(http.ResponseWriter, *http.Request) { nextCalled = true }
 
-		req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/machines", nil), user)
-		rec := httptest.NewRecorder()
-		h.RequireHeadscaleClient(next)(rec, req)
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/machines", nil), user)
+	rec := httptest.NewRecorder()
+	h.RequireHeadscaleClient(next)(rec, req)
 
-		if rec.Code != http.StatusConflict {
-			t.Errorf("status = %d, want 409, body=%s", rec.Code, rec.Body.String())
-		}
-		if nextCalled {
-			t.Error("next was called, want short-circuit")
-		}
-	})
-
-	t.Run("mint key fails", func(t *testing.T) {
-		h, queries := newMachinesTestHandlers(t)
-		user, _, _ := activeOrgUser(t, h, queries)
-		h.hs = headscaleclient.NewRegistry(&fakeClientMinter{err: errors.New("mint failed")})
-
-		nextCalled := false
-		next := func(http.ResponseWriter, *http.Request) { nextCalled = true }
-
-		req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/machines", nil), user)
-		rec := httptest.NewRecorder()
-		h.RequireHeadscaleClient(next)(rec, req)
-
-		if rec.Code != http.StatusConflict {
-			t.Errorf("status = %d, want 409, body=%s", rec.Code, rec.Body.String())
-		}
-		if nextCalled {
-			t.Error("next was called, want short-circuit")
-		}
-	})
+	if rec.Code != http.StatusConflict {
+		t.Errorf("status = %d, want 409, body=%s", rec.Code, rec.Body.String())
+	}
+	if nextCalled {
+		t.Error("next was called, want short-circuit")
+	}
 }
 
 func TestRequireHeadscaleClientCallsNextWithClient(t *testing.T) {

@@ -24,10 +24,18 @@ func newTestQueries(t *testing.T) *sqlcgen.Queries {
 	return queries.Queries
 }
 
-// insertUser inserts a user row directly and returns it.
+// insertUser inserts a fresh organization and a user row owning it, and
+// returns the user.
 func insertUser(t *testing.T, queries *sqlcgen.Queries) sqlcgen.User {
 	t.Helper()
 	id := xid.New().String()
+	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
+		ID:        xid.New().String(),
+		Subdomain: id,
+	})
+	if err != nil {
+		t.Fatalf("insertUser: CreateOrganization: %v", err)
+	}
 	user, err := queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
 		ID:             id,
 		Provider:       "oidc",
@@ -35,6 +43,8 @@ func insertUser(t *testing.T, queries *sqlcgen.Queries) sqlcgen.User {
 		Email:          id + "@example.com",
 		Name:           "Test User",
 		AvatarUrl:      "",
+		OrganizationID: org.ID,
+		Role:           "owner",
 	})
 	if err != nil {
 		t.Fatalf("insertUser: %v", err)

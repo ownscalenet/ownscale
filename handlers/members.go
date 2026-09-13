@@ -21,40 +21,39 @@ type member struct {
 }
 
 // callerAndOrg resolves the authenticated caller's *sqlcgen.User and their
-// organization ID, writing a 401/409 response (and returning ok=false) if
-// the caller isn't authenticated or has no organization.
-func (h *Handlers) callerAndOrg(w http.ResponseWriter, r *http.Request) (caller *sqlcgen.User, orgID string, ok bool) {
+// organization, writing a 401 response (and returning ok=false) if the
+// caller isn't authenticated. On success, req is r with its context
+// enriched by h.withOrgLogger so downstream logging (including any further
+// h.serverError call using req) is annotated with the organization's
+// subdomain.
+func (h *Handlers) callerAndOrg(w http.ResponseWriter, r *http.Request) (caller *sqlcgen.User, org sqlcgen.Organization, req *http.Request, ok bool) {
 	user, authed := auth.UserFromContext(r.Context())
 	if !authed {
 		h.writeError(w, http.StatusUnauthorized, "unauthenticated")
-		return nil, "", false
+		return nil, sqlcgen.Organization{}, r, false
 	}
-	if !user.OrganizationID.Valid {
-		h.writeError(w, http.StatusConflict, "user does not belong to an organization")
-		return nil, "", false
+	o, err := h.queries.GetOrganization(r.Context(), user.OrganizationID)
+	if err != nil {
+		h.serverError(w, r, err)
+		return nil, sqlcgen.Organization{}, r, false
 	}
-	return user, user.OrganizationID.String, true
+	r = r.WithContext(h.withOrgLogger(r.Context(), o.Subdomain))
+	return user, o, r, true
 }
 
 // resolveActiveOrg resolves the caller and their organization (via
 // callerAndOrg), reporting notConfigured if the org isn't operational yet
 // (still pending, or failed -- but not merely mid a settings-save
 // restart, see orgs.IsOperational).
-func (h *Handlers) resolveActiveOrg(w http.ResponseWriter, r *http.Request) (caller *sqlcgen.User, org sqlcgen.Organization, notConfigured bool, ok bool) {
-	c, orgID, callerOk := h.callerAndOrg(w, r)
+func (h *Handlers) resolveActiveOrg(w http.ResponseWriter, r *http.Request) (caller *sqlcgen.User, org sqlcgen.Organization, req *http.Request, notConfigured bool, ok bool) {
+	c, o, r, callerOk := h.callerAndOrg(w, r)
 	if !callerOk {
-		return nil, sqlcgen.Organization{}, false, false
-	}
-
-	o, err := h.queries.GetOrganization(r.Context(), orgID)
-	if err != nil {
-		h.serverError(w, err)
-		return nil, sqlcgen.Organization{}, false, false
+		return nil, sqlcgen.Organization{}, r, false, false
 	}
 	if !orgs.IsOperational(o.Status) {
-		return c, o, true, true
+		return c, o, r, true, true
 	}
-	return c, o, false, true
+	return c, o, r, false, true
 }
 
 // toMember converts u into its JSON representation.
@@ -66,18 +65,18 @@ func toMember(u sqlcgen.User) member {
 // caller's organization, plus whether the caller can manage members
 // (owner/admin).
 func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
-	caller, orgID, ok := h.callerAndOrg(w, r)
+	caller, org, r, ok := h.callerAndOrg(w, r)
 	if !ok {
 		return
 	}
 
-	users, err := h.queries.ListUsersByOrganization(r.Context(), sql.NullString{String: orgID, Valid: true})
+	users, err := h.queries.ListUsersByOrganization(r.Context(), org.ID)
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 
-	if client, notConfigured, err := h.resolveHeadscaleClient(r); err == nil && !notConfigured {
+	if client, _, notConfigured, err := h.resolveHeadscaleClient(r); err == nil && !notConfigured {
 		claimed := claimedHeadscaleUserIDs(users)
 		for i, u := range users {
 			if u.HeadscaleUserID.Valid {
@@ -117,7 +116,7 @@ func (h *Handlers) targetMember(w http.ResponseWriter, r *http.Request, orgID st
 		h.writeError(w, http.StatusNotFound, "member not found")
 		return sqlcgen.User{}, false
 	}
-	if !target.OrganizationID.Valid || target.OrganizationID.String != orgID {
+	if target.OrganizationID != orgID {
 		h.writeError(w, http.StatusNotFound, "member not found")
 		return sqlcgen.User{}, false
 	}
@@ -129,7 +128,7 @@ func (h *Handlers) targetMember(w http.ResponseWriter, r *http.Request, orgID st
 // must go through TransferOwnership instead, so both the target's current
 // role and the requested role are rejected here if either is "owner".
 func (h *Handlers) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
-	caller, orgID, ok := h.callerAndOrg(w, r)
+	caller, org, r, ok := h.callerAndOrg(w, r)
 	if !ok {
 		return
 	}
@@ -137,7 +136,7 @@ func (h *Handlers) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusForbidden, "only owners and admins can change member roles")
 		return
 	}
-	target, ok := h.targetMember(w, r, orgID)
+	target, ok := h.targetMember(w, r, org.ID)
 	if !ok {
 		return
 	}
@@ -156,7 +155,7 @@ func (h *Handlers) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.queries.UpdateUserRole(r.Context(), sqlcgen.UpdateUserRoleParams{Role: req.Role, ID: target.ID}); err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -166,11 +165,12 @@ func (h *Handlers) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 // remove a member, and the owner can't be removed this way -- ownership
 // must be transferred first (see TransferOwnership), which protects
 // against ever leaving an organization without an owner. Removing a member
-// only clears their organization membership (role/link); it does not
-// delete their ownscale account, which is recreated on their next login
-// should they be re-invited.
+// deletes their ownscale account outright (organization_id is NOT NULL, so
+// there's no "member with no org" state to leave them in); a genuinely
+// fresh account (with its own freshly pool-assigned organization, or the
+// invited organization) is created the next time they log in.
 func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
-	caller, orgID, ok := h.callerAndOrg(w, r)
+	caller, org, r, ok := h.callerAndOrg(w, r)
 	if !ok {
 		return
 	}
@@ -178,7 +178,7 @@ func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusForbidden, "only owners and admins can remove members")
 		return
 	}
-	target, ok := h.targetMember(w, r, orgID)
+	target, ok := h.targetMember(w, r, org.ID)
 	if !ok {
 		return
 	}
@@ -186,8 +186,8 @@ func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusBadRequest, "transfer ownership before removing the owner")
 		return
 	}
-	if err := h.queries.RemoveUserFromOrganization(r.Context(), target.ID); err != nil {
-		h.serverError(w, err)
+	if err := h.queries.DeleteUser(r.Context(), target.ID); err != nil {
+		h.serverError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -197,7 +197,7 @@ func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
 // current owner may call it; it promotes the given member to owner and
 // demotes the caller to admin, so there's always exactly one owner.
 func (h *Handlers) TransferOwnership(w http.ResponseWriter, r *http.Request) {
-	caller, orgID, ok := h.callerAndOrg(w, r)
+	caller, org, r, ok := h.callerAndOrg(w, r)
 	if !ok {
 		return
 	}
@@ -212,7 +212,7 @@ func (h *Handlers) TransferOwnership(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	r.SetPathValue("id", req.MemberID)
-	target, ok := h.targetMember(w, r, orgID)
+	target, ok := h.targetMember(w, r, org.ID)
 	if !ok {
 		return
 	}
@@ -221,11 +221,11 @@ func (h *Handlers) TransferOwnership(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.queries.UpdateUserRole(r.Context(), sqlcgen.UpdateUserRoleParams{Role: RoleOwner, ID: target.ID}); err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	if err := h.queries.UpdateUserRole(r.Context(), sqlcgen.UpdateUserRoleParams{Role: RoleAdmin, ID: caller.ID}); err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

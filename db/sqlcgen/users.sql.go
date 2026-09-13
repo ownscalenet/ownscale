@@ -15,7 +15,7 @@ const countOwnersInOrganization = `-- name: CountOwnersInOrganization :one
 SELECT COUNT(*) FROM users WHERE organization_id = ? AND role = 'owner'
 `
 
-func (q *Queries) CountOwnersInOrganization(ctx context.Context, organizationID sql.NullString) (int64, error) {
+func (q *Queries) CountOwnersInOrganization(ctx context.Context, organizationID string) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countOwnersInOrganization, organizationID)
 	var count int64
 	err := row.Scan(&count)
@@ -23,13 +23,15 @@ func (q *Queries) CountOwnersInOrganization(ctx context.Context, organizationID 
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (id, provider, provider_user_id, email, name, avatar_url, email_verified)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO users (id, organization_id, role, provider, provider_user_id, email, name, avatar_url, email_verified)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, organization_id, provider, provider_user_id, email, name, avatar_url, created_at, updated_at, email_verified, last_login_at, role, headscale_user_id
 `
 
 type CreateUserParams struct {
 	ID             string
+	OrganizationID string
+	Role           string
 	Provider       string
 	ProviderUserID string
 	Email          string
@@ -41,6 +43,8 @@ type CreateUserParams struct {
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
 	row := q.db.QueryRowContext(ctx, createUser,
 		arg.ID,
+		arg.OrganizationID,
+		arg.Role,
 		arg.Provider,
 		arg.ProviderUserID,
 		arg.Email,
@@ -149,7 +153,7 @@ const listUsersByOrganization = `-- name: ListUsersByOrganization :many
 SELECT id, organization_id, provider, provider_user_id, email, name, avatar_url, created_at, updated_at, email_verified, last_login_at, role, headscale_user_id FROM users WHERE organization_id = ? ORDER BY created_at
 `
 
-func (q *Queries) ListUsersByOrganization(ctx context.Context, organizationID sql.NullString) ([]User, error) {
+func (q *Queries) ListUsersByOrganization(ctx context.Context, organizationID string) ([]User, error) {
 	rows, err := q.db.QueryContext(ctx, listUsersByOrganization, organizationID)
 	if err != nil {
 		return nil, err
@@ -195,7 +199,7 @@ ORDER BY organizations.subdomain, users.email
 
 type ListUsersWithOrganizationRow struct {
 	ID              string
-	OrganizationID  sql.NullString
+	OrganizationID  string
 	Provider        string
 	ProviderUserID  string
 	Email           string
@@ -248,35 +252,12 @@ func (q *Queries) ListUsersWithOrganization(ctx context.Context) ([]ListUsersWit
 	return items, nil
 }
 
-const removeUserFromOrganization = `-- name: RemoveUserFromOrganization :exec
-UPDATE users SET organization_id = NULL, role = 'member', headscale_user_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-`
-
-func (q *Queries) RemoveUserFromOrganization(ctx context.Context, id string) error {
-	_, err := q.db.ExecContext(ctx, removeUserFromOrganization, id)
-	return err
-}
-
-const setUserOrganization = `-- name: SetUserOrganization :exec
-UPDATE users SET organization_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-`
-
-type SetUserOrganizationParams struct {
-	OrganizationID sql.NullString
-	ID             string
-}
-
-func (q *Queries) SetUserOrganization(ctx context.Context, arg SetUserOrganizationParams) error {
-	_, err := q.db.ExecContext(ctx, setUserOrganization, arg.OrganizationID, arg.ID)
-	return err
-}
-
 const setUserOrganizationAndRole = `-- name: SetUserOrganizationAndRole :exec
 UPDATE users SET organization_id = ?, role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
 `
 
 type SetUserOrganizationAndRoleParams struct {
-	OrganizationID sql.NullString
+	OrganizationID string
 	Role           string
 	ID             string
 }

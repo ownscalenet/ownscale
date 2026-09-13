@@ -39,7 +39,7 @@ func testStorage(t *testing.T) (*Storage, *sqlcgen.Queries) {
 	return storage, queries
 }
 
-func insertTestUser(t *testing.T, queries *sqlcgen.Queries) sqlcgen.User {
+func insertTestUser(t *testing.T, queries *sqlcgen.Queries, orgID string) sqlcgen.User {
 	t.Helper()
 	id := xid.New().String()
 	user, err := queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
@@ -50,6 +50,8 @@ func insertTestUser(t *testing.T, queries *sqlcgen.Queries) sqlcgen.User {
 		Name:           "Test User",
 		AvatarUrl:      "https://example.com/avatar.png",
 		EmailVerified:  1,
+		OrganizationID: orgID,
+		Role:           "owner",
 	})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
@@ -158,7 +160,7 @@ func TestUserClaimsAdapter(t *testing.T) {
 	storage, queries := testStorage(t)
 	org := insertTestOrg(t, queries)
 	clientRow, _ := insertTestClient(t, queries, org.ID)
-	user := insertTestUser(t, queries)
+	user := insertTestUser(t, queries, org.ID)
 
 	userInfo := new(oidc.UserInfo)
 	if err := storage.SetUserinfoFromRequest(t.Context(), userInfo, testIDTokenRequest{

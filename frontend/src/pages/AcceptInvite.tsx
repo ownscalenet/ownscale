@@ -1,29 +1,20 @@
 import { useEffect, useState } from 'react'
-import { Navigate, useNavigate, useParams } from 'react-router-dom'
+import { Navigate, useParams } from 'react-router-dom'
 import { useAuth } from '../auth'
-import {
-  acceptInvite,
-  getInvitePreview,
-  isAbortError,
-  isOrgOperational,
-  type InvitePreview,
-} from '../api'
+import { getInvitePreview, isAbortError, type InvitePreview } from '../api'
 import { usePageTitle } from '../hooks/usePageTitle'
 
 // AcceptInvite is the /invite/:token landing page. An unauthenticated
 // visitor is sent through /login?next=/invite/:token (mirroring Login.tsx's
 // existing next= redirect pattern) so they come right back here once
-// signed in; a visitor who already belongs to an organization can't accept
-// (ownscale supports one organization per user today).
+// signed in.
 export default function AcceptInvite() {
   usePageTitle('Accept Invite')
   const { token } = useParams<{ token: string }>()
-  const { user, organization, loading, refresh } = useAuth()
-  const navigate = useNavigate()
+  const { user, organization, loading } = useAuth()
 
   const [preview, setPreview] = useState<InvitePreview | null>(null)
   const [error, setError] = useState<string | null>(null)
-  const [accepting, setAccepting] = useState(false)
 
   useEffect(() => {
     if (!token) return
@@ -49,21 +40,13 @@ export default function AcceptInvite() {
     return <Navigate to={`/login?next=${encodeURIComponent(`/invite/${token}`)}`} replace />
   }
 
-  const alreadyInOrg = user.OrganizationID.Valid && isOrgOperational(organization?.Status)
+  const orgSubdomain = organization?.Domain.split('.')[0]
+  const joinedInvitedOrg = !!preview && orgSubdomain === preview.organizationName
 
-  const handleAccept = async () => {
-    if (!token) return
-    setAccepting(true)
-    setError(null)
-    try {
-      await acceptInvite(token)
-      await refresh()
-      navigate('/')
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setAccepting(false)
-    }
+  // A successful join needs no further confirmation step -- send the user
+  // straight into the console.
+  if (joinedInvitedOrg) {
+    return <Navigate to="/" replace />
   }
 
   return (
@@ -78,30 +61,11 @@ export default function AcceptInvite() {
             </div>
           )}
 
-          {alreadyInOrg ? (
+          {preview ? (
             <p className="text-base-content/70">
-              You already belong to an organization. You must leave it before accepting a new
-              invite.
+              This invite doesn&rsquo;t apply to your account (it may be for a different
+              organization, already used, or no longer valid).
             </p>
-          ) : preview ? (
-            preview.valid ? (
-              <>
-                <p className="mb-6 text-base-content/70">
-                  You&rsquo;ve been invited to join <strong>{preview.organizationName}</strong> as{' '}
-                  <strong>{preview.role.replace('_', ' ')}</strong>.
-                </p>
-                <button
-                  type="button"
-                  className="btn btn-primary"
-                  disabled={accepting}
-                  onClick={() => void handleAccept()}
-                >
-                  Accept invite
-                </button>
-              </>
-            ) : (
-              <p className="text-base-content/70">This invite is no longer valid.</p>
-            )
           ) : (
             !error && <span className="loading loading-spinner"></span>
           )}

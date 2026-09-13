@@ -16,7 +16,7 @@ func (h *Handlers) GetAuthRestrictions(w http.ResponseWriter, r *http.Request) {
 
 	content, err := h.orgs.ForOrg(org).GetAuthRestrictions(r.Context())
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]any{
@@ -49,7 +49,7 @@ func (h *Handlers) UpdateAuthRestrictions(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := h.orgs.ForOrg(org).SetAuthRestrictions(r.Context(), req.Content); err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

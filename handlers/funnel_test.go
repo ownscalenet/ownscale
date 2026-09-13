@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -179,7 +178,7 @@ func TestDeleteFunnelRouteRequiresManagerAndScopesToOrg(t *testing.T) {
 	}
 	otherOwner := insertUser(t, h.queries)
 	if err := h.queries.SetUserOrganizationAndRole(t.Context(), sqlcgen.SetUserOrganizationAndRoleParams{
-		OrganizationID: sql.NullString{String: otherOrg.ID, Valid: true},
+		OrganizationID: otherOrg.ID,
 		Role:           RoleOwner,
 		ID:             otherOwner.ID,
 	}); err != nil {

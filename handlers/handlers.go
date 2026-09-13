@@ -138,8 +138,8 @@ func (h *Handlers) writeError(w http.ResponseWriter, status int, msg string) {
 	h.writeJSON(w, status, map[string]string{"error": msg})
 }
 
-func (h *Handlers) serverError(w http.ResponseWriter, err error) {
-	h.logger.Error("request failed", "error", err)
+func (h *Handlers) serverError(w http.ResponseWriter, r *http.Request, err error) {
+	h.loggerFromContext(r.Context()).Error("request failed", "error", err)
 	h.writeError(w, http.StatusInternalServerError, "internal server error")
 }
 
@@ -160,10 +160,7 @@ func (h *Handlers) toOrganizationResponse(org sqlcgen.Organization) organization
 // Session returns the currently authenticated user, plus their
 // organization (including its provisioning status), as JSON. It is mounted
 // behind auth.RequireAuthAPI, so reaching this handler implies a user is
-// present in the request context. "organization" is null for a user who
-// hasn't created one yet; otherwise the SPA polls this endpoint after
-// organization creation until status becomes "active" (see
-// CreateOrganization/orgs.Provisioner).
+// present in the request context.
 func (h *Handlers) Session(w http.ResponseWriter, r *http.Request) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
@@ -171,38 +168,31 @@ func (h *Handlers) Session(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var org *sqlcgen.Organization
-	if user.OrganizationID.Valid {
-		o, err := h.queries.GetOrganization(r.Context(), user.OrganizationID.String)
-		if err != nil {
-			h.serverError(w, err)
-			return
-		}
-		org = &o
-		h.ensureCallerHeadscaleUser(r, user, o)
+	org, err := h.queries.GetOrganization(r.Context(), user.OrganizationID)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
 	}
+	h.ensureCallerHeadscaleUser(r, user, org)
 
-	var orgResp any
-	if org != nil {
-		orgResp = h.toOrganizationResponse(*org)
-	}
-	h.writeJSON(w, http.StatusOK, map[string]any{"user": user, "organization": orgResp})
+	h.writeJSON(w, http.StatusOK, map[string]any{"user": user, "organization": h.toOrganizationResponse(org)})
 }
 
 func (h *Handlers) ensureCallerHeadscaleUser(r *http.Request, user *sqlcgen.User, org sqlcgen.Organization) {
 	if user.HeadscaleUserID.Valid || org.Status != orgs.StatusActive {
 		return
 	}
-	client, notConfigured, err := h.resolveHeadscaleClient(r)
+	logger := h.logger.With("org", org.Subdomain)
+	client, _, notConfigured, err := h.resolveHeadscaleClient(r)
 	if err != nil || notConfigured {
 		return
 	}
 	members, err := h.queries.ListUsersByOrganization(r.Context(), user.OrganizationID)
 	if err != nil {
-		h.logger.Warn("list organization members for headscale user linking", "error", err)
+		logger.Warn("list organization members for headscale user linking", "error", err)
 		return
 	}
 	if _, err := h.ensureHeadscaleUser(r.Context(), client, *user, claimedHeadscaleUserIDs(members)); err != nil {
-		h.logger.Warn("ensure headscale user", "user_id", user.ID, "error", err)
+		logger.Warn("ensure headscale user", "user_id", user.ID, "error", err)
 	}
 }

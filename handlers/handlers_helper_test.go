@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"database/sql"
 	"io"
 	"log/slog"
 	"net/http"
@@ -102,26 +101,11 @@ func withHeadscaleClient(req *http.Request, client *headscaleclient.Client) *htt
 	return req.WithContext(ctx)
 }
 
-// insertUser inserts a user row directly and returns it.
+// insertUser inserts a user row, together with a freshly created
+// organization it owns (every user always belongs to one), and returns
+// the user.
 func insertUser(t *testing.T, queries *dbpkg.TxQueries) sqlcgen.User {
 	t.Helper()
-	id := xid.New().String()
-	user, err := queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
-		ID:             id,
-		Provider:       "oidc",
-		ProviderUserID: id,
-		Email:          id + "@example.com",
-		Name:           "Test User",
-	})
-	if err != nil {
-		t.Fatalf("insertUser: %v", err)
-	}
-	return user
-}
-
-func insertUserWithOrg(t *testing.T, queries *dbpkg.TxQueries) sqlcgen.User {
-	t.Helper()
-	user := insertUser(t, queries)
 	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
 		ID:        xid.New().String(),
 		Subdomain: "acme-" + xid.New().String(),
@@ -129,16 +113,18 @@ func insertUserWithOrg(t *testing.T, queries *dbpkg.TxQueries) sqlcgen.User {
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
-	if err := queries.SetUserOrganizationAndRole(t.Context(), sqlcgen.SetUserOrganizationAndRoleParams{
-		OrganizationID: sql.NullString{String: org.ID, Valid: true},
+	id := xid.New().String()
+	user, err := queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
+		ID:             id,
+		OrganizationID: org.ID,
 		Role:           RoleOwner,
-		ID:             user.ID,
-	}); err != nil {
-		t.Fatalf("SetUserOrganizationAndRole: %v", err)
-	}
-	user, err = queries.GetUserByID(t.Context(), user.ID)
+		Provider:       "oidc",
+		ProviderUserID: id,
+		Email:          id + "@example.com",
+		Name:           "Test User",
+	})
 	if err != nil {
-		t.Fatalf("GetUserByID: %v", err)
+		t.Fatalf("insertUser: %v", err)
 	}
 	return user
 }

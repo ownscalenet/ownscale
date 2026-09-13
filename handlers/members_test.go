@@ -46,7 +46,7 @@ func newMembersTestHandlers(t *testing.T, roles ...string) (*Handlers, *dbpkg.Tx
 	for _, role := range roles {
 		u := insertUser(t, queries)
 		if err := queries.SetUserOrganizationAndRole(t.Context(), sqlcgen.SetUserOrganizationAndRoleParams{
-			OrganizationID: sql.NullString{String: org.ID, Valid: true},
+			OrganizationID: org.ID,
 			Role:           role,
 			ID:             u.ID,
 		}); err != nil {
@@ -309,12 +309,8 @@ func TestRemoveMember(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
 	}
-	got, err := queries.GetUserByID(t.Context(), target.ID)
-	if err != nil {
-		t.Fatalf("GetUserByID: %v", err)
-	}
-	if got.OrganizationID.Valid {
-		t.Errorf("expected organization to be cleared, got %+v", got.OrganizationID)
+	if _, err := queries.GetUserByID(t.Context(), target.ID); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("GetUserByID after remove: err = %v, want sql.ErrNoRows (account should be deleted)", err)
 	}
 }
 

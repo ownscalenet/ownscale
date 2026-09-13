@@ -215,7 +215,7 @@ func TestServerIntegration(t *testing.T) {
 			t.Errorf("organization.status = %q, want %q", org.Status, orgs.StatusActive)
 		}
 		if err := queries.SetUserOrganizationAndRole(t.Context(), sqlcgen.SetUserOrganizationAndRoleParams{
-			OrganizationID: sql.NullString{String: org.ID, Valid: true},
+			OrganizationID: org.ID,
 			Role:           "owner",
 			ID:             user.ID,
 		}); err != nil {

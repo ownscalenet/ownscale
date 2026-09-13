@@ -1,6 +1,6 @@
 -- name: CreateUser :one
-INSERT INTO users (id, provider, provider_user_id, email, name, avatar_url, email_verified)
-VALUES (?, ?, ?, ?, ?, ?, ?)
+INSERT INTO users (id, organization_id, role, provider, provider_user_id, email, name, avatar_url, email_verified)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetUserByProvider :one
@@ -11,9 +11,6 @@ SELECT * FROM users WHERE id = ?;
 
 -- name: DeleteUser :exec
 DELETE FROM users WHERE id = ?;
-
--- name: SetUserOrganization :exec
-UPDATE users SET organization_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
 
 -- name: SetUserOrganizationAndRole :exec
 UPDATE users SET organization_id = ?, role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
@@ -35,9 +32,6 @@ UPDATE users SET headscale_user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id 
 
 -- name: UnlinkUserHeadscaleUser :exec
 UPDATE users SET headscale_user_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
-
--- name: RemoveUserFromOrganization :exec
-UPDATE users SET organization_id = NULL, role = 'member', headscale_user_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
 
 -- name: CountOwnersInOrganization :one
 SELECT COUNT(*) FROM users WHERE organization_id = ? AND role = 'owner';

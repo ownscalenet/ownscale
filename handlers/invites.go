@@ -9,7 +9,6 @@ import (
 
 	"github.com/rs/xid"
 
-	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/derrors"
 )
@@ -58,7 +57,7 @@ func randomToken() (_ string, err error) {
 // it just returns the invite (including its token) for the caller to share
 // the /invite/{token} link out-of-band.
 func (h *Handlers) CreateInvite(w http.ResponseWriter, r *http.Request) {
-	caller, orgID, ok := h.callerAndOrg(w, r)
+	caller, org, r, ok := h.callerAndOrg(w, r)
 	if !ok {
 		return
 	}
@@ -83,7 +82,7 @@ func (h *Handlers) CreateInvite(w http.ResponseWriter, r *http.Request) {
 
 	token, err := randomToken()
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -94,7 +93,7 @@ func (h *Handlers) CreateInvite(w http.ResponseWriter, r *http.Request) {
 
 	inv, err := h.queries.CreateInvite(r.Context(), sqlcgen.CreateInviteParams{
 		ID:             xid.New().String(),
-		OrganizationID: orgID,
+		OrganizationID: org.ID,
 		Email:          email,
 		Role:           req.Role,
 		Token:          token,
@@ -102,7 +101,7 @@ func (h *Handlers) CreateInvite(w http.ResponseWriter, r *http.Request) {
 		ExpiresAt:      time.Now().Add(inviteTokenTTL),
 	})
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusCreated, map[string]any{"invite": toInvite(inv)})
@@ -111,7 +110,7 @@ func (h *Handlers) CreateInvite(w http.ResponseWriter, r *http.Request) {
 // ListInvites handles GET /api/invites. Admin/owner only; returns every
 // pending (not yet accepted) invite for the caller's organization.
 func (h *Handlers) ListInvites(w http.ResponseWriter, r *http.Request) {
-	caller, orgID, ok := h.callerAndOrg(w, r)
+	caller, org, r, ok := h.callerAndOrg(w, r)
 	if !ok {
 		return
 	}
@@ -119,9 +118,9 @@ func (h *Handlers) ListInvites(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusForbidden, "only owners and admins can view invites")
 		return
 	}
-	invites, err := h.queries.ListInvitesByOrganization(r.Context(), orgID)
+	invites, err := h.queries.ListInvitesByOrganization(r.Context(), org.ID)
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	out := make([]invite, 0, len(invites))
@@ -134,7 +133,7 @@ func (h *Handlers) ListInvites(w http.ResponseWriter, r *http.Request) {
 // DeleteInvite handles DELETE /api/invites/{id}. Admin/owner only; revokes
 // a pending invite (accepted or not) so its token stops working.
 func (h *Handlers) DeleteInvite(w http.ResponseWriter, r *http.Request) {
-	caller, orgID, ok := h.callerAndOrg(w, r)
+	caller, org, r, ok := h.callerAndOrg(w, r)
 	if !ok {
 		return
 	}
@@ -148,12 +147,12 @@ func (h *Handlers) DeleteInvite(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusNotFound, "invite not found")
 		return
 	}
-	if inv.OrganizationID != orgID {
+	if inv.OrganizationID != org.ID {
 		h.writeError(w, http.StatusNotFound, "invite not found")
 		return
 	}
 	if err := h.queries.DeleteInvite(r.Context(), id); err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -172,7 +171,7 @@ func (h *Handlers) GetInvitePreview(w http.ResponseWriter, r *http.Request) {
 	}
 	org, err := h.queries.GetOrganization(r.Context(), inv.OrganizationID)
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	valid := !inv.AcceptedAt.Valid && inv.ExpiresAt.After(time.Now())
@@ -181,59 +180,4 @@ func (h *Handlers) GetInvitePreview(w http.ResponseWriter, r *http.Request) {
 		"organizationName": org.Subdomain,
 		"role":             inv.Role,
 	})
-}
-
-// AcceptInvite handles POST /api/invites/{token}/accept. It requires an
-// authenticated caller who doesn't already belong to an organization (the
-// same one-org-per-user constraint CreateOrganization enforces); on
-// success it attaches the caller to the invite's organization with the
-// invite's role and marks the invite accepted.
-func (h *Handlers) AcceptInvite(w http.ResponseWriter, r *http.Request) {
-	user, ok := auth.UserFromContext(r.Context())
-	if !ok {
-		h.writeError(w, http.StatusUnauthorized, "unauthenticated")
-		return
-	}
-	if user.OrganizationID.Valid {
-		h.writeError(w, http.StatusConflict, "user already belongs to an organization")
-		return
-	}
-
-	token := r.PathValue("token")
-	inv, err := h.queries.GetInviteByToken(r.Context(), token)
-	if err != nil {
-		h.writeError(w, http.StatusNotFound, "invite not found")
-		return
-	}
-	if inv.AcceptedAt.Valid {
-		h.writeError(w, http.StatusGone, "invite has already been used")
-		return
-	}
-	if inv.ExpiresAt.Before(time.Now()) {
-		h.writeError(w, http.StatusGone, "invite has expired")
-		return
-	}
-
-	if err := h.queries.SetUserOrganizationAndRole(r.Context(), sqlcgen.SetUserOrganizationAndRoleParams{
-		OrganizationID: sql.NullString{String: inv.OrganizationID, Valid: true},
-		Role:           inv.Role,
-		ID:             user.ID,
-	}); err != nil {
-		h.serverError(w, err)
-		return
-	}
-	if err := h.queries.MarkInviteAccepted(r.Context(), sqlcgen.MarkInviteAcceptedParams{
-		AcceptedByUserID: sql.NullString{String: user.ID, Valid: true},
-		ID:               inv.ID,
-	}); err != nil {
-		h.serverError(w, err)
-		return
-	}
-
-	org, err := h.queries.GetOrganization(r.Context(), inv.OrganizationID)
-	if err != nil {
-		h.serverError(w, err)
-		return
-	}
-	h.writeJSON(w, http.StatusOK, map[string]any{"organization": h.toOrganizationResponse(org)})
 }

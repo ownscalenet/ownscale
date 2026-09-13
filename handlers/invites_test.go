@@ -82,7 +82,7 @@ func TestGetInvitePreview(t *testing.T) {
 
 	inv, err := queries.CreateInvite(t.Context(), sqlcgen.CreateInviteParams{
 		ID:             xid.New().String(),
-		OrganizationID: owner.OrganizationID.String,
+		OrganizationID: owner.OrganizationID,
 		Role:           RoleMember,
 		Token:          "test-token",
 		CreatedBy:      owner.ID,
@@ -116,7 +116,7 @@ func TestGetInvitePreviewExpired(t *testing.T) {
 
 	inv, err := queries.CreateInvite(t.Context(), sqlcgen.CreateInviteParams{
 		ID:             xid.New().String(),
-		OrganizationID: owner.OrganizationID.String,
+		OrganizationID: owner.OrganizationID,
 		Role:           RoleMember,
 		Token:          "expired-token",
 		CreatedBy:      owner.ID,
@@ -141,94 +141,13 @@ func TestGetInvitePreviewExpired(t *testing.T) {
 	}
 }
 
-func TestAcceptInvite(t *testing.T) {
-	h, queries, users := newMembersTestHandlers(t, RoleOwner)
-	owner := users[0]
-
-	inv, err := queries.CreateInvite(t.Context(), sqlcgen.CreateInviteParams{
-		ID:             xid.New().String(),
-		OrganizationID: owner.OrganizationID.String,
-		Role:           RoleMember,
-		Token:          "accept-token",
-		CreatedBy:      owner.ID,
-		ExpiresAt:      time.Now().Add(24 * time.Hour),
-	})
-	if err != nil {
-		t.Fatalf("CreateInvite: %v", err)
-	}
-
-	newUser := insertUser(t, queries)
-	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodPost, "/api/invites/accept-token/accept", nil), newUser), "token", inv.Token)
-	rec := httptest.NewRecorder()
-	h.AcceptInvite(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
-	}
-	got, err := queries.GetUserByID(t.Context(), newUser.ID)
-	if err != nil {
-		t.Fatalf("GetUserByID: %v", err)
-	}
-	if got.Role != RoleMember || got.OrganizationID.String != owner.OrganizationID.String {
-		t.Errorf("unexpected user after accept: %+v", got)
-	}
-
-	acceptedInv, err := queries.GetInvite(t.Context(), inv.ID)
-	if err != nil {
-		t.Fatalf("GetInvite: %v", err)
-	}
-	if !acceptedInv.AcceptedAt.Valid {
-		t.Error("expected invite to be marked accepted")
-	}
-}
-
-func TestAcceptInviteRejectsExistingOrgMember(t *testing.T) {
-	h, _, users := newMembersTestHandlers(t, RoleOwner, RoleMember)
-	owner, alreadyMember := users[0], users[1]
-
-	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodPost, "/api/invites/whatever/accept", nil), alreadyMember), "token", "whatever")
-	rec := httptest.NewRecorder()
-	h.AcceptInvite(rec, req)
-
-	if rec.Code != http.StatusConflict {
-		t.Fatalf("status = %d, want 409: %s", rec.Code, rec.Body)
-	}
-	_ = owner
-}
-
-func TestAcceptInviteRejectsExpired(t *testing.T) {
-	h, queries, users := newMembersTestHandlers(t, RoleOwner)
-	owner := users[0]
-
-	inv, err := queries.CreateInvite(t.Context(), sqlcgen.CreateInviteParams{
-		ID:             xid.New().String(),
-		OrganizationID: owner.OrganizationID.String,
-		Role:           RoleMember,
-		Token:          "expired-accept",
-		CreatedBy:      owner.ID,
-		ExpiresAt:      time.Now().Add(-time.Hour),
-	})
-	if err != nil {
-		t.Fatalf("CreateInvite: %v", err)
-	}
-
-	newUser := insertUser(t, queries)
-	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodPost, "/api/invites/expired-accept/accept", nil), newUser), "token", inv.Token)
-	rec := httptest.NewRecorder()
-	h.AcceptInvite(rec, req)
-
-	if rec.Code != http.StatusGone {
-		t.Fatalf("status = %d, want 410: %s", rec.Code, rec.Body)
-	}
-}
-
 func TestDeleteInvite(t *testing.T) {
 	h, queries, users := newMembersTestHandlers(t, RoleOwner)
 	owner := users[0]
 
 	inv, err := queries.CreateInvite(t.Context(), sqlcgen.CreateInviteParams{
 		ID:             xid.New().String(),
-		OrganizationID: owner.OrganizationID.String,
+		OrganizationID: owner.OrganizationID,
 		Role:           RoleMember,
 		Token:          "delete-me",
 		CreatedBy:      owner.ID,

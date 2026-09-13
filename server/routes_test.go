@@ -112,12 +112,21 @@ func TestNewMuxAuthenticatedSession(t *testing.T) {
 
 	auth.Setup("test-session-secret-at-least-32-bytes-long")
 	id := xid.New().String()
+	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
+		ID:        xid.New().String(),
+		Subdomain: id,
+	})
+	if err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
 	user, err := queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
 		ID:             id,
 		Provider:       "oidc",
 		ProviderUserID: id,
 		Email:          id + "@example.com",
 		Name:           "Test User",
+		OrganizationID: org.ID,
+		Role:           "owner",
 	})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)

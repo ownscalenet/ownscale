@@ -1,14 +1,17 @@
 package handlers
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/auth/oidcprovider"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/derrors"
 
 	"github.com/markbates/goth"
 	"github.com/markbates/goth/gothic"
@@ -32,6 +35,86 @@ const nextCookieMaxAge = 10 * 60 // 10 minutes, in seconds
 
 func isInviteAcceptPath(next string) bool {
 	return strings.HasPrefix(next, "/invite/")
+}
+
+// inviteTokenFromNext extracts the invite token from a next path of the
+// form "/invite/{token}" (see AcceptInvite.tsx's /login?next=... redirect).
+func inviteTokenFromNext(next string) (token string, ok bool) {
+	if !isInviteAcceptPath(next) {
+		return "", false
+	}
+	token = strings.TrimPrefix(next, "/invite/")
+	if token == "" {
+		return "", false
+	}
+	return token, true
+}
+
+type inviteInvalidError struct{ msg string }
+
+func (e *inviteInvalidError) Error() string { return e.msg }
+
+// createNewUser creates a brand-new user row, always with a resolved
+// organization and role: either the invite's organization+role (when next
+// points at an invite-accept path, consuming the invite atomically with
+// user creation), or a freshly pool-assigned organization with the owner role.
+func (h *Handlers) createNewUser(ctx context.Context, params sqlcgen.CreateUserParams, next string) (_ sqlcgen.User, err error) {
+	defer derrors.Wrap(&err, "h.createNewUser(%q)", next)
+
+	token, isInvite := inviteTokenFromNext(next)
+	if !isInvite {
+		org, err := h.provisioner.Take(ctx)
+		if err != nil {
+			return sqlcgen.User{}, err
+		}
+		params.OrganizationID = org.ID
+		params.Role = RoleOwner
+		return h.queries.CreateUser(ctx, params)
+	}
+
+	inv, err := h.queries.GetInviteByToken(ctx, token)
+	if errors.Is(err, sql.ErrNoRows) {
+		return sqlcgen.User{}, &inviteInvalidError{"invite not found"}
+	}
+	if err != nil {
+		return sqlcgen.User{}, err
+	}
+	if inv.AcceptedAt.Valid {
+		return sqlcgen.User{}, &inviteInvalidError{"invite has already been used"}
+	}
+	if inv.ExpiresAt.Before(time.Now()) {
+		return sqlcgen.User{}, &inviteInvalidError{"invite has expired"}
+	}
+	params.OrganizationID = inv.OrganizationID
+	params.Role = inv.Role
+
+	txQueries, commit, rollback, err := h.queries.StartTx(ctx)
+	if err != nil {
+		return sqlcgen.User{}, err
+	}
+	defer rollback()
+
+	// The user row must exist before accepted_by_user_id can reference
+	// it, so create the user first.
+	user, err := txQueries.CreateUser(ctx, params)
+	if err != nil {
+		return sqlcgen.User{}, err
+	}
+
+	n, err := txQueries.MarkInviteAcceptedIfPending(ctx, sqlcgen.MarkInviteAcceptedIfPendingParams{
+		AcceptedByUserID: sql.NullString{String: params.ID, Valid: true},
+		ID:               inv.ID,
+	})
+	if err != nil {
+		return sqlcgen.User{}, err
+	}
+	if n == 0 {
+		return sqlcgen.User{}, &inviteInvalidError{"invite has already been used"}
+	}
+	if err := commit(); err != nil {
+		return sqlcgen.User{}, err
+	}
+	return user, nil
 }
 
 // BeginAuth kicks off the OAuth flow for the {provider} path segment.
@@ -73,9 +156,23 @@ func emailVerifiedFromGothUser(gothUser goth.User) bool {
 func (h *Handlers) AuthCallback(w http.ResponseWriter, r *http.Request) {
 	gothUser, err := gothic.CompleteUserAuth(w, r)
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
+
+	var next string
+	if c, err := r.Cookie(nextCookieName); err == nil {
+		next = c.Value
+	}
+	http.SetCookie(w, &http.Cookie{
+		Name:     nextCookieName,
+		Value:    "",
+		Path:     "/",
+		MaxAge:   -1,
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteNoneMode,
+	})
 
 	ctx := r.Context()
 	emailVerified := emailVerifiedFromGothUser(gothUser)
@@ -85,7 +182,7 @@ func (h *Handlers) AuthCallback(w http.ResponseWriter, r *http.Request) {
 	})
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		user, err = h.queries.CreateUser(ctx, sqlcgen.CreateUserParams{
+		user, err = h.createNewUser(ctx, sqlcgen.CreateUserParams{
 			ID:             xid.New().String(),
 			Provider:       gothUser.Provider,
 			ProviderUserID: gothUser.UserID,
@@ -93,13 +190,18 @@ func (h *Handlers) AuthCallback(w http.ResponseWriter, r *http.Request) {
 			Name:           gothUser.Name,
 			AvatarUrl:      gothUser.AvatarURL,
 			EmailVerified:  boolToInt64(emailVerified),
-		})
+		}, next)
 		if err != nil {
-			h.serverError(w, err)
+			var invErr *inviteInvalidError
+			if errors.As(err, &invErr) {
+				h.writeError(w, http.StatusGone, invErr.Error())
+				return
+			}
+			h.serverError(w, r, err)
 			return
 		}
 	case err != nil:
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	default:
 		// Existing user: keep profile fields fresh.
@@ -118,57 +220,19 @@ func (h *Handlers) AuthCallback(w http.ResponseWriter, r *http.Request) {
 		h.logger.Error("touch user last login", "error", err)
 	}
 
-	var next string
-	if c, err := r.Cookie(nextCookieName); err == nil {
-		next = c.Value
-	}
-	http.SetCookie(w, &http.Cookie{
-		Name:     nextCookieName,
-		Value:    "",
-		Path:     "/",
-		MaxAge:   -1,
-		HttpOnly: true,
-		Secure:   true,
-		SameSite: http.SameSiteNoneMode,
-	})
-
 	h.finishLogin(w, r, user, next)
 }
 
 // finishLogin completes a login/registration for user, regardless of which
 // auth method produced it: OAuth callback, passkey registration, or passkey login.
 func (h *Handlers) finishLogin(w http.ResponseWriter, r *http.Request, user sqlcgen.User, next string) {
-	ctx := r.Context()
-
-	// Skip auto-assignment for a user who's mid-flow accepting an invite
-	// (see AcceptInvite.tsx's /login?next=/invite/{token} redirect):
-	// otherwise they'd land back on the invite page already owning a fresh
-	// organization, and AcceptInvite's one-org-per-user check would reject
-	// the invite before they ever got a chance to accept it.
-	if !user.OrganizationID.Valid && !isInviteAcceptPath(next) {
-		org, err := h.provisioner.Take(ctx)
-		if err != nil {
-			h.serverError(w, err)
-			return
-		}
-		if err := h.queries.SetUserOrganizationAndRole(ctx, sqlcgen.SetUserOrganizationAndRoleParams{
-			OrganizationID: sql.NullString{String: org.ID, Valid: true},
-			Role:           RoleOwner,
-			ID:             user.ID,
-		}); err != nil {
-			h.serverError(w, err)
-			return
-		}
-		user.OrganizationID = sql.NullString{String: org.ID, Valid: true}
-	}
-
 	if err := auth.StoreUserSession(w, r, user.ID); err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	if nextID := oidcprovider.AuthRequestIDFromNext(next); nextID != "" && h.oidc != nil {
 		if err := h.oidc.AuthorizeAuthRequest(nextID, user.ID); err != nil {
-			h.serverError(w, err)
+			h.serverError(w, r, err)
 			return
 		}
 	}
@@ -183,7 +247,7 @@ func (h *Handlers) finishLogin(w http.ResponseWriter, r *http.Request, user sqlc
 // GET redirect for non-JS fallback links.
 func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 	if err := auth.ClearUserSession(w, r); err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	http.Redirect(w, r, "/login", http.StatusSeeOther)
@@ -193,7 +257,7 @@ func (h *Handlers) Logout(w http.ResponseWriter, r *http.Request) {
 // SPA (which then redirects client-side to /login).
 func (h *Handlers) APILogout(w http.ResponseWriter, r *http.Request) {
 	if err := auth.ClearUserSession(w, r); err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)

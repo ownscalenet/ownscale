@@ -144,16 +144,20 @@ func (q *Queries) ListInvitesByOrganization(ctx context.Context, organizationID 
 	return items, nil
 }
 
-const markInviteAccepted = `-- name: MarkInviteAccepted :exec
-UPDATE invites SET accepted_at = CURRENT_TIMESTAMP, accepted_by_user_id = ? WHERE id = ?
+const markInviteAcceptedIfPending = `-- name: MarkInviteAcceptedIfPending :execrows
+UPDATE invites SET accepted_at = CURRENT_TIMESTAMP, accepted_by_user_id = ?
+WHERE id = ? AND accepted_at IS NULL
 `
 
-type MarkInviteAcceptedParams struct {
+type MarkInviteAcceptedIfPendingParams struct {
 	AcceptedByUserID sql.NullString
 	ID               string
 }
 
-func (q *Queries) MarkInviteAccepted(ctx context.Context, arg MarkInviteAcceptedParams) error {
-	_, err := q.db.ExecContext(ctx, markInviteAccepted, arg.AcceptedByUserID, arg.ID)
-	return err
+func (q *Queries) MarkInviteAcceptedIfPending(ctx context.Context, arg MarkInviteAcceptedIfPendingParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, markInviteAcceptedIfPending, arg.AcceptedByUserID, arg.ID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
 }

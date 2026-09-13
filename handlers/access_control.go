@@ -17,7 +17,7 @@ func (h *Handlers) GetAccessControlPolicy(w http.ResponseWriter, r *http.Request
 
 	content, err := client.GetPolicy(r.Context())
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	// dockerctl.CreateOrganization seeds every organization with a default

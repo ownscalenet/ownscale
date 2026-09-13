@@ -6,23 +6,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
-	"net/http/httptest"
 	"os"
 
-	"github.com/markbates/goth/gothic"
 	"github.com/peterbourgon/ff/v4"
-	"github.com/rs/xid"
 
-	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/db"
-	"github.com/ownscalenet/ownscale/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/orgs"
 )
-
-// testAuthProvider is the synthetic goth provider used by "osa user login"
-// to identify users it creates.
-const testAuthProvider = "test"
 
 // newUserCommand builds the "user" subcommand group (currently just
 // "list"), parented under rootFlags.
@@ -38,7 +27,6 @@ func newUserCommand(rootFlags *ff.FlagSet) *ff.Command {
 	userCmd.Subcommands = append(userCmd.Subcommands,
 		newUserListCommand(userFlags),
 		newUserDeleteCommand(userFlags),
-		newUserLoginCommand(userFlags),
 	)
 	return userCmd
 }
@@ -136,97 +124,4 @@ func deleteUser(ctx context.Context, out io.Writer, queries *db.TxQueries, userI
 	}
 	_, _ = fmt.Fprintf(out, "deleted user %s (%s)\n", user.ID, user.Email)
 	return nil
-}
-
-func newUserLoginCommand(parent *ff.FlagSet) *ff.Command {
-	flags := ff.NewFlagSet("user login").SetParent(parent)
-	name := flags.StringLong("name", "", "display name for a newly created user (defaults to the email)")
-	org := flags.StringLong("org", "", "attach the user to this already-active organization's subdomain (only if they don't already belong to one)")
-	role := flags.StringLong("role", "owner", "role to assign when --org is given")
-	return &ff.Command{
-		Name:      "login",
-		Usage:     "osa user login [FLAGS] <email>",
-		ShortHelp: "for loca/integration only: mint a valid session cookie for a user without going through OAuth ",
-		Flags:     flags,
-		Exec: func(ctx context.Context, args []string) error {
-			if len(args) != 1 {
-				return errors.New("usage: osa user login [--org <subdomain>] [--role <role>] [--name <name>] <email>")
-			}
-			res, cleanup, err := newOrgResources(true, false)
-			defer cleanup()
-			if err != nil {
-				return err
-			}
-			auth.Setup(res.cfg.Auth.SessionSecret)
-			return loginUser(ctx, os.Stdout, res.queries, args[0], *name, *org, *role)
-		},
-	}
-}
-
-// loginUser finds or creates a user identified by the synthetic
-// testAuthProvider/email identity, optionally attaches them to an
-// already-active organization then mints a real session cookie for that user.
-func loginUser(ctx context.Context, out io.Writer, queries *db.TxQueries, email, name, orgSubdomain, role string) error {
-	if name == "" {
-		name = email
-	}
-
-	user, err := queries.GetUserByProvider(ctx, sqlcgen.GetUserByProviderParams{
-		Provider:       testAuthProvider,
-		ProviderUserID: email,
-	})
-	switch {
-	case errors.Is(err, sql.ErrNoRows):
-		user, err = queries.CreateUser(ctx, sqlcgen.CreateUserParams{
-			ID:             xid.New().String(),
-			Provider:       testAuthProvider,
-			ProviderUserID: email,
-			Email:          email,
-			Name:           name,
-			EmailVerified:  1,
-		})
-		if err != nil {
-			return fmt.Errorf("create user: %w", err)
-		}
-	case err != nil:
-		return fmt.Errorf("get user: %w", err)
-	}
-
-	if orgSubdomain != "" && !user.OrganizationID.Valid {
-		org, err := queries.GetOrganizationBySubdomain(ctx, orgSubdomain)
-		if errors.Is(err, sql.ErrNoRows) {
-			return fmt.Errorf("no organization with subdomain %q", orgSubdomain)
-		}
-		if err != nil {
-			return fmt.Errorf("get organization: %w", err)
-		}
-		if org.Status != orgs.StatusActive {
-			return fmt.Errorf("organization %q is not active yet (status %q)", orgSubdomain, org.Status)
-		}
-		if err := queries.SetUserOrganizationAndRole(ctx, sqlcgen.SetUserOrganizationAndRoleParams{
-			OrganizationID: sql.NullString{String: org.ID, Valid: true},
-			Role:           role,
-			ID:             user.ID,
-		}); err != nil {
-			return fmt.Errorf("assign organization: %w", err)
-		}
-		user.OrganizationID = sql.NullString{String: org.ID, Valid: true}
-	}
-
-	if err := queries.TouchUserLastLogin(ctx, user.ID); err != nil {
-		return fmt.Errorf("touch last login: %w", err)
-	}
-
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "http://localhost/", nil)
-	if err := auth.StoreUserSession(rec, req, user.ID); err != nil {
-		return fmt.Errorf("mint session: %w", err)
-	}
-	for _, c := range rec.Result().Cookies() {
-		if c.Name == gothic.SessionName {
-			_, _ = fmt.Fprintf(out, "%s=%s\n", c.Name, c.Value)
-			return nil
-		}
-	}
-	return fmt.Errorf("mint session: %q cookie not found", gothic.SessionName)
 }

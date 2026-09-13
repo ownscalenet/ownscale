@@ -58,7 +58,7 @@ type Orgconfig struct {
 
 type User struct {
 	ID              string
-	OrganizationID  sql.NullString
+	OrganizationID  string
 	Provider        string
 	ProviderUserID  string
 	Email           string

@@ -3,7 +3,6 @@ package handlers
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -199,11 +198,12 @@ func activeOrgUserWithPolicy(t *testing.T, h *Handlers, queries *dbpkg.TxQueries
 	if _, err := queries.UpdateOrganizationStatus(t.Context(), sqlcgen.UpdateOrganizationStatusParams{ID: org.ID, Status: orgs.StatusActive}); err != nil {
 		t.Fatalf("UpdateOrganizationStatus: %v", err)
 	}
-	if err := queries.SetUserOrganization(t.Context(), sqlcgen.SetUserOrganizationParams{
-		OrganizationID: sql.NullString{String: org.ID, Valid: true},
+	if err := queries.SetUserOrganizationAndRole(t.Context(), sqlcgen.SetUserOrganizationAndRoleParams{
+		OrganizationID: org.ID,
+		Role:           user.Role,
 		ID:             user.ID,
 	}); err != nil {
-		t.Fatalf("SetUserOrganization: %v", err)
+		t.Fatalf("SetUserOrganizationAndRole: %v", err)
 	}
 	user, err = queries.GetUserByID(t.Context(), user.ID)
 	if err != nil {

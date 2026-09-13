@@ -2,10 +2,13 @@ package handlers
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"regexp"
 	"testing"
+	"time"
 
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
@@ -107,7 +110,7 @@ func TestBeginAuthNoNextParam(t *testing.T) {
 func TestAuthCallbackRedirectsToNextCookie(t *testing.T) {
 	setupSessions()
 	h, queries := newTestHandlers(t, false)
-	user := insertUserWithOrg(t, queries)
+	user := insertUser(t, queries)
 
 	orig := gothic.CompleteUserAuth
 	t.Cleanup(func() { gothic.CompleteUserAuth = orig })
@@ -152,7 +155,7 @@ func TestAuthCallbackRedirectsToNextCookie(t *testing.T) {
 func TestAuthCallbackNoNextCookieFallsBackToRoot(t *testing.T) {
 	setupSessions()
 	h, queries := newTestHandlers(t, false)
-	user := insertUserWithOrg(t, queries)
+	user := insertUser(t, queries)
 
 	orig := gothic.CompleteUserAuth
 	t.Cleanup(func() { gothic.CompleteUserAuth = orig })
@@ -216,14 +219,14 @@ func TestAuthCallbackAutoAssignsOrganization(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetUserByProvider: %v", err)
 	}
-	if !user.OrganizationID.Valid {
+	if user.OrganizationID == "" {
 		t.Fatal("OrganizationID: want it set after AuthCallback, got unset")
 	}
 	if user.Role != RoleOwner {
 		t.Errorf("Role = %q, want %q", user.Role, RoleOwner)
 	}
 
-	org, err := queries.GetOrganization(t.Context(), user.OrganizationID.String)
+	org, err := queries.GetOrganization(t.Context(), user.OrganizationID)
 	if err != nil {
 		t.Fatalf("GetOrganization: %v", err)
 	}
@@ -235,18 +238,28 @@ func TestAuthCallbackAutoAssignsOrganization(t *testing.T) {
 	}
 }
 
-// TestAuthCallbackSkipsAutoAssignForInviteFlow verifies that a first-time
+// TestAuthCallbackAssignsInvitedOrganization verifies that a first-time
 // login redirected via /login?next=/invite/{token} (see AcceptInvite.tsx)
-// does not get auto-assigned a pool organization: doing so would leave the
-// user already "in an organization" by the time they land back on the
-// invite page, permanently blocking AcceptInvite's one-org-per-user check.
-func TestAuthCallbackSkipsAutoAssignForInviteFlow(t *testing.T) {
+// is created with the invite's organization and role directly.
+func TestAuthCallbackAssignsInvitedOrganization(t *testing.T) {
 	setupSessions()
 	h, queries := newTestHandlers(t, true)
-
-	provisionerCtx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	h.StartProvisioner(provisionerCtx)
+	owner := insertUser(t, queries)
+	org, err := queries.GetOrganization(t.Context(), owner.OrganizationID)
+	if err != nil {
+		t.Fatalf("GetOrganization: %v", err)
+	}
+	inv, err := queries.CreateInvite(t.Context(), sqlcgen.CreateInviteParams{
+		ID:             "invite-1",
+		OrganizationID: org.ID,
+		Role:           "admin",
+		Token:          "testtoken",
+		CreatedBy:      owner.ID,
+		ExpiresAt:      time.Now().Add(24 * time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("CreateInvite: %v", err)
+	}
 
 	orig := gothic.CompleteUserAuth
 	t.Cleanup(func() { gothic.CompleteUserAuth = orig })
@@ -279,8 +292,54 @@ func TestAuthCallbackSkipsAutoAssignForInviteFlow(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetUserByProvider: %v", err)
 	}
-	if user.OrganizationID.Valid {
-		t.Errorf("OrganizationID = %+v, want unset so AcceptInvite can still assign the invited organization", user.OrganizationID)
+	if user.OrganizationID != org.ID {
+		t.Errorf("OrganizationID = %q, want the invited organization %q", user.OrganizationID, org.ID)
+	}
+	if user.Role != "admin" {
+		t.Errorf("Role = %q, want the invite's role %q", user.Role, "admin")
+	}
+
+	acceptedInv, err := queries.GetInvite(t.Context(), inv.ID)
+	if err != nil {
+		t.Fatalf("GetInvite: %v", err)
+	}
+	if !acceptedInv.AcceptedAt.Valid {
+		t.Error("invite AcceptedAt not set, want it marked accepted")
+	}
+	if acceptedInv.AcceptedByUserID.String != user.ID {
+		t.Errorf("invite AcceptedByUserID = %+v, want %q", acceptedInv.AcceptedByUserID, user.ID)
+	}
+}
+
+func TestAuthCallbackRejectsInvalidInvite(t *testing.T) {
+	setupSessions()
+	h, queries := newTestHandlers(t, true)
+
+	orig := gothic.CompleteUserAuth
+	t.Cleanup(func() { gothic.CompleteUserAuth = orig })
+	gothic.CompleteUserAuth = func(w http.ResponseWriter, r *http.Request) (goth.User, error) {
+		return goth.User{
+			Provider: "oidc",
+			UserID:   "invitee-user-id",
+			Email:    "invitee@example.com",
+			Name:     "Invitee User",
+		}, nil
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/oidc/callback", nil)
+	req.AddCookie(&http.Cookie{Name: nextCookieName, Value: "/invite/no-such-token"})
+	rec := httptest.NewRecorder()
+
+	h.AuthCallback(rec, req)
+
+	if rec.Code != http.StatusGone {
+		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusGone, rec.Body.String())
+	}
+	if _, err := queries.GetUserByProvider(t.Context(), sqlcgen.GetUserByProviderParams{
+		Provider:       "oidc",
+		ProviderUserID: "invitee-user-id",
+	}); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("GetUserByProvider: err = %v, want sql.ErrNoRows (no account should be created)", err)
 	}
 }
 

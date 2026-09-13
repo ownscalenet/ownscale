@@ -107,7 +107,7 @@ func (h *Handlers) PasskeyRegisterBegin(w http.ResponseWriter, r *http.Request) 
 	creation, session, err := h.webauthn.BeginRegistration(user,
 		webauthn.WithResidentKeyRequirement(protocol.ResidentKeyRequirementRequired))
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -119,7 +119,7 @@ func (h *Handlers) PasskeyRegisterBegin(w http.ResponseWriter, r *http.Request) 
 		Next:          req.Next,
 	})
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	setPasskeyCeremonyCookie(w, tok)
@@ -147,7 +147,7 @@ func (h *Handlers) PasskeyRegisterFinish(w http.ResponseWriter, r *http.Request)
 	}
 
 	ctx := r.Context()
-	user, err := h.queries.CreateUser(ctx, sqlcgen.CreateUserParams{
+	user, err := h.createNewUser(ctx, sqlcgen.CreateUserParams{
 		ID:             ceremony.PendingUserID,
 		Provider:       passkeyProvider,
 		ProviderUserID: ceremony.PendingUserID,
@@ -155,13 +155,18 @@ func (h *Handlers) PasskeyRegisterFinish(w http.ResponseWriter, r *http.Request)
 		Name:           "",
 		AvatarUrl:      "",
 		EmailVerified:  0,
-	})
+	}, ceremony.Next)
 	if err != nil {
-		h.serverError(w, err)
+		var invErr *inviteInvalidError
+		if errors.As(err, &invErr) {
+			h.writeError(w, http.StatusGone, invErr.Error())
+			return
+		}
+		h.serverError(w, r, err)
 		return
 	}
 	if _, err := h.queries.CreateWebauthnCredential(ctx, passkey.CredentialParams(xid.New().String(), user.ID, ceremony.Name, *cred)); err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	if err := h.queries.TouchUserLastLogin(ctx, user.ID); err != nil {
@@ -183,12 +188,12 @@ func (h *Handlers) PasskeyLoginBegin(w http.ResponseWriter, r *http.Request) {
 
 	assertion, session, err := h.webauthn.BeginDiscoverableLogin()
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	tok, err := h.passkeySessions.save(passkeyCeremony{Session: session, Next: req.Next})
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	setPasskeyCeremonyCookie(w, tok)
@@ -225,7 +230,7 @@ func (h *Handlers) PasskeyLoginFinish(w http.ResponseWriter, r *http.Request) {
 	}
 	pu, ok := validatedUser.(passkey.User)
 	if !ok {
-		h.serverError(w, errors.New("unexpected webauthn.User implementation"))
+		h.serverError(w, r, errors.New("unexpected webauthn.User implementation"))
 		return
 	}
 
@@ -252,7 +257,7 @@ func (h *Handlers) ListPasskeys(w http.ResponseWriter, r *http.Request) {
 	}
 	rows, err := h.queries.ListWebauthnCredentialsByUser(r.Context(), user.ID)
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	out := make([]passkeyCredentialSummary, 0, len(rows))
@@ -281,7 +286,7 @@ func (h *Handlers) PasskeyAddBegin(w http.ResponseWriter, r *http.Request) {
 
 	existing, err := h.queries.ListWebauthnCredentialsByUser(r.Context(), user.ID)
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	pu := passkey.User{Row: *user, Credentials: existing}
@@ -294,12 +299,12 @@ func (h *Handlers) PasskeyAddBegin(w http.ResponseWriter, r *http.Request) {
 		webauthn.WithResidentKeyRequirement(protocol.ResidentKeyRequirementRequired),
 		webauthn.WithExclusions(excludeList))
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	tok, err := h.passkeySessions.save(passkeyCeremony{Session: session, UserID: user.ID, Name: name})
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	setPasskeyCeremonyCookie(w, tok)
@@ -326,7 +331,7 @@ func (h *Handlers) PasskeyAddFinish(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	existing, err := h.queries.ListWebauthnCredentialsByUser(ctx, user.ID)
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	pu := passkey.User{Row: *user, Credentials: existing}
@@ -337,7 +342,7 @@ func (h *Handlers) PasskeyAddFinish(w http.ResponseWriter, r *http.Request) {
 	}
 	row, err := h.queries.CreateWebauthnCredential(ctx, passkey.CredentialParams(xid.New().String(), user.ID, ceremony.Name, *cred))
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusCreated, map[string]any{"passkey": toPasskeyCredentialSummary(row)})
@@ -357,7 +362,7 @@ func (h *Handlers) DeletePasskey(w http.ResponseWriter, r *http.Request) {
 			h.writeError(w, http.StatusNotFound, "passkey not found")
 			return
 		}
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	if row.UserID != user.ID {
@@ -365,7 +370,7 @@ func (h *Handlers) DeletePasskey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.queries.DeleteWebauthnCredential(r.Context(), id); err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -64,7 +63,7 @@ func newAccessControlTestHandlers(t *testing.T, roles ...string) (*Handlers, sql
 	for _, role := range roles {
 		u := insertUser(t, queries)
 		if err := queries.SetUserOrganizationAndRole(t.Context(), sqlcgen.SetUserOrganizationAndRoleParams{
-			OrganizationID: sql.NullString{String: org.ID, Valid: true},
+			OrganizationID: org.ID,
 			Role:           role,
 			ID:             u.ID,
 		}); err != nil {

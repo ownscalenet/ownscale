@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	vwa "github.com/descope/virtualwebauthn"
 
@@ -112,7 +113,7 @@ func TestPasskeyRegisterSelfServiceProvisionsOrganization(t *testing.T) {
 	if found.Provider != passkeyProvider {
 		t.Errorf("Provider = %q, want %q", found.Provider, passkeyProvider)
 	}
-	if !found.OrganizationID.Valid {
+	if found.OrganizationID == "" {
 		t.Error("expected OrganizationID to be set (auto-provisioned)")
 	}
 	if found.Role != RoleOwner {
@@ -128,17 +129,34 @@ func TestPasskeyRegisterSelfServiceProvisionsOrganization(t *testing.T) {
 	}
 }
 
-// TestPasskeyRegisterFinishSkipsAutoAssignForInviteFlow mirrors
-// TestAuthCallbackSkipsAutoAssignForInviteFlow (auth_test.go) for the
+// TestPasskeyRegisterFinishAssignsInvitedOrganization mirrors
+// TestAuthCallbackAssignsInvitedOrganization (auth_test.go) for the
 // passkey registration path: a visitor registering via
-// /login?next=/invite/{token} must not get auto-assigned a pool
-// organization, so AcceptInvite can still attach the invited one.
-func TestPasskeyRegisterFinishSkipsAutoAssignForInviteFlow(t *testing.T) {
+// /login?next=/invite/{token} is created directly with the invite's
+// organization and role, and the invite is marked accepted.
+func TestPasskeyRegisterFinishAssignsInvitedOrganization(t *testing.T) {
 	setupSessions()
 	h, queries := newTestHandlers(t, true)
 	provisionerCtx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	h.StartProvisioner(provisionerCtx)
+
+	owner := insertUser(t, queries)
+	org, err := queries.GetOrganization(t.Context(), owner.OrganizationID)
+	if err != nil {
+		t.Fatalf("GetOrganization: %v", err)
+	}
+	inv, err := queries.CreateInvite(t.Context(), sqlcgen.CreateInviteParams{
+		ID:             "invite-passkey-1",
+		OrganizationID: org.ID,
+		Role:           RoleAdmin,
+		Token:          "testtoken",
+		CreatedBy:      owner.ID,
+		ExpiresAt:      time.Now().Add(24 * time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("CreateInvite: %v", err)
+	}
 
 	rp := testRelyingParty(testBaseDomain)
 	authenticator := vwa.NewAuthenticator()
@@ -164,8 +182,19 @@ func TestPasskeyRegisterFinishSkipsAutoAssignForInviteFlow(t *testing.T) {
 	if found.ID == "" {
 		t.Fatalf("expected a user with email invitee-passkey@example.com to have been created")
 	}
-	if found.OrganizationID.Valid {
-		t.Errorf("OrganizationID = %+v, want unset so AcceptInvite can still assign the invited organization", found.OrganizationID)
+	if found.OrganizationID != org.ID {
+		t.Errorf("OrganizationID = %q, want the invited organization %q", found.OrganizationID, org.ID)
+	}
+	if found.Role != RoleAdmin {
+		t.Errorf("Role = %q, want the invite's role %q", found.Role, RoleAdmin)
+	}
+
+	acceptedInv, err := queries.GetInvite(t.Context(), inv.ID)
+	if err != nil {
+		t.Fatalf("GetInvite: %v", err)
+	}
+	if !acceptedInv.AcceptedAt.Valid {
+		t.Error("invite AcceptedAt not set, want it marked accepted")
 	}
 }
 
@@ -201,7 +230,7 @@ func TestPasskeyRegisterFinishRejectsExpiredCeremony(t *testing.T) {
 func TestPasskeyAddListLoginAndDelete(t *testing.T) {
 	setupSessions()
 	h, queries := newTestHandlers(t, false)
-	owner := insertUserWithOrg(t, queries)
+	owner := insertUser(t, queries)
 	other := insertUser(t, queries)
 
 	rp := testRelyingParty("")

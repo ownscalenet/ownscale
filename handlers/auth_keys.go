@@ -18,12 +18,12 @@ func (h *Handlers) ListAuthKeys(w http.ResponseWriter, r *http.Request) {
 
 	keys, err := client.ListPreAuthKeys(r.Context())
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	users, err := client.ListUsers(r.Context())
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -67,7 +67,7 @@ func (h *Handlers) CreateAuthKey(w http.ResponseWriter, r *http.Request) {
 		ACLTags:    req.ACLTags,
 	})
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]any{"authKey": key})
@@ -80,7 +80,7 @@ func (h *Handlers) ExpireAuthKey(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 
 	if err := client.ExpirePreAuthKey(r.Context(), id); err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

@@ -11,7 +11,7 @@ import type {
 
 export interface User {
   ID: string
-  OrganizationID: { String: string; Valid: boolean }
+  OrganizationID: string
   Provider: string
   ProviderUserID: string
   Email: string
@@ -240,10 +240,6 @@ export interface InvitePreview {
 
 export function getInvitePreview(token: string, signal?: AbortSignal) {
   return request<InvitePreview>(`/api/invites/${token}`, { signal })
-}
-
-export function acceptInvite(token: string) {
-  return request<{ organization: Organization }>(`/api/invites/${token}/accept`, { method: 'POST' })
 }
 
 export interface AccessControlResponse {

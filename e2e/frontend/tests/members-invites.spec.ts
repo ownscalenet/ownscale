@@ -48,9 +48,6 @@ test('accepting an invite adds a member, whose role can be changed and who can b
     await inviteePage.locator('#password').fill('ownscale')
     await inviteePage.locator('#submit-login').click()
 
-    await expect(inviteePage.getByRole('heading', { name: 'Join organization' })).toBeVisible()
-    await inviteePage.getByRole('button', { name: 'Accept invite' }).click()
-
     await expect(inviteePage.getByRole('link', { name: 'Machines' })).toBeVisible({
       timeout: 15_000,
     })

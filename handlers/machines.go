@@ -10,35 +10,36 @@ import (
 	"time"
 
 	"github.com/ownscalenet/ownscale/auth"
+	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/headscaleclient"
 	"github.com/ownscalenet/ownscale/orgs"
 	"github.com/tailscale/hujson"
 )
 
 // resolveHeadscaleClient returns the calling user's organization's
-// headscaleclient.Client. notConfigured is true (nil client, nil error)
-// when the user has no org, the org isn't active yet, or minting/reaching
-// its headscale API key failed. Other failures are returned as err.
-func (h *Handlers) resolveHeadscaleClient(r *http.Request) (_ *headscaleclient.Client, notConfigured bool, err error) {
+// headscaleclient.Client, along with the resolved org. notConfigured is
+// true (nil client, nil error) when the org isn't active yet, or
+// minting/reaching its headscale API key failed.
+func (h *Handlers) resolveHeadscaleClient(r *http.Request) (_ *headscaleclient.Client, org sqlcgen.Organization, notConfigured bool, err error) {
 	user, ok := auth.UserFromContext(r.Context())
-	if !ok || !user.OrganizationID.Valid {
-		return nil, true, nil
+	if !ok {
+		return nil, sqlcgen.Organization{}, true, nil
 	}
 
-	org, err := h.queries.GetOrganization(r.Context(), user.OrganizationID.String)
+	org, err = h.queries.GetOrganization(r.Context(), user.OrganizationID)
 	if err != nil {
-		return nil, false, err
+		return nil, sqlcgen.Organization{}, false, err
 	}
 	if org.Status != orgs.StatusActive {
-		return nil, true, nil
+		return nil, org, true, nil
 	}
 
 	client, err := h.hs.Client(r.Context(), org.Subdomain)
 	if err != nil {
-		h.logger.Warn("mint/reach headscale API client", "subdomain", org.Subdomain, "error", err)
-		return nil, true, nil
+		h.logger.With("org", org.Subdomain).Warn("mint/reach headscale API client", "error", err)
+		return nil, org, true, nil
 	}
-	return client, false, nil
+	return client, org, false, nil
 }
 
 // matchesFilters reports whether m satisfies the optional q (case
@@ -94,12 +95,12 @@ func (h *Handlers) ListMachines(w http.ResponseWriter, r *http.Request) {
 
 	nodes, err := client.ListNodes(r.Context())
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	users, err := client.ListUsers(r.Context())
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -147,7 +148,7 @@ func (h *Handlers) RegisterMachine(w http.ResponseWriter, r *http.Request) {
 
 	node, err := client.RegisterNode(r.Context(), req.User, key)
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]any{"machine": node})
@@ -195,7 +196,7 @@ func (h *Handlers) RenameMachine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := client.RenameNode(r.Context(), id, req.Name); err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -342,7 +343,7 @@ func (h *Handlers) SetMachineRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := client.SetApprovedRoutes(r.Context(), id, req.Routes); err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -352,7 +353,7 @@ func (h *Handlers) SetMachineRoutes(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) ExpireMachine(w http.ResponseWriter, r *http.Request) {
 	client, id := h.machineIDAndClient(r)
 	if err := client.ExpireNode(r.Context(), id); err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
@@ -362,7 +363,7 @@ func (h *Handlers) ExpireMachine(w http.ResponseWriter, r *http.Request) {
 func (h *Handlers) DeleteMachine(w http.ResponseWriter, r *http.Request) {
 	client, id := h.machineIDAndClient(r)
 	if err := client.DeleteNode(r.Context(), id); err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

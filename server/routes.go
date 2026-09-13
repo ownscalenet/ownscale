@@ -44,7 +44,6 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	mux.HandleFunc("POST /api/invites", requireAuthAPI(h.CreateInvite))
 	mux.HandleFunc("DELETE /api/invites/{id}", requireAuthAPI(h.DeleteInvite))
 	mux.HandleFunc("GET /api/invites/{token}", h.GetInvitePreview) // public: preview before login
-	mux.HandleFunc("POST /api/invites/{token}/accept", requireAuthAPI(h.AcceptInvite))
 
 	mux.HandleFunc("POST /api/passkey/register/begin", h.PasskeyRegisterBegin)
 	mux.HandleFunc("POST /api/passkey/register/finish", h.PasskeyRegisterFinish)

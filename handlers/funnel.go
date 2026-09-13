@@ -67,13 +67,13 @@ func (h *Handlers) ListFunnelRoutes(w http.ResponseWriter, r *http.Request) {
 
 	routes, err := h.queries.ListFunnelRoutesByOrg(r.Context(), org.ID)
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 
 	nodes, err := client.ListNodes(r.Context())
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	nodesByID := make(map[string]headscaleclient.Node, len(nodes))
@@ -124,7 +124,7 @@ func (h *Handlers) CreateFunnelRoute(w http.ResponseWriter, r *http.Request) {
 
 	nodes, err := client.ListNodes(r.Context())
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	var targetNode *headscaleclient.Node
@@ -141,7 +141,7 @@ func (h *Handlers) CreateFunnelRoute(w http.ResponseWriter, r *http.Request) {
 
 	existing, err := h.queries.ListFunnelRoutesByOrg(r.Context(), org.ID)
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	for _, e := range existing {
@@ -160,7 +160,7 @@ func (h *Handlers) CreateFunnelRoute(w http.ResponseWriter, r *http.Request) {
 		CreatedBy:      caller.ID,
 	})
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 
@@ -184,12 +184,12 @@ func (h *Handlers) DeleteFunnelRoute(w http.ResponseWriter, r *http.Request) {
 			h.writeError(w, http.StatusNotFound, "funnel route not found")
 			return
 		}
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 
 	if err := h.queries.DeleteFunnelRoute(r.Context(), sqlcgen.DeleteFunnelRouteParams{ID: id, OrganizationID: org.ID}); err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})

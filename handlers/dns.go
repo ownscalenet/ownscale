@@ -12,7 +12,7 @@ func (h *Handlers) GetDNSSettings(w http.ResponseWriter, r *http.Request) {
 
 	dns, err := h.orgs.ForOrg(org).GetDNSSettings(r.Context())
 	if err != nil {
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]any{
@@ -38,7 +38,7 @@ func (h *Handlers) UpdateDNSSettings(w http.ResponseWriter, r *http.Request) {
 			h.writeError(w, http.StatusBadRequest, invalid.Error())
 			return
 		}
-		h.serverError(w, err)
+		h.serverError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
