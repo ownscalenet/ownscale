@@ -17,11 +17,6 @@ test('a new user is provisioned an organization and lands on /machines', async (
   await page.locator('#password').fill('ownscale')
   await page.locator('#submit-login').click()
 
-  // If this is user1's first-ever login the org is still "pending" and
-  // CreateOrganization.tsx shows a polling spinner before redirecting;
-  // on a repeat local run the org may already be active and this resolves
-  // immediately. Either way, the sidebar's "Machines" link landing is the
-  // one outcome that always holds.
-  await expect(page.getByRole('link', { name: 'Machines' })).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByRole('link', { name: 'Machines' })).toBeVisible({ timeout: 5_000 })
   await expect(page).toHaveURL(/\/machines$/)
 })

@@ -9,12 +9,11 @@ import AuthRestrictions from './pages/AuthRestrictions'
 import DNS from './pages/DNS'
 import Funnel from './pages/Funnel'
 import Settings from './pages/Settings'
-import CreateOrganization from './pages/CreateOrganization'
 import AcceptInvite from './pages/AcceptInvite'
 import NotFound from './pages/NotFound'
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
-  const { user, organization, loading } = useAuth()
+  const { user, loading } = useAuth()
   const location = useLocation()
   if (loading) {
     return (
@@ -27,31 +26,6 @@ function RequireAuth({ children }: { children: React.ReactElement }) {
     const next = encodeURIComponent(location.pathname + location.search)
     return <Navigate to={`/login?next=${next}`} replace />
   }
-  // A user whose organization isn't active yet (no org, still pending, or
-  // failed) belongs on the create-organization page: that's also where the
-  // "provisioning..." polling UI lives, so a pending org stays visible
-  // there even across a page refresh instead of bouncing into the app.
-  if (!user.OrganizationID.Valid || organization?.Status !== 'active') {
-    return <Navigate to="/create-organization" replace />
-  }
-  return children
-}
-
-function RequireAuthNoOrg({ children }: { children: React.ReactElement }) {
-  const { user, organization, loading } = useAuth()
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <span className="loading loading-spinner loading-lg"></span>
-      </div>
-    )
-  }
-  if (!user) {
-    return <Navigate to="/login" replace />
-  }
-  if (user.OrganizationID.Valid && organization?.Status === 'active') {
-    return <Navigate to="/" replace />
-  }
   return children
 }
 
@@ -60,14 +34,6 @@ function AppRoutes() {
     <Routes>
       <Route path="/login" element={<Login />} />
       <Route path="/invite/:token" element={<AcceptInvite />} />
-      <Route
-        path="/create-organization"
-        element={
-          <RequireAuthNoOrg>
-            <CreateOrganization />
-          </RequireAuthNoOrg>
-        }
-      />
       <Route
         path="/"
         element={

@@ -36,9 +36,9 @@ export async function retryUntil(
 ): Promise<void> {
   for (let attempt = 1; attempt <= attempts; attempt++) {
     await action()
-    // Give the save request (and the restart it triggers) a moment to
-    // land server-side before reloading to check the persisted truth.
-    await page.waitForTimeout(700)
+    // Give the save request (and the restart it triggers) time to land
+    // server-side before reloading to check the persisted truth.
+    await page.waitForLoadState('networkidle')
     await page.reload()
     try {
       await check()

@@ -18,10 +18,8 @@ test('signing in via SSO reaches the app, and logout returns to /login', async (
   await page.locator('#password').fill('ownscale')
   await page.locator('#submit-login').click()
 
-  // Provisioning a brand-new organization can take a few seconds (see
-  // CreateOrganization.tsx); either way this ends with the app's sidebar.
   const logout = page.getByRole('button', { name: 'Logout' })
-  await expect(logout).toBeVisible({ timeout: 60_000 })
+  await expect(logout).toBeVisible({ timeout: 5_000 })
 
   await logout.click()
   await expect(page).toHaveURL(/\/login/)

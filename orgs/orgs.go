@@ -241,4 +241,16 @@ const (
 	StatusActive = "active"
 	// StatusFailed is set if provisioning an organization fails permanently.
 	StatusFailed = "failed"
+	// StatusUpdatePending is set while an organization's headscale
+	// config is being applied. If the restart fails, status is left
+	// here rather than reverted, since the org's actual running
+	// headscale config no longer necessarily matches what's stored.
+	StatusUpdatePending = "update_pending"
 )
+
+// IsOperational reports whether an organization is fully provisioned and
+// usable, even if it's momentarily mid a settings-save restart
+// (StatusUpdatePending).
+func IsOperational(status string) bool {
+	return status == StatusActive || status == StatusUpdatePending
+}

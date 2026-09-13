@@ -21,7 +21,7 @@ import (
 // applyHeadscaleConfigTimeout bounds the background context used for
 // applyHeadscaleConfig's write/restart tail (see SetAuthRestrictions/
 // SetDNSSettings), once decoupled from the HTTP request's context. It
-// must comfortably cover WriteConfigYAML + ConfigTest + the DB write +
+// must comfortably cover WriteConfigYAML + ConfigTest + both DB writes +
 // RestartHeadscale, which itself now blocks until headscale reports
 // healthy again after the restart.
 const applyHeadscaleConfigTimeout = 45 * time.Second
@@ -51,7 +51,14 @@ func (o *OrgService) getHeadscaleConfig(ctx context.Context) (_ *dockerctl.Heads
 	return cfg, nil
 }
 
-func (o *OrgService) applyHeadscaleConfig(ctx context.Context, txQueries *sqlcgen.Queries, cfg *dockerctl.HeadscaleFileConfig) (err error) {
+// applyHeadscaleConfig writes cfg to o's headscale config.yaml (both the
+// on-disk file and its orgconfigs row) and restarts headscale so it picks
+// it up. extraWrites, if non-nil, runs within the same short transaction
+// as the config.yaml row write.
+//
+// This function is NOT a single big transaction because the headscale restarting
+// takes several seconds and that would block all other DB operations.
+func (o *OrgService) applyHeadscaleConfig(ctx context.Context, cfg *dockerctl.HeadscaleFileConfig, extraWrites func(ctx context.Context, txQueries *sqlcgen.Queries) error) (err error) {
 	defer derrors.Wrap(&err, "o.applyHeadscaleConfig(%q, %q)", o.orgID, o.subdomain)
 
 	updated, err := cfg.Marshal()
@@ -61,9 +68,47 @@ func (o *OrgService) applyHeadscaleConfig(ctx context.Context, txQueries *sqlcge
 	if err := o.ctl.WriteConfigYAML(ctx, o.subdomain, updated); err != nil {
 		return err
 	}
-
 	if err := o.ctl.ConfigTest(ctx, o.subdomain); err != nil {
 		return err
+	}
+
+	if err := o.persistConfigAndMarkUpdatePending(ctx, updated, extraWrites); err != nil {
+		return err
+	}
+
+	if err := o.ctl.RestartHeadscale(ctx, o.subdomain); err != nil {
+		return err
+	}
+
+	if _, err := o.queries.UpdateOrganizationStatus(ctx, sqlcgen.UpdateOrganizationStatusParams{
+		ID:     o.orgID,
+		Status: StatusActive,
+	}); err != nil {
+		return fmt.Errorf("mark organization active: %w", err)
+	}
+	return nil
+}
+
+// persistConfigAndMarkUpdatePending runs extraWrites (if non-nil),
+// upserts o's config.yaml orgconfigs row to updated, and sets its status
+// to StatusUpdatePending.
+func (o *OrgService) persistConfigAndMarkUpdatePending(
+	ctx context.Context,
+	updated string,
+	extraWrites func(ctx context.Context, txQueries *sqlcgen.Queries) error,
+) (err error) {
+	defer derrors.Wrap(&err, "o.persistConfigAndMarkUpdatePending(%q)", o.orgID)
+
+	txQueries, commit, rollback, err := o.queries.StartTx(ctx)
+	if err != nil {
+		return fmt.Errorf("start transaction: %w", err)
+	}
+	defer rollback()
+
+	if extraWrites != nil {
+		if err := extraWrites(ctx, txQueries); err != nil {
+			return err
+		}
 	}
 
 	if _, err := txQueries.UpsertOrgConfig(ctx, sqlcgen.UpsertOrgConfigParams{
@@ -75,8 +120,15 @@ func (o *OrgService) applyHeadscaleConfig(ctx context.Context, txQueries *sqlcge
 		return fmt.Errorf("save config: %w", err)
 	}
 
-	if err := o.ctl.RestartHeadscale(ctx, o.subdomain); err != nil {
-		return err
+	if _, err := txQueries.UpdateOrganizationStatus(ctx, sqlcgen.UpdateOrganizationStatusParams{
+		ID:     o.orgID,
+		Status: StatusUpdatePending,
+	}); err != nil {
+		return fmt.Errorf("mark organization update-pending: %w", err)
+	}
+
+	if err := commit(); err != nil {
+		return fmt.Errorf("commit config: %w", err)
 	}
 	return nil
 }
@@ -143,39 +195,27 @@ func (o *OrgService) SetAuthRestrictions(ctx context.Context, content string) (e
 	cfg.OIDC.AllowedGroups = r.Groups
 	cfg.OIDC.AllowedUsers = r.Users
 
-	// From here on, content is validated and the write/restart is
-	// committed-or-rolled-back atomically -- decouple from ctx (the HTTP
-	// request's context) with a bounded timeout so a client-side
+	// From here on, content is validated; applyHeadscaleConfig persists
+	// it (via extraWrites, atomically with the config.yaml row and the
+	// update_pending status transition) and restarts headscale as three
+	// separate steps (see its doc comment) -- decouple from ctx (the
+	// HTTP request's context) with a bounded timeout so a client-side
 	// disconnect/network blip (e.g. the request's own fetch getting
 	// aborted by the headscale container restart's brief interface churn)
 	// can't abort an already-validated save partway through, forcing the
-	// caller to redo it. See applyHeadscaleConfig's restart step.
+	// caller to redo it.
 	applyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), applyHeadscaleConfigTimeout)
 	defer cancel()
 
-	txQueries, commit, rollback, err := o.queries.StartTx(applyCtx)
-	if err != nil {
-		return fmt.Errorf("start transaction: %w", err)
-	}
-	defer rollback()
-
-	if _, err := txQueries.UpsertOrgConfig(applyCtx, sqlcgen.UpsertOrgConfigParams{
-		ID:             xid.New().String(),
-		OrganizationID: o.orgID,
-		Path:           AuthRestrictionsConfigKey,
-		Content:        content,
-	}); err != nil {
+	return o.applyHeadscaleConfig(applyCtx, cfg, func(ctx context.Context, txQueries *sqlcgen.Queries) error {
+		_, err := txQueries.UpsertOrgConfig(ctx, sqlcgen.UpsertOrgConfigParams{
+			ID:             xid.New().String(),
+			OrganizationID: o.orgID,
+			Path:           AuthRestrictionsConfigKey,
+			Content:        content,
+		})
 		return err
-	}
-
-	if err := o.applyHeadscaleConfig(applyCtx, txQueries, cfg); err != nil {
-		return err
-	}
-
-	if err := commit(); err != nil {
-		return fmt.Errorf("commit allowlist: %w", err)
-	}
-	return nil
+	})
 }
 
 // GetDNSSettings returns o's live DNS settings, read from its
@@ -219,20 +259,7 @@ func (o *OrgService) SetDNSSettings(ctx context.Context, dns dockerctl.DNSConfig
 	applyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), applyHeadscaleConfigTimeout)
 	defer cancel()
 
-	txQueries, commit, rollback, err := o.queries.StartTx(applyCtx)
-	if err != nil {
-		return fmt.Errorf("start transaction: %w", err)
-	}
-	defer rollback()
-
-	if err := o.applyHeadscaleConfig(applyCtx, txQueries, cfg); err != nil {
-		return err
-	}
-
-	if err := commit(); err != nil {
-		return fmt.Errorf("commit dns settings: %w", err)
-	}
-	return nil
+	return o.applyHeadscaleConfig(applyCtx, cfg, nil)
 }
 
 // validateDNSSettings runs the minimal structural checks headscale's own

@@ -110,11 +110,7 @@ export default function Layout() {
                   <p className="text-xs text-base-content/60 truncate">{organization.Domain}</p>
                   <span
                     className={`badge badge-xs ${
-                      organization.Status === 'active'
-                        ? 'badge-success'
-                        : organization.Status === 'failed'
-                          ? 'badge-error'
-                          : 'badge-warning'
+                      organization.Status === 'active' ? 'badge-success' : 'badge-warning'
                     }`}
                   >
                     {organization.Status}

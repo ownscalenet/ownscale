@@ -88,7 +88,7 @@ func TestSetAuthRestrictionsRejectsInvalidHuJSON(t *testing.T) {
 	}
 }
 
-func TestSetAuthRestrictionsRollsBackOnDockerFailure(t *testing.T) {
+func TestSetAuthRestrictionsPersistsDespiteRestartFailure(t *testing.T) {
 	queries := newTestQueries(t)
 	var failRestart bool
 	api := &dockerfake.API{
@@ -118,7 +118,8 @@ func TestSetAuthRestrictionsRollsBackOnDockerFailure(t *testing.T) {
 	}
 
 	failRestart = true
-	if err := svc.ForOrg(org).SetAuthRestrictions(t.Context(), `{"domains":["example.com"]}`); err == nil {
+	newContent := `{"domains":["example.com"]}`
+	if err := svc.ForOrg(org).SetAuthRestrictions(t.Context(), newContent); err == nil {
 		t.Fatal("SetAuthRestrictions: want error when restart fails, got nil")
 	}
 
@@ -126,8 +127,16 @@ func TestSetAuthRestrictionsRollsBackOnDockerFailure(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetAuthRestrictions: %v", err)
 	}
-	if content != defaultAuthRestrictions {
-		t.Fatalf("GetAuthRestrictions = %q, want the pre-failure default (rolled back)", content)
+	if content != newContent {
+		t.Fatalf("GetAuthRestrictions = %q, want the new content %q (persisted despite the restart failing)", content, newContent)
+	}
+
+	got, err := queries.GetOrganization(t.Context(), org.ID)
+	if err != nil {
+		t.Fatalf("GetOrganization: %v", err)
+	}
+	if got.Status != StatusUpdatePending {
+		t.Fatalf("org.Status = %q, want %q", got.Status, StatusUpdatePending)
 	}
 }
 
@@ -171,6 +180,14 @@ func TestSetAuthRestrictionsPersistsPatchesAndRestarts(t *testing.T) {
 	}
 	if got := cfg.OIDC.AllowedUsers; len(got) != 1 || got[0] != "alice@example.com" {
 		t.Errorf("config.yaml oidc.allowed_users = %v, want [alice@example.com]", got)
+	}
+
+	got, err := svc.ForOrg(org).queries.GetOrganization(t.Context(), org.ID)
+	if err != nil {
+		t.Fatalf("GetOrganization: %v", err)
+	}
+	if got.Status != StatusActive {
+		t.Errorf("org.Status = %q, want %q", got.Status, StatusActive)
 	}
 }
 
@@ -250,6 +267,14 @@ func TestSetDNSSettingsPersistsAndRestarts(t *testing.T) {
 	}
 	if len(*restarted) != 1 {
 		t.Fatalf("restarted %d times, want 1", len(*restarted))
+	}
+
+	orgAfter, err := svc.ForOrg(org).queries.GetOrganization(t.Context(), org.ID)
+	if err != nil {
+		t.Fatalf("GetOrganization: %v", err)
+	}
+	if orgAfter.Status != StatusActive {
+		t.Errorf("org.Status = %q, want %q", orgAfter.Status, StatusActive)
 	}
 }
 

@@ -1,6 +1,6 @@
 -- +goose Up
 ALTER TABLE organizations ADD COLUMN status TEXT NOT NULL DEFAULT 'pending'
-    CHECK (status IN ('pending', 'active', 'failed'));
+    CHECK (status IN ('pending', 'active', 'failed', 'update_pending'));
 
 -- Every organization that already exists at the time this migration runs
 -- was created by the old fully-synchronous provisioning path, so it's

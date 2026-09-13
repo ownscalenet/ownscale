@@ -37,7 +37,9 @@ func (h *Handlers) callerAndOrg(w http.ResponseWriter, r *http.Request) (caller 
 }
 
 // resolveActiveOrg resolves the caller and their organization (via
-// callerAndOrg), reporting notConfigured if the org isn't active yet.
+// callerAndOrg), reporting notConfigured if the org isn't operational yet
+// (still pending, or failed -- but not merely mid a settings-save
+// restart, see orgs.IsOperational).
 func (h *Handlers) resolveActiveOrg(w http.ResponseWriter, r *http.Request) (caller *sqlcgen.User, org sqlcgen.Organization, notConfigured bool, ok bool) {
 	c, orgID, callerOk := h.callerAndOrg(w, r)
 	if !callerOk {
@@ -49,7 +51,7 @@ func (h *Handlers) resolveActiveOrg(w http.ResponseWriter, r *http.Request) (cal
 		h.serverError(w, err)
 		return nil, sqlcgen.Organization{}, false, false
 	}
-	if o.Status != orgs.StatusActive {
+	if !orgs.IsOperational(o.Status) {
 		return c, o, true, true
 	}
 	return c, o, false, true

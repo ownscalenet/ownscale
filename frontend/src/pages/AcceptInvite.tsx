@@ -1,7 +1,13 @@
 import { useEffect, useState } from 'react'
 import { Navigate, useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../auth'
-import { acceptInvite, getInvitePreview, isAbortError, type InvitePreview } from '../api'
+import {
+  acceptInvite,
+  getInvitePreview,
+  isAbortError,
+  isOrgOperational,
+  type InvitePreview,
+} from '../api'
 import { usePageTitle } from '../hooks/usePageTitle'
 
 // AcceptInvite is the /invite/:token landing page. An unauthenticated
@@ -43,7 +49,7 @@ export default function AcceptInvite() {
     return <Navigate to={`/login?next=${encodeURIComponent(`/invite/${token}`)}`} replace />
   }
 
-  const alreadyInOrg = user.OrganizationID.Valid && organization?.Status === 'active'
+  const alreadyInOrg = user.OrganizationID.Valid && isOrgOperational(organization?.Status)
 
   const handleAccept = async () => {
     if (!token) return

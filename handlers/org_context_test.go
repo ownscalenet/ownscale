@@ -9,6 +9,7 @@ import (
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/headscaleclient"
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 // TestRequireActiveOrgShortCircuits covers RequireActiveOrg's guard: an
@@ -73,6 +74,35 @@ func TestRequireActiveOrgShortCircuits(t *testing.T) {
 				t.Error("next was called, want short-circuit")
 			}
 		})
+	}
+}
+
+func TestRequireActiveOrgAllowsUpdatePending(t *testing.T) {
+	h, org, users := newAccessControlTestHandlers(t, RoleOwner)
+	owner := users[0]
+
+	if _, err := h.queries.UpdateOrganizationStatus(t.Context(), sqlcgen.UpdateOrganizationStatusParams{
+		Status: orgs.StatusUpdatePending,
+		ID:     org.ID,
+	}); err != nil {
+		t.Fatalf("UpdateOrganizationStatus: %v", err)
+	}
+
+	nextCalled := false
+	next := func(w http.ResponseWriter, r *http.Request) {
+		nextCalled = true
+		w.WriteHeader(http.StatusOK)
+	}
+
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/auth-restrictions", nil), owner)
+	rec := httptest.NewRecorder()
+	h.RequireActiveOrg(next)(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200, body=%s", rec.Code, rec.Body.String())
+	}
+	if !nextCalled {
+		t.Error("next was not called, want it to be called for an update_pending org")
 	}
 }
 
