@@ -47,13 +47,13 @@ export async function registerRealMachine(page: Page, orgSubdomain = 'aaaa'): Pr
   for (let attempt = 1; ; attempt++) {
     try {
       await page.goto('/settings')
+      await page.getByRole('button', { name: 'Create pre-auth key' }).click()
       break
     } catch (err) {
       if (attempt >= 5 || !String(err).includes('ERR_NETWORK_CHANGED')) throw err
       await page.waitForTimeout(2_000)
     }
   }
-  await page.getByRole('button', { name: 'Create pre-auth key' }).click()
   const createDialog = page.locator('dialog.modal[open]')
   const userSelect = createDialog.getByRole('combobox')
   // Wait for the real (non-placeholder) user option to render before
