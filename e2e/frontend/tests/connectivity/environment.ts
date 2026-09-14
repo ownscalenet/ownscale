@@ -5,8 +5,10 @@ export const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../.
 export const baseURL = process.env.E2E_BASE_URL ?? 'https://ownscale.test'
 export const baseDomain = process.env.E2E_BASE_DOMAIN ?? new URL(baseURL).hostname
 export const privateDir = resolve(root, 'e2e/.connectivity-private')
-export const caFile = resolve(root, process.env.E2E_CA_FILE ??
-  `${process.env.OWNSCALE_DATA_DIR ?? 'data'}/local-ca/root.crt`)
+export const caFile = process.env.E2E_CA_FILE === ''
+  ? undefined
+  : resolve(root, process.env.E2E_CA_FILE ??
+      `${process.env.OWNSCALE_DATA_DIR ?? 'data'}/local-ca/root.crt`)
 export const bridgeBinary = resolve(root, 'bin/tscl-bridge')
 export const scratchDir = resolve(root, 'bin/connectivity-work')
 export const dexURL = process.env.E2E_DEX_URL ?? `https://dex.${baseDomain}`

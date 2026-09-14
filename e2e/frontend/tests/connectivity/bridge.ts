@@ -116,7 +116,7 @@ export class Bridge {
     this.killGraceMs = options.killGraceMs ?? 2000
     this.child = spawn(options.command ?? bridgeBinary, options.args ?? [], {
       cwd: root,
-      env: { ...process.env, SSL_CERT_FILE: caFile, TS_NO_LOGS_NO_SUPPORT: 'true', TMPDIR: scratchDir },
+      env: { ...process.env, ...(caFile ? { SSL_CERT_FILE: caFile } : {}), TS_NO_LOGS_NO_SUPPORT: 'true', TMPDIR: scratchDir },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
     this.exit = new Promise(resolve => {

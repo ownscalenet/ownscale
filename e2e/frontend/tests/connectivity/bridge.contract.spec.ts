@@ -38,7 +38,7 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
   process.stderr.write('${secret}'.repeat(5000));
   if (q.op === 'create') {
     if (q.args.authKey !== '${secret}' || process.argv.includes(q.args.authKey) ||
-        process.env.SSL_CERT_FILE !== ${JSON.stringify(caFile)} || process.env.TS_NO_LOGS_NO_SUPPORT !== 'true')
+        process.env.SSL_CERT_FILE !== ${caFile ? JSON.stringify(caFile) : 'undefined'} || process.env.TS_NO_LOGS_NO_SUPPORT !== 'true')
       process.exit(9);
     process.stdout.write(reply({node:q.args.node,hostname:q.args.hostname,addresses:['100.64.0.1'],backendState:'Running'}));
     return;
@@ -145,7 +145,7 @@ test('compiled Go binary negotiates hello and rejects invalid operations', async
     await expect(bridge.status('missing')).rejects.toThrow('unknown_handle')
   } finally { await bridge.shutdown() }
   const child = spawn(bridgeBinary, [], {
-    cwd: root, env: { ...process.env, SSL_CERT_FILE: caFile, TS_NO_LOGS_NO_SUPPORT: 'true', TMPDIR: scratchDir },
+    cwd: root, env: { ...process.env, ...(caFile ? { SSL_CERT_FILE: caFile } : {}), TS_NO_LOGS_NO_SUPPORT: 'true', TMPDIR: scratchDir },
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   const closed = once(child, 'close')

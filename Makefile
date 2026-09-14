@@ -4,7 +4,7 @@
 # (go:embed needs real files at Go build time), so run `make frontend`
 # whenever frontend/ changes and commit the updated webui/dist.
 
-.PHONY: build frontend backend osa restore test test-integration coverage migration archive docker-image caddy-image rm-orphans purge ci docs load-cert dev-up devbox e2e e2e-frontend e2e-connectivity
+.PHONY: build frontend backend osa restore test test-integration coverage migration archive docker-image caddy-image rm-orphans purge ci docs load-cert dev-up devbox e2e e2e-frontend e2e-connectivity e2e-remote e2e-remote-frontend e2e-remote-connectivity
 
 DOCKER_IMAGE := ownscale:latest
 CADDY_IMAGE := ownscale-caddy:latest
@@ -108,6 +108,18 @@ e2e-frontend:
 e2e-connectivity:
 	mkdir -p bin/connectivity-work
 	TMPDIR="$(CURDIR)/bin/connectivity-work" npm --prefix e2e/frontend run test:connectivity
+
+REMOTE_BASE_DOMAIN ?= ""
+
+e2e-remote: e2e-remote-frontend e2e-remote-connectivity
+
+e2e-remote-frontend:
+	E2E_BASE_URL=https://$(REMOTE_BASE_DOMAIN) E2E_BASE_DOMAIN=$(REMOTE_BASE_DOMAIN) $(MAKE) e2e-frontend
+
+e2e-remote-connectivity:
+	mkdir -p bin/connectivity-work
+	E2E_BASE_URL=https://$(REMOTE_BASE_DOMAIN) E2E_BASE_DOMAIN=$(REMOTE_BASE_DOMAIN) E2E_CA_FILE= \
+		TMPDIR="$(CURDIR)/bin/connectivity-work" npm --prefix e2e/frontend run test:connectivity
 
 # Regenerate the headscale API client in headscaleclient/hscodegen
 # from the vendored OpenAPI spec (headscale.swagger.json). The generated
