@@ -5,6 +5,7 @@ go 1.27.0
 require (
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/containerd/errdefs v1.0.0
+	github.com/creachadair/jrpc2 v1.3.5
 	github.com/descope/virtualwebauthn v1.0.5
 	github.com/docker/docker v28.5.2+incompatible
 	github.com/go-jose/go-jose/v4 v4.1.4
@@ -45,6 +46,7 @@ require (
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
 	github.com/containerd/errdefs/pkg v0.3.0 // indirect
+	github.com/creachadair/mds v0.26.1 // indirect
 	github.com/creachadair/msync v0.8.1 // indirect
 	github.com/dblohm7/wingoes v0.0.0-20240119213807-a09d6be7affa // indirect
 	github.com/distribution/reference v0.6.0 // indirect

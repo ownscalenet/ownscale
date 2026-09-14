@@ -42,6 +42,9 @@ osa:
 # env or in .env -- persisting them to .env means a bare `docker compose ...`
 # (bypassing make) still runs containers as the host user instead of
 # silently falling back to root.
+#
+# Pass `make dev-up BUILD=1`) to forward --build to `docker compose up`.
+BUILD ?=
 dev-up:
 	mkdir -p "$(DATA_DIR)/.litestream-backups"
 	@touch .env
@@ -49,7 +52,7 @@ dev-up:
 		key=$${kv%%=*}; \
 		grep -q "^$$key=" .env && sed -i "s|^$$key=.*|$$kv|" .env || echo "$$kv" >> .env; \
 	done
-	docker compose up --build
+	docker compose up $(if $(BUILD),--build)
 
 # Spin up a throwaway ubuntu container running tailscaled, auto-join it to
 # an org's headscale server (ORG, default aaaa -- see

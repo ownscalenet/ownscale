@@ -5,52 +5,60 @@ import { Bridge } from './bridge'
 import { bridgeBinary, caFile, root, scratchDir } from './environment'
 
 const secret = 'contract-private-key-cookie-password'
+// A JSON-RPC mock bridge process: replies mirror the real Go bridge's
+// wire shape (see internal/bridge/protocol.go's toRPCError), but each
+// "mode" deliberately misbehaves in one way to exercise the client's
+// defenses (malformed JSON, wrong reply id, missing/invalid fields, etc).
 const mock = `
 const readline = require('node:readline');
 const mode = process.argv[1];
-let count = 0;
 if (mode === 'stubborn') process.on('SIGTERM', () => {});
 readline.createInterface({ input: process.stdin }).on('line', line => {
   const q = JSON.parse(line);
-  const reply = result => JSON.stringify({ version: 1, id: q.id, result }) + '\\n';
-  if (q.op === 'hello') {
+  const reply = result => JSON.stringify({ jsonrpc: '2.0', id: q.id, result }) + '\\n';
+  if (q.method === 'hello') {
     if (mode === 'hello-timeout') return;
     if (mode === 'hello-exit') { process.exit(0); return; }
     if (mode === 'hello-malformed') { process.stdout.write('${secret}\\n'); return; }
-    process.stdout.write(reply({ ready: true, maxTimeoutMs: 300000, maxFrameBytes: 65536 }));
+    process.stdout.write(reply({ ready: true }));
     return;
   }
-  if (q.op === 'shutdown') {
+  if (q.method === 'shutdown') {
     if (mode === 'stubborn') { setInterval(() => {}, 1000); return; }
     process.stdout.write(reply({ closed: true }), () => process.exit(0));
     return;
   }
-  if (mode === 'exit') { process.stdout.write('{"version":'); process.exit(7); }
+  if (mode === 'exit') { process.stdout.write('{"jsonrpc":'); process.exit(7); }
   if (mode === 'timeout') return;
   if (mode === 'malformed') { process.stdout.write('PRIVATE-NON-JSON\\n'); return; }
-  if (mode === 'oversize') { process.stdout.write('x'.repeat(65537)); return; }
-  if (mode === 'wrong-id') { process.stdout.write(JSON.stringify({version:1,id:'wrong',result:{}})+'\\n'); return; }
-  if (mode === 'wrong-version') { process.stdout.write(JSON.stringify({version:2,id:q.id,result:{}})+'\\n'); return; }
+  if (mode === 'wrong-id') { process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:'wrong',result:{}})+'\\n'); return; }
+  if (mode === 'wrong-jsonrpc') { process.stdout.write(JSON.stringify({jsonrpc:'1.0',id:q.id,result:{}})+'\\n'); return; }
   if (mode === 'wrong-shape') { process.stdout.write(reply({ok:true})); return; }
-  if (mode === 'both') { process.stdout.write(JSON.stringify({version:1,id:q.id,result:{},error:{code:'timeout',message:'SECRET'}})+'\\n'); return; }
-  if (mode === 'error') { process.stdout.write(JSON.stringify({version:1,id:q.id,error:{code:'invalid_command',message:'${secret}'}})+'\\n'); return; }
-  if (mode === 'unknown-error') { process.stdout.write(JSON.stringify({version:1,id:q.id,error:{code:'${secret}',message:'${secret}'}})+'\\n'); return; }
+  if (mode === 'both') { process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:q.id,result:{},error:{code:1,message:'x',data:{code:'timeout',message:'SECRET'}}})+'\\n'); return; }
+  if (mode === 'error') { process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:q.id,error:{code:1,message:'${secret}',data:{code:'invalid_command',message:'${secret}'}}})+'\\n'); return; }
+  if (mode === 'unknown-error') { process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:q.id,error:{code:1,message:'${secret}',data:{code:'${secret}',message:'${secret}'}}})+'\\n'); return; }
   process.stderr.write('${secret}'.repeat(5000));
-  if (q.op === 'create') {
-    if (q.args.authKey !== '${secret}' || process.argv.includes(q.args.authKey) ||
+  if (q.method === 'create') {
+    if (q.params.authKey !== '${secret}' || process.argv.includes(q.params.authKey) ||
         process.env.SSL_CERT_FILE !== ${caFile ? JSON.stringify(caFile) : 'undefined'} || process.env.TS_NO_LOGS_NO_SUPPORT !== 'true')
       process.exit(9);
-    process.stdout.write(reply({node:q.args.node,hostname:q.args.hostname,addresses:['100.64.0.1'],backendState:'Running'}));
+    const createFrame = reply({node:q.params.node,hostname:q.params.hostname,addresses:['100.64.0.1'],backendState:'Running'});
+    if (mode === 'partial') {
+      // create is always the first, solitary in-flight request in this
+      // test, so fragmenting only its reply exercises reassembly across
+      // stdout chunks without any risk of interleaving with a concurrent
+      // reply -- the real Go bridge never interleaves partial writes for
+      // different in-flight requests (deliver() is mutex-serialized), so
+      // that scenario would not be representative of real behavior.
+      process.stdout.write(createFrame.slice(0, 10));
+      setTimeout(() => process.stdout.write(createFrame.slice(10)), 10);
+    } else process.stdout.write(createFrame);
     return;
   }
-  const result = q.op === 'probe'
+  const result = q.method === 'probe'
     ? {ok:false,statusCode:0,identity:'',durationMs:10,error:{code:'timeout',message:'${secret}'}}
-    : {node:q.args.node,hostname:'host',addresses:['100.64.0.1','fd7a:115c:a1e0::1'],backendState:'Running'};
-  const frame = reply(result);
-  if (mode === 'partial') {
-    process.stdout.write(frame.slice(0, 10));
-    setTimeout(() => process.stdout.write(frame.slice(10)), 10);
-  } else process.stdout.write(frame);
+    : {node:q.params.node,hostname:'host',addresses:['100.64.0.1','fd7a:115c:a1e0::1'],backendState:'Running'};
+  process.stdout.write(reply(result));
 });
 `
 
@@ -59,12 +67,14 @@ async function start(mode: string) {
     rpcGraceMs: 50, shutdownGraceMs: 50, killGraceMs: 100 })
 }
 
-test('partial framing, serialized calls, child environment, and secret-free diagnostics', async () => {
+test('partial framing, concurrent calls, child environment, and secret-free diagnostics', async () => {
   const bridge = await start('partial')
   try {
     const node = await bridge.create({ node: 'one', hostname: 'host',
       controlURL: 'https://aaaa.ownscale.test', authKey: secret })
     expect(node.addresses).toEqual(['100.64.0.1'])
+    // Calls are ID-correlated by the JSON-RPC client, not queued, so this
+    // also exercises multiple requests in flight at once.
     const results = await Promise.all([bridge.status('one'), bridge.status('two'), bridge.status('three')])
     expect(results.map(r => r.node)).toEqual(['one', 'two', 'three'])
     const probe = await bridge.probe('one', 'http://100.64.0.1:80', 'identity', 100)
@@ -78,7 +88,7 @@ test('partial framing, serialized calls, child environment, and secret-free diag
   expect(JSON.parse(bridge.diagnostics())).toMatchObject({ exited: true, forcedCleanup: false })
 })
 
-for (const mode of ['malformed', 'oversize', 'wrong-id', 'wrong-version', 'wrong-shape', 'both', 'unknown-error', 'exit', 'timeout']) {
+for (const mode of ['malformed', 'wrong-id', 'wrong-jsonrpc', 'wrong-shape', 'both', 'unknown-error', 'exit', 'timeout']) {
   test(`rejects ${mode} output without leaking data or stranding queued calls`, async () => {
     const bridge = await start(mode)
     const pid = JSON.parse(bridge.diagnostics()).pid as number
@@ -122,9 +132,13 @@ test('non-cooperative shutdown escalates only the owned PID and reports failure'
 test('shutdown remains bounded behind an unresponsive in-flight call', async () => {
   const bridge = await start('timeout')
   const pending = bridge.status('one').catch(error => error)
+  // The mock still replies to shutdown promptly and exits cleanly (it isn't
+  // "stuck" itself); shutdown() still surfaces a failure because the
+  // status('one') call was abandoned without a reply, so no force-kill is
+  // needed here (unlike the 'stubborn' case above).
   await expect(bridge.shutdown()).rejects.toThrow('cleanup failed')
   expect(await pending).toBeInstanceOf(Error)
-  expect(JSON.parse(bridge.diagnostics())).toMatchObject({ exited: true, forcedCleanup: true })
+  expect(JSON.parse(bridge.diagnostics())).toMatchObject({ exited: true, forcedCleanup: false })
 })
 
 test('spawn failure is bounded and sanitized', async () => {
@@ -159,18 +173,18 @@ test('compiled Go binary negotiates hello and rejects invalid operations', async
       replies.push(JSON.parse(buffer.slice(0, newline)))
       buffer = buffer.slice(newline + 1)
       if (replies.length === 1) child.stdin.write(JSON.stringify({
-        version: 1, id: 'stop', op: 'shutdown', timeoutMs: 1000, args: {},
+        jsonrpc: '2.0', id: 2, method: 'shutdown', params: { timeout: '1000ms' },
       }) + '\n')
     }
   })
   child.stderr.resume()
   const timer = setTimeout(() => child.kill('SIGKILL'), 5000)
   try {
-    child.stdin.write(JSON.stringify({ version: 1, id: 'invalid', op: 'not-a-command', timeoutMs: 1000, args: {} }) + '\n')
+    child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'not-a-command', params: { timeout: '1000ms' } }) + '\n')
     expect(await closed).toEqual([0, null])
     expect(replies).toEqual([
-      { version: 1, id: 'invalid', error: { code: 'invalid_command', message: 'Invalid command, arguments, framing, or request ID' } },
-      { version: 1, id: 'stop', result: { closed: true } },
+      { jsonrpc: '2.0', id: 1, error: { code: 1, message: 'Invalid command or arguments', data: { code: 'invalid_command', message: 'Invalid command or arguments' } } },
+      { jsonrpc: '2.0', id: 2, result: { closed: true } },
     ])
   } finally {
     clearTimeout(timer)

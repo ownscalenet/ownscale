@@ -51,7 +51,7 @@ func TestProcessLifecycle(t *testing.T) {
 			exchange := func(op string) {
 				t.Helper()
 				if err := encoder.Encode(map[string]any{
-					"version": 1, "id": op, "op": op, "timeoutMs": 1000, "args": struct{}{},
+					"jsonrpc": "2.0", "id": op, "method": op, "params": map[string]any{"timeout": "1000ms"},
 				}); err != nil {
 					t.Fatal(err)
 				}

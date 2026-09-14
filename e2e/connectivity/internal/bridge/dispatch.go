@@ -2,6 +2,7 @@ package bridge
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"log/slog"
@@ -9,9 +10,11 @@ import (
 	"net/netip"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
+	"github.com/creachadair/jrpc2"
 	"github.com/ownscalenet/ownscale/e2e/connectivity/tscl"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/net/tsaddr"
@@ -33,15 +36,31 @@ type ownedNode struct {
 type dispatcher struct {
 	nodes    map[string]*ownedNode
 	services map[string]*tscl.HTTPService
-	ids      map[string]bool
+	requests int
 	newNode  func(context.Context, tscl.Config) (node, error)
+
+	shutdownRequested atomic.Bool
 }
 
 func newDispatcher() *dispatcher {
 	return &dispatcher{
 		nodes: make(map[string]*ownedNode), services: make(map[string]*tscl.HTTPService),
-		ids:     make(map[string]bool),
 		newNode: func(ctx context.Context, cfg tscl.Config) (node, error) { return tscl.New(ctx, cfg) },
+	}
+}
+
+// Assign implements jrpc2.Assigner. It always returns a handler (never nil)
+// so that unknown methods are rejected by dispatch's own switch as
+// "invalid_command", matching the bridge's existing error-code contract
+// rather than jrpc2's standard "method not found" response.
+func (d *dispatcher) Assign(_ context.Context, method string) jrpc2.Handler {
+	return func(ctx context.Context, req *jrpc2.Request) (any, error) {
+		params := json.RawMessage("{}")
+		if req.HasParams() {
+			params = json.RawMessage(req.ParamString())
+		}
+		result, err := d.dispatch(ctx, method, params)
+		return result, toRPCError(err)
 	}
 }
 
@@ -68,45 +87,44 @@ type probeResult struct {
 	Error      *protocolError `json:"error,omitempty"`
 }
 
-func (d *dispatcher) dispatch(parent context.Context, req request) (any, error) {
-	if req.Version != version {
-		return nil, failure("unsupported_version")
-	}
-	if !handlePattern.MatchString(req.ID) || d.ids[req.ID] || len(d.ids) >= maxRequests ||
-		req.TimeoutMs < 1 || req.TimeoutMs > maxTimeoutMs {
+func (d *dispatcher) dispatch(parent context.Context, op string, params json.RawMessage) (any, error) {
+	if d.requests >= maxRequests {
 		return nil, failure("invalid_command")
 	}
-	d.ids[req.ID] = true
-	ctx, cancel := context.WithTimeout(parent, time.Duration(req.TimeoutMs)*time.Millisecond)
-	defer cancel()
-	switch req.Op {
+	d.requests++
+	switch op {
 	case "hello", "shutdown":
-		if err := decode(req.Args, &struct{}{}); err != nil {
+		var args struct {
+			Timeout timeout `json:"timeout"`
+		}
+		if err := decode(params, &args); err != nil {
 			return nil, err
 		}
-		if req.Op == "shutdown" {
+		if op == "shutdown" {
 			if err := d.close(); err != nil {
 				return nil, failure("bridge_failure")
 			}
+			d.shutdownRequested.Store(true)
 			return struct {
 				Closed bool `json:"closed"`
 			}{true}, nil
 		}
 		return struct {
-			Ready         bool `json:"ready"`
-			MaxTimeoutMs  int  `json:"maxTimeoutMs"`
-			MaxFrameBytes int  `json:"maxFrameBytes"`
-		}{true, maxTimeoutMs, maxFrameBytes}, nil
+			Ready bool `json:"ready"`
+		}{true}, nil
 	case "create":
 		var args struct {
-			Node       string `json:"node"`
-			Hostname   string `json:"hostname"`
-			ControlURL string `json:"controlURL"`
-			AuthKey    string `json:"authKey"`
+			Timeout    timeout `json:"timeout"`
+			Node       string  `json:"node"`
+			Hostname   string  `json:"hostname"`
+			ControlURL string  `json:"controlURL"`
+			AuthKey    string  `json:"authKey"`
 		}
-		if err := decode(req.Args, &args); err != nil {
+		if err := decode(params, &args); err != nil {
 			return nil, err
 		}
+		ctx, cancel := context.WithTimeout(parent, time.Duration(args.Timeout))
+		defer cancel()
 		u, err := url.Parse(args.ControlURL)
 		if !handlePattern.MatchString(args.Node) || !handlePattern.MatchString(args.Hostname) ||
 			strings.TrimSpace(args.AuthKey) == "" || len(args.AuthKey) > 4096 ||
@@ -123,7 +141,7 @@ func (d *dispatcher) dispatch(parent context.Context, req request) (any, error) 
 		}
 		client, err := d.newNode(ctx, tscl.Config{
 			Hostname: args.Hostname, ControlURL: args.ControlURL, AuthKey: args.AuthKey,
-			StartupTimeout: time.Duration(req.TimeoutMs) * time.Millisecond,
+			StartupTimeout: time.Duration(args.Timeout),
 			ProbeTimeout:   5 * time.Second,
 			Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
 		})
@@ -142,16 +160,19 @@ func (d *dispatcher) dispatch(parent context.Context, req request) (any, error) 
 		return result, nil
 	case "status", "close":
 		var args struct {
-			Node string `json:"node"`
+			Timeout timeout `json:"timeout"`
+			Node    string  `json:"node"`
 		}
-		if err := decode(req.Args, &args); err != nil {
+		if err := decode(params, &args); err != nil {
 			return nil, err
 		}
+		ctx, cancel := context.WithTimeout(parent, time.Duration(args.Timeout))
+		defer cancel()
 		n, err := d.lookup(args.Node)
 		if err != nil {
 			return nil, err
 		}
-		if req.Op == "status" {
+		if op == "status" {
 			return d.status(ctx, args.Node)
 		}
 		n.closed = true
@@ -164,13 +185,16 @@ func (d *dispatcher) dispatch(parent context.Context, req request) (any, error) 
 		}{args.Node, true}, nil
 	case "serve":
 		var args struct {
-			Node    string `json:"node"`
-			Service string `json:"service"`
-			Port    *int   `json:"port"`
+			Timeout timeout `json:"timeout"`
+			Node    string  `json:"node"`
+			Service string  `json:"service"`
+			Port    *int    `json:"port"`
 		}
-		if err := decode(req.Args, &args); err != nil {
+		if err := decode(params, &args); err != nil {
 			return nil, err
 		}
+		ctx, cancel := context.WithTimeout(parent, time.Duration(args.Timeout))
+		defer cancel()
 		if !handlePattern.MatchString(args.Service) || args.Port == nil || *args.Port < 0 || *args.Port > 65535 {
 			return nil, failure("invalid_command")
 		}
@@ -200,13 +224,16 @@ func (d *dispatcher) dispatch(parent context.Context, req request) (any, error) 
 		return result, nil
 	case "probe":
 		var args struct {
-			Node             string `json:"node"`
-			URL              string `json:"url"`
-			ExpectedIdentity string `json:"expectedIdentity"`
+			Timeout          timeout `json:"timeout"`
+			Node             string  `json:"node"`
+			URL              string  `json:"url"`
+			ExpectedIdentity string  `json:"expectedIdentity"`
 		}
-		if err := decode(req.Args, &args); err != nil {
+		if err := decode(params, &args); err != nil {
 			return nil, err
 		}
+		ctx, cancel := context.WithTimeout(parent, time.Duration(args.Timeout))
+		defer cancel()
 		n, err := d.lookup(args.Node)
 		if err != nil {
 			return nil, err

@@ -1,4 +1,4 @@
-// Package bridge implements the bounded JSON-lines connectivity subprocess.
+// Package bridge implements the bounded JSON-RPC connectivity subprocess.
 package bridge
 
 import (
@@ -8,32 +8,35 @@ import (
 	"io"
 	"reflect"
 	"regexp"
+	"time"
+
+	"github.com/creachadair/jrpc2"
 )
 
 const (
-	version       = 1
-	maxFrameBytes = 65536
-	maxTimeoutMs  = 300000
-	maxRequests   = 10000
-	maxNodes      = 64
-	maxServices   = 128
+	maxTimeout  = 300 * time.Second
+	maxRequests = 10000
+	maxNodes    = 64
+	maxServices = 128
+
+	appErrorCode jrpc2.Code = 1
 )
 
 var handlePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
-type request struct {
-	Version   int             `json:"version"`
-	ID        string          `json:"id"`
-	Op        string          `json:"op"`
-	TimeoutMs int             `json:"timeoutMs"`
-	Args      json.RawMessage `json:"args"`
-}
+type timeout time.Duration
 
-type response struct {
-	Version int            `json:"version"`
-	ID      string         `json:"id"`
-	Result  any            `json:"result,omitempty"`
-	Error   *protocolError `json:"error,omitempty"`
+func (t *timeout) UnmarshalJSON(data []byte) error {
+	var s string
+	if err := json.Unmarshal(data, &s); err != nil {
+		return err
+	}
+	d, err := time.ParseDuration(s)
+	if err != nil || d <= 0 || d > maxTimeout {
+		return errors.New("timeout out of range")
+	}
+	*t = timeout(d)
+	return nil
 }
 
 type protocolError struct {
@@ -45,22 +48,37 @@ func (e *protocolError) Error() string { return e.Message }
 
 func failure(code string) *protocolError {
 	messages := map[string]string{
-		"invalid_command":     "Invalid command, arguments, framing, or request ID",
-		"unsupported_version": "Unsupported protocol version",
-		"duplicate_handle":    "Handle is already reserved",
-		"unknown_handle":      "Handle does not exist",
-		"closed_node":         "Node is closed",
-		"timeout":             "Operation deadline exceeded",
-		"unreachable":         "Network endpoint is unreachable",
-		"refused":             "Network connection was refused",
-		"cancelled":           "Operation was cancelled",
-		"identity_mismatch":   "Endpoint returned a different identity",
-		"invalid_response":    "Endpoint returned an invalid response",
-		"bridge_failure":      "Bridge operation or cleanup failed",
+		"invalid_command":   "Invalid command or arguments",
+		"duplicate_handle":  "Handle is already reserved",
+		"unknown_handle":    "Handle does not exist",
+		"closed_node":       "Node is closed",
+		"timeout":           "Operation deadline exceeded",
+		"unreachable":       "Network endpoint is unreachable",
+		"refused":           "Network connection was refused",
+		"cancelled":         "Operation was cancelled",
+		"identity_mismatch": "Endpoint returned a different identity",
+		"invalid_response":  "Endpoint returned an invalid response",
+		"bridge_failure":    "Bridge operation or cleanup failed",
 	}
 	return &protocolError{Code: code, Message: messages[code]}
 }
 
+// toRPCError converts an application error into the *jrpc2.Error the
+// transport sends over the wire, preserving the application error code in
+// the response's Data field. Non-protocol errors (e.g. framing failures
+// reported by the library itself) are returned unchanged.
+func toRPCError(err error) error {
+	var pe *protocolError
+	if !errors.As(err, &pe) {
+		return err
+	}
+	return jrpc2.Errorf(appErrorCode, "%s", pe.Message).WithData(pe)
+}
+
+// decode strictly decodes raw into target, rejecting unknown or duplicate
+// JSON keys so RPC arguments can't silently carry unexpected fields. This is
+// an application-level shape/security check, independent of the JSON-RPC
+// envelope itself (which the transport library validates).
 func decode(raw []byte, target any) error {
 	raw = bytes.TrimSpace(raw)
 	if len(raw) == 0 || raw[0] != '{' {

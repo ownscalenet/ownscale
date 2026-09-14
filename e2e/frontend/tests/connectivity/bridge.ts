@@ -1,5 +1,6 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { isIP } from 'node:net'
+import { JSONRPCClient, JSONRPCErrorException } from 'json-rpc-2.0'
 import { bridgeBinary, caFile, enrollmentTimeoutMs, root, scratchDir } from './environment'
 
 export interface NodeInfo {
@@ -34,10 +35,12 @@ interface StartOptions {
   helloTimeoutMs?: number
 }
 
-const maxFrame = 65_536
+// The single non-reserved JSON-RPC error code the Go bridge uses to carry an
+// application-level protocolError (see protocol.go's appErrorCode); the
+// actual {code, message} pair travels in the JSON-RPC error's `data` field.
+const appErrorCode = 1
 const messages: Record<string, string> = {
   invalid_command: 'Invalid command, arguments, framing, or request ID',
-  unsupported_version: 'Unsupported protocol version',
   duplicate_handle: 'Handle is already reserved',
   unknown_handle: 'Handle does not exist',
   closed_node: 'Node is closed',
@@ -80,21 +83,10 @@ const probeResult = (v: unknown): v is ProbeResult => object(v) &&
   text(v.identity) && integer(v.durationMs, 0, 300_000) &&
   (v.ok ? !Object.hasOwn(v, 'error') && v.statusCode === 200 && v.identity.length > 0 : protocolError(v.error))
 
-interface Pending {
-  id: string
-  op: string
-  validate: (value: unknown) => boolean
-  resolve: (value: unknown) => void
-  reject: (error: Error) => void
-  timer: NodeJS.Timeout
-}
-
 export class Bridge {
   private readonly child: ChildProcessWithoutNullStreams
-  private buffer = Buffer.alloc(0)
-  private pending?: Pending
-  private sequence = 0
-  private queue: Promise<unknown> = Promise.resolve()
+  private readonly rpc: JSONRPCClient
+  private lineBuffer = ''
   private fault?: Error
   private exited = false
   private exitCode: number | null = null
@@ -102,7 +94,13 @@ export class Bridge {
   private stopping = false
   private forced = false
   private stderrBytes = 0
-  private frames = 0
+  private requests = 0
+  private replies = 0
+  // Number of calls awaiting a reply. Unlike the old hand-rolled protocol,
+  // several calls may be in flight at once (they're ID-correlated by the
+  // JSON-RPC client, not queued), so if the process exits while any are
+  // still outstanding, that's still a bridge failure worth surfacing.
+  private inFlight = 0
   private termination?: Promise<void>
   private shutdownPromise?: Promise<void>
   private readonly exit: Promise<void>
@@ -119,12 +117,18 @@ export class Bridge {
       env: { ...process.env, ...(caFile ? { SSL_CERT_FILE: caFile } : {}), TS_NO_LOGS_NO_SUPPORT: 'true', TMPDIR: scratchDir },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
+    this.rpc = new JSONRPCClient(request => {
+      const frame = JSON.stringify(request) + '\n'
+      return new Promise((resolve, reject) => {
+        this.child.stdin.write(frame, error => { if (error) reject(error); else resolve() })
+      })
+    })
     this.exit = new Promise(resolve => {
       this.child.once('close', (code, signal) => {
         this.exited = true
         this.exitCode = code
         this.exitSignal = signal
-        if (this.buffer.length || this.pending || !this.stopping || code !== 0)
+        if (this.lineBuffer.length || this.inFlight > 0 || !this.stopping || code !== 0)
           this.fail('Bridge exited unexpectedly')
         resolve()
       })
@@ -137,15 +141,15 @@ export class Bridge {
       // Keep counts, never diagnostic text: upstream logs may contain credentials.
       this.stderrBytes = Math.min(Number.MAX_SAFE_INTEGER, this.stderrBytes + data.length)
     })
-    this.child.stdout.on('data', (data: Buffer) => this.receive(data))
+    this.child.stdout.setEncoding('utf8')
+    this.child.stdout.on('data', (data: string) => this.receive(data))
   }
 
   static async start(options: StartOptions = {}): Promise<Bridge> {
     const bridge = new Bridge(options)
     try {
       await bridge.call('hello', {}, options.helloTimeoutMs ?? 5000, value => object(value) &&
-        keys(value, ['ready', 'maxTimeoutMs', 'maxFrameBytes']) && value.ready === true &&
-        value.maxTimeoutMs === 300_000 && value.maxFrameBytes === maxFrame)
+        keys(value, ['ready']) && value.ready === true)
       return bridge
     } catch (error) {
       await bridge.terminate()
@@ -181,7 +185,7 @@ export class Bridge {
 
   diagnostics(): string {
     return JSON.stringify({
-      pid: this.child.pid ?? null, requests: this.sequence, replies: this.frames,
+      pid: this.child.pid ?? null, requests: this.requests, replies: this.replies,
       stderrBytes: this.stderrBytes, exited: this.exited, exitCode: this.exitCode,
       exitSignal: this.exitSignal, forcedCleanup: this.forced, failed: !!this.fault,
     })
@@ -213,71 +217,65 @@ export class Bridge {
       throw new Error(`Bridge cleanup failed; ${this.diagnostics()}`)
   }
 
-  private call<T>(op: string, args: unknown, timeoutMs: number,
+  // call sends one JSON-RPC request and validates the reply. Requests are
+  // ID-correlated by the JSON-RPC client library, so unlike the old hand-rolled
+  // protocol there's no need to queue calls one at a time on this side --
+  // the Go bridge already serializes its own handler execution
+  // (jrpc2.ServerOptions.Concurrency: 1).
+  private async call<T>(op: string, args: unknown, timeoutMs: number,
     validate: (value: unknown) => boolean, teardown = false): Promise<T> {
-    if (!integer(timeoutMs, 1, 300_000)) return Promise.reject(new Error('Invalid bridge operation timeout'))
-    if (this.stopping && !teardown) return Promise.reject(new Error('Bridge is shutting down'))
-    const next = this.queue.then(() => new Promise<T>((resolve, reject) => {
-      if (this.fault || this.exited) {
-        reject(this.fault ?? new Error('Bridge is closed'))
-        return
+    if (!integer(timeoutMs, 1, 300_000)) throw new Error('Invalid bridge operation timeout')
+    if (this.stopping && !teardown) throw new Error('Bridge is shutting down')
+    if (this.fault || this.exited) throw this.fault ?? new Error('Bridge is closed')
+    this.requests++
+    this.inFlight++
+    try {
+      let result: unknown
+      try {
+        result = await this.rpc.timeout(timeoutMs + this.rpcGraceMs).request(op, { ...(args as object), timeout: `${timeoutMs}ms` })
+      } catch (error) {
+        if (error instanceof JSONRPCErrorException && error.code === appErrorCode && protocolError(error.data)) {
+          const pe = error.data
+          throw new Error(`Bridge ${op} operation failed: ${pe.code} (${messages[pe.code]})`)
+        }
+        this.fail('Bridge RPC deadline exceeded or bridge returned an invalid response')
+        throw this.fault
       }
-      const id = `rpc-${++this.sequence}`
-      const frame = JSON.stringify({ version: 1, id, op, timeoutMs, args }) + '\n'
-      if (Buffer.byteLength(frame) > maxFrame) {
-        reject(new Error('Bridge request exceeds frame limit'))
-        return
+      if (!validate(result)) {
+        this.fail('Bridge returned an invalid response shape')
+        throw this.fault
       }
-      const timer = setTimeout(() => this.fail('Bridge RPC deadline exceeded'), timeoutMs + this.rpcGraceMs)
-      this.pending = { id, op, validate, resolve: value => resolve(value as T), reject, timer }
-      this.child.stdin.write(frame, error => { if (error) this.fail('Bridge input stream failed') })
-    }))
-    this.queue = next.catch(() => {})
-    return next
+      this.replies++
+      return result as T
+    } finally {
+      this.inFlight--
+    }
   }
 
-  private receive(data: Buffer): void {
+  private receive(data: string): void {
     if (this.fault) return
-    let offset = 0
-    while (offset < data.length) {
-      const newline = data.indexOf(10, offset)
-      const end = newline === -1 ? data.length : newline
-      if (this.buffer.length + end - offset > maxFrame) {
-        this.fail('Bridge response exceeds frame limit')
-        return
-      }
-      this.buffer = Buffer.concat([this.buffer, data.subarray(offset, end)])
-      if (newline === -1) return
-      const line = this.buffer
-      this.buffer = Buffer.alloc(0)
-      offset = newline + 1
+    this.lineBuffer += data
+    let newline: number
+    while ((newline = this.lineBuffer.indexOf('\n')) >= 0) {
+      const line = this.lineBuffer.slice(0, newline)
+      this.lineBuffer = this.lineBuffer.slice(newline + 1)
       let value: unknown
-      try { value = JSON.parse(line.toString('utf8')) } catch {
+      try { value = JSON.parse(line) } catch {
         this.fail('Bridge returned malformed JSON')
         return
       }
-      const pending = this.pending
-      if (!pending || !object(value) || value.version !== 1 || value.id !== pending.id ||
-        !(keys(value, ['version', 'id', 'result']) || keys(value, ['version', 'id', 'error'])) ||
-        (Object.hasOwn(value, 'error') ? !protocolError(value.error) : !pending.validate(value.result))) {
+      if (!object(value) || value.jsonrpc !== '2.0' || !('id' in value) ||
+        !(keys(value, ['jsonrpc', 'id', 'result']) || keys(value, ['jsonrpc', 'id', 'error']))) {
         this.fail('Bridge returned an invalid response shape or request ID')
         return
       }
-      clearTimeout(pending.timer)
-      this.pending = undefined
-      this.frames++
-      if (protocolError(value.error)) pending.reject(new Error(`Bridge ${pending.op} operation failed: ${value.error.code} (${messages[value.error.code]})`))
-      else pending.resolve(value.result)
+      this.rpc.receive(value as unknown as Parameters<JSONRPCClient['receive']>[0])
     }
   }
 
   private fail(message: string): void {
     this.fault ??= new Error(message)
-    if (this.pending) {
-      clearTimeout(this.pending.timer)
-      this.pending.reject(this.fault)
-      this.pending = undefined
-    }
+    this.rpc.rejectAllPendingRequests(this.fault.message)
     if (!this.exited) void this.terminate()
   }
 
@@ -294,11 +292,7 @@ export class Bridge {
       if (this.exited) return
       this.forced = true
       this.fault ??= new Error('Bridge forced cleanup required')
-      if (this.pending) {
-        clearTimeout(this.pending.timer)
-        this.pending.reject(this.fault)
-        this.pending = undefined
-      }
+      this.rpc.rejectAllPendingRequests(this.fault.message)
       this.child.stdin.end()
       // child.kill targets only this owned process, never a process group.
       this.child.kill('SIGTERM')
