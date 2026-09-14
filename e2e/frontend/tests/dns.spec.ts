@@ -95,12 +95,12 @@ test('adding and removing a nameserver, DNS record, and search domain, and toggl
   )
 
   const magicDnsToggle = page.locator('input[type="checkbox"].toggle')
-  const wasEnabled = await magicDnsToggle.isChecked()
+  const wasEnabled = await magicDnsToggle.isChecked({ timeout: 8_000 })
   const flippedLabel = page.getByText(wasEnabled ? 'Disabled' : 'Enabled', { exact: true })
   await retryUntil(
     page,
     async () => {
-      if ((await magicDnsToggle.isChecked()) !== wasEnabled) return
+      if ((await magicDnsToggle.isChecked({ timeout: 8_000 })) !== wasEnabled) return
       await magicDnsToggle.click()
     },
     async () => {
@@ -114,7 +114,7 @@ test('adding and removing a nameserver, DNS record, and search domain, and toggl
   await retryUntil(
     page,
     async () => {
-      if ((await magicDnsToggle.isChecked()) === wasEnabled) return
+      if ((await magicDnsToggle.isChecked({ timeout: 8_000 })) === wasEnabled) return
       await magicDnsToggle.click()
     },
     async () => {

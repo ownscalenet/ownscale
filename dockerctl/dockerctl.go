@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+	"sync"
 	"text/template"
 	"time"
 
@@ -101,6 +102,16 @@ type Ctl struct {
 
 	healthCheckPollInterval time.Duration
 	healthCheckTimeout      time.Duration
+
+	// restartMu serializes RestartHeadscale calls per subdomain, so two
+	// concurrent config-change requests for the same organization never
+	// issue overlapping ContainerRestart calls on the same container.
+	restartMu sync.Map // subdomain (string) -> *sync.Mutex
+}
+
+func (c *Ctl) restartLock(subdomain string) *sync.Mutex {
+	mu, _ := c.restartMu.LoadOrStore(subdomain, &sync.Mutex{})
+	return mu.(*sync.Mutex)
 }
 
 // New creates a controller using the standard Docker environment (DOCKER_HOST
@@ -789,7 +800,7 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 		return "", fmt.Errorf("start container: %w", err)
 	}
 
-	if err := c.waitForHealthy(ctx, resp.ID); err != nil {
+	if err := c.waitForHealthy(ctx, resp.ID, 0); err != nil {
 		return "", err
 	}
 
@@ -808,28 +819,43 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 	return resp.ID, nil
 }
 
+const unhealthyGracePeriod = 2 * time.Second
+
 // waitForHealthy polls containerID's Docker health status until it reports
-// healthy or c.healthCheckTimeout elapses, at which point it returns an
-// error. It requires the container to have a HEALTHCHECK configured (see
-// CreateOrganization).
-func (c *Ctl) waitForHealthy(ctx context.Context, containerID string) (err error) {
+// healthy, or until it has been continuously Unhealthy for longer than
+// unhealthyGrace, or until c.healthCheckTimeout elapses -- whichever comes
+// first.
+func (c *Ctl) waitForHealthy(ctx context.Context, containerID string, unhealthyGrace time.Duration) (err error) {
 	defer derrors.Wrap(&err, "c.waitForHealthy(%q)", containerID)
 
 	deadline := time.Now().Add(c.healthCheckTimeout)
+	lastStatus := ""
+	var unhealthySince time.Time
 	for {
 		info, err := c.cli.ContainerInspect(ctx, containerID)
 		if err != nil {
 			return fmt.Errorf("inspect container: %w", err)
 		}
 		if info.State != nil && info.State.Health != nil {
-			switch info.State.Health.Status {
+			lastStatus = info.State.Health.Status
+			switch lastStatus {
 			case container.Healthy:
 				return nil
 			case container.Unhealthy:
-				return fmt.Errorf("container reported unhealthy")
+				if unhealthySince.IsZero() {
+					unhealthySince = time.Now()
+				}
+				if time.Since(unhealthySince) > unhealthyGrace {
+					return fmt.Errorf("container reported unhealthy")
+				}
+			default:
+				unhealthySince = time.Time{}
 			}
 		}
 		if time.Now().After(deadline) {
+			if lastStatus != "" {
+				return fmt.Errorf("timed out after %s waiting for container to become healthy (last status: %s)", c.healthCheckTimeout, lastStatus)
+			}
 			return fmt.Errorf("timed out after %s waiting for container to become healthy", c.healthCheckTimeout)
 		}
 		select {
@@ -911,14 +937,19 @@ func (c *Ctl) StartOrganization(ctx context.Context, subdomain string) (err erro
 // RestartHeadscale restarts subdomain's headscale container via the Docker
 // API, so it picks up an on-disk config.yaml change (e.g. DNS or
 // auth-restriction settings, see orgs.OrgService.applyHeadscaleConfig).
+// Concurrent calls for the same subdomain are serialized.
 func (c *Ctl) RestartHeadscale(ctx context.Context, subdomain string) (err error) {
 	defer derrors.Wrap(&err, "c.RestartHeadscale(%q)", subdomain)
+
+	mu := c.restartLock(subdomain)
+	mu.Lock()
+	defer mu.Unlock()
 
 	name := HSContainerName(subdomain)
 	if err := c.cli.ContainerRestart(ctx, name, container.StopOptions{}); err != nil {
 		return fmt.Errorf("restart container: %w", err)
 	}
-	if err := c.waitForHealthy(ctx, name); err != nil {
+	if err := c.waitForHealthy(ctx, name, unhealthyGracePeriod); err != nil {
 		return fmt.Errorf("wait for healthy after restart: %w", err)
 	}
 	return nil

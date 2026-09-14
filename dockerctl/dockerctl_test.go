@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1015,6 +1016,118 @@ func TestRestartHeadscaleFailsWhenNeverHealthy(t *testing.T) {
 
 	if err := ctl.RestartHeadscale(t.Context(), "acme"); err == nil {
 		t.Fatal("RestartHeadscale: want error when container never becomes healthy, got nil")
+	}
+}
+
+// TestRestartHeadscaleToleratesTransientUnhealthyFlap verifies
+// RestartHeadscale doesn't fail on a single transient Unhealthy reading.
+func TestRestartHeadscaleToleratesTransientUnhealthyFlap(t *testing.T) {
+	var inspectCalls int
+	api := &dockerfake.API{
+		ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+			inspectCalls++
+			status := container.Unhealthy
+			if inspectCalls >= 2 {
+				status = container.Healthy
+			}
+			return container.InspectResponse{
+				ContainerJSONBase: &container.ContainerJSONBase{
+					State: &container.State{Status: "running", Health: &container.Health{Status: status}},
+				},
+			}, nil
+		},
+	}
+	ctl := newTestCtl(t, api, t.TempDir(), "")
+	t.Cleanup(func() { _ = ctl.Close() })
+	ctl.healthCheckPollInterval = time.Millisecond
+
+	if err := ctl.RestartHeadscale(t.Context(), "acme"); err != nil {
+		t.Fatalf("RestartHeadscale: want a single transient Unhealthy reading to be tolerated, got error: %v", err)
+	}
+}
+
+// TestRestartHeadscaleFailsWhenPersistentlyUnhealthy verifies
+// RestartHeadscale still fails fast (well before healthCheckTimeout) when
+// the container stays Unhealthy for longer than unhealthyGracePeriod,
+// rather than only fast-failing on the very first reading.
+func TestRestartHeadscaleFailsWhenPersistentlyUnhealthy(t *testing.T) {
+	api := &dockerfake.API{
+		ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+			return container.InspectResponse{
+				ContainerJSONBase: &container.ContainerJSONBase{
+					State: &container.State{Status: "running", Health: &container.Health{Status: container.Unhealthy}},
+				},
+			}, nil
+		},
+	}
+	ctl := newTestCtl(t, api, t.TempDir(), "")
+	t.Cleanup(func() { _ = ctl.Close() })
+	ctl.healthCheckPollInterval = time.Millisecond
+	ctl.healthCheckTimeout = time.Minute // large, to prove failure isn't from the overall deadline
+
+	start := time.Now()
+	if err := ctl.RestartHeadscale(t.Context(), "acme"); err == nil {
+		t.Fatal("RestartHeadscale: want error when container stays unhealthy, got nil")
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Errorf("RestartHeadscale took %s to fail on persistent Unhealthy, want it to fail fast (within unhealthyGracePeriod), not wait out healthCheckTimeout", elapsed)
+	}
+}
+
+// TestRestartHeadscaleSerializesConcurrentCallsForSameSubdomain verifies
+// two concurrent RestartHeadscale calls for the same subdomain never
+// overlap their ContainerRestart calls, preventing the kind of racing
+// restarts that can crash-loop a container under concurrent config-change
+// requests.
+func TestRestartHeadscaleSerializesConcurrentCallsForSameSubdomain(t *testing.T) {
+	var mu sync.Mutex
+	var inFlight int
+	var maxInFlight int
+	api := &dockerfake.API{
+		ContainerRestartFn: func(ctx context.Context, containerID string, options container.StopOptions) error {
+			mu.Lock()
+			inFlight++
+			if inFlight > maxInFlight {
+				maxInFlight = inFlight
+			}
+			mu.Unlock()
+
+			time.Sleep(20 * time.Millisecond)
+
+			mu.Lock()
+			inFlight--
+			mu.Unlock()
+			return nil
+		},
+		ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+			return container.InspectResponse{
+				ContainerJSONBase: &container.ContainerJSONBase{
+					State: &container.State{Status: "running", Health: &container.Health{Status: container.Healthy}},
+				},
+			}, nil
+		},
+	}
+	ctl := newTestCtl(t, api, t.TempDir(), "")
+	t.Cleanup(func() { _ = ctl.Close() })
+
+	var wg sync.WaitGroup
+	errs := make([]error, 5)
+	for i := range errs {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			errs[i] = ctl.RestartHeadscale(t.Context(), "acme")
+		}(i)
+	}
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("RestartHeadscale[%d]: %v", i, err)
+		}
+	}
+	if maxInFlight != 1 {
+		t.Errorf("max concurrent ContainerRestart calls for subdomain %q = %d, want 1 (serialized)", "acme", maxInFlight)
 	}
 }
 
