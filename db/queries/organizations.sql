@@ -19,7 +19,7 @@ SELECT * FROM organizations WHERE status = 'pending' ORDER BY created_at;
 SELECT COUNT(*) FROM organizations WHERE status = 'active';
 
 -- name: UpdateOrganizationStatus :one
-UPDATE organizations SET status = ? WHERE id = ?
+UPDATE organizations SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
 RETURNING *;
 
 -- name: DeleteOrganization :exec

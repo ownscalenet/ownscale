@@ -7,6 +7,7 @@ package sqlcgen
 
 import (
 	"context"
+	"database/sql"
 )
 
 const createFunnelRoute = `-- name: CreateFunnelRoute :one
@@ -21,7 +22,7 @@ type CreateFunnelRouteParams struct {
 	Label          string
 	TargetNodeID   string
 	TargetPort     int64
-	CreatedBy      string
+	CreatedBy      sql.NullString
 }
 
 func (q *Queries) CreateFunnelRoute(ctx context.Context, arg CreateFunnelRouteParams) (FunnelRoute, error) {

@@ -157,7 +157,7 @@ func (h *Handlers) CreateFunnelRoute(w http.ResponseWriter, r *http.Request) {
 		Label:          req.Label,
 		TargetNodeID:   req.TargetNodeID,
 		TargetPort:     int64(req.TargetPort),
-		CreatedBy:      caller.ID,
+		CreatedBy:      sql.NullString{String: caller.ID, Valid: true},
 	})
 	if err != nil {
 		h.serverError(w, r, err)

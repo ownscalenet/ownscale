@@ -30,12 +30,6 @@ UPDATE users SET role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
 -- name: LinkUserHeadscaleUser :exec
 UPDATE users SET headscale_user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
 
--- name: UnlinkUserHeadscaleUser :exec
-UPDATE users SET headscale_user_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
-
--- name: CountOwnersInOrganization :one
-SELECT COUNT(*) FROM users WHERE organization_id = ? AND role = 'owner';
-
 -- name: ListUsersWithOrganization :many
 SELECT users.*, organizations.subdomain AS org_subdomain
 FROM users

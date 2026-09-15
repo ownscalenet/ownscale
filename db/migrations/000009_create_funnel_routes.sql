@@ -5,7 +5,7 @@ CREATE TABLE funnel_routes (
     label TEXT NOT NULL,
     target_node_id TEXT NOT NULL,
     target_port INTEGER NOT NULL,
-    created_by TEXT NOT NULL,
+    created_by TEXT REFERENCES users(id) ON DELETE SET NULL,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE(organization_id, label)
 );

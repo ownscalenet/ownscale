@@ -9,17 +9,6 @@ import (
 	"context"
 )
 
-const countWebauthnCredentialsByUser = `-- name: CountWebauthnCredentialsByUser :one
-SELECT COUNT(*) FROM webauthn_credentials WHERE user_id = ?
-`
-
-func (q *Queries) CountWebauthnCredentialsByUser(ctx context.Context, userID string) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countWebauthnCredentialsByUser, userID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createWebauthnCredential = `-- name: CreateWebauthnCredential :one
 INSERT INTO webauthn_credentials (id, user_id, credential_id, public_key, attestation_type, transports, sign_count, backup_eligible, backup_state, name)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)

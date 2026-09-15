@@ -23,7 +23,7 @@ func (q *Queries) CountActiveOrganizations(ctx context.Context) (int64, error) {
 const createOrganization = `-- name: CreateOrganization :one
 INSERT INTO organizations (id, subdomain)
 VALUES (?, ?)
-RETURNING id, subdomain, created_at, status
+RETURNING id, subdomain, created_at, updated_at, status
 `
 
 type CreateOrganizationParams struct {
@@ -38,6 +38,7 @@ func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganization
 		&i.ID,
 		&i.Subdomain,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 		&i.Status,
 	)
 	return i, err
@@ -53,7 +54,7 @@ func (q *Queries) DeleteOrganization(ctx context.Context, id string) error {
 }
 
 const getOrganization = `-- name: GetOrganization :one
-SELECT id, subdomain, created_at, status FROM organizations WHERE id = ?
+SELECT id, subdomain, created_at, updated_at, status FROM organizations WHERE id = ?
 `
 
 func (q *Queries) GetOrganization(ctx context.Context, id string) (Organization, error) {
@@ -63,13 +64,14 @@ func (q *Queries) GetOrganization(ctx context.Context, id string) (Organization,
 		&i.ID,
 		&i.Subdomain,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 		&i.Status,
 	)
 	return i, err
 }
 
 const getOrganizationBySubdomain = `-- name: GetOrganizationBySubdomain :one
-SELECT id, subdomain, created_at, status FROM organizations WHERE subdomain = ?
+SELECT id, subdomain, created_at, updated_at, status FROM organizations WHERE subdomain = ?
 `
 
 func (q *Queries) GetOrganizationBySubdomain(ctx context.Context, subdomain string) (Organization, error) {
@@ -79,13 +81,14 @@ func (q *Queries) GetOrganizationBySubdomain(ctx context.Context, subdomain stri
 		&i.ID,
 		&i.Subdomain,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 		&i.Status,
 	)
 	return i, err
 }
 
 const listOrganizations = `-- name: ListOrganizations :many
-SELECT id, subdomain, created_at, status FROM organizations ORDER BY subdomain
+SELECT id, subdomain, created_at, updated_at, status FROM organizations ORDER BY subdomain
 `
 
 func (q *Queries) ListOrganizations(ctx context.Context) ([]Organization, error) {
@@ -101,6 +104,7 @@ func (q *Queries) ListOrganizations(ctx context.Context) ([]Organization, error)
 			&i.ID,
 			&i.Subdomain,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 			&i.Status,
 		); err != nil {
 			return nil, err
@@ -117,7 +121,7 @@ func (q *Queries) ListOrganizations(ctx context.Context) ([]Organization, error)
 }
 
 const listPendingOrganizations = `-- name: ListPendingOrganizations :many
-SELECT id, subdomain, created_at, status FROM organizations WHERE status = 'pending' ORDER BY created_at
+SELECT id, subdomain, created_at, updated_at, status FROM organizations WHERE status = 'pending' ORDER BY created_at
 `
 
 func (q *Queries) ListPendingOrganizations(ctx context.Context) ([]Organization, error) {
@@ -133,6 +137,7 @@ func (q *Queries) ListPendingOrganizations(ctx context.Context) ([]Organization,
 			&i.ID,
 			&i.Subdomain,
 			&i.CreatedAt,
+			&i.UpdatedAt,
 			&i.Status,
 		); err != nil {
 			return nil, err
@@ -149,8 +154,8 @@ func (q *Queries) ListPendingOrganizations(ctx context.Context) ([]Organization,
 }
 
 const updateOrganizationStatus = `-- name: UpdateOrganizationStatus :one
-UPDATE organizations SET status = ? WHERE id = ?
-RETURNING id, subdomain, created_at, status
+UPDATE organizations SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
+RETURNING id, subdomain, created_at, updated_at, status
 `
 
 type UpdateOrganizationStatusParams struct {
@@ -165,6 +170,7 @@ func (q *Queries) UpdateOrganizationStatus(ctx context.Context, arg UpdateOrgani
 		&i.ID,
 		&i.Subdomain,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 		&i.Status,
 	)
 	return i, err

@@ -15,7 +15,7 @@ type FunnelRoute struct {
 	Label          string
 	TargetNodeID   string
 	TargetPort     int64
-	CreatedBy      string
+	CreatedBy      sql.NullString
 	CreatedAt      time.Time
 }
 
@@ -45,6 +45,7 @@ type Organization struct {
 	ID        string
 	Subdomain string
 	CreatedAt time.Time
+	UpdatedAt time.Time
 	Status    string
 }
 
@@ -54,6 +55,7 @@ type Orgconfig struct {
 	Path           string
 	Content        string
 	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 type User struct {

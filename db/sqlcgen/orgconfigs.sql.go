@@ -12,7 +12,7 @@ import (
 const createOrgConfig = `-- name: CreateOrgConfig :one
 INSERT INTO orgconfigs (id, organization_id, path, content)
 VALUES (?, ?, ?, ?)
-RETURNING id, organization_id, path, content, created_at
+RETURNING id, organization_id, path, content, created_at, updated_at
 `
 
 type CreateOrgConfigParams struct {
@@ -36,12 +36,13 @@ func (q *Queries) CreateOrgConfig(ctx context.Context, arg CreateOrgConfigParams
 		&i.Path,
 		&i.Content,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
 
 const getOrgConfig = `-- name: GetOrgConfig :one
-SELECT id, organization_id, path, content, created_at FROM orgconfigs
+SELECT id, organization_id, path, content, created_at, updated_at FROM orgconfigs
 WHERE organization_id = ? AND path = ?
 `
 
@@ -59,6 +60,7 @@ func (q *Queries) GetOrgConfig(ctx context.Context, arg GetOrgConfigParams) (Org
 		&i.Path,
 		&i.Content,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }
@@ -67,8 +69,8 @@ const upsertOrgConfig = `-- name: UpsertOrgConfig :one
 INSERT INTO orgconfigs (id, organization_id, path, content)
 VALUES (?, ?, ?, ?)
 ON CONFLICT(organization_id, path)
-DO UPDATE SET content = excluded.content
-RETURNING id, organization_id, path, content, created_at
+DO UPDATE SET content = excluded.content, updated_at = CURRENT_TIMESTAMP
+RETURNING id, organization_id, path, content, created_at, updated_at
 `
 
 type UpsertOrgConfigParams struct {
@@ -92,6 +94,7 @@ func (q *Queries) UpsertOrgConfig(ctx context.Context, arg UpsertOrgConfigParams
 		&i.Path,
 		&i.Content,
 		&i.CreatedAt,
+		&i.UpdatedAt,
 	)
 	return i, err
 }

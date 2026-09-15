@@ -11,5 +11,5 @@ WHERE organization_id = ? AND path = ?;
 INSERT INTO orgconfigs (id, organization_id, path, content)
 VALUES (?, ?, ?, ?)
 ON CONFLICT(organization_id, path)
-DO UPDATE SET content = excluded.content
+DO UPDATE SET content = excluded.content, updated_at = CURRENT_TIMESTAMP
 RETURNING *;

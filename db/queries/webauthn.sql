@@ -17,6 +17,3 @@ UPDATE webauthn_credentials SET sign_count = ?, last_used_at = CURRENT_TIMESTAMP
 
 -- name: DeleteWebauthnCredential :exec
 DELETE FROM webauthn_credentials WHERE id = ?;
-
--- name: CountWebauthnCredentialsByUser :one
-SELECT COUNT(*) FROM webauthn_credentials WHERE user_id = ?;

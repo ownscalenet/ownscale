@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -116,7 +117,7 @@ func TestListFunnelRoutesFlagsMissingTargetNode(t *testing.T) {
 		Label:          "ghost",
 		TargetNodeID:   "does-not-exist",
 		TargetPort:     8080,
-		CreatedBy:      owner.ID,
+		CreatedBy:      sql.NullString{String: owner.ID, Valid: true},
 	}); err != nil {
 		t.Fatalf("CreateFunnelRoute: %v", err)
 	}
@@ -156,7 +157,7 @@ func TestDeleteFunnelRouteRequiresManagerAndScopesToOrg(t *testing.T) {
 		Label:          "web",
 		TargetNodeID:   "1",
 		TargetPort:     8080,
-		CreatedBy:      owner.ID,
+		CreatedBy:      sql.NullString{String: owner.ID, Valid: true},
 	})
 	if err != nil {
 		t.Fatalf("CreateFunnelRoute: %v", err)

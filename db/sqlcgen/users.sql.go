@@ -11,17 +11,6 @@ import (
 	"time"
 )
 
-const countOwnersInOrganization = `-- name: CountOwnersInOrganization :one
-SELECT COUNT(*) FROM users WHERE organization_id = ? AND role = 'owner'
-`
-
-func (q *Queries) CountOwnersInOrganization(ctx context.Context, organizationID string) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countOwnersInOrganization, organizationID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createUser = `-- name: CreateUser :one
 INSERT INTO users (id, organization_id, role, provider, provider_user_id, email, name, avatar_url, email_verified)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
@@ -273,15 +262,6 @@ UPDATE users SET last_login_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTA
 
 func (q *Queries) TouchUserLastLogin(ctx context.Context, id string) error {
 	_, err := q.db.ExecContext(ctx, touchUserLastLogin, id)
-	return err
-}
-
-const unlinkUserHeadscaleUser = `-- name: UnlinkUserHeadscaleUser :exec
-UPDATE users SET headscale_user_id = NULL, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-`
-
-func (q *Queries) UnlinkUserHeadscaleUser(ctx context.Context, id string) error {
-	_, err := q.db.ExecContext(ctx, unlinkUserHeadscaleUser, id)
 	return err
 }
 
