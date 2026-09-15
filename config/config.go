@@ -161,12 +161,12 @@ func Load() (_ *Config, err error) {
 		cfg.DataDir = abs
 	}
 
-	// The OIDC provider issuer defaults to "https://<base_domain>" (ownscale
-	// itself is bound to the bare base domain by etc/caddy/Caddyfile), which
-	// can only be computed once base_domain is known (i.e. after env vars
-	// have been applied).
+	// The OIDC provider issuer defaults to "https://console.<base_domain>"
+	// (ownscale itself is bound to the "console" subdomain by
+	// etc/caddy/Caddyfile), which can only be computed once base_domain is
+	// known (i.e. after env vars have been applied).
 	if cfg.Auth.OIDCProvider.Issuer == "" && cfg.BaseDomain != "" {
-		cfg.Auth.OIDCProvider.Issuer = "https://" + cfg.BaseDomain
+		cfg.Auth.OIDCProvider.Issuer = "https://console." + cfg.BaseDomain
 	}
 	// SigningKeyPath is stored under DataDir unless already absolute.
 	if cfg.Auth.OIDCProvider.SigningKeyPath != "" && cfg.DataDir != "" && !filepath.IsAbs(cfg.Auth.OIDCProvider.SigningKeyPath) {
@@ -236,8 +236,8 @@ func (c *Config) Validate() (err error) {
 			` and set up your /etc/hosts with:
 sudo tee -a /etc/hosts <<'EOF'
 127.0.0.1 ownscale.test
+127.0.0.1 console.ownscale.test
 127.0.0.1 dex.ownscale.test
-127.0.0.1 docs.ownscale.test
 # If you're using organization names other than acme, those should be added too.
 127.0.0.1 acme.ownscale.test
 EOF`)

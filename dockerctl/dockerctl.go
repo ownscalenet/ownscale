@@ -225,47 +225,40 @@ func (c *Ctl) ensureNetwork(ctx context.Context, name string) (err error) {
 	return err
 }
 
-// EnsureCaddyNetworkAlias re-asserts baseDomain as a network alias for the
-// Caddy container on the shared network (see ensureCaddyNetworkAlias). It's
-// exported so callers can reconcile this on ownscale process startup, not
-// just when a new organization is created: the alias is set imperatively
-// via the Docker API rather than declared in docker-compose.yml, so it does
-// NOT survive Caddy's container being recreated (image rebuild, `docker
-// compose up`, etc.) -- only the container being merely restarted keeps it.
-// Without this, every org container created before such a recreation would
-// silently lose the ability to resolve https://{baseDomain} to Caddy (it
-// falls back to baseDomain's public DNS record, if any, which typically
-// points nowhere useful from inside the container), breaking their OIDC
-// login (discovery, and especially the token endpoint fetch) until the
-// alias is restored.
-func (c *Ctl) EnsureCaddyNetworkAlias(ctx context.Context, baseDomain string) (err error) {
-	defer derrors.Wrap(&err, "c.EnsureCaddyNetworkAlias(%q)", baseDomain)
+const ConsoleSubdomain = "console"
+
+func ConsoleDomain(baseDomain string) string {
+	return ConsoleSubdomain + "." + baseDomain
+}
+
+// EnsureCaddyNetworkAlias re-asserts domain as a network alias for the
+// Caddy container on the shared network (see ensureCaddyNetworkAlias).
+// Callers pass ConsoleDomain(baseDomain), since that's the hostname
+// ownscale's own OIDC provider is actually reachable at.
+func (c *Ctl) EnsureCaddyNetworkAlias(ctx context.Context, domain string) (err error) {
+	defer derrors.Wrap(&err, "c.EnsureCaddyNetworkAlias(%q)", domain)
 
 	if err := c.EnsureNetwork(ctx); err != nil {
 		return err
 	}
-	return c.ensureCaddyNetworkAlias(ctx, ownscaleNetwork, baseDomain)
+	return c.ensureCaddyNetworkAlias(ctx, ownscaleNetwork, domain)
 }
 
-// EnsureCaddyNetworkAliasForOrg re-asserts baseDomain as a network alias
-// for the Caddy container on subdomain's own per-organization network (see
+// EnsureCaddyNetworkAliasForOrg re-asserts domain as a network alias for
+// the Caddy container on subdomain's own per-organization network (see
 // EnsureOrgNetwork and ensureCaddyNetworkAlias), so that subdomain's
 // headscale container -- which lives only on its own isolated
 // network, not the shared ownscaleNetwork -- can still resolve
-// https://{baseDomain} back to Caddy for OIDC discovery/token calls.
-//
-// Like EnsureCaddyNetworkAlias, it's exported so callers can reconcile this
-// on ownscale process startup (per organization) and not just when that
-// organization is first created, since the alias doesn't survive Caddy's
-// container being recreated.
-func (c *Ctl) EnsureCaddyNetworkAliasForOrg(ctx context.Context, subdomain, baseDomain string) (err error) {
-	defer derrors.Wrap(&err, "c.EnsureCaddyNetworkAliasForOrg(%q, %q)", subdomain, baseDomain)
+// https://{domain} back to Caddy for OIDC discovery/token calls. Callers
+// pass ConsoleDomain(baseDomain), matching EnsureCaddyNetworkAlias.
+func (c *Ctl) EnsureCaddyNetworkAliasForOrg(ctx context.Context, subdomain, domain string) (err error) {
+	defer derrors.Wrap(&err, "c.EnsureCaddyNetworkAliasForOrg(%q, %q)", subdomain, domain)
 
 	netName, err := c.EnsureOrgNetwork(ctx, subdomain)
 	if err != nil {
 		return err
 	}
-	return c.ensureCaddyNetworkAlias(ctx, netName, baseDomain)
+	return c.ensureCaddyNetworkAlias(ctx, netName, domain)
 }
 
 // caddyComposeServiceLabel is the label Docker Compose sets on every
@@ -364,9 +357,9 @@ func (c *Ctl) EnsureOwnscaleNetworkForOrg(ctx context.Context, subdomain string)
 }
 
 // ensureCaddyNetworkAlias makes sure the Caddy container (found via its
-// Compose service label) is connected to networkName with baseDomain as a
+// Compose service label) is connected to networkName with domain as a
 // network alias, so that any other container on networkName can resolve
-// https://{baseDomain} straight to Caddy via Docker's embedded DNS, instead
+// https://{domain} straight to Caddy via Docker's embedded DNS, instead
 // of failing DNS resolution (e.g. for BASE_DOMAIN=localhost) or relying on
 // hairpinning back through the host's published ports.
 //
@@ -380,15 +373,15 @@ func (c *Ctl) EnsureOwnscaleNetworkForOrg(ctx context.Context, subdomain string)
 // hardcoded to the shared ownscaleNetwork): EnsureCaddyNetworkAlias calls it
 // for ownscaleNetwork itself, while EnsureCaddyNetworkAliasForOrg calls it
 // for each organization's own isolated network.
-func (c *Ctl) ensureCaddyNetworkAlias(ctx context.Context, networkName, baseDomain string) (err error) {
-	defer derrors.Wrap(&err, "c.ensureCaddyNetworkAlias(%q, %q)", networkName, baseDomain)
+func (c *Ctl) ensureCaddyNetworkAlias(ctx context.Context, networkName, domain string) (err error) {
+	defer derrors.Wrap(&err, "c.ensureCaddyNetworkAlias(%q, %q)", networkName, domain)
 
 	caddyID, err := c.findCaddyContainer(ctx)
 	if err != nil {
 		return err
 	}
 	if caddyID == "" {
-		c.logger.Warn("caddy container not found; skipping network alias setup (OIDC discovery from org containers may fail)", "network", networkName, "base_domain", baseDomain)
+		c.logger.Warn("caddy container not found; skipping network alias setup (OIDC discovery from org containers may fail)", "network", networkName, "domain", domain)
 		return nil
 	}
 
@@ -401,11 +394,11 @@ func (c *Ctl) ensureCaddyNetworkAlias(ctx context.Context, networkName, baseDoma
 	if inspected.NetworkSettings != nil {
 		existing = inspected.NetworkSettings.Networks[networkName]
 	}
-	if existing != nil && slices.Contains(existing.Aliases, baseDomain) {
+	if existing != nil && slices.Contains(existing.Aliases, domain) {
 		return nil // already aliased
 	}
 
-	aliases := []string{baseDomain}
+	aliases := []string{domain}
 	if existing != nil {
 		aliases = append(aliases, existing.Aliases...)
 		// Reconnecting requires disconnecting first if already attached.
@@ -422,7 +415,7 @@ func (c *Ctl) ensureCaddyNetworkAlias(ctx context.Context, networkName, baseDoma
 		settings.GwPriority = existing.GwPriority
 	}
 	if err := c.cli.NetworkConnect(ctx, networkName, caddyID, settings); err != nil {
-		return fmt.Errorf("connect caddy to %s with alias %q: %w", networkName, baseDomain, err)
+		return fmt.Errorf("connect caddy to %s with alias %q: %w", networkName, domain, err)
 	}
 	return nil
 }
@@ -705,7 +698,7 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 	if err := ValidateSubdomain(subdomain); err != nil {
 		return "", err
 	}
-	if err := c.EnsureCaddyNetworkAliasForOrg(ctx, subdomain, baseDomain); err != nil {
+	if err := c.EnsureCaddyNetworkAliasForOrg(ctx, subdomain, ConsoleDomain(baseDomain)); err != nil {
 		return "", err
 	}
 	if err := c.EnsureOwnscaleNetworkForOrg(ctx, subdomain); err != nil {
@@ -998,17 +991,19 @@ var subdomainRe = regexp.MustCompile(`^[a-z0-9]{4,63}$`)
 
 // reservedSubdomains are single DNS labels that organizations may not use,
 // because they're reserved for fixed, non-organization Caddy site blocks:
-// the ownscale app itself (Ownscale console, login, OIDC provider) is bound to
-// the bare base domain, "docs" serves the documentation site, and "admin"/
-// "auth" are kept reserved defensively even though they aren't currently
-// bound to their own Caddy site blocks, to avoid confusion with the app's
-// former routing and any future re-introduction of dedicated subdomains.
+// "console" is bound to the ownscale console itself (web UI, API, its own
+// OIDC provider), "docs" serves the documentation site at the bare base
+// domain, and "admin"/"auth" are kept reserved defensively even though they
+// aren't currently bound to their own Caddy site blocks, to avoid confusion
+// with the app's former routing and any future re-introduction of
+// dedicated subdomains.
 var reservedSubdomains = map[string]bool{
-	"admin": true,
-	"auth":  true,
-	"docs":  true,
-	"www":   true,
-	"derp":  true,
+	"admin":          true,
+	"auth":           true,
+	"docs":           true,
+	"www":            true,
+	"derp":           true,
+	ConsoleSubdomain: true,
 }
 
 // ValidateSubdomain checks that s is a valid single DNS label and not one of

@@ -60,9 +60,9 @@ on restart.
 
 ## Single sign-on (via ownscale's own OIDC provider)
 
-Sign in at `https://<base_domain>/login` (ownscale — Ownscale console, login,
-and OIDC provider — is bound to the bare base domain; the documentation
-site lives at `https://docs.<base_domain>`). ownscale federates the initial
+Sign in at `https://console.<base_domain>/login` (ownscale — Ownscale console, login,
+and OIDC provider — is bound to the `console` subdomain; the documentation
+site lives at the bare `https://<base_domain>`). ownscale federates the initial
 login to a configurable upstream OIDC provider (`OWNSCALE_AUTH_UPSTREAM_OIDC_*`) — any standard OIDC issuer works: Google, Okta, Dex, etc. —
 then acts as its own OIDC provider so each organization's Headscale
 container trusts it as a relying party: one upstream login covers the
@@ -105,7 +105,7 @@ publicly-trusted IdP (see "Single sign-on" above), there's nothing left
 requiring a real public domain like the previously-used `lvh.me`. Unlike
 `lvh.me`, though, `ownscale.test` has no real wildcard DNS, so every
 subdomain you actually use locally needs an `/etc/hosts` entry pointing at
-`127.0.0.1`: `ownscale.test`, `dex.ownscale.test`, `docs.ownscale.test`,
+`127.0.0.1`: `ownscale.test`, `console.ownscale.test`, `dex.ownscale.test`,
 and one per organization created (e.g. `acme.ownscale.test`). A
 `dnsmasq`-based wildcard resolver is a nicer alternative if you create
 organizations often.
@@ -166,6 +166,6 @@ that's also proxied through Caddy under a non-public `BASE_DOMAIN`. This
 only matters for a non-public `BASE_DOMAIN` (e.g. `ownscale.test`), where
 Caddy issues its own self-signed certs instead of publicly-trusted ones;
 it's a no-op in production. Additionally, dockerctl connects the running
-Caddy container to each organization's Docker network with `BASE_DOMAIN` as
-an alias, so those containers can resolve `https://{BASE_DOMAIN}` straight
-to Caddy for OIDC discovery.
+Caddy container to each organization's Docker network with
+`console.{BASE_DOMAIN}` as an alias, so those containers can resolve
+`https://console.{BASE_DOMAIN}` straight to Caddy for OIDC discovery.

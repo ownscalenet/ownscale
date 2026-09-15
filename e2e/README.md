@@ -56,8 +56,8 @@ Other useful commands (from `e2e/frontend/`):
 
 ## Notes
 
-- `playwright.config.ts` points at `https://ownscale.test` by default;
-  override with `E2E_BASE_URL` if your `.env` uses a different
+- `playwright.config.ts` points at `https://console.ownscale.test` by
+  default; override with `E2E_BASE_URL` if your `.env` uses a different
   `BASE_DOMAIN`.
 - `ignoreHTTPSErrors: true` is set instead of requiring every contributor
   to trust the local dev CA (see `make load-cert`).
@@ -110,7 +110,7 @@ Build/browser scratch files remain under ignored `bin/connectivity-work`.
 - Ensure these host entries already exist (tests only read `/etc/hosts`):
 
   ```text
-  127.0.0.1 ownscale.test dex.ownscale.test
+  127.0.0.1 ownscale.test console.ownscale.test dex.ownscale.test
   127.0.0.1 aaaa.ownscale.test bbbb.ownscale.test cccc.ownscale.test
   127.0.0.1 web1-aaaa.ownscale.test web2-aaaa.ownscale.test
   127.0.0.1 web1-bbbb.ownscale.test web2-bbbb.ownscale.test
@@ -123,8 +123,8 @@ Environment overrides (export before invoking Make/npm):
 
 | Variable | Default | Purpose |
 | --- | --- | --- |
-| `E2E_BASE_URL` | `https://ownscale.test` | Existing application endpoint |
-| `E2E_BASE_DOMAIN` | Hostname of `E2E_BASE_URL` | Organization/funnel hostname suffix |
+| `E2E_BASE_DOMAIN` | `ownscale.test` | Organization/funnel hostname suffix |
+| `E2E_BASE_URL` | `https://console.${E2E_BASE_DOMAIN}` | Existing application endpoint |
 | `E2E_DEX_URL` | `https://dex.<base-domain>` | Existing Dex endpoint |
 | `E2E_CA_FILE` | `data/local-ca/root.crt` | Existing CA; relative paths resolve from repository root |
 | `OWNSCALE_DATA_DIR` | `data` | Alternative data directory for the default CA path |

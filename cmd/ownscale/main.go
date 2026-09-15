@@ -78,14 +78,14 @@ func run() error {
 	// organization's own network individually, so their OIDC login doesn't
 	// silently break until the alias is restored.
 	if cfg.BaseDomain != "" {
-		if err := ctl.EnsureCaddyNetworkAlias(ctx, cfg.BaseDomain); err != nil {
+		if err := ctl.EnsureCaddyNetworkAlias(ctx, dockerctl.ConsoleDomain(cfg.BaseDomain)); err != nil {
 			logger.Warn("ensure caddy network alias", "error", err)
 		}
 		if organizations, err := queries.ListOrganizations(ctx); err != nil {
 			logger.Warn("list organizations for caddy network alias reconciliation", "error", err)
 		} else {
 			for _, org := range organizations {
-				if err := ctl.EnsureCaddyNetworkAliasForOrg(ctx, org.Subdomain, cfg.BaseDomain); err != nil {
+				if err := ctl.EnsureCaddyNetworkAliasForOrg(ctx, org.Subdomain, dockerctl.ConsoleDomain(cfg.BaseDomain)); err != nil {
 					logger.Warn("ensure caddy network alias for organization", "subdomain", org.Subdomain, "error", err)
 				}
 				// Likewise, ownscale's own membership in each organization's

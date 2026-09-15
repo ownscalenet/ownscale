@@ -2,8 +2,12 @@ import { fileURLToPath } from 'node:url'
 import { dirname, resolve } from 'node:path'
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..')
-export const baseURL = process.env.E2E_BASE_URL ?? 'https://ownscale.test'
-export const baseDomain = process.env.E2E_BASE_DOMAIN ?? new URL(baseURL).hostname
+export const baseDomain = process.env.E2E_BASE_DOMAIN ?? 'ownscale.test'
+// The console (and its WebAuthn Relying Party ID -- see handlers.New's
+// dockerctl.ConsoleDomain) is bound to the "console" subdomain, not the
+// bare base domain.
+export const consoleDomain = `console.${baseDomain}`
+export const baseURL = process.env.E2E_BASE_URL ?? `https://${consoleDomain}`
 export const privateDir = resolve(root, 'e2e/.connectivity-private')
 export const caFile = process.env.E2E_CA_FILE === ''
   ? undefined

@@ -58,13 +58,16 @@ func New(
 	orgSvc := orgs.NewService(queries, ctl, baseDomain, issuer, derpCfg)
 	hs := headscaleclient.NewRegistry(ctl)
 
-	// The console is served on a single baseDomain (per-org subdomains are
+	// The console is served on console.baseDomain (per-org subdomains are
 	// only used for headscale/tailnet traffic, not this admin UI), so one
 	// static WebAuthn Relying Party ID/origin covers every organization.
 	// Fall back to localhost for tests/dev that run without a configured
 	// baseDomain; WebAuthn permits http://localhost as a secure context.
-	rpID, rpOrigin := baseDomain, "https://"+baseDomain
-	if rpID == "" {
+	rpID, rpOrigin := "", ""
+	if baseDomain != "" {
+		rpID = dockerctl.ConsoleDomain(baseDomain)
+		rpOrigin = "https://" + rpID
+	} else {
 		rpID, rpOrigin = "localhost", "http://localhost"
 	}
 	wa, err := passkey.New(rpID, "Ownscale", rpOrigin)

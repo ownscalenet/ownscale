@@ -1,7 +1,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { expect, test as setup, type Page } from '@playwright/test'
-import { baseDomain, baseURL } from './connectivity/environment'
+import { baseDomain, baseURL, consoleDomain } from './connectivity/environment'
 import { identities, OrgUI } from './connectivity/ui'
 import { addVirtualAuthenticator, clearCredentials, exportCredential, importCredential } from './support/webauthn'
 
@@ -130,7 +130,7 @@ setup.describe.serial('bootstrap fixed dev identities', () => {
       }
 
       if (registeredFresh) {
-        const credential = await exportCredential(auth, baseDomain)
+        const credential = await exportCredential(auth, consoleDomain)
         mkdirSync(dirname(PASSKEY_CREDENTIAL_STATE), { recursive: true })
         writeFileSync(PASSKEY_CREDENTIAL_STATE, JSON.stringify({ email: PASSKEY_IDENTITY.email, credential }))
       }

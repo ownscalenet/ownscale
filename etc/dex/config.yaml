@@ -22,7 +22,7 @@ staticClients:
     secret: ownscale-dev-secret
     name: "ownscale (local dev)"
     redirectURIs:
-      - https://$BASE_DOMAIN/auth/oidc/callback
+      - https://console.$BASE_DOMAIN/auth/oidc/callback
 
 enablePasswordDB: true
 staticPasswords:

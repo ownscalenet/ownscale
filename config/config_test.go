@@ -58,7 +58,7 @@ func TestLoadOIDCProviderDefaults(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Load: %v", err)
 	}
-	if want := "https://example.com"; cfg.Auth.OIDCProvider.Issuer != want {
+	if want := "https://console.example.com"; cfg.Auth.OIDCProvider.Issuer != want {
 		t.Errorf("Auth.OIDCProvider.Issuer = %q, want %q", cfg.Auth.OIDCProvider.Issuer, want)
 	}
 	wantKeyPath := filepath.Join(cfg.DataDir, "oidc_signing_key.pem")

@@ -15,13 +15,14 @@ import (
 )
 
 // testRelyingParty mirrors the WebAuthn RP config handlers.New derives from
-// baseDomain (see handlers.go): "example.com"/"https://example.com" when
-// newTestHandlers(t, true) is used, or the "localhost" fallback otherwise.
+// baseDomain (see handlers.go): "console.example.com"/"https://console.example.com"
+// when newTestHandlers(t, true) is used, or the "localhost" fallback otherwise.
 func testRelyingParty(baseDomain string) vwa.RelyingParty {
 	if baseDomain == "" {
 		return vwa.RelyingParty{Name: "Ownscale", ID: "localhost", Origin: "http://localhost"}
 	}
-	return vwa.RelyingParty{Name: "Ownscale", ID: baseDomain, Origin: "https://" + baseDomain}
+	consoleDomain := "console." + baseDomain
+	return vwa.RelyingParty{Name: "Ownscale", ID: consoleDomain, Origin: "https://" + consoleDomain}
 }
 
 // runCeremony drives a begin handler followed by its matching finish
