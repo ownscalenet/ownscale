@@ -136,28 +136,29 @@ export class OrgUI {
   async savePolicy(content: string, timeoutMs = 90_000): Promise<void> {
     let phase = 'navigation'
     try {
-      await this.page.goto('/access-control')
+      await this.page.goto('/access-control', { timeout: 5_000 })
       const editor = this.page.locator('textarea')
       phase = 'editor readiness'
-      await editor.waitFor()
-      await expect(this.page.getByRole('heading', { name: 'Access Control', exact: true })).toBeVisible()
+      await editor.waitFor({ timeout: 5_000 })
+      await expect(this.page.getByRole('heading', { name: 'Access Control', exact: true })).toBeVisible({ timeout: 5_000 })
       if (await editor.inputValue() !== content) {
         phase = 'editor input'
-        await editor.fill(content)
+        await editor.fill(content, { timeout: 5_000 })
         phase = 'save request'
         const [response] = await Promise.all([
-          this.page.waitForResponse(r => new URL(r.url()).pathname === '/api/access-control' && r.request().method() === 'PUT'),
-          this.page.getByRole('button', { name: 'Save', exact: true }).click(),
+          this.page.waitForResponse(r => new URL(r.url()).pathname === '/api/access-control' && r.request().method() === 'PUT', { timeout: 5_000 }),
+          this.page.getByRole('button', { name: 'Save', exact: true }).click({ timeout: 5_000 }),
         ])
         phase = `save response HTTP ${response.status()}`
         if (!response.ok()) throw new Error('ACL save rejected')
         phase = 'save confirmation'
-        await expect(this.page.getByText('Policy saved. Headscale is restarting to apply it.')).toBeVisible()
+        await expect(this.page.getByText('Policy saved. Headscale is restarting to apply it.')).toBeVisible({ timeout: 5_000 })
       }
-    } catch {
-      throw new Error(`${this.org}: ACL ${phase} failed; private snapshot retained until verified restoration`)
+    } catch (err) {
+      const detail = err instanceof Error ? err.message : String(err)
+      throw new Error(`${this.org}: ACL ${phase} failed; private snapshot retained until verified restoration: ${detail}`)
     }
-    await this.ready(timeoutMs)
+    await this.ready(5_000)
     if (await this.policy() !== content) throw new Error(`${this.org}: ACL save did not round-trip; private snapshot retained`)
   }
 

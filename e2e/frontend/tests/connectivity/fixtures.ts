@@ -62,7 +62,10 @@ export const test = base.extend<{ harness: Harness }, { orgs: OrgUI[] }>({
     let harness: Harness | undefined
     const cleanupErrors: string[] = []
     const attempt = async (label: string, action: () => Promise<unknown>) => {
-      try { await action() } catch { cleanupErrors.push(label) }
+      try { await action() } catch (err) {
+        const detail = err instanceof Error ? err.message : String(err)
+        cleanupErrors.push(`${label}: ${detail}`)
+      }
     }
     try {
       bridge = await Bridge.start()

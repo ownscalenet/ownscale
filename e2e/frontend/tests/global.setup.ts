@@ -126,7 +126,7 @@ setup.describe.serial('bootstrap fixed dev identities', () => {
         throw new Error(`${PASSKEY_IDENTITY.org}: unexpected signed-in passkey user`)
       }
       if (session.organization?.Domain !== `${PASSKEY_IDENTITY.org}.${baseDomain}`) {
-        throw new Error(`passkey identity must belong to ${PASSKEY_IDENTITY.org}.${baseDomain}; unexpected registration assignment`)
+        throw new Error(`expected passkey belongs to: ${PASSKEY_IDENTITY.org}.${baseDomain}; got: ${session.organization?.Domain}`)
       }
 
       if (registeredFresh) {
