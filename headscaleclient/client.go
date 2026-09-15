@@ -333,6 +333,17 @@ func (c *Client) ExpirePreAuthKey(ctx context.Context, id string) (err error) {
 	return err
 }
 
+// DeletePreAuthKey permanently deletes the pre-authentication key identified by id.
+func (c *Client) DeletePreAuthKey(ctx context.Context, id string) (err error) {
+	defer derrors.Wrap(&err, "c.DeletePreAuthKey(%q)", id)
+
+	params := headscale_service.NewHeadscaleServiceDeletePreAuthKeyParams().
+		WithContext(ctx).
+		WithID(&id)
+	_, err = c.api.HeadscaleService.HeadscaleServiceDeletePreAuthKey(params)
+	return err
+}
+
 // GetPolicy returns the organization's access control policy.
 func (c *Client) GetPolicy(ctx context.Context) (_ string, err error) {
 	defer derrors.Wrap(&err, "c.GetPolicy()")

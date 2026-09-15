@@ -417,6 +417,22 @@ func TestClientExpirePreAuthKey(t *testing.T) {
 	}
 }
 
+func TestClientDeletePreAuthKey(t *testing.T) {
+	c, srv, reqs := newTestClient(t)
+	defer srv.Close()
+
+	if err := c.DeletePreAuthKey(t.Context(), "1"); err != nil {
+		t.Fatalf("DeletePreAuthKey: %v", err)
+	}
+	last := (*reqs)[len(*reqs)-1]
+	if last.Method != http.MethodDelete || last.URL.Path != "/api/v1/preauthkey" {
+		t.Errorf("unexpected request: %s %s", last.Method, last.URL.Path)
+	}
+	if got := last.URL.Query().Get("id"); got != "1" {
+		t.Errorf("unexpected id query param: %q", got)
+	}
+}
+
 func TestClientAuthFailureSurfacesAsError(t *testing.T) {
 	srv, _ := newTestServer(t, "correct-key")
 	defer srv.Close()

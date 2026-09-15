@@ -300,7 +300,7 @@ func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *
 		srv := &tsnet.Server{
 			Dir:        filepath.Join(p.dataDir, "funnel-tsnet", subdomain),
 			Hostname:   "funnel-" + subdomain,
-			AuthKey:    authKey,
+			AuthKey:    authKey.Key,
 			ControlURL: controlURL,
 			Logf:       tsnetLogf(p.logger, subdomain),
 			UserLogf:   tsnetLogf(p.logger, subdomain),
@@ -316,6 +316,10 @@ func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *
 			return nil, fmt.Errorf("tsnet server up: %w", err)
 		}
 
+		if err := client.DeletePreAuthKey(context.WithoutCancel(ctx), authKey.ID); err != nil {
+			p.logger.Warn("funnel: delete pre-auth key after use", "subdomain", subdomain, "error", err)
+		}
+
 		p.mu.Lock()
 		p.servers[subdomain] = srv
 		p.mu.Unlock()
@@ -329,11 +333,11 @@ func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *
 
 const funnelAuthKeyValidity = 100 * 365 * 24 * time.Hour
 
-func ensureFunnelAuthKey(ctx context.Context, client *headscaleclient.Client) (string, error) {
+func ensureFunnelAuthKey(ctx context.Context, client *headscaleclient.Client) (headscaleclient.PreAuthKey, error) {
 	// TODO: This listing might be inefficient.
 	users, err := client.ListUsers(ctx)
 	if err != nil {
-		return "", err
+		return headscaleclient.PreAuthKey{}, err
 	}
 	var userID string
 	for _, u := range users {
@@ -345,19 +349,15 @@ func ensureFunnelAuthKey(ctx context.Context, client *headscaleclient.Client) (s
 	if userID == "" {
 		created, err := client.CreateUser(ctx, headscaleclient.CreateUserParams{Name: funnelHeadscaleUserName})
 		if err != nil {
-			return "", err
+			return headscaleclient.PreAuthKey{}, err
 		}
 		userID = created.ID
 	}
 
-	key, err := client.CreatePreAuthKey(ctx, headscaleclient.CreatePreAuthKeyParams{
+	return client.CreatePreAuthKey(ctx, headscaleclient.CreatePreAuthKeyParams{
 		UserID:     userID,
 		Reusable:   true,
 		Ephemeral:  false,
 		Expiration: time.Now().Add(funnelAuthKeyValidity),
 	})
-	if err != nil {
-		return "", err
-	}
-	return key.Key, nil
 }
