@@ -192,8 +192,7 @@ func (h *Handlers) AuthCallback(w http.ResponseWriter, r *http.Request) {
 			EmailVerified:  boolToInt64(emailVerified),
 		}, next)
 		if err != nil {
-			var invErr *inviteInvalidError
-			if errors.As(err, &invErr) {
+			if invErr, ok := errors.AsType[*inviteInvalidError](err); ok {
 				h.writeError(w, http.StatusGone, invErr.Error())
 				return
 			}

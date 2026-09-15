@@ -157,8 +157,7 @@ func (h *Handlers) PasskeyRegisterFinish(w http.ResponseWriter, r *http.Request)
 		EmailVerified:  0,
 	}, ceremony.Next)
 	if err != nil {
-		var invErr *inviteInvalidError
-		if errors.As(err, &invErr) {
+		if invErr, ok := errors.AsType[*inviteInvalidError](err); ok {
 			h.writeError(w, http.StatusGone, invErr.Error())
 			return
 		}

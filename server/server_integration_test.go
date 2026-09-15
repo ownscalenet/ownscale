@@ -1,21 +1,10 @@
 //go:build integration
 
-// server_integration_test.go is the "full stack" integration test that
-// routes.go's doc comment anticipates: it wires the exact same
-// server.NewMux/handlers.New stack as cmd/ownscale/main.go, but against a
-// real, freshly-migrated SQLite database and a real Docker daemon (as
-// opposed to the package's regular unit tests, which use an in-memory mux
-// with no organization provisioning). Excluded from the default `go test
-// ./...` run via the "integration" build tag; run explicitly with
-// `go test -tags=integration ./...` (or `make test-integration`), which
-// requires Docker running on the host and the headscale image
-// already pulled.
 package server_test
 
 import (
 	"bytes"
 	"context"
-	"database/sql"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -152,11 +141,31 @@ func TestServerIntegration(t *testing.T) {
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
 
+	orgSvc := orgs.NewService(queries, ctl, baseDomain, "", config.DerpConfig{})
+	provisioner := orgs.NewProvisioner(orgSvc, logger, 0, 1, 1)
+	poolCtx, cancelPool := context.WithCancel(t.Context())
+	defer cancelPool()
+	go func() { provisioner.Run(poolCtx) }()
+
+	takeCtx, cancelTake := context.WithTimeout(t.Context(), 60*time.Second)
+	defer cancelTake()
+	org, err := provisioner.Take(takeCtx)
+	if err != nil {
+		t.Fatalf("provisioner.Take: %v", err)
+	}
+	subdomain = org.Subdomain
+
+	if org.Status != orgs.StatusActive {
+		t.Errorf("organization.status = %q, want %q", org.Status, orgs.StatusActive)
+	}
+
 	// Seed a user and mint its session cookie directly, bypassing the
 	// real OAuth redirect flow.
 	id := xid.New().String()
 	user, err := queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
 		ID:             id,
+		OrganizationID: org.ID,
+		Role:           handlers.RoleOwner,
 		Provider:       "oidc",
 		ProviderUserID: id,
 		Email:          id + "@example.com",
@@ -192,36 +201,6 @@ func TestServerIntegration(t *testing.T) {
 	}
 
 	t.Run("auto-provisioned organization pool assigns real containers", func(t *testing.T) {
-		// Mirrors what handlers.AuthCallback does for a first-time user:
-		// take a fully-provisioned organization out of the pool and assign
-		// it. Built directly against orgs (rather than through h, whose
-		// provisioner field is private) so this test can drive it exactly
-		// like AuthCallback would.
-		orgSvc := orgs.NewService(queries, ctl, baseDomain, "", config.DerpConfig{})
-		provisioner := orgs.NewProvisioner(orgSvc, logger, 0, 1, 1)
-		poolCtx, cancelPool := context.WithCancel(t.Context())
-		defer cancelPool()
-		go func() { provisioner.Run(poolCtx) }()
-
-		takeCtx, cancelTake := context.WithTimeout(t.Context(), 60*time.Second)
-		defer cancelTake()
-		org, err := provisioner.Take(takeCtx)
-		if err != nil {
-			t.Fatalf("provisioner.Take: %v", err)
-		}
-		subdomain = org.Subdomain
-
-		if org.Status != orgs.StatusActive {
-			t.Errorf("organization.status = %q, want %q", org.Status, orgs.StatusActive)
-		}
-		if err := queries.SetUserOrganizationAndRole(t.Context(), sqlcgen.SetUserOrganizationAndRoleParams{
-			OrganizationID: org.ID,
-			Role:           "owner",
-			ID:             user.ID,
-		}); err != nil {
-			t.Fatalf("SetUserOrganizationAndRole: %v", err)
-		}
-
 		ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 		defer cancel()
 		state, err := ctl.ContainerState(ctx, subdomain)

@@ -131,4 +131,3 @@ func TestDeleteUser(t *testing.T) {
 		}
 	})
 }
-
