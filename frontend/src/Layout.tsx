@@ -56,7 +56,7 @@ export default function Layout() {
           aria-label="close sidebar"
           className="drawer-overlay"
         ></label>
-        <aside className="bg-base-100 min-h-full w-64">
+        <aside className="bg-base-100 min-h-full w-64 flex flex-col">
           <div className="p-4 text-xl font-bold border-b border-base-200">Ownscale console</div>
           <ul className="menu p-4 w-full" onClick={closeDrawer}>
             <li>
@@ -101,31 +101,43 @@ export default function Layout() {
               </NavLink>
             </li>
           </ul>
-          {user && (
-            <div className="p-4 border-t border-base-200 mt-auto">
-              <p className="text-sm font-medium truncate">{user.Name}</p>
-              <p className="text-xs text-base-content/60 truncate">{user.Email}</p>
-              {organization && (
-                <div className="mt-2 mb-2">
-                  <p className="text-xs text-base-content/60 truncate">{organization.Domain}</p>
-                  <span
-                    className={`badge badge-xs ${
-                      organization.Status === 'active' ? 'badge-success' : 'badge-warning'
-                    }`}
-                  >
-                    {organization.Status}
-                  </span>
-                </div>
-              )}
-              <button
-                type="button"
-                className="btn btn-sm btn-outline w-full mt-2"
-                onClick={handleLogout}
-              >
-                Logout
-              </button>
-            </div>
-          )}
+          <div className="mt-auto border-t border-base-200">
+            <ul className="menu p-4 w-full" onClick={closeDrawer}>
+              <li>
+                <NavLink
+                  to="/user-settings"
+                  className={({ isActive }) => (isActive ? 'active' : '')}
+                >
+                  User settings
+                </NavLink>
+              </li>
+            </ul>
+            {user && (
+              <div className="p-4 pt-0">
+                <p className="text-sm font-medium truncate">{user.Name}</p>
+                <p className="text-xs text-base-content/60 truncate">{user.Email}</p>
+                {organization && (
+                  <div className="mt-2 mb-2">
+                    <p className="text-xs text-base-content/60 truncate">{organization.Domain}</p>
+                    <span
+                      className={`badge badge-xs ${
+                        organization.Status === 'active' ? 'badge-success' : 'badge-warning'
+                      }`}
+                    >
+                      {organization.Status}
+                    </span>
+                  </div>
+                )}
+                <button
+                  type="button"
+                  className="btn btn-sm btn-outline w-full mt-2"
+                  onClick={handleLogout}
+                >
+                  Logout
+                </button>
+              </div>
+            )}
+          </div>
         </aside>
       </div>
     </div>

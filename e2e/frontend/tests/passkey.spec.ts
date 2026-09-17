@@ -6,7 +6,7 @@ const PASSKEY_IDENTITY_EMAIL = 'passkey@ownscale.test'
 const PASSKEY_CREDENTIAL_STATE = 'tests/.auth/passkey-credential.json'
 
 // This test adds a passkey to the already-provisioned admin account from
-// Settings, then uses it to sign back in. It deliberately reuses the
+// User settings, then uses it to sign back in. It deliberately reuses the
 // "chromium" project's authenticated storageState (unlike login.spec.ts)
 // rather than exercising brand-new self-registration, since that path
 // consumes one of the dev stack's fixed seed organizations -- brand-new
@@ -15,10 +15,10 @@ const PASSKEY_CREDENTIAL_STATE = 'tests/.auth/passkey-credential.json'
 // with that bootstrapped identity's passkey instead of registering
 // another). The invite-skip-provisioning case is covered at the Go handler
 // level in handlers/passkey_test.go.
-test('adding a passkey in Settings and signing in with it', async ({ page }) => {
+test('adding a passkey in User settings and signing in with it', async ({ page }) => {
   await addVirtualAuthenticator(page)
 
-  await page.goto('/settings')
+  await page.goto('/user-settings')
   await expect(page.getByRole('heading', { name: 'Passkeys' })).toBeVisible()
 
   page.once('dialog', (dialog) => void dialog.accept('E2E test passkey'))
@@ -34,7 +34,7 @@ test('adding a passkey in Settings and signing in with it', async ({ page }) => 
   await expect(page.getByRole('button', { name: 'Logout' })).toBeVisible({ timeout: 15_000 })
 
   // Clean up: remove the passkey this test added so repeat runs start fresh.
-  await page.goto('/settings')
+  await page.goto('/user-settings')
   page.once('dialog', (dialog) => void dialog.accept())
   await row.getByRole('button', { name: 'Delete' }).click()
   await expect(row).toBeHidden()

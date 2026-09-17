@@ -9,6 +9,7 @@ import AuthRestrictions from './pages/AuthRestrictions'
 import DNS from './pages/DNS'
 import Funnel from './pages/Funnel'
 import Settings from './pages/Settings'
+import UserSettings from './pages/UserSettings'
 import AcceptInvite from './pages/AcceptInvite'
 import NotFound from './pages/NotFound'
 
@@ -51,6 +52,7 @@ function AppRoutes() {
         <Route path="funnel" element={<Funnel />} />
 
         <Route path="settings" element={<Settings />} />
+        <Route path="user-settings" element={<UserSettings />} />
       </Route>
       <Route path="*" element={<NotFound />} />
     </Routes>
