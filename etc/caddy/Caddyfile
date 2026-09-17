@@ -46,6 +46,10 @@
 # below.
 {$BASE_DOMAIN} {
 	root * /srv/site
+
+	@development expression `"{$OWNSCALE_DEVELOPMENT}" != ""`
+	header @development Cache-Control "no-store"
+
 	file_server
 }
 

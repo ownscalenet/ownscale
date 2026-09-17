@@ -19,6 +19,7 @@ e2e/.connectivity-private/
 /site/public/
 /site/resources/_gen/
 /site/.hugo_build.lock
+/etc/caddy/site
 
 
 webui/dist/assets

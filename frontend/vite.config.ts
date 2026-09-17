@@ -13,14 +13,6 @@ export default defineConfig({
     emptyOutDir: true,
     rollupOptions: {
       output: {
-        // Use fixed (non-content-hashed) output filenames. webui/dist is
-        // committed to git (go:embed needs real files at Go build time),
-        // so Vite's default content-hashed names would rename these
-        // files on every frontend change, turning every diff into a
-        // noisy rename instead of a clean content diff. This is safe
-        // here because webui/webui.go serves these files with no
-        // Cache-Control/ETag, so nothing relies on the hash for cache
-        // invalidation.
         entryFileNames: 'assets/index.js',
         chunkFileNames: 'assets/[name].js',
         assetFileNames: 'assets/index.[ext]',

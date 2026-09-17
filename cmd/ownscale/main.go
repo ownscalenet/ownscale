@@ -113,7 +113,7 @@ func run() error {
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
 		return auth.RequireAuthAPI(queries.Queries, next)
 	}
-	mux := server.NewMux(h, requireAuthAPI, logger, webui.Handler(), provider)
+	mux := server.NewMux(h, requireAuthAPI, logger, webui.Handler(cfg.Development), provider)
 
 	srv := &http.Server{Addr: cfg.Addr, Handler: mux}
 

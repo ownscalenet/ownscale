@@ -14,13 +14,13 @@ import (
 //go:embed all:dist
 var distFS embed.FS
 
-// Handler returns an http.Handler serving the embedded frontend build.
-func Handler() http.Handler {
+// Handler returns an http.Handler serving the embedded frontend build. When
+// development is true, every response gets "Cache-Control: no-store".
+func Handler(development bool) http.Handler {
 	sub, err := fs.Sub(distFS, "dist")
 	if err != nil {
-		// dist is embedded at build time; this can only fail if the
-		// "dist" directory is missing from the embed, which would be a
-		// packaging bug.
+		// dist is embedded at build time; this can only fail if the "dist"
+		// directory is missing from the embed, which would be a packaging bug.
 		panic("webui: " + err.Error())
 	}
 	fileServer := http.FileServer(http.FS(sub))
@@ -29,6 +29,10 @@ func Handler() http.Handler {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			http.NotFound(w, r)
 			return
+		}
+
+		if development {
+			w.Header().Set("Cache-Control", "no-store")
 		}
 
 		if _, err := fs.Stat(sub, assetPath(r.URL.Path)); err == nil {

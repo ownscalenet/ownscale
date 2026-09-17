@@ -24,6 +24,9 @@ func TestLoadDefaultsOnly(t *testing.T) {
 	if cfg.DataDir != wantDataDir {
 		t.Errorf("DataDir = %q, want %q (absolute)", cfg.DataDir, wantDataDir)
 	}
+	if cfg.Development {
+		t.Errorf("Development = %v, want false by default", cfg.Development)
+	}
 }
 
 func TestLoadEnvOverridesDefaults(t *testing.T) {

@@ -16,10 +16,11 @@ import (
 // Config is the admin panel's runtime configuration.
 // See .env.example for documentation about these fields.
 type Config struct {
-	Addr       string `env:"OWNSCALE_ADDR"`
-	BaseDomain string `env:"OWNSCALE_BASE_DOMAIN"`
-	DataDir    string `env:"OWNSCALE_DATA_DIR"`
-	LocalCADir string `env:"OWNSCALE_LOCAL_CA_DIR"`
+	Development bool   `env:"OWNSCALE_DEVELOPMENT"`
+	Addr        string `env:"OWNSCALE_ADDR"`
+	BaseDomain  string `env:"OWNSCALE_BASE_DOMAIN"`
+	DataDir     string `env:"OWNSCALE_DATA_DIR"`
+	LocalCADir  string `env:"OWNSCALE_LOCAL_CA_DIR"`
 
 	Auth        AuthConfig
 	Log         LogConfig

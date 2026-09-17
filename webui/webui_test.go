@@ -25,7 +25,7 @@ func TestAssetPath(t *testing.T) {
 }
 
 func TestHandlerServesIndexAtRoot(t *testing.T) {
-	h := Handler()
+	h := Handler(false)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -40,7 +40,7 @@ func TestHandlerServesIndexAtRoot(t *testing.T) {
 }
 
 func TestHandlerServesRealAsset(t *testing.T) {
-	h := Handler()
+	h := Handler(false)
 
 	req := httptest.NewRequest(http.MethodGet, "/favicon.svg", nil)
 	rec := httptest.NewRecorder()
@@ -55,7 +55,7 @@ func TestHandlerServesRealAsset(t *testing.T) {
 }
 
 func TestHandlerRejectsNonGetHead(t *testing.T) {
-	h := Handler()
+	h := Handler(false)
 
 	req := httptest.NewRequest(http.MethodPost, "/", nil)
 	rec := httptest.NewRecorder()
@@ -63,5 +63,29 @@ func TestHandlerRejectsNonGetHead(t *testing.T) {
 
 	if rec.Code != http.StatusNotFound {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusNotFound)
+	}
+}
+
+func TestHandlerCacheControl(t *testing.T) {
+	cases := []struct {
+		name        string
+		development bool
+		want        string
+	}{
+		{"production omits header", false, ""},
+		{"development disables caching", true, "no-store"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			h := Handler(tc.development)
+
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			if got := rec.Header().Get("Cache-Control"); got != tc.want {
+				t.Errorf("Cache-Control = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }

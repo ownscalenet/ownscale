@@ -25,6 +25,8 @@ build: frontend backend
 frontend:
 	npm --prefix frontend ci
 	npm --prefix frontend run build
+	rm -rf etc/caddy/site
+	hugo --source site --destination ../etc/caddy/site --minify
 
 osa:
 	docker compose exec ownscale ./osa $(filter-out osa,$(MAKECMDGOALS))
@@ -92,14 +94,6 @@ devbox:
 			echo '<html><body><h1>devbox-$(ORG)</h1></body></html>' > /var/www/index.html; \
 			python3 -m http.server 80 --directory /var/www >/var/log/httpserver.log 2>&1 & \
 			exec bash"
-
-# Build the site/ Hugo module (hugo-book theme) into etc/caddy/site, which
-# Caddy serves at {$BASE_DOMAIN}. The generated output is committed to the
-# repo, so re-run this and commit the result whenever site/content changes.
-# Requires `go` on PATH for Hugo Modules to resolve the hugo-book theme.
-docs:
-	rm -rf etc/caddy/site
-	hugo --source site --destination ../etc/caddy/site --minify
 
 # Requires `make dev-up` already running.
 e2e: e2e-frontend e2e-connectivity
