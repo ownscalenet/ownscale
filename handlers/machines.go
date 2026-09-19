@@ -11,6 +11,7 @@ import (
 
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/funnelproxy"
 	"github.com/ownscalenet/ownscale/headscaleclient"
 	"github.com/ownscalenet/ownscale/orgs"
 	"github.com/tailscale/hujson"
@@ -86,6 +87,23 @@ func matchesFilters(m headscaleclient.Node, q, userFilter, status string) bool {
 	return true
 }
 
+type machineResponse struct {
+	headscaleclient.Node
+	Internal bool `json:"internal"`
+}
+
+func toMachineResponse(n headscaleclient.Node) machineResponse {
+	return machineResponse{
+		Node:     n,
+		Internal: isFunnelNode(n),
+	}
+}
+
+// isFunnelNode reports whether n belongs to funnelproxy.FunnelHeadscaleUserName.
+func isFunnelNode(n headscaleclient.Node) bool {
+	return n.User != nil && n.User.Name == funnelproxy.FunnelHeadscaleUserName
+}
+
 // ListMachines handles GET /api/machines. It returns every machine
 // (headscale node) for the caller's organization, applying the optional
 // q/user/status query-string filters. requireHeadscaleClient guarantees
@@ -108,10 +126,10 @@ func (h *Handlers) ListMachines(w http.ResponseWriter, r *http.Request) {
 	userFilter := r.URL.Query().Get("user")
 	status := r.URL.Query().Get("status")
 
-	filtered := make([]headscaleclient.Node, 0, len(nodes))
+	filtered := make([]machineResponse, 0, len(nodes))
 	for _, n := range nodes {
 		if matchesFilters(n, q, userFilter, status) {
-			filtered = append(filtered, n)
+			filtered = append(filtered, toMachineResponse(n))
 		}
 	}
 
@@ -359,14 +377,44 @@ func (h *Handlers) ExpireMachine(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// DeleteMachine handles DELETE /api/machines/{id}.
+// DeleteMachine handles DELETE /api/machines/{id}. If the machine is a funnel,
+// this also deletes every funnel route for the org.
 func (h *Handlers) DeleteMachine(w http.ResponseWriter, r *http.Request) {
 	client, id := h.machineIDAndClient(r)
+
+	if isFunnelMachine, err := h.isFunnelMachine(r.Context(), client, id); err != nil {
+		h.serverError(w, r, err)
+		return
+	} else if isFunnelMachine {
+		user, ok := auth.UserFromContext(r.Context())
+		if !ok {
+			h.writeError(w, http.StatusUnauthorized, "unauthorized")
+			return
+		}
+		if err := h.queries.DeleteFunnelRoutesByOrg(r.Context(), user.OrganizationID); err != nil {
+			h.serverError(w, r, err)
+			return
+		}
+	}
+
 	if err := client.DeleteNode(r.Context(), id); err != nil {
 		h.serverError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+func (h *Handlers) isFunnelMachine(ctx context.Context, client *headscaleclient.Client, nodeID string) (bool, error) {
+	nodes, err := client.ListNodes(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, n := range nodes {
+		if n.ID == nodeID {
+			return isFunnelNode(n), nil
+		}
+	}
+	return false, nil
 }
 
 // isExpiredRFC3339 reports whether expiry (an RFC3339 timestamp, as

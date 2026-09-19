@@ -31,10 +31,7 @@ type User struct {
 	CreatedAt   string `json:"createdAt"`
 }
 
-// Node is a headscale node -- a "machine" in the ownscale admin UI --
-// matching frontend/src/api.ts's Machine interface field-for-field. Note
-// headscale dropped the old ForcedTags/ValidTags/InvalidTags split in
-// favor of a single Tags list (see hscodegen/models.V1Node's doc comment).
+// Node is a headscale node/machine.
 type Node struct {
 	ID              string   `json:"id"`
 	MachineKey      string   `json:"machineKey"`
@@ -103,11 +100,6 @@ func (rt authRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 	return rt.next.RoundTrip(req)
 }
 
-// New builds a Client that talks to the headscale management API at host
-// (a "host:port" reachable from the ownscale container, e.g.
-// "hs-acme:8080" -- see dockerctl.HSContainerName and
-// EnsureOwnscaleNetworkForOrg for why that's reachable at all),
-// authenticating every request with apiKey.
 func New(host, apiKey string) *Client {
 	transport := httptransport.New(host, "/", []string{"http"})
 	next := transport.Transport
@@ -200,11 +192,8 @@ func (c *Client) DeleteUser(ctx context.Context, id string) (err error) {
 	return err
 }
 
-// RegisterNode registers a machine pending interactive authentication
-// (i.e. one that ran `tailscale up --login-server=...` and is waiting at
-// its printed registration key/URL) to user, returning the newly created
-// Node. key must already be in headscale's expected
-// `hskey-authreq-<token>` form -- see NormalizeRegistrationKey.
+// RegisterNode registers a machine pending interactive authentication,
+// i.e. one that ran `tailscale up --login-server=...`.
 func (c *Client) RegisterNode(ctx context.Context, user, key string) (_ Node, err error) {
 	defer derrors.Wrap(&err, "c.RegisterNode(%q, %q)", user, key)
 

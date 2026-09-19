@@ -61,6 +61,15 @@ func (q *Queries) DeleteFunnelRoute(ctx context.Context, arg DeleteFunnelRoutePa
 	return err
 }
 
+const deleteFunnelRoutesByOrg = `-- name: DeleteFunnelRoutesByOrg :exec
+DELETE FROM funnel_routes WHERE organization_id = ?
+`
+
+func (q *Queries) DeleteFunnelRoutesByOrg(ctx context.Context, organizationID string) error {
+	_, err := q.db.ExecContext(ctx, deleteFunnelRoutesByOrg, organizationID)
+	return err
+}
+
 const getFunnelRoute = `-- name: GetFunnelRoute :one
 SELECT id, organization_id, label, target_node_id, target_port, created_by, created_at FROM funnel_routes WHERE id = ? AND organization_id = ?
 `

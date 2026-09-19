@@ -7,10 +7,6 @@ import (
 	"strings"
 )
 
-// authReqKeyPattern matches a full, already-prefixed registration key as
-// printed by `tailscale up` against headscale >=0.23 (and expected by
-// headscale 0.29.3, the version ownscale pins -- see
-// dockerctl/dockerctl.go's Image).
 var authReqKeyPattern = regexp.MustCompile(`^hskey-authreq-[A-Za-z0-9_-]{16,}$`)
 
 // legacyMachineKeyPattern matches the older `mkey:...` registration key

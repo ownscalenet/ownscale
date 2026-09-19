@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -18,6 +19,7 @@ import (
 	"github.com/ownscalenet/ownscale/config"
 	dbpkg "github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/funnelproxy"
 	"github.com/ownscalenet/ownscale/headscaleclient"
 	"github.com/ownscalenet/ownscale/orgs"
 )
@@ -52,15 +54,15 @@ func newFakeHeadscaleServer(t *testing.T) (*httptest.Server, *headscaleclient.Cl
 	mux.HandleFunc("/api/v1/node", func(w http.ResponseWriter, r *http.Request) {
 		requests = append(requests, r)
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"nodes":[
+		fmt.Fprintf(w, `{"nodes":[
 			{"id":"1","name":"node1","givenName":"node1","ipAddresses":["100.64.0.1"],
 			 "user":{"id":"1","name":"alice"},"online":true,"tags":["tag:server"],
 			 "approvedRoutes":["10.0.0.0/24"],"availableRoutes":["10.0.0.0/24"],
 			 "createdAt":"2024-01-01T00:00:00Z"},
-			{"id":"2","name":"node2","givenName":"node2","ipAddresses":["100.64.0.2"],
-			 "user":{"id":"2","name":"bob"},"online":false,
+			{"id":"2","name":"funnel-acme","givenName":"funnel-acme","ipAddresses":["100.64.0.2"],
+			 "user":{"id":"2","name":%q},"online":false,
 			 "expiry":"2020-01-01T00:00:00Z","createdAt":"2024-01-01T00:00:00Z"}
-		]}`)
+		]}`, funnelproxy.FunnelHeadscaleUserName)
 	})
 	mux.HandleFunc("/api/v1/user", func(w http.ResponseWriter, r *http.Request) {
 		requests = append(requests, r)
@@ -238,7 +240,7 @@ func TestListMachinesReturnsNodesAndUsers(t *testing.T) {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
 	var body struct {
-		Machines []headscaleclient.Node `json:"machines"`
+		Machines []machineResponse      `json:"machines"`
 		Users    []headscaleclient.User `json:"users"`
 		Total    int                    `json:"total"`
 	}
@@ -250,6 +252,12 @@ func TestListMachinesReturnsNodesAndUsers(t *testing.T) {
 	}
 	if len(body.Users) != 2 {
 		t.Errorf("got %d users, want 2", len(body.Users))
+	}
+	if body.Machines[0].Internal {
+		t.Errorf("first machine should not be a funnel machine")
+	}
+	if !body.Machines[1].Internal {
+		t.Errorf("second machine should be a funnel machine")
 	}
 }
 
@@ -264,7 +272,7 @@ func TestListMachinesFiltersByQUserStatus(t *testing.T) {
 		wantIDs   []string
 	}{
 		{"q matches name", "q=node1", 1, []string{"1"}},
-		{"user filter", "user=bob", 1, []string{"2"}},
+		{"user filter", "user=alice", 1, []string{"1"}},
 		{"status online", "status=online", 1, []string{"1"}},
 		{"status expired", "status=expired", 1, []string{"2"}},
 		{"no filters", "", 2, []string{"1", "2"}},
@@ -519,6 +527,18 @@ func TestDeleteMachine(t *testing.T) {
 	h, queries := newMachinesTestHandlers(t)
 	user, client, requests := activeOrgUser(t, h, queries)
 
+	route, err := queries.CreateFunnelRoute(t.Context(), sqlcgen.CreateFunnelRouteParams{
+		ID:             xid.New().String(),
+		OrganizationID: user.OrganizationID,
+		Label:          "web",
+		TargetNodeID:   "2",
+		TargetPort:     8080,
+		CreatedBy:      sql.NullString{String: user.ID, Valid: true},
+	})
+	if err != nil {
+		t.Fatalf("CreateFunnelRoute: %v", err)
+	}
+
 	req := withPathValue(withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/machines/1", nil), user), client), "id", "1")
 	rec := httptest.NewRecorder()
 	h.DeleteMachine(rec, req)
@@ -529,6 +549,94 @@ func TestDeleteMachine(t *testing.T) {
 	last := (*requests)[len(*requests)-1]
 	if last.Method != http.MethodDelete {
 		t.Errorf("expected DELETE upstream, got %s", last.Method)
+	}
+
+	// Node "1" is owned by "alice" (not the funnel user), so deleting it
+	// must not touch the org's funnel routes.
+	remaining, err := queries.ListFunnelRoutesByOrg(t.Context(), user.OrganizationID)
+	if err != nil {
+		t.Fatalf("ListFunnelRoutesByOrg: %v", err)
+	}
+	if len(remaining) != 1 || remaining[0].ID != route.ID {
+		t.Errorf("got %d funnel routes after deleting a normal machine, want the original route untouched", len(remaining))
+	}
+}
+
+func TestDeleteMachineCascadesFunnelRoutesForInternalMachine(t *testing.T) {
+	h, queries := newMachinesTestHandlers(t)
+	user := insertUser(t, queries)
+
+	orgID := xid.New().String()
+	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{ID: orgID, Subdomain: "acme"})
+	if err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+	if _, err := queries.UpdateOrganizationStatus(t.Context(), sqlcgen.UpdateOrganizationStatusParams{ID: org.ID, Status: orgs.StatusActive}); err != nil {
+		t.Fatalf("UpdateOrganizationStatus: %v", err)
+	}
+	if err := queries.SetUserOrganizationAndRole(t.Context(), sqlcgen.SetUserOrganizationAndRoleParams{
+		OrganizationID: org.ID,
+		Role:           user.Role,
+		ID:             user.ID,
+	}); err != nil {
+		t.Fatalf("SetUserOrganizationAndRole: %v", err)
+	}
+	user, err = queries.GetUserByID(t.Context(), user.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID: %v", err)
+	}
+
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/node", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprintf(w, `{"nodes":[
+			{"id":"1","name":"node1","givenName":"node1","ipAddresses":["100.64.0.1"],
+			 "user":{"id":"1","name":"alice"},"online":true,"createdAt":"2024-01-01T00:00:00Z"},
+			{"id":"2","name":"funnel-acme","givenName":"funnel-acme","ipAddresses":["100.64.0.2"],
+			 "user":{"id":"2","name":%q},"online":true,"createdAt":"2024-01-01T00:00:00Z"}
+		]}`, funnelproxy.FunnelHeadscaleUserName)
+	})
+	var deletedNodeID string
+	mux.HandleFunc("/api/v1/node/2", func(w http.ResponseWriter, r *http.Request) {
+		deletedNodeID = "2"
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{}`)
+	})
+	srv := httptest.NewServer(mux)
+	t.Cleanup(srv.Close)
+	client := headscaleclient.New(strings.TrimPrefix(srv.URL, "http://"), "test-key")
+	h.hs = headscaleclient.NewRegistry(&fakeClientMinter{client: client})
+
+	for _, label := range []string{"web", "admin"} {
+		if _, err := queries.CreateFunnelRoute(t.Context(), sqlcgen.CreateFunnelRouteParams{
+			ID:             xid.New().String(),
+			OrganizationID: org.ID,
+			Label:          label,
+			TargetNodeID:   "1",
+			TargetPort:     8080,
+			CreatedBy:      sql.NullString{String: user.ID, Valid: true},
+		}); err != nil {
+			t.Fatalf("CreateFunnelRoute(%q): %v", label, err)
+		}
+	}
+
+	req := withPathValue(withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/machines/2", nil), user), client), "id", "2")
+	rec := httptest.NewRecorder()
+	h.DeleteMachine(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	if deletedNodeID != "2" {
+		t.Errorf("expected node 2 to be deleted upstream, got %q", deletedNodeID)
+	}
+
+	remaining, err := queries.ListFunnelRoutesByOrg(t.Context(), org.ID)
+	if err != nil {
+		t.Fatalf("ListFunnelRoutesByOrg: %v", err)
+	}
+	if len(remaining) != 0 {
+		t.Errorf("got %d funnel routes after deleting the internal funnel machine, want 0", len(remaining))
 	}
 }
 

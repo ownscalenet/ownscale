@@ -48,8 +48,12 @@ To keep routing simple, organization subdomains can only be alphanumeric. When a
 funnel is created, its subdomain will be funnelname-orgname.example.com. TLS is
 done with wildcards.
 
-### 10. tsnet clients need to talk with headscale through IPs
+### 10. Funnels create a tsnet client
+The client shows as a machine in the interface. A machine/node with access in
+the tailnet is needed to forward the funnel to the outside world.
+
+### 11. tsnet clients need to talk with headscale through IPs
 In commit 9dbe28470, tsnet clients were switched to use IPs instead of docker
 resolved DNS names. That is because the client will switch to https/443 when
-a request to the controlURL(headscale) failed. That headscale instance is a 
+a request to the controlURL(headscale) failed. That headscale instance is a
 docker container serving on hs-org_name:8080, and it has no https or 443 port.

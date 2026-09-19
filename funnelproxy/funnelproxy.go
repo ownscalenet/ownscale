@@ -31,10 +31,7 @@ import (
 	"github.com/ownscalenet/ownscale/headscaleclient"
 )
 
-// funnelHeadscaleUserName is the fixed headscale user name the proxy
-// registers its per-org tsnet nodes under. It's not tied to any ownscale user.
-// TODO: should this be hidden in the UI?
-const funnelHeadscaleUserName = "ownscale-funnel"
+const FunnelHeadscaleUserName = "ownscale-funnel"
 
 // Queries is the narrow subset of *db.TxQueries the proxy needs.
 type Queries interface {
@@ -76,15 +73,8 @@ type Pool struct {
 // a stable node across process restarts instead of re-registering on
 // every request).
 func NewPool(queries Queries, hs HeadscaleClients, dataDir string, logger *slog.Logger) *Pool {
-	// Every tsnet.Server we run uses a fake, no-op tun device (there's no
-	// real OS route through Tailscale to loop back into), so netns's
-	// default-route-interface binding -- meant to stop a *real* tailscaled
-	// from routing its own control-plane traffic back through its own tun
-	// -- only causes harm here: this container has one Docker network per
-	// organization, so it forces every tsnet control-client dial through
-	// whichever org happens to currently own the container's default
-	// route, breaking connectivity to every other org's headscale.
-	// The symptoms are: only funnels from one org work, all others timeout.
+	// The symptoms of having this enabled: only funnels from one org work,
+	// all others timeout.
 	netns.SetEnabled(false)
 
 	return &Pool{
@@ -153,11 +143,8 @@ func tsnetLogf(logger *slog.Logger, subdomain string) func(format string, args .
 	}
 }
 
-// ParseHost splits a funnel request's Host header (already stripped of
-// any port) into (label, subdomain, ok), given base -- the same
-// "label-subdomain.{base}" single-DNS-label scheme handlers/funnel.go
-// computes and validates. ok is false if host isn't shaped like a funnel
-// hostname at all.
+// ParseHost splits a funnel request's Host header into (label, subdomain, ok),
+// given base. ok is false if host isn't shaped like a funnel hostname at all.
 func ParseHost(host, base string) (label, subdomain string, ok bool) {
 	host = strings.ToLower(host)
 	if h, _, err := net.SplitHostPort(host); err == nil {
@@ -341,13 +328,13 @@ func ensureFunnelAuthKey(ctx context.Context, client *headscaleclient.Client) (h
 	}
 	var userID string
 	for _, u := range users {
-		if u.Name == funnelHeadscaleUserName {
+		if u.Name == FunnelHeadscaleUserName {
 			userID = u.ID
 			break
 		}
 	}
 	if userID == "" {
-		created, err := client.CreateUser(ctx, headscaleclient.CreateUserParams{Name: funnelHeadscaleUserName})
+		created, err := client.CreateUser(ctx, headscaleclient.CreateUserParams{Name: FunnelHeadscaleUserName})
 		if err != nil {
 			return headscaleclient.PreAuthKey{}, err
 		}

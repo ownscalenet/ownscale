@@ -19,10 +19,7 @@ type ClientMinter interface {
 
 // Registry lazily mints and caches one Client per organization subdomain,
 // entirely in memory: the ownscale-facing headscale API key is never
-// persisted anywhere. A process restart simply mints a fresh key next
-// time a Client is needed for a given subdomain -- headscale allows any
-// number of simultaneously valid API keys, so this never invalidates keys
-// already handed out to anything else.
+// persisted anywhere. A process restart simply mints a fresh key next.
 type Registry struct {
 	minter ClientMinter
 
@@ -52,9 +49,7 @@ func (r *Registry) Client(ctx context.Context, subdomain string) (_ *Client, err
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	// A concurrent call might have raced us to mint+cache a client for the
-	// same subdomain; keep whichever was cached first rather than
-	// overwriting it -- both keys are equally valid, so there's no
-	// correctness issue either way, just avoids leaking the loser's Client.
+	// same subdomain.
 	if existing, ok := r.clients[subdomain]; ok {
 		return existing, nil
 	}

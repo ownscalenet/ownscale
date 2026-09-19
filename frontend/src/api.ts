@@ -64,6 +64,7 @@ export interface Machine {
   approvedRoutes: string[] | null
   availableRoutes: string[] | null
   subnetRoutes: string[] | null
+  internal: boolean
 }
 
 export class ApiError extends Error {
@@ -80,7 +81,7 @@ export class ApiError extends Error {
 export const UNAUTHORIZED_EVENT = 'ownscale:unauthorized'
 
 // True for the error fetch() throws when an in-flight request is aborted via
-// AbortController -- callers use this to skip setError() on an intentional
+// AbortController. Callers use this to skip setError() on an intentional
 // cancellation (e.g. unmount, or a newer request superseding an older one).
 export function isAbortError(err: unknown): boolean {
   return err instanceof DOMException && err.name === 'AbortError'

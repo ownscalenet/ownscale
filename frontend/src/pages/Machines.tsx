@@ -2,16 +2,19 @@ import { useEffect, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth'
 import { usePageTitle } from '../hooks/usePageTitle'
+import { faqURL } from '../lib/faq'
 import {
   ApiError,
   deleteMachine,
   expireMachine,
   isAbortError,
+  listFunnelRoutes,
   listMachines,
   registerMachine,
   renameMachine,
   setMachineRoutes,
   setMachineTags,
+  type FunnelRoute,
   type HeadscaleUser,
   type Machine,
 } from '../api'
@@ -357,10 +360,14 @@ function MachineRow({ machine: m, onChange }: { machine: Machine; onChange: () =
   const renameRef = useRef<HTMLDialogElement>(null)
   const tagsRef = useRef<HTMLDialogElement>(null)
   const routesRef = useRef<HTMLDialogElement>(null)
+  const removeInternalRef = useRef<HTMLDialogElement>(null)
   const [name, setName] = useState(m.givenName)
   const [tagsInput, setTagsInput] = useState(tags(m).join(', '))
   const [selectedRoutes, setSelectedRoutes] = useState<string[]>(m.approvedRoutes ?? [])
   const [busy, setBusy] = useState(false)
+  const [affectedFunnels, setAffectedFunnels] = useState<FunnelRoute[]>([])
+  const [affectedFunnelsLoading, setAffectedFunnelsLoading] = useState(false)
+  const [affectedFunnelsError, setAffectedFunnelsError] = useState<string | null>(null)
   const expired = isExpired(m)
   const availableRoutes = m.availableRoutes ?? []
 
@@ -374,6 +381,18 @@ function MachineRow({ machine: m, onChange }: { machine: Machine; onChange: () =
     }
   }
 
+  const openRemoveInternalDialog = () => {
+    removeInternalRef.current?.showModal()
+    setAffectedFunnelsLoading(true)
+    setAffectedFunnelsError(null)
+    listFunnelRoutes()
+      .then((res) => setAffectedFunnels(res.funnelRoutes))
+      .catch((err) => {
+        setAffectedFunnelsError(err instanceof Error ? err.message : String(err))
+      })
+      .finally(() => setAffectedFunnelsLoading(false))
+  }
+
   return (
     <tr>
       <td className="whitespace-nowrap">
@@ -382,6 +401,17 @@ function MachineRow({ machine: m, onChange }: { machine: Machine; onChange: () =
         <div className="flex flex-wrap gap-1 mt-1">
           {expired && <span className="badge badge-error badge-sm">Expired</span>}
           {!m.expiry && <span className="badge badge-ghost badge-sm">No expiry</span>}
+          {m.internal && (
+            <a
+              href={faqURL('funnel-machine')}
+              target="_blank"
+              rel="noreferrer"
+              className="badge badge-info badge-sm"
+              title="Automatically created for the funnel feature"
+            >
+              Internal
+            </a>
+          )}
           {tags(m).map((t) => (
             <span key={t} className="badge badge-outline badge-sm font-mono">
               {t}
@@ -417,17 +447,29 @@ function MachineRow({ machine: m, onChange }: { machine: Machine; onChange: () =
             className="dropdown-content menu bg-base-100 rounded-box z-10 w-56 p-2 shadow"
           >
             <li>
-              <button type="button" onClick={() => renameRef.current?.showModal()}>
+              <button
+                type="button"
+                disabled={m.internal}
+                onClick={() => renameRef.current?.showModal()}
+              >
                 Edit machine name
               </button>
             </li>
             <li>
-              <button type="button" onClick={() => tagsRef.current?.showModal()}>
+              <button
+                type="button"
+                disabled={m.internal}
+                onClick={() => tagsRef.current?.showModal()}
+              >
                 Edit ACL tags
               </button>
             </li>
             <li>
-              <button type="button" onClick={() => routesRef.current?.showModal()}>
+              <button
+                type="button"
+                disabled={m.internal}
+                onClick={() => routesRef.current?.showModal()}
+              >
                 Edit route settings
               </button>
             </li>
@@ -435,7 +477,7 @@ function MachineRow({ machine: m, onChange }: { machine: Machine; onChange: () =
               <button
                 type="button"
                 className="text-error"
-                disabled={expired || busy}
+                disabled={expired || busy || m.internal}
                 onClick={() => {
                   if (confirm(`Expire the session of ${m.givenName}?`)) {
                     void run(() => expireMachine(m.id))
@@ -451,6 +493,10 @@ function MachineRow({ machine: m, onChange }: { machine: Machine; onChange: () =
                 className="text-error"
                 disabled={busy}
                 onClick={() => {
+                  if (m.internal) {
+                    openRemoveInternalDialog()
+                    return
+                  }
                   if (confirm(`Permanently remove ${m.givenName}?`)) {
                     void run(() => deleteMachine(m.id))
                   }
@@ -596,6 +642,59 @@ function MachineRow({ machine: m, onChange }: { machine: Machine; onChange: () =
                 </button>
               </div>
             </form>
+          </div>
+          <form method="dialog" className="modal-backdrop">
+            <button>close</button>
+          </form>
+        </dialog>
+
+        <dialog ref={removeInternalRef} className="modal">
+          <div className="modal-box text-left whitespace-normal">
+            <h3 className="text-lg font-bold mb-4">Remove {m.givenName}</h3>
+            <div role="alert" className="alert alert-warning mb-4">
+              <span>
+                This machine is used internally by the funnel feature. The following funnels will
+                be deleted and no longer accessible:
+              </span>
+            </div>
+            {affectedFunnelsLoading ? (
+              <div className="flex justify-center py-2">
+                <span className="loading loading-spinner loading-sm"></span>
+              </div>
+            ) : affectedFunnelsError ? (
+              <div role="alert" className="alert alert-error mb-2">
+                <span>{affectedFunnelsError}</span>
+              </div>
+            ) : affectedFunnels.length === 0 ? (
+              <p className="text-sm opacity-60">No funnels are currently configured.</p>
+            ) : (
+              <ul className="list-disc list-inside space-y-1">
+                {affectedFunnels.map((f) => (
+                  <li key={f.id} className="font-mono text-sm">
+                    {f.hostname}
+                  </li>
+                ))}
+              </ul>
+            )}
+            <div className="modal-action">
+              <button
+                type="button"
+                className="btn btn-error"
+                disabled={busy || affectedFunnelsLoading}
+                onClick={() => {
+                  void run(() => deleteMachine(m.id)).then(() => removeInternalRef.current?.close())
+                }}
+              >
+                Delete machine and funnels
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => removeInternalRef.current?.close()}
+              >
+                Cancel
+              </button>
+            </div>
           </div>
           <form method="dialog" className="modal-backdrop">
             <button>close</button>

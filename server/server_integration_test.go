@@ -33,9 +33,7 @@ import (
 )
 
 // requireDocker skips the test if no Docker daemon is reachable, and
-// returns a raw client for tests that need to inspect containers directly
-// (e.g. to work around the test process not being able to resolve
-// container names by DNS -- see the MintClientFn override below).
+// returns a raw client for tests that need to inspect containers directly.
 func requireDocker(t *testing.T) *client.Client {
 	t.Helper()
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
