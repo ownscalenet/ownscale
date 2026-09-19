@@ -174,16 +174,18 @@ caddy-image:
 # Send the ownscale and caddy images and repo files to remote.
 archive: docker-image caddy-image
 	docker save $(DOCKER_IMAGE) $(CADDY_IMAGE) | gzip | ssh az 'gzip -d | docker load'
-	# delete existing go files
-	ssh az rm -rf ownscale/internal ownscale/cmd
-	tar czf - \
+	ssh az mkdir -p ownscale
+	rsync -a --delete \
 		--exclude='.git' \
 		--exclude='.env' \
 		--exclude='data' \
 		--exclude='node_modules' \
 		--exclude='bin' \
-		-C .. $(notdir $(CURDIR)) \
-		| ssh az 'mkdir -p ownscale && tar -xzf - -C ownscale --strip-components=1'
+		--exclude='/organizations' \
+		--exclude='/etc/headscale' \
+		--exclude='/etc/caddy/wildcard' \
+		--exclude='/etc/caddy/admin' \
+		./ az:ownscale/
 
 purge:
 	docker compose down
