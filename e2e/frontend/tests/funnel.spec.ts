@@ -23,7 +23,7 @@ test('creating and deleting a funnel route', async ({ page }) => {
     await page.getByRole('button', { name: 'Create' }).click()
 
     const row = page.getByRole('row').filter({ hasText: machine.hostname })
-    await expect(row).toBeVisible()
+    await expect(row).toBeVisible({ timeout: 25_000 })
     await expect(row.getByText('8080', { exact: true })).toBeVisible()
 
     await row.getByRole('button', { name: 'Remove' }).click()

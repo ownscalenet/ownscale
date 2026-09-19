@@ -134,59 +134,30 @@ test('real tailnets: bidirectional connectivity, ordered isolation, ACL transiti
       expect(await publicContext.cookies()).toEqual([])
       const publicURL = `https://${route.hostname}/`
 
-      // A real browser's first load of a brand-new funnel fires several
-      // near-simultaneous requests (HTML, JS/CSS bundles, favicon, ...),
-      // not one at a time. When initially called, the funnel will instantiate
-      // tsnet.Server against the same on-disk state directory, corrupting
-      // registration and leaving the funnel stuck loading forever.
-      const concurrentAttempt = async (id: number): Promise<void> => {
-        await poll(`public funnel concurrent first access #${id}`, 120_000, async () => {
-          let response
-          try { response = await publicContext.request.get(publicURL, { timeout: 60_000, maxRedirects: 0 }) } catch (error) {
-            if (error instanceof Error && /Timeout .*exceeded|ECONNRESET|ETIMEDOUT/.test(error.message)) return undefined
-            throw new Error(`Concurrent public funnel access #${id} failed unexpectedly`)
-          }
-          try {
-            if ([502, 503, 504].includes(response.status())) return undefined
-            if (response.status() !== 200) throw new Error(`Concurrent public funnel access #${id} returned HTTP ${response.status()}, not an identity endpoint`)
-            const data = await response.json().catch(() => null)
-            if (data?.identity !== target.service.identity) throw new Error(`Concurrent public funnel access #${id} returned the wrong or malformed identity`)
-            return true
-          } finally { await response.dispose() }
-        })
-      }
-      const concurrency = 10
-      await Promise.all(Array.from({ length: concurrency }, (_, i) => concurrentAttempt(i)))
-      harness.observations.push({ phase: 'public-funnel-concurrent-first-access', concurrency })
-
-      await poll('public funnel lazy tsnet enrollment', 120_000, async () => {
-        let response
-        try { response = await publicContext.request.get(publicURL, { timeout: 60_000, maxRedirects: 0 }) } catch (error) {
-          if (error instanceof Error && /Timeout .*exceeded|ECONNRESET|ETIMEDOUT/.test(error.message)) return undefined
-          throw new Error('Public funnel request failed unexpectedly')
-        }
+      // The funnel's shared tsnet server is started eagerly by
+      // CreateFunnelRoute (before it even returns), so it's already up
+      // and serving by the time we get here.
+      {
+        const response = await publicContext.request.get(publicURL, { timeout: 10_000, maxRedirects: 0 })
         try {
-          if ([502, 503, 504].includes(response.status())) return undefined
           if (response.status() !== 200) throw new Error(`Public funnel returned HTTP ${response.status()}, not an identity endpoint`)
           const data = await response.json().catch(() => null)
           if (data?.identity !== target.service.identity) throw new Error('Public funnel returned the wrong or malformed identity')
           harness.observations.push({ phase: 'public-funnel', statusCode: 200, identity: data.identity })
-          return true
         } finally { await response.dispose() }
-      })
+      }
       const ownedRoute = recovery.resources.find(r => r.kind === 'route' && r.id === String(route.id))!
       await orgs[0].removeResource(ownedRoute, recovery)
-      await poll('public funnel missing-route confirmation', 30_000, async () => {
-        const response = await publicContext.request.get(publicURL, { timeout: 5000, maxRedirects: 0 })
+      {
+        const response = await publicContext.request.get(publicURL, { timeout: 10_000, maxRedirects: 0 })
         try {
           const body = await response.text()
           if (response.status() !== 404 || body.trim() !== '404 page not found') {
             throw new Error(`Removed funnel must return the missing-route HTTP 404, got HTTP ${response.status()}`)
           }
           harness.observations.push({ phase: 'public-funnel-removed', statusCode: response.status() })
-          return true
         } finally { await response.dispose() }
-      })
+      }
     } finally { await publicContext.close() }
   })
 })

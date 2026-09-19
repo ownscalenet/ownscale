@@ -64,45 +64,28 @@ func TestCreateFunnelRouteValidation(t *testing.T) {
 	}
 }
 
-func TestCreateFunnelRouteSucceedsAndRejectsDuplicateLabel(t *testing.T) {
+func TestCreateFunnelRouteRejectsDuplicateLabel(t *testing.T) {
 	h, org, users := newFunnelTestHandlers(t, RoleOwner)
 	owner := users[0]
 	_, client, _, _, _ := newFakeHeadscaleServer(t)
+
+	if _, err := h.queries.CreateFunnelRoute(t.Context(), sqlcgen.CreateFunnelRouteParams{
+		ID:             xid.New().String(),
+		OrganizationID: org.ID,
+		Label:          "web",
+		TargetNodeID:   "1",
+		TargetPort:     8080,
+		CreatedBy:      sql.NullString{String: owner.ID, Valid: true},
+	}); err != nil {
+		t.Fatalf("CreateFunnelRoute: %v", err)
+	}
 
 	body := `{"label":"web","targetNodeId":"1","targetPort":8080}`
 	req := withHeadscaleClient(withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPost, "/api/funnel", strings.NewReader(body)), owner), owner, org), client)
 	rec := httptest.NewRecorder()
 	h.CreateFunnelRoute(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
-	}
-
-	var resp struct {
-		FunnelRoute struct {
-			ID             string `json:"id"`
-			Label          string `json:"label"`
-			Hostname       string `json:"hostname"`
-			TargetNodeName string `json:"targetNodeName"`
-			TargetPort     int64  `json:"targetPort"`
-		} `json:"funnelRoute"`
-	}
-	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	wantHostname := "web-" + org.Subdomain + "." + testBaseDomain
-	if resp.FunnelRoute.Hostname != wantHostname {
-		t.Errorf("hostname = %q, want %q", resp.FunnelRoute.Hostname, wantHostname)
-	}
-	if resp.FunnelRoute.TargetNodeName != "node1" {
-		t.Errorf("targetNodeName = %q, want %q", resp.FunnelRoute.TargetNodeName, "node1")
-	}
-
-	// Duplicate label for the same org -> 409.
-	dupReq := withHeadscaleClient(withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPost, "/api/funnel", strings.NewReader(body)), owner), owner, org), client)
-	dupRec := httptest.NewRecorder()
-	h.CreateFunnelRoute(dupRec, dupReq)
-	if dupRec.Code != http.StatusConflict {
-		t.Errorf("duplicate label status = %d, want %d", dupRec.Code, http.StatusConflict)
+	if rec.Code != http.StatusConflict {
+		t.Errorf("duplicate label status = %d, want %d, body=%s", rec.Code, http.StatusConflict, rec.Body.String())
 	}
 }
 

@@ -248,6 +248,12 @@ func targetNodeIP(ctx context.Context, client *headscaleclient.Client, nodeID st
 // reach the Running state.
 const funnelUpTimeout = 45 * time.Second
 
+// EnsureServer starts or reuses the already-cached tsnet.Server for subdomain.
+func (p *Pool) EnsureServer(ctx context.Context, subdomain string, client *headscaleclient.Client) error {
+	_, err := p.getOrCreateServer(ctx, subdomain, client)
+	return err
+}
+
 // getOrCreateServer returns the cached tsnet.Server for subdomain,
 // starting (and registering, via a freshly minted pre-auth key) one on
 // first use.

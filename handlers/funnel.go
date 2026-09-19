@@ -151,6 +151,12 @@ func (h *Handlers) CreateFunnelRoute(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if err := h.funnel.EnsureServer(r.Context(), org.Subdomain, client); err != nil {
+		h.logger.Error("create funnel route: start tsnet server", "subdomain", org.Subdomain, "error", err)
+		h.writeError(w, http.StatusBadGateway, "failed to start funnel server")
+		return
+	}
+
 	created, err := h.queries.CreateFunnelRoute(r.Context(), sqlcgen.CreateFunnelRouteParams{
 		ID:             xid.New().String(),
 		OrganizationID: org.ID,
