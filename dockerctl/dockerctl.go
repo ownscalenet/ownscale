@@ -814,9 +814,12 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 
 const unhealthyGracePeriod = 2 * time.Second
 
+// unhealthyLogTailLines is how many lines will be read from unhealthy containers.
+const unhealthyLogTailLines = "200"
+
 // waitForHealthy polls containerID's Docker health status until it reports
 // healthy, or until it has been continuously Unhealthy for longer than
-// unhealthyGrace, or until c.healthCheckTimeout elapses -- whichever comes
+// unhealthyGrace, or until c.healthCheckTimeout elapses, whichever comes
 // first.
 func (c *Ctl) waitForHealthy(ctx context.Context, containerID string, unhealthyGrace time.Duration) (err error) {
 	defer derrors.Wrap(&err, "c.waitForHealthy(%q)", containerID)
@@ -839,6 +842,7 @@ func (c *Ctl) waitForHealthy(ctx context.Context, containerID string, unhealthyG
 					unhealthySince = time.Now()
 				}
 				if time.Since(unhealthySince) > unhealthyGrace {
+					c.logUnhealthyDiagnostics(ctx, containerID, info)
 					return fmt.Errorf("container reported unhealthy")
 				}
 			default:
@@ -846,6 +850,7 @@ func (c *Ctl) waitForHealthy(ctx context.Context, containerID string, unhealthyG
 			}
 		}
 		if time.Now().After(deadline) {
+			c.logUnhealthyDiagnostics(ctx, containerID, info)
 			if lastStatus != "" {
 				return fmt.Errorf("timed out after %s waiting for container to become healthy (last status: %s)", c.healthCheckTimeout, lastStatus)
 			}
@@ -857,6 +862,47 @@ func (c *Ctl) waitForHealthy(ctx context.Context, containerID string, unhealthyG
 		case <-time.After(c.healthCheckPollInterval):
 		}
 	}
+}
+
+// logUnhealthyDiagnostics logs containerID's Docker health-check probe
+// history and a tail of its stdout/stderr for debugging purposes.
+func (c *Ctl) logUnhealthyDiagnostics(ctx context.Context, containerID string, info container.InspectResponse) {
+	var healthLog []*container.HealthcheckResult
+	if info.State != nil && info.State.Health != nil {
+		healthLog = info.State.Health.Log
+	}
+
+	logs, err := c.containerLogTail(ctx, containerID)
+	if err != nil {
+		c.logger.Warn("fetch container logs for unhealthy diagnostics", "container_id", containerID, "error", err)
+	}
+
+	c.logger.Error("container failed to become healthy",
+		"container_id", containerID,
+		"health_check_log", healthLog,
+		"container_logs", logs,
+	)
+}
+
+// containerLogTail returns the last unhealthyLogTailLines lines of
+// containerID's combined stdout/stderr.
+func (c *Ctl) containerLogTail(ctx context.Context, containerID string) (string, error) {
+	rc, err := c.cli.ContainerLogs(ctx, containerID, container.LogsOptions{
+		ShowStdout: true,
+		ShowStderr: true,
+		Timestamps: true,
+		Tail:       unhealthyLogTailLines,
+	})
+	if err != nil {
+		return "", err
+	}
+	defer rc.Close()
+
+	var out bytes.Buffer
+	if _, err := stdcopy.StdCopy(&out, &out, rc); err != nil {
+		return "", err
+	}
+	return out.String(), nil
 }
 
 // RemoveOrganization stops and removes the headscale container and its

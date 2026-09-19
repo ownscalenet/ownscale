@@ -1,6 +1,7 @@
 package dockerctl
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -259,6 +260,65 @@ func TestCreateOrganizationFailsWhenNeverHealthy(t *testing.T) {
 
 	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}); err == nil {
 		t.Fatal("CreateOrganization: want error when container never becomes healthy, got nil")
+	}
+}
+
+// TestWaitForHealthyLogsDiagnostics covers both failure modes of
+// waitForHealthy (persistent Unhealthy, and never reporting Healthy before
+// the timeout) and asserts each logs the container's stdout/stderr, so the
+// cause is still visible after the caller removes the failed container.
+func TestWaitForHealthyLogsDiagnostics(t *testing.T) {
+	tests := []struct {
+		name          string
+		health        *container.Health
+		unhealthyWait time.Duration
+	}{
+		{
+			name:   "unhealthy",
+			health: &container.Health{Status: container.Unhealthy},
+		},
+		{
+			name:   "timeout",
+			health: &container.Health{Status: container.Starting},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			const wantLogLine = "headscale: fatal error binding listener"
+
+			var logBuf bytes.Buffer
+			logger := slog.New(slog.NewTextHandler(&logBuf, nil))
+
+			api := &dockerfake.API{
+				ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
+					return container.InspectResponse{
+						ContainerJSONBase: &container.ContainerJSONBase{
+							State: &container.State{Status: "running", Health: tt.health},
+						},
+					}, nil
+				},
+				ContainerLogsFn: func(ctx context.Context, containerID string, options container.LogsOptions) (io.ReadCloser, error) {
+					var buf bytes.Buffer
+					stdcopy.NewStdWriter(&buf, stdcopy.Stderr).Write([]byte(wantLogLine + "\n"))
+					return io.NopCloser(&buf), nil
+				},
+			}
+			ctl, err := NewWithClient(api, t.TempDir(), "", logger)
+			if err != nil {
+				t.Fatalf("NewWithClient: %v", err)
+			}
+			t.Cleanup(func() { ctl.Close() })
+			ctl.healthCheckPollInterval = time.Millisecond
+			ctl.healthCheckTimeout = 10 * time.Millisecond
+
+			if err := ctl.waitForHealthy(t.Context(), "hs-acme", unhealthyGracePeriod); err == nil {
+				t.Fatal("waitForHealthy: want error, got nil")
+			}
+
+			if !strings.Contains(logBuf.String(), wantLogLine) {
+				t.Errorf("log output = %q, want it to contain container log line %q", logBuf.String(), wantLogLine)
+			}
+		})
 	}
 }
 
