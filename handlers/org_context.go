@@ -12,29 +12,22 @@ import (
 type orgContextKey int
 
 const (
-	activeOrgContextKey orgContextKey = iota
-	headscaleClientContextKey
+	headscaleClientContextKey orgContextKey = iota
 	requestLoggerContextKey
 )
 
-// activeOrgContext is the (caller, org) pair attached to the request
-// context by RequireActiveOrg.
-type activeOrgContext struct {
-	caller *sqlcgen.User
+// headscaleContext is the (client, org) pair attached to the request
+// context by RequireHeadscaleClient.
+type headscaleContext struct {
+	client *headscaleclient.Client
 	org    sqlcgen.Organization
 }
 
-// orgFromContext returns the caller and org attached by RequireActiveOrg.
-func orgFromContext(r *http.Request) (caller *sqlcgen.User, org sqlcgen.Organization, ok bool) {
-	c, ok := r.Context().Value(activeOrgContextKey).(activeOrgContext)
-	return c.caller, c.org, ok
-}
-
-// headscaleClientFromContext returns the client attached by
+// headscaleClientFromContext returns the client and org attached by
 // RequireHeadscaleClient.
-func headscaleClientFromContext(r *http.Request) (*headscaleclient.Client, bool) {
-	c, ok := r.Context().Value(headscaleClientContextKey).(*headscaleclient.Client)
-	return c, ok
+func headscaleClientFromContext(r *http.Request) (client *headscaleclient.Client, org sqlcgen.Organization, ok bool) {
+	c, ok := r.Context().Value(headscaleClientContextKey).(headscaleContext)
+	return c.client, c.org, ok
 }
 
 // withOrgLogger returns ctx carrying a logger annotated with the
@@ -55,25 +48,6 @@ func (h *Handlers) loggerFromContext(ctx context.Context) *slog.Logger {
 	return h.logger
 }
 
-// RequireActiveOrg wraps next so it only runs once the caller's org is
-// resolved and active, short-circuiting with 409+notConfigured otherwise.
-// This is used for endpoints backed by the org's own DB row (access
-// control, auth restrictions) rather than headscale itself.
-func (h *Handlers) RequireActiveOrg(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		caller, org, r, notConfigured, ok := h.resolveActiveOrg(w, r)
-		if !ok {
-			return
-		}
-		if notConfigured {
-			h.writeJSON(w, http.StatusConflict, map[string]bool{"notConfigured": true})
-			return
-		}
-		ctx := context.WithValue(r.Context(), activeOrgContextKey, activeOrgContext{caller: caller, org: org})
-		next(w, r.WithContext(ctx))
-	}
-}
-
 // RequireHeadscaleClient wraps next so it only runs once the caller's
 // organization's headscale client is resolved, short-circuiting with
 // 409+notConfigured if the org isn't active or headscale isn't reachable.
@@ -91,7 +65,7 @@ func (h *Handlers) RequireHeadscaleClient(next http.HandlerFunc) http.HandlerFun
 			h.writeJSON(w, http.StatusConflict, map[string]bool{"notConfigured": true})
 			return
 		}
-		ctx := context.WithValue(r.Context(), headscaleClientContextKey, client)
+		ctx := context.WithValue(r.Context(), headscaleClientContextKey, headscaleContext{client: client, org: org})
 		next(w, r.WithContext(ctx))
 	}
 }

@@ -8,7 +8,10 @@ import (
 )
 
 func (h *Handlers) GetDNSSettings(w http.ResponseWriter, r *http.Request) {
-	caller, org, _ := orgFromContext(r)
+	caller, org, r, ok := h.callerAndOrg(w, r)
+	if !ok {
+		return
+	}
 
 	dns, err := h.orgs.ForOrg(org).GetDNSSettings(r.Context())
 	if err != nil {
@@ -22,7 +25,10 @@ func (h *Handlers) GetDNSSettings(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) UpdateDNSSettings(w http.ResponseWriter, r *http.Request) {
-	caller, org, _ := orgFromContext(r)
+	caller, org, r, ok := h.callerAndOrg(w, r)
+	if !ok {
+		return
+	}
 	if !isManager(caller.Role) {
 		h.writeError(w, http.StatusForbidden, "only owners and admins can edit DNS settings")
 		return

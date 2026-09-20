@@ -61,13 +61,9 @@ func noopDockerAPI() *dockerfake.API {
 
 const testBaseDomain = "example.com"
 
-// newTestHandlers builds a *Handlers backed by a real, freshly-migrated
-// SQLite database and a dockerfake-backed dockerctl.Ctl, so organization
-// provisioning always works and every user is guaranteed a real, active
-// organization -- matching production, where Handlers is never built with
-// a nil Ctl. baseDomain is "" (the WebAuthn RP falls back to "localhost");
-// use newTestHandlersWithBaseDomain for tests that need a real one, since
-// baseDomain is baked into the WebAuthn RP at construction time.
+// newTestHandlers builds a *Handlers backed by a real, freshly-migrated SQLite
+// database and a dockerfake-backed dockerctl.Ctl, so organization provisioning
+// always works and every user is guaranteed a real, active organization.
 func newTestHandlers(t *testing.T) (*Handlers, *dbpkg.TxQueries) {
 	t.Helper()
 	return newTestHandlersWithBaseDomain(t, "")
@@ -88,13 +84,6 @@ func newTestHandlersWithBaseDomain(t *testing.T, baseDomain string) (*Handlers, 
 	return h, queries
 }
 
-// withActiveOrg attaches (caller, org) to req's context, as RequireActiveOrg
-// would for an authenticated request against an active organization.
-func withActiveOrg(req *http.Request, caller sqlcgen.User, org sqlcgen.Organization) *http.Request {
-	ctx := context.WithValue(req.Context(), activeOrgContextKey, activeOrgContext{caller: &caller, org: org})
-	return req.WithContext(ctx)
-}
-
 // withTestUser returns req with user attached to its context, as
 // auth.RequireAuthAPI middleware would for an authenticated request.
 func withTestUser(req *http.Request, user sqlcgen.User) *http.Request {
@@ -103,9 +92,17 @@ func withTestUser(req *http.Request, user sqlcgen.User) *http.Request {
 
 // withHeadscaleClient attaches client to req's context, as
 // RequireHeadscaleClient would for an authenticated request whose
-// organization's headscale is reachable.
+// organization's headscale is reachable. Handlers that only read the
+// client (not org) from context are fine with org's zero value.
 func withHeadscaleClient(req *http.Request, client *headscaleclient.Client) *http.Request {
-	ctx := context.WithValue(req.Context(), headscaleClientContextKey, client)
+	ctx := context.WithValue(req.Context(), headscaleClientContextKey, headscaleContext{client: client})
+	return req.WithContext(ctx)
+}
+
+// withHeadscaleClientOrg is withHeadscaleClient plus org, for handlers
+// (e.g. funnel routes) that also read org from headscaleClientFromContext.
+func withHeadscaleClientOrg(req *http.Request, client *headscaleclient.Client, org sqlcgen.Organization) *http.Request {
+	ctx := context.WithValue(req.Context(), headscaleClientContextKey, headscaleContext{client: client, org: org})
 	return req.WithContext(ctx)
 }
 

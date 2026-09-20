@@ -55,19 +55,19 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	mux.HandleFunc("POST /api/passkeys/register/finish", requireAuthAPI(h.PasskeyAddFinish))
 	mux.HandleFunc("DELETE /api/passkeys/{id}", requireAuthAPI(h.DeletePasskey))
 
-	mux.HandleFunc("GET /api/access-control", requireAuthAPI(h.RequireActiveOrg(h.RequireHeadscaleClient(h.GetAccessControlPolicy))))
-	mux.HandleFunc("PUT /api/access-control", requireAuthAPI(h.RequireActiveOrg(h.RequireHeadscaleClient(h.UpdateAccessControlPolicy))))
+	mux.HandleFunc("GET /api/access-control", requireAuthAPI(h.RequireHeadscaleClient(h.GetAccessControlPolicy)))
+	mux.HandleFunc("PUT /api/access-control", requireAuthAPI(h.RequireHeadscaleClient(h.UpdateAccessControlPolicy)))
 	mux.HandleFunc("POST /api/hujson/format", requireAuthAPI(h.FormatHuJSON))
 
-	mux.HandleFunc("GET /api/auth-restrictions", requireAuthAPI(h.RequireActiveOrg(h.GetAuthRestrictions)))
-	mux.HandleFunc("PUT /api/auth-restrictions", requireAuthAPI(h.RequireActiveOrg(h.UpdateAuthRestrictions)))
+	mux.HandleFunc("GET /api/auth-restrictions", requireAuthAPI(h.GetAuthRestrictions))
+	mux.HandleFunc("PUT /api/auth-restrictions", requireAuthAPI(h.UpdateAuthRestrictions))
 
-	mux.HandleFunc("GET /api/dns", requireAuthAPI(h.RequireActiveOrg(h.GetDNSSettings)))
-	mux.HandleFunc("PUT /api/dns", requireAuthAPI(h.RequireActiveOrg(h.UpdateDNSSettings)))
+	mux.HandleFunc("GET /api/dns", requireAuthAPI(h.GetDNSSettings))
+	mux.HandleFunc("PUT /api/dns", requireAuthAPI(h.UpdateDNSSettings))
 
-	mux.HandleFunc("GET /api/funnel", requireAuthAPI(h.RequireActiveOrg(h.RequireHeadscaleClient(h.ListFunnelRoutes))))
-	mux.HandleFunc("POST /api/funnel", requireAuthAPI(h.RequireActiveOrg(h.RequireHeadscaleClient(h.CreateFunnelRoute))))
-	mux.HandleFunc("DELETE /api/funnel/{id}", requireAuthAPI(h.RequireActiveOrg(h.DeleteFunnelRoute)))
+	mux.HandleFunc("GET /api/funnel", requireAuthAPI(h.RequireHeadscaleClient(h.ListFunnelRoutes)))
+	mux.HandleFunc("POST /api/funnel", requireAuthAPI(h.RequireHeadscaleClient(h.CreateFunnelRoute)))
+	mux.HandleFunc("DELETE /api/funnel/{id}", requireAuthAPI(h.DeleteFunnelRoute))
 
 	// Browser-driven OAuth flow: real redirects, not JSON.
 	mux.HandleFunc("GET /auth/{provider}/callback", h.AuthCallback)

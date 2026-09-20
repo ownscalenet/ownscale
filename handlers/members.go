@@ -6,7 +6,6 @@ import (
 
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/orgs"
 )
 
 // member is the JSON shape of an org member returned by ListMembers. The
@@ -39,21 +38,6 @@ func (h *Handlers) callerAndOrg(w http.ResponseWriter, r *http.Request) (caller 
 	}
 	r = r.WithContext(h.withOrgLogger(r.Context(), o.Subdomain))
 	return user, o, r, true
-}
-
-// resolveActiveOrg resolves the caller and their organization (via
-// callerAndOrg), reporting notConfigured if the org isn't operational yet
-// (still pending, or failed -- but not merely mid a settings-save
-// restart, see orgs.IsOperational).
-func (h *Handlers) resolveActiveOrg(w http.ResponseWriter, r *http.Request) (caller *sqlcgen.User, org sqlcgen.Organization, req *http.Request, notConfigured bool, ok bool) {
-	c, o, r, callerOk := h.callerAndOrg(w, r)
-	if !callerOk {
-		return nil, sqlcgen.Organization{}, r, false, false
-	}
-	if !orgs.IsOperational(o.Status) {
-		return c, o, r, true, true
-	}
-	return c, o, r, false, true
 }
 
 // toMember converts u into its JSON representation.

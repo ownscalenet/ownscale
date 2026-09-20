@@ -188,10 +188,3 @@ const (
 	// headscale config no longer necessarily matches what's stored.
 	StatusUpdatePending = "update_pending"
 )
-
-// IsOperational reports whether an organization is fully provisioned and
-// usable, even if it's momentarily mid a settings-save restart
-// (StatusUpdatePending).
-func IsOperational(status string) bool {
-	return status == StatusActive || status == StatusUpdatePending
-}

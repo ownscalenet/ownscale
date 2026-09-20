@@ -10,6 +10,7 @@ import (
 
 	"github.com/rs/xid"
 
+	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/headscaleclient"
 )
@@ -58,12 +59,15 @@ func (h *Handlers) toFunnelRouteResponse(route sqlcgen.FunnelRoute, subdomain st
 	return resp
 }
 
-// ListFunnelRoutes handles GET /api/funnel. RequireActiveOrg/
-// RequireHeadscaleClient guarantee the org is active and its headscale
-// client is resolved.
+// ListFunnelRoutes handles GET /api/funnel. RequireHeadscaleClient
+// guarantees the org's headscale client is resolved.
 func (h *Handlers) ListFunnelRoutes(w http.ResponseWriter, r *http.Request) {
-	caller, org, _ := orgFromContext(r)
-	client, _ := headscaleClientFromContext(r)
+	caller, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		h.writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+	client, org, _ := headscaleClientFromContext(r)
 
 	routes, err := h.queries.ListFunnelRoutesByOrg(r.Context(), org.ID)
 	if err != nil {
@@ -93,12 +97,16 @@ func (h *Handlers) ListFunnelRoutes(w http.ResponseWriter, r *http.Request) {
 
 // CreateFunnelRoute handles POST /api/funnel.
 func (h *Handlers) CreateFunnelRoute(w http.ResponseWriter, r *http.Request) {
-	caller, org, _ := orgFromContext(r)
+	caller, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		h.writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
 	if !isManager(caller.Role) {
 		h.writeError(w, http.StatusForbidden, "only owners and admins can create funnel routes")
 		return
 	}
-	client, _ := headscaleClientFromContext(r)
+	client, org, _ := headscaleClientFromContext(r)
 
 	var req struct {
 		Label        string `json:"label"`
@@ -178,7 +186,10 @@ func (h *Handlers) CreateFunnelRoute(w http.ResponseWriter, r *http.Request) {
 
 // DeleteFunnelRoute handles DELETE /api/funnel/{id}.
 func (h *Handlers) DeleteFunnelRoute(w http.ResponseWriter, r *http.Request) {
-	caller, org, _ := orgFromContext(r)
+	caller, org, r, ok := h.callerAndOrg(w, r)
+	if !ok {
+		return
+	}
 	if !isManager(caller.Role) {
 		h.writeError(w, http.StatusForbidden, "only owners and admins can delete funnel routes")
 		return

@@ -14,7 +14,7 @@ import (
 // without a second round trip). requireHeadscaleClient guarantees the
 // client is reachable.
 func (h *Handlers) ListAuthKeys(w http.ResponseWriter, r *http.Request) {
-	client, _ := headscaleClientFromContext(r)
+	client, _, _ := headscaleClientFromContext(r)
 
 	keys, err := client.ListPreAuthKeys(r.Context())
 	if err != nil {
@@ -38,7 +38,7 @@ func (h *Handlers) ListAuthKeys(w http.ResponseWriter, r *http.Request) {
 // "tag only" key with no owning user). requireHeadscaleClient guarantees
 // the client is reachable.
 func (h *Handlers) CreateAuthKey(w http.ResponseWriter, r *http.Request) {
-	client, _ := headscaleClientFromContext(r)
+	client, _, _ := headscaleClientFromContext(r)
 
 	var req struct {
 		UserID     string   `json:"userId"`
@@ -76,7 +76,7 @@ func (h *Handlers) CreateAuthKey(w http.ResponseWriter, r *http.Request) {
 // ExpireAuthKey handles POST /api/auth-keys/{id}/expire.
 // requireHeadscaleClient guarantees the client is reachable.
 func (h *Handlers) ExpireAuthKey(w http.ResponseWriter, r *http.Request) {
-	client, _ := headscaleClientFromContext(r)
+	client, _, _ := headscaleClientFromContext(r)
 	id := r.PathValue("id")
 
 	if err := client.ExpirePreAuthKey(r.Context(), id); err != nil {

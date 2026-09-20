@@ -11,10 +11,10 @@ import (
 )
 
 func TestGetDNSSettingsReflectsProvisionedDefaults(t *testing.T) {
-	h, org, users := newAccessControlTestHandlers(t, RoleMember)
+	h, _, users := newAccessControlTestHandlers(t, RoleMember)
 	member := users[0]
 
-	req := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodGet, "/api/dns", nil), member), member, org)
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/dns", nil), member)
 	rec := httptest.NewRecorder()
 	h.GetDNSSettings(rec, req)
 
@@ -40,11 +40,11 @@ func TestGetDNSSettingsReflectsProvisionedDefaults(t *testing.T) {
 }
 
 func TestUpdateDNSSettingsRequiresManager(t *testing.T) {
-	h, org, users := newAccessControlTestHandlers(t, RoleMember)
+	h, _, users := newAccessControlTestHandlers(t, RoleMember)
 	member := users[0]
 
 	body := `{"baseDomain":"acme.ownscale","magicDns":true}`
-	req := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPut, "/api/dns", strings.NewReader(body)), member), member, org)
+	req := withTestUser(httptest.NewRequest(http.MethodPut, "/api/dns", strings.NewReader(body)), member)
 	rec := httptest.NewRecorder()
 	h.UpdateDNSSettings(rec, req)
 
@@ -54,11 +54,11 @@ func TestUpdateDNSSettingsRequiresManager(t *testing.T) {
 }
 
 func TestUpdateDNSSettingsRejectsInvalidInput(t *testing.T) {
-	h, org, users := newAccessControlTestHandlers(t, RoleOwner)
+	h, _, users := newAccessControlTestHandlers(t, RoleOwner)
 	owner := users[0]
 
 	body := `{"baseDomain":"acme.ownscale","nameservers":["not-an-ip"]}`
-	req := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPut, "/api/dns", strings.NewReader(body)), owner), owner, org)
+	req := withTestUser(httptest.NewRequest(http.MethodPut, "/api/dns", strings.NewReader(body)), owner)
 	rec := httptest.NewRecorder()
 	h.UpdateDNSSettings(rec, req)
 
@@ -68,12 +68,12 @@ func TestUpdateDNSSettingsRejectsInvalidInput(t *testing.T) {
 }
 
 func TestUpdateDNSSettingsPersistsAndReturnsOK(t *testing.T) {
-	h, org, users := newAccessControlTestHandlers(t, RoleOwner)
+	h, _, users := newAccessControlTestHandlers(t, RoleOwner)
 	owner := users[0]
 
 	body := `{"baseDomain":"acme.ownscale","magicDns":true,"nameservers":{"global":["1.1.1.1","8.8.8.8"]},` +
 		`"searchDomains":["internal.acme.example.com"],"extraRecords":[{"name":"server.acme.ownscale","type":"A","value":"10.0.0.1"}]}`
-	req := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPut, "/api/dns", strings.NewReader(body)), owner), owner, org)
+	req := withTestUser(httptest.NewRequest(http.MethodPut, "/api/dns", strings.NewReader(body)), owner)
 	rec := httptest.NewRecorder()
 	h.UpdateDNSSettings(rec, req)
 
@@ -81,7 +81,7 @@ func TestUpdateDNSSettingsPersistsAndReturnsOK(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	getReq := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodGet, "/api/dns", nil), owner), owner, org)
+	getReq := withTestUser(httptest.NewRequest(http.MethodGet, "/api/dns", nil), owner)
 	getRec := httptest.NewRecorder()
 	h.GetDNSSettings(getRec, getReq)
 

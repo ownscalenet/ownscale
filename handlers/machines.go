@@ -109,7 +109,7 @@ func isFunnelNode(n headscaleclient.Node) bool {
 // q/user/status query-string filters. requireHeadscaleClient guarantees
 // the client is reachable.
 func (h *Handlers) ListMachines(w http.ResponseWriter, r *http.Request) {
-	client, _ := headscaleClientFromContext(r)
+	client, _, _ := headscaleClientFromContext(r)
 
 	nodes, err := client.ListNodes(r.Context())
 	if err != nil {
@@ -145,7 +145,7 @@ func (h *Handlers) ListMachines(w http.ResponseWriter, r *http.Request) {
 // ran `tailscale up --login-server=...`) to the given user.
 // requireHeadscaleClient guarantees the client is reachable.
 func (h *Handlers) RegisterMachine(w http.ResponseWriter, r *http.Request) {
-	client, _ := headscaleClientFromContext(r)
+	client, _, _ := headscaleClientFromContext(r)
 
 	var req struct {
 		User string `json:"user"`
@@ -175,7 +175,7 @@ func (h *Handlers) RegisterMachine(w http.ResponseWriter, r *http.Request) {
 // machineIDAndClient extracts the {id} path value and the caller's
 // organization's headscale client (attached by requireHeadscaleClient).
 func (h *Handlers) machineIDAndClient(r *http.Request) (client *headscaleclient.Client, id string) {
-	client, _ = headscaleClientFromContext(r)
+	client, _, _ = headscaleClientFromContext(r)
 	return client, r.PathValue("id")
 }
 

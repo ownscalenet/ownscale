@@ -81,7 +81,6 @@ export default function AuthRestrictions() {
   const [content, setContent] = useState('')
   const [savedContent, setSavedContent] = useState('')
   const [canManage, setCanManage] = useState(false)
-  const [notConfigured, setNotConfigured] = useState(false)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [formatting, setFormatting] = useState(false)
@@ -97,14 +96,9 @@ export default function AuthRestrictions() {
         setContent(res.content)
         setSavedContent(res.content)
         setCanManage(res.canManage)
-        setNotConfigured(false)
       } catch (err) {
         if (isAbortError(err)) return
-        if (err instanceof ApiError && err.status === 409) {
-          setNotConfigured(true)
-        } else {
-          setError(err instanceof Error ? err.message : String(err))
-        }
+        setError(err instanceof Error ? err.message : String(err))
       } finally {
         if (!controller.signal.aborted) setLoading(false)
       }
@@ -159,14 +153,6 @@ export default function AuthRestrictions() {
     <div>
       <h1 className="text-2xl font-bold mb-4">Authentication Restrictions</h1>
 
-      {notConfigured && (
-        <div className="alert alert-warning mb-4">
-          <span>
-            Your organization isn't active yet, so its authentication restrictions can't be edited.
-          </span>
-        </div>
-      )}
-
       {error && (
         <div role="alert" className="alert alert-error mb-4">
           <span>{error}</span>
@@ -199,7 +185,7 @@ export default function AuthRestrictions() {
                     <button
                       type="button"
                       className="btn btn-ghost btn-sm"
-                      disabled={formatting || notConfigured}
+                      disabled={formatting}
                       onClick={() => void handleFormat()}
                     >
                       {formatting ? (
@@ -212,7 +198,7 @@ export default function AuthRestrictions() {
                     <button
                       type="button"
                       className="btn btn-primary btn-sm"
-                      disabled={saving || notConfigured || !dirty}
+                      disabled={saving || !dirty}
                       onClick={() => void handleSave()}
                     >
                       {saving ? <span className="loading loading-spinner loading-xs"></span> : null}

@@ -27,7 +27,7 @@ func TestCreateFunnelRouteRequiresManager(t *testing.T) {
 	_, client, _, _, _ := newFakeHeadscaleServer(t)
 
 	body := `{"label":"web","targetNodeId":"1","targetPort":8080}`
-	req := withHeadscaleClient(withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPost, "/api/funnel", strings.NewReader(body)), member), member, org), client)
+	req := withHeadscaleClientOrg(withTestUser(httptest.NewRequest(http.MethodPost, "/api/funnel", strings.NewReader(body)), member), client, org)
 	rec := httptest.NewRecorder()
 	h.CreateFunnelRoute(rec, req)
 
@@ -54,7 +54,7 @@ func TestCreateFunnelRouteValidation(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			req := withHeadscaleClient(withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPost, "/api/funnel", strings.NewReader(tt.body)), owner), owner, org), client)
+			req := withHeadscaleClientOrg(withTestUser(httptest.NewRequest(http.MethodPost, "/api/funnel", strings.NewReader(tt.body)), owner), client, org)
 			rec := httptest.NewRecorder()
 			h.CreateFunnelRoute(rec, req)
 			if rec.Code != tt.want {
@@ -81,7 +81,7 @@ func TestCreateFunnelRouteRejectsDuplicateLabel(t *testing.T) {
 	}
 
 	body := `{"label":"web","targetNodeId":"1","targetPort":8080}`
-	req := withHeadscaleClient(withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPost, "/api/funnel", strings.NewReader(body)), owner), owner, org), client)
+	req := withHeadscaleClientOrg(withTestUser(httptest.NewRequest(http.MethodPost, "/api/funnel", strings.NewReader(body)), owner), client, org)
 	rec := httptest.NewRecorder()
 	h.CreateFunnelRoute(rec, req)
 	if rec.Code != http.StatusConflict {
@@ -105,7 +105,7 @@ func TestListFunnelRoutesFlagsMissingTargetNode(t *testing.T) {
 		t.Fatalf("CreateFunnelRoute: %v", err)
 	}
 
-	req := withHeadscaleClient(withActiveOrg(withTestUser(httptest.NewRequest(http.MethodGet, "/api/funnel", nil), owner), owner, org), client)
+	req := withHeadscaleClientOrg(withTestUser(httptest.NewRequest(http.MethodGet, "/api/funnel", nil), owner), client, org)
 	rec := httptest.NewRecorder()
 	h.ListFunnelRoutes(rec, req)
 	if rec.Code != http.StatusOK {
@@ -147,7 +147,7 @@ func TestDeleteFunnelRouteRequiresManagerAndScopesToOrg(t *testing.T) {
 	}
 
 	// A plain member cannot delete.
-	memberReq := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/funnel/"+route.ID, nil), member), member, org)
+	memberReq := withTestUser(httptest.NewRequest(http.MethodDelete, "/api/funnel/"+route.ID, nil), member)
 	memberReq.SetPathValue("id", route.ID)
 	memberRec := httptest.NewRecorder()
 	h.DeleteFunnelRoute(memberRec, memberReq)
@@ -172,7 +172,7 @@ func TestDeleteFunnelRouteRequiresManagerAndScopesToOrg(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetUserByID: %v", err)
 	}
-	wrongOrgReq := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/funnel/"+route.ID, nil), otherOwner), otherOwner, otherOrg)
+	wrongOrgReq := withTestUser(httptest.NewRequest(http.MethodDelete, "/api/funnel/"+route.ID, nil), otherOwner)
 	wrongOrgReq.SetPathValue("id", route.ID)
 	wrongOrgRec := httptest.NewRecorder()
 	h.DeleteFunnelRoute(wrongOrgRec, wrongOrgReq)
@@ -181,7 +181,7 @@ func TestDeleteFunnelRouteRequiresManagerAndScopesToOrg(t *testing.T) {
 	}
 
 	// The owner can delete it.
-	ownerReq := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/funnel/"+route.ID, nil), owner), owner, org)
+	ownerReq := withTestUser(httptest.NewRequest(http.MethodDelete, "/api/funnel/"+route.ID, nil), owner)
 	ownerReq.SetPathValue("id", route.ID)
 	ownerRec := httptest.NewRecorder()
 	h.DeleteFunnelRoute(ownerRec, ownerReq)

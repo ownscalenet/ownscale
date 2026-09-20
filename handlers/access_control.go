@@ -3,17 +3,22 @@ package handlers
 import (
 	"net/http"
 
+	"github.com/ownscalenet/ownscale/auth"
 	"github.com/tailscale/hujson"
 )
 
 // GetAccessControlPolicy handles GET /api/access-control. It returns the
 // caller's organization's headscale ACL policy (HuJSON), plus whether the
 // caller can edit it (owner/admin, mirroring ListMembers' canManage).
-// RequireActiveOrg/RequireHeadscaleClient guarantee the org is active and
-// its headscale client is resolved.
+// RequireHeadscaleClient guarantees the org's headscale client is
+// resolved.
 func (h *Handlers) GetAccessControlPolicy(w http.ResponseWriter, r *http.Request) {
-	caller, _, _ := orgFromContext(r)
-	client, _ := headscaleClientFromContext(r)
+	caller, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		h.writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+	client, _, _ := headscaleClientFromContext(r)
 
 	content, err := client.GetPolicy(r.Context())
 	if err != nil {
@@ -35,16 +40,19 @@ func (h *Handlers) GetAccessControlPolicy(w http.ResponseWriter, r *http.Request
 // before anything is sent to headscale, so a malformed policy is rejected
 // with a 400 and a parser error message; headscale itself may still reject
 // a syntactically valid policy (e.g. bad tag/user references), which is
-// also surfaced as a 400 rather than a 500. RequireActiveOrg/
-// RequireHeadscaleClient guarantee the org is active and its headscale
-// client is resolved.
+// also surfaced as a 400 rather than a 500. RequireHeadscaleClient
+// guarantees the org's headscale client is resolved.
 func (h *Handlers) UpdateAccessControlPolicy(w http.ResponseWriter, r *http.Request) {
-	caller, _, _ := orgFromContext(r)
+	caller, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		h.writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
 	if !isManager(caller.Role) {
 		h.writeError(w, http.StatusForbidden, "only owners and admins can edit the access control policy")
 		return
 	}
-	client, _ := headscaleClientFromContext(r)
+	client, _, _ := headscaleClientFromContext(r)
 
 	var req struct {
 		Content string `json:"content"`

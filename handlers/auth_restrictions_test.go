@@ -11,10 +11,10 @@ import (
 )
 
 func TestGetAuthRestrictionsDefaultsToEmpty(t *testing.T) {
-	h, org, users := newAccessControlTestHandlers(t, RoleMember)
+	h, _, users := newAccessControlTestHandlers(t, RoleMember)
 	member := users[0]
 
-	req := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodGet, "/api/auth-restrictions", nil), member), member, org)
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/auth-restrictions", nil), member)
 	rec := httptest.NewRecorder()
 	h.GetAuthRestrictions(rec, req)
 
@@ -48,11 +48,11 @@ func TestGetAuthRestrictionsDefaultsToEmpty(t *testing.T) {
 }
 
 func TestUpdateAuthRestrictionsRequiresManager(t *testing.T) {
-	h, org, users := newAccessControlTestHandlers(t, RoleMember)
+	h, _, users := newAccessControlTestHandlers(t, RoleMember)
 	member := users[0]
 
 	body := `{"content":"{\"domains\":[\"example.com\"]}"}`
-	req := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPut, "/api/auth-restrictions", strings.NewReader(body)), member), member, org)
+	req := withTestUser(httptest.NewRequest(http.MethodPut, "/api/auth-restrictions", strings.NewReader(body)), member)
 	rec := httptest.NewRecorder()
 	h.UpdateAuthRestrictions(rec, req)
 
@@ -62,11 +62,11 @@ func TestUpdateAuthRestrictionsRequiresManager(t *testing.T) {
 }
 
 func TestUpdateAuthRestrictionsRejectsInvalidHuJSON(t *testing.T) {
-	h, org, users := newAccessControlTestHandlers(t, RoleOwner)
+	h, _, users := newAccessControlTestHandlers(t, RoleOwner)
 	owner := users[0]
 
 	body := `{"content":"not valid hujson {{{"}`
-	req := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPut, "/api/auth-restrictions", strings.NewReader(body)), owner), owner, org)
+	req := withTestUser(httptest.NewRequest(http.MethodPut, "/api/auth-restrictions", strings.NewReader(body)), owner)
 	rec := httptest.NewRecorder()
 	h.UpdateAuthRestrictions(rec, req)
 
@@ -76,12 +76,12 @@ func TestUpdateAuthRestrictionsRejectsInvalidHuJSON(t *testing.T) {
 }
 
 func TestUpdateAuthRestrictionsPersistsAndReturnsOK(t *testing.T) {
-	h, org, users := newAccessControlTestHandlers(t, RoleOwner)
+	h, _, users := newAccessControlTestHandlers(t, RoleOwner)
 	owner := users[0]
 
 	newContent := `{"domains":["example.com"],"groups":["group:eng"],"users":["alice@example.com"]}`
 	body := `{"content":` + jsonQuote(newContent) + `}`
-	req := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPut, "/api/auth-restrictions", strings.NewReader(body)), owner), owner, org)
+	req := withTestUser(httptest.NewRequest(http.MethodPut, "/api/auth-restrictions", strings.NewReader(body)), owner)
 	rec := httptest.NewRecorder()
 	h.UpdateAuthRestrictions(rec, req)
 
@@ -89,7 +89,7 @@ func TestUpdateAuthRestrictionsPersistsAndReturnsOK(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 
-	getReq := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodGet, "/api/auth-restrictions", nil), owner), owner, org)
+	getReq := withTestUser(httptest.NewRequest(http.MethodGet, "/api/auth-restrictions", nil), owner)
 	getRec := httptest.NewRecorder()
 	h.GetAuthRestrictions(getRec, getReq)
 
@@ -109,11 +109,11 @@ func TestUpdateAuthRestrictionsPersistsAndReturnsOK(t *testing.T) {
 }
 
 func TestUpdateAuthRestrictionsCanClearAllowlist(t *testing.T) {
-	h, org, users := newAccessControlTestHandlers(t, RoleOwner)
+	h, _, users := newAccessControlTestHandlers(t, RoleOwner)
 	owner := users[0]
 
 	setBody := `{"content":"{\"domains\":[\"example.com\"]}"}`
-	setReq := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPut, "/api/auth-restrictions", strings.NewReader(setBody)), owner), owner, org)
+	setReq := withTestUser(httptest.NewRequest(http.MethodPut, "/api/auth-restrictions", strings.NewReader(setBody)), owner)
 	setRec := httptest.NewRecorder()
 	h.UpdateAuthRestrictions(setRec, setReq)
 	if setRec.Code != http.StatusOK {
@@ -122,14 +122,14 @@ func TestUpdateAuthRestrictionsCanClearAllowlist(t *testing.T) {
 
 	emptyContent := `{"domains":[],"groups":[],"users":[]}`
 	clearBody := `{"content":` + jsonQuote(emptyContent) + `}`
-	clearReq := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodPut, "/api/auth-restrictions", strings.NewReader(clearBody)), owner), owner, org)
+	clearReq := withTestUser(httptest.NewRequest(http.MethodPut, "/api/auth-restrictions", strings.NewReader(clearBody)), owner)
 	clearRec := httptest.NewRecorder()
 	h.UpdateAuthRestrictions(clearRec, clearReq)
 	if clearRec.Code != http.StatusOK {
 		t.Fatalf("clear update status = %d, want %d, body=%s", clearRec.Code, http.StatusOK, clearRec.Body.String())
 	}
 
-	getReq := withActiveOrg(withTestUser(httptest.NewRequest(http.MethodGet, "/api/auth-restrictions", nil), owner), owner, org)
+	getReq := withTestUser(httptest.NewRequest(http.MethodGet, "/api/auth-restrictions", nil), owner)
 	getRec := httptest.NewRecorder()
 	h.GetAuthRestrictions(getRec, getReq)
 	var getResp struct {

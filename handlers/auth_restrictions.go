@@ -9,10 +9,12 @@ import (
 // GetAuthRestrictions handles GET /api/auth-restrictions. It returns the
 // caller's organization's stored OIDC login allowlist (HuJSON), plus
 // whether the caller can edit it (owner/admin, mirroring
-// GetAccessControlPolicy's canManage). requireActiveOrg guarantees the
-// org is active.
+// GetAccessControlPolicy's canManage).
 func (h *Handlers) GetAuthRestrictions(w http.ResponseWriter, r *http.Request) {
-	caller, org, _ := orgFromContext(r)
+	caller, org, r, ok := h.callerAndOrg(w, r)
+	if !ok {
+		return
+	}
 
 	content, err := h.orgs.ForOrg(org).GetAuthRestrictions(r.Context())
 	if err != nil {
@@ -29,9 +31,11 @@ func (h *Handlers) GetAuthRestrictions(w http.ResponseWriter, r *http.Request) {
 // owner/admin may edit the OIDC login allowlist. content is validated as
 // HuJSON before anything is persisted, mirroring
 // UpdateAccessControlPolicy's validate-then-persist semantics.
-// requireActiveOrg guarantees the org is active.
 func (h *Handlers) UpdateAuthRestrictions(w http.ResponseWriter, r *http.Request) {
-	caller, org, _ := orgFromContext(r)
+	caller, org, r, ok := h.callerAndOrg(w, r)
+	if !ok {
+		return
+	}
 	if !isManager(caller.Role) {
 		h.writeError(w, http.StatusForbidden, "only owners and admins can edit authentication restrictions")
 		return
