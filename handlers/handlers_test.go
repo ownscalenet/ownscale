@@ -40,7 +40,7 @@ func TestSessionEnsuresHeadscaleUserForActiveOrg(t *testing.T) {
 }
 
 func TestSessionAuthenticated(t *testing.T) {
-	h, queries := newTestHandlers(t, false)
+	h, queries := newTestHandlers(t)
 	user := insertUser(t, queries)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/session", nil)
@@ -58,7 +58,7 @@ func TestSessionAuthenticated(t *testing.T) {
 }
 
 func TestSessionUnauthenticated(t *testing.T) {
-	h, queries := newTestHandlers(t, false)
+	h, queries := newTestHandlers(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/session", nil)
 	rec := httptest.NewRecorder()
@@ -70,7 +70,7 @@ func TestSessionUnauthenticated(t *testing.T) {
 }
 
 func TestWriteJSON(t *testing.T) {
-	h, _ := newTestHandlers(t, false)
+	h, _ := newTestHandlers(t)
 
 	rec := httptest.NewRecorder()
 	h.writeJSON(rec, http.StatusCreated, map[string]string{"ok": "yes"})
@@ -87,7 +87,7 @@ func TestWriteJSON(t *testing.T) {
 }
 
 func TestWriteJSONNilBody(t *testing.T) {
-	h, _ := newTestHandlers(t, false)
+	h, _ := newTestHandlers(t)
 
 	rec := httptest.NewRecorder()
 	h.writeJSON(rec, http.StatusNoContent, nil)
@@ -101,7 +101,7 @@ func TestWriteJSONNilBody(t *testing.T) {
 }
 
 func TestWriteError(t *testing.T) {
-	h, _ := newTestHandlers(t, false)
+	h, _ := newTestHandlers(t)
 
 	rec := httptest.NewRecorder()
 	h.writeError(rec, http.StatusBadRequest, "bad input")

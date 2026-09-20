@@ -17,6 +17,7 @@ import (
 	"github.com/rs/xid"
 
 	"github.com/ownscalenet/ownscale/config"
+	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/dockerctl"
 	"github.com/ownscalenet/ownscale/dockerctl/dockerfake"
 	"github.com/ownscalenet/ownscale/headscaleclient"
@@ -103,33 +104,42 @@ func TestProvisionerReplenishesAfterTake(t *testing.T) {
 	}
 }
 
-// TestProvisionerRecoversPendingOnStart checks that an organization left
-// "pending" (e.g. by a process that crashed between creating and pooling
-// it) is provisioned and pooled as soon as Run starts, without waiting for
-// the replenish loop to generate a brand new one.
-func TestProvisionerRecoversPendingOnStart(t *testing.T) {
+// TestProvisionerRecoversReadyOnStart checks that an organization left "ready"
+// is re-pooled as soon as Run starts, without being re-provisioned.
+func TestProvisionerRecoversReadyOnStart(t *testing.T) {
 	svc := newTestService(t)
-	_, err := svc.CreatePending(t.Context(), "acme")
+	org, err := svc.provisionNew(t.Context(), "acme", StatusReady)
 	if err != nil {
-		t.Fatalf("CreatePending: %v", err)
+		t.Fatalf("provisionNew: %v", err)
+	}
+	if org.Status != StatusReady {
+		t.Fatalf("org.Status after provisionNew = %q, want %q", org.Status, StatusReady)
 	}
 
+	// A brand new Provisioner, as if the process had just restarted.
 	p := NewProvisioner(svc, discardLogger(), time.Hour, 1, 0)
-	// Recovering 4 organizations sequentially (3 seeded + this test's own)
-	// is slow under -race, so give it more headroom than a single Take needs.
 	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
 	defer cancel()
 	go func() { p.Run(ctx) }()
 
-	org, err := p.Take(ctx)
-	if err != nil {
-		t.Fatalf("Take: %v", err)
+	// Drain organizations until "acme" shows up: DefaultSeedSubdomains are
+	// also being recovered/created concurrently, in no guaranteed order.
+	var got sqlcgen.Organization
+	for range len(DefaultSeedSubdomains) + 1 {
+		next, err := p.Take(ctx)
+		if err != nil {
+			t.Fatalf("Take: %v", err)
+		}
+		if next.Subdomain == "acme" {
+			got = next
+			break
+		}
 	}
-	if org.Status != StatusActive {
-		t.Errorf("org.Status = %q, want %q", org.Status, StatusActive)
+	if got.ID == "" {
+		t.Fatal("Take never returned the recovered \"acme\" organization")
 	}
-	if org.Subdomain != "acme" {
-		t.Errorf("Take returned org %q, want acme", org.Subdomain)
+	if got.Status != StatusActive {
+		t.Errorf("org.Status = %q, want %q", got.Status, StatusActive)
 	}
 }
 
@@ -277,7 +287,7 @@ func TestProvisionerCircuitBreakerBacksOffAfterConsecutiveFailures(t *testing.T)
 	defer cancel()
 	go func() { p.Run(ctx) }()
 
-	// Drain the fixed dev subdomains recoverPending provisions up front
+	// Drain the fixed dev subdomains seedFixed provisions up front
 	// (capacity 1 forces each push to wait for a Take, same as the
 	// replenish-loop attempts below) before measuring the breaker timing.
 	for range DefaultSeedSubdomains {

@@ -52,7 +52,7 @@ func newFakePolicyServer(t *testing.T, initial string) (*headscaleclient.Client,
 // roles (in order).
 func newAccessControlTestHandlers(t *testing.T, roles ...string) (*Handlers, sqlcgen.Organization, []sqlcgen.User) {
 	t.Helper()
-	h, queries := newTestHandlers(t, true)
+	h, queries := newTestHandlers(t)
 
 	org, err := h.orgs.Create(t.Context(), "acme")
 	if err != nil {

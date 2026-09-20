@@ -18,7 +18,6 @@ import (
 	"github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/dockerctl"
 	"github.com/ownscalenet/ownscale/logging"
-	"github.com/ownscalenet/ownscale/orgs"
 )
 
 // loadConfigAndLogger reads the config from OWNSCALE_* environment
@@ -110,7 +109,7 @@ func newOrgResources(withDB, withDocker bool) (_ *orgResources, cleanup func(), 
 }
 
 // newOrganizationCommand builds the "organization" subcommand group
-// (create/delete/list/start/stop), parented under rootFlags.
+// (delete/list/start/stop), parented under rootFlags.
 func newOrganizationCommand(rootFlags *ff.FlagSet) *ff.Command {
 	organizationFlags := ff.NewFlagSet("organization").SetParent(rootFlags)
 	organizationCmd := &ff.Command{
@@ -121,69 +120,12 @@ func newOrganizationCommand(rootFlags *ff.FlagSet) *ff.Command {
 	}
 
 	organizationCmd.Subcommands = append(organizationCmd.Subcommands,
-		newOrganizationCreateCommand(organizationFlags),
 		newOrganizationDeleteCommand(organizationFlags),
 		newOrganizationListCommand(organizationFlags),
 		newOrganizationStartCommand(organizationFlags),
 		newOrganizationStopCommand(organizationFlags),
-		newOrganizationSeedPoolCommand(organizationFlags),
 	)
 	return organizationCmd
-}
-
-// defaultSeedPoolSubdomains is used by "osa organization seed-pool" when no
-// subdomains are given on the command line. Shares its list with
-// orgs.Provisioner, which seeds the same subdomains automatically at
-// startup.
-var defaultSeedPoolSubdomains = orgs.DefaultSeedSubdomains
-
-func newOrganizationSeedPoolCommand(parent *ff.FlagSet) *ff.Command {
-	flags := ff.NewFlagSet("organization seed-pool").SetParent(parent)
-	return &ff.Command{
-		Name:      "seed-pool",
-		Usage:     "osa organization seed-pool [FLAGS] [subdomain...]",
-		ShortHelp: "create pending organizations for the provisioner's warm pool to pick up",
-		Flags:     flags,
-		Exec: func(ctx context.Context, args []string) error {
-			subdomains := args
-			if len(subdomains) == 0 {
-				subdomains = defaultSeedPoolSubdomains
-			}
-			res, cleanup, err := newOrgResources(true, false)
-			defer cleanup()
-			if err != nil {
-				return err
-			}
-			svc := orgs.NewService(res.queries, nil, "", "", res.cfg.Derp)
-			return seedPool(ctx, os.Stdout, svc, subdomains)
-		},
-	}
-}
-
-func newOrganizationCreateCommand(parent *ff.FlagSet) *ff.Command {
-	flags := ff.NewFlagSet("organization create").SetParent(parent)
-	return &ff.Command{
-		Name:      "create",
-		Usage:     "osa organization create [FLAGS] <subdomain>",
-		ShortHelp: "provision a new organization",
-		Flags:     flags,
-		Exec: func(ctx context.Context, args []string) error {
-			if len(args) != 1 {
-				return errors.New("usage: osa organization create <subdomain>")
-			}
-			res, cleanup, err := newOrgResources(true, true)
-			defer cleanup()
-			if err != nil {
-				return err
-			}
-			domain, err := baseDomain(res.cfg)
-			if err != nil {
-				return err
-			}
-			svc := orgs.NewService(res.queries, res.ctl, domain, res.cfg.Auth.OIDCProvider.Issuer, res.cfg.Derp)
-			return createOrganization(ctx, os.Stdout, svc, args[0])
-		},
-	}
 }
 
 func newOrganizationDeleteCommand(parent *ff.FlagSet) *ff.Command {
@@ -273,34 +215,6 @@ func newOrganizationStopCommand(parent *ff.FlagSet) *ff.Command {
 			return stopOrganizations(ctx, os.Stdout, res.ctl, *timeout)
 		},
 	}
-}
-
-// createOrganization validates subdomain and provisions it as a new
-// organization (DB record + headscale container) under svc's base domain,
-// writing a confirmation to out.
-func createOrganization(ctx context.Context, out io.Writer, svc *orgs.Service, subdomain string) error {
-	if err := dockerctl.ValidateSubdomain(subdomain); err != nil {
-		return err
-	}
-
-	if _, err := svc.Create(ctx, subdomain); err != nil {
-		return err
-	}
-
-	domain := svc.BaseDomain()
-	_, _ = fmt.Fprintf(out, "created organization %s.%s (container %s)\n", subdomain, domain, dockerctl.HSContainerName(subdomain))
-	_, _ = fmt.Fprintf(out, "headscale will be reachable at https://%s.%s once Caddy is running\n", subdomain, domain)
-	return nil
-}
-
-func seedPool(ctx context.Context, out io.Writer, svc *orgs.Service, subdomains []string) error {
-	for _, subdomain := range subdomains {
-		if _, err := svc.CreatePending(ctx, subdomain); err != nil {
-			return err
-		}
-		_, _ = fmt.Fprintf(out, "seeded pending organization %s\n", subdomain)
-	}
-	return nil
 }
 
 // deleteOrganization looks up subdomain, removes its container via ctl,

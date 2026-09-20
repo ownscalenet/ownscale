@@ -15,6 +15,7 @@ import (
 	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/handlers"
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 func discardLogger() *slog.Logger {
@@ -115,6 +116,7 @@ func TestNewMuxAuthenticatedSession(t *testing.T) {
 	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
 		ID:        xid.New().String(),
 		Subdomain: id,
+		Status:    orgs.StatusReady,
 	})
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)

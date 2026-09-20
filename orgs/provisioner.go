@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -54,17 +55,24 @@ func NewProvisioner(svc *Service, logger *slog.Logger, retryBackoff time.Duratio
 
 // Take removes a fully-provisioned organization from the pool, blocking
 // until one is available or ctx is done (in which case it returns
-// ctx.Err()).
+// ctx.Err())
 func (p *Provisioner) Take(ctx context.Context) (sqlcgen.Organization, error) {
 	select {
 	case org := <-p.ready:
-		return org, nil
+		claimed, err := p.svc.queries.UpdateOrganizationStatus(ctx, sqlcgen.UpdateOrganizationStatusParams{
+			ID:     org.ID,
+			Status: StatusActive,
+		})
+		if err != nil {
+			return sqlcgen.Organization{}, err
+		}
+		return claimed, nil
 	case <-ctx.Done():
 		return sqlcgen.Organization{}, ctx.Err()
 	}
 }
 
-// Run recovers any organizations left "pending" from a previous restart,
+// Run recovers any organizations left "ready" from a previous restart,
 // then replenishes the pool forever.
 func (p *Provisioner) Run(ctx context.Context) error {
 	if err := p.seedFixed(ctx); err != nil {
@@ -73,13 +81,12 @@ func (p *Provisioner) Run(ctx context.Context) error {
 		}
 		return err
 	}
-	if err := p.recoverPending(ctx); err != nil {
+	if err := p.recoverReady(ctx); err != nil {
 		if ctx.Err() != nil {
 			return nil
 		}
 		return err
 	}
-
 	var consecutiveFailures int
 	for {
 		// See OWNSCALE_PROVISIONER_MAX_ORGS. Counted from the database
@@ -130,9 +137,10 @@ func (p *Provisioner) Run(ctx context.Context) error {
 }
 
 // seedFixed makes sure every subdomain in DefaultSeedSubdomains has an
-// organization record, creating it (as "pending", for recoverPending to
-// pick up) if missing. Safe to call on every restart: existing
-// organizations (in any status) are left untouched.
+// organization record, fully provisioning and inserting it (status
+// "ready") if missing. Safe to call on every restart: existing
+// organizations (in any status) are left untouched. Newly-seeded orgs are
+// picked up and pooled by recoverReady, run right after this.
 func (p *Provisioner) seedFixed(ctx context.Context) error {
 	for _, subdomain := range DefaultSeedSubdomains {
 		_, err := p.svc.queries.GetOrganizationBySubdomain(ctx, subdomain)
@@ -142,74 +150,60 @@ func (p *Provisioner) seedFixed(ctx context.Context) error {
 		if !errors.Is(err, sql.ErrNoRows) {
 			return err
 		}
-		if _, err := p.svc.CreatePending(ctx, subdomain); err != nil {
+		if _, err := p.provisionOne(ctx, subdomain); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// recoverPending provisions every organization left "pending" in the database.
-func (p *Provisioner) recoverPending(ctx context.Context) error {
-	pending, err := p.svc.queries.ListPendingOrganizations(ctx)
+// recoverReady re-pools every organization left "ready" in the database.
+func (p *Provisioner) recoverReady(ctx context.Context) error {
+	ready, err := p.svc.queries.ListReadyOrganizations(ctx)
 	if err != nil {
 		return err
 	}
-	for _, org := range pending {
-		provisioned, err := p.provisionOne(ctx, org.ID)
-		if err != nil {
-			p.logger.Error("recover pending organization", "organization_id", org.ID, "error", err)
-			continue
-		}
-		if err := p.push(ctx, provisioned); err != nil {
+	for _, org := range ready {
+		if err := p.push(ctx, org); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// replenishOne generates a new organization (retrying its random subdomain
-// on collision), provisions it, and pushes it onto the pool, blocking if
-// the pool is already full.
+// replenishOne provisions a new organization under a randomly generated
+// subdomain (retrying on collision up to maxSubdomainAttempts times) and
+// pushes it onto the pool, blocking if the pool is already full.
 func (p *Provisioner) replenishOne(ctx context.Context) error {
-	org, err := p.createPendingWithRandomSubdomain(ctx)
-	if err != nil {
-		return err
-	}
-	provisioned, err := p.provisionOne(ctx, org.ID)
-	if err != nil {
-		return err
-	}
-	return p.push(ctx, provisioned)
-}
-
-// createPendingWithRandomSubdomain creates a pending organization under a
-// randomly generated subdomain, retrying with a fresh candidate up to
-// maxSubdomainAttempts times if one happens to collide with an existing
-// organization.
-func (p *Provisioner) createPendingWithRandomSubdomain(ctx context.Context) (sqlcgen.Organization, error) {
 	var lastErr error
 	for range maxSubdomainAttempts {
 		subdomain, err := randomAlphaNum(6)
 		if err != nil {
-			return sqlcgen.Organization{}, err
+			return err
 		}
-		org, err := p.svc.CreatePending(ctx, subdomain)
+		_, err = p.svc.queries.GetOrganizationBySubdomain(ctx, subdomain)
 		if err == nil {
-			return org, nil
+			lastErr = fmt.Errorf("subdomain %q already in use", subdomain)
+			continue
 		}
-		lastErr = err
+		if !errors.Is(err, sql.ErrNoRows) {
+			return err
+		}
+		org, err := p.provisionOne(ctx, subdomain)
+		if err != nil {
+			return err
+		}
+		return p.push(ctx, org)
 	}
-	return sqlcgen.Organization{}, lastErr
+	return lastErr
 }
 
-func (p *Provisioner) provisionOne(ctx context.Context, orgID string) (sqlcgen.Organization, error) {
+// provisionOne provisions and inserts subdomain as a "ready" organization
+// and returns it.
+func (p *Provisioner) provisionOne(ctx context.Context, subdomain string) (sqlcgen.Organization, error) {
 	ctx, cancel := context.WithTimeout(ctx, provisionTimeout)
 	defer cancel()
-	if err := p.svc.Provision(ctx, orgID); err != nil {
-		return sqlcgen.Organization{}, err
-	}
-	return p.svc.queries.GetOrganization(ctx, orgID)
+	return p.svc.provisionNew(ctx, subdomain, StatusReady)
 }
 
 func (p *Provisioner) push(ctx context.Context, org sqlcgen.Organization) error {

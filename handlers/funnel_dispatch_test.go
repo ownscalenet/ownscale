@@ -7,7 +7,7 @@ import (
 )
 
 func TestServeFunnelIfMatched(t *testing.T) {
-	h, _ := newTestHandlers(t, false)
+	h, _ := newTestHandlers(t)
 	h.baseDomain = testBaseDomain
 
 	tests := []struct {
@@ -33,7 +33,7 @@ func TestServeFunnelIfMatched(t *testing.T) {
 }
 
 func TestServeFunnelIfMatchedNoBaseDomainConfigured(t *testing.T) {
-	h, _ := newTestHandlers(t, false)
+	h, _ := newTestHandlers(t)
 	// baseDomain left empty, as when running without provisioning configured.
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)

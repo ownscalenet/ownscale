@@ -6,21 +6,26 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	"github.com/rs/xid"
+
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/headscaleclient"
 	"github.com/ownscalenet/ownscale/orgs"
 )
 
 // TestRequireActiveOrgShortCircuits covers RequireActiveOrg's guard: an
-// unauthenticated caller gets 401, and a pending (not yet provisioned)
-// organization gets 409+notConfigured -- in both cases next is never
-// called.
+// unauthenticated caller gets 401, and a non-active (e.g. still "ready",
+// pooled but unassigned) organization gets 409+notConfigured.
 func TestRequireActiveOrgShortCircuits(t *testing.T) {
-	h, queries := newTestHandlers(t, true)
+	h, queries := newTestHandlers(t)
 
-	pendingOrg, err := h.orgs.CreatePending(t.Context(), "acme")
+	pendingOrg, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
+		ID:        xid.New().String(),
+		Subdomain: "acme",
+		Status:    orgs.StatusReady,
+	})
 	if err != nil {
-		t.Fatalf("orgs.CreatePending: %v", err)
+		t.Fatalf("CreateOrganization: %v", err)
 	}
 	pendingUser := insertUser(t, queries)
 	if err := queries.SetUserOrganizationAndRole(t.Context(), sqlcgen.SetUserOrganizationAndRoleParams{

@@ -16,7 +16,8 @@ import (
 
 // testRelyingParty mirrors the WebAuthn RP config handlers.New derives from
 // baseDomain (see handlers.go): "console.example.com"/"https://console.example.com"
-// when newTestHandlers(t, true) is used, or the "localhost" fallback otherwise.
+// when newTestHandlersWithBaseDomain(t, testBaseDomain) is used, or the
+// "localhost" fallback when newTestHandlers(t) (baseDomain "") is used.
 func testRelyingParty(baseDomain string) vwa.RelyingParty {
 	if baseDomain == "" {
 		return vwa.RelyingParty{Name: "Ownscale", ID: "localhost", Origin: "http://localhost"}
@@ -79,7 +80,7 @@ func loginBuilder(rp vwa.RelyingParty, authenticator vwa.Authenticator, cred vwa
 // organization as owner, exactly like a first-time OAuth login.
 func TestPasskeyRegisterSelfServiceProvisionsOrganization(t *testing.T) {
 	setupSessions()
-	h, queries := newTestHandlers(t, true)
+	h, queries := newTestHandlersWithBaseDomain(t, testBaseDomain)
 	provisionerCtx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	h.StartProvisioner(provisionerCtx)
@@ -137,7 +138,7 @@ func TestPasskeyRegisterSelfServiceProvisionsOrganization(t *testing.T) {
 // organization and role, and the invite is marked accepted.
 func TestPasskeyRegisterFinishAssignsInvitedOrganization(t *testing.T) {
 	setupSessions()
-	h, queries := newTestHandlers(t, true)
+	h, queries := newTestHandlersWithBaseDomain(t, testBaseDomain)
 	provisionerCtx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
 	h.StartProvisioner(provisionerCtx)
@@ -202,7 +203,7 @@ func TestPasskeyRegisterFinishAssignsInvitedOrganization(t *testing.T) {
 // TestPasskeyRegisterBeginRejectsMissingEmail verifies the (only)
 // validation PasskeyRegisterBegin performs itself.
 func TestPasskeyRegisterBeginRejectsMissingEmail(t *testing.T) {
-	h, _ := newTestHandlers(t, false)
+	h, _ := newTestHandlers(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/passkey/register/begin", strings.NewReader(`{}`))
 	rec := httptest.NewRecorder()
 	h.PasskeyRegisterBegin(rec, req)
@@ -215,7 +216,7 @@ func TestPasskeyRegisterBeginRejectsMissingEmail(t *testing.T) {
 // without a valid ceremony cookie (e.g. it expired, or was never set)
 // fails cleanly instead of panicking.
 func TestPasskeyRegisterFinishRejectsExpiredCeremony(t *testing.T) {
-	h, _ := newTestHandlers(t, false)
+	h, _ := newTestHandlers(t)
 	req := httptest.NewRequest(http.MethodPost, "/api/passkey/register/finish", strings.NewReader(`{}`))
 	rec := httptest.NewRecorder()
 	h.PasskeyRegisterFinish(rec, req)
@@ -230,7 +231,7 @@ func TestPasskeyRegisterFinishRejectsExpiredCeremony(t *testing.T) {
 // flow, and deleting it -- plus verifies another user can't delete it.
 func TestPasskeyAddListLoginAndDelete(t *testing.T) {
 	setupSessions()
-	h, queries := newTestHandlers(t, false)
+	h, queries := newTestHandlers(t)
 	owner := insertUser(t, queries)
 	other := insertUser(t, queries)
 

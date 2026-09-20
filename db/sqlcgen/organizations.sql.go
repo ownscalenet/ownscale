@@ -10,9 +10,10 @@ import (
 )
 
 const countActiveOrganizations = `-- name: CountActiveOrganizations :one
-SELECT COUNT(*) FROM organizations WHERE status = 'active'
+SELECT COUNT(*) FROM organizations WHERE status IN ('active', 'ready')
 `
 
+// Counts active and ready organizations.
 func (q *Queries) CountActiveOrganizations(ctx context.Context) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countActiveOrganizations)
 	var count int64
@@ -21,18 +22,19 @@ func (q *Queries) CountActiveOrganizations(ctx context.Context) (int64, error) {
 }
 
 const createOrganization = `-- name: CreateOrganization :one
-INSERT INTO organizations (id, subdomain)
-VALUES (?, ?)
+INSERT INTO organizations (id, subdomain, status)
+VALUES (?, ?, ?)
 RETURNING id, subdomain, created_at, updated_at, status
 `
 
 type CreateOrganizationParams struct {
 	ID        string
 	Subdomain string
+	Status    string
 }
 
 func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error) {
-	row := q.db.QueryRowContext(ctx, createOrganization, arg.ID, arg.Subdomain)
+	row := q.db.QueryRowContext(ctx, createOrganization, arg.ID, arg.Subdomain, arg.Status)
 	var i Organization
 	err := row.Scan(
 		&i.ID,
@@ -120,12 +122,12 @@ func (q *Queries) ListOrganizations(ctx context.Context) ([]Organization, error)
 	return items, nil
 }
 
-const listPendingOrganizations = `-- name: ListPendingOrganizations :many
-SELECT id, subdomain, created_at, updated_at, status FROM organizations WHERE status = 'pending' ORDER BY created_at
+const listReadyOrganizations = `-- name: ListReadyOrganizations :many
+SELECT id, subdomain, created_at, updated_at, status FROM organizations WHERE status = 'ready' ORDER BY created_at
 `
 
-func (q *Queries) ListPendingOrganizations(ctx context.Context) ([]Organization, error) {
-	rows, err := q.db.QueryContext(ctx, listPendingOrganizations)
+func (q *Queries) ListReadyOrganizations(ctx context.Context) ([]Organization, error) {
+	rows, err := q.db.QueryContext(ctx, listReadyOrganizations)
 	if err != nil {
 		return nil, err
 	}

@@ -34,7 +34,7 @@ func newMembersTestHandlers(t *testing.T, roles ...string) (*Handlers, *dbpkg.Tx
 	h.hs = headscaleclient.NewRegistry(&fakeClientMinter{err: errors.New("headscale unreachable")})
 
 	orgID := xid.New().String()
-	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{ID: orgID, Subdomain: "acme"})
+	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{ID: orgID, Subdomain: "acme", Status: orgs.StatusActive})
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}

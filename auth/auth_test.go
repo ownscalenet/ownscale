@@ -12,6 +12,7 @@ import (
 
 	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 // newTestQueries returns queries backed by a copy of the shared, already
@@ -32,6 +33,7 @@ func insertUser(t *testing.T, queries *sqlcgen.Queries) sqlcgen.User {
 	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
 		ID:        xid.New().String(),
 		Subdomain: id,
+		Status:    orgs.StatusActive,
 	})
 	if err != nil {
 		t.Fatalf("insertUser: CreateOrganization: %v", err)

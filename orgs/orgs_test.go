@@ -4,7 +4,9 @@ import (
 	"archive/tar"
 	"bytes"
 	"context"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -141,7 +143,7 @@ func TestServiceCreateCreatesOIDCClient(t *testing.T) {
 	}
 }
 
-func TestServiceProvisionRemovesContainerOnFailure(t *testing.T) {
+func TestServiceCreateRemovesContainerOnFailure(t *testing.T) {
 	queries := newTestQueries(t)
 	var removed []string
 	api := &dockerfake.API{
@@ -173,25 +175,20 @@ func TestServiceProvisionRemovesContainerOnFailure(t *testing.T) {
 	t.Cleanup(func() { ctl.Close() })
 
 	svc := NewService(queries, ctl, "example.com", "https://auth.example.com", config.DerpConfig{})
-	org, err := svc.CreatePending(t.Context(), "acme")
-	if err != nil {
-		t.Fatalf("CreatePending: %v", err)
-	}
-	if err := svc.Provision(t.Context(), org.ID); err == nil {
-		t.Fatal("Provision: want error when the container never becomes healthy, got nil")
+	if _, err := svc.Create(t.Context(), "acme"); err == nil {
+		t.Fatal("Create: want error when the container never becomes healthy, got nil")
 	}
 
-	got, err := queries.GetOrganization(t.Context(), org.ID)
-	if err != nil {
-		t.Fatalf("GetOrganization: %v", err)
-	}
-	if got.Status != StatusFailed {
-		t.Errorf("org.Status = %q, want %q", got.Status, StatusFailed)
+	// No organizations row (or its OIDC client/orgconfig rows) should
+	// have ever become visible: an org is only inserted once fully
+	// provisioned.
+	if _, err := queries.GetOrganizationBySubdomain(t.Context(), "acme"); !errors.Is(err, sql.ErrNoRows) {
+		t.Fatalf("GetOrganizationBySubdomain: want sql.ErrNoRows (no row left behind), got %v", err)
 	}
 
 	wantContainer := dockerctl.HSContainerName("acme")
 	if !slices.Contains(removed, wantContainer) {
-		t.Errorf("ContainerRemove calls = %v, want it to include %q (no zombie container should survive a failed Provision)", removed, wantContainer)
+		t.Errorf("ContainerRemove calls = %v, want it to include %q (no zombie container should survive a failed Create)", removed, wantContainer)
 	}
 }
 

@@ -9,7 +9,7 @@ import (
 )
 
 func TestFormatHuJSONPrettyPrints(t *testing.T) {
-	h, _ := newTestHandlers(t, false)
+	h, _ := newTestHandlers(t)
 
 	body := `{"content":"{\"acls\":[{\"action\":\"accept\",\"src\":[\"*\"],\"dst\":[\"*:*\"]}]}"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/hujson/format", strings.NewReader(body))
@@ -31,7 +31,7 @@ func TestFormatHuJSONPrettyPrints(t *testing.T) {
 }
 
 func TestFormatHuJSONRejectsInvalidHuJSON(t *testing.T) {
-	h, _ := newTestHandlers(t, false)
+	h, _ := newTestHandlers(t)
 
 	body := `{"content":"not valid hujson {{{"}`
 	req := httptest.NewRequest(http.MethodPost, "/api/hujson/format", strings.NewReader(body))

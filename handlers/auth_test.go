@@ -58,7 +58,7 @@ func registerTestOIDCProvider(t *testing.T) {
 func TestBeginAuthSetsNextCookie(t *testing.T) {
 	setupSessions()
 	registerTestOIDCProvider(t)
-	h, _ := newTestHandlers(t, false)
+	h, _ := newTestHandlers(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/oidc?next="+"%2Finvite%2Ftesttoken", nil)
 	req.SetPathValue("provider", "oidc")
@@ -92,7 +92,7 @@ func TestBeginAuthSetsNextCookie(t *testing.T) {
 func TestBeginAuthNoNextParam(t *testing.T) {
 	setupSessions()
 	registerTestOIDCProvider(t)
-	h, _ := newTestHandlers(t, false)
+	h, _ := newTestHandlers(t)
 
 	req := httptest.NewRequest(http.MethodGet, "/auth/oidc", nil)
 	req.SetPathValue("provider", "oidc")
@@ -109,7 +109,7 @@ func TestBeginAuthNoNextParam(t *testing.T) {
 
 func TestAuthCallbackRedirectsToNextCookie(t *testing.T) {
 	setupSessions()
-	h, queries := newTestHandlers(t, false)
+	h, queries := newTestHandlers(t)
 	user := insertUser(t, queries)
 
 	orig := gothic.CompleteUserAuth
@@ -154,7 +154,7 @@ func TestAuthCallbackRedirectsToNextCookie(t *testing.T) {
 // still falls back to "/".
 func TestAuthCallbackNoNextCookieFallsBackToRoot(t *testing.T) {
 	setupSessions()
-	h, queries := newTestHandlers(t, false)
+	h, queries := newTestHandlers(t)
 	user := insertUser(t, queries)
 
 	orig := gothic.CompleteUserAuth
@@ -186,7 +186,7 @@ var randomSubdomainRe = regexp.MustCompile(`^[a-z0-9]+$`)
 
 func TestAuthCallbackAutoAssignsOrganization(t *testing.T) {
 	setupSessions()
-	h, queries := newTestHandlers(t, true)
+	h, queries := newTestHandlers(t)
 
 	provisionerCtx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
@@ -243,7 +243,7 @@ func TestAuthCallbackAutoAssignsOrganization(t *testing.T) {
 // is created with the invite's organization and role directly.
 func TestAuthCallbackAssignsInvitedOrganization(t *testing.T) {
 	setupSessions()
-	h, queries := newTestHandlers(t, true)
+	h, queries := newTestHandlers(t)
 	owner := insertUser(t, queries)
 	org, err := queries.GetOrganization(t.Context(), owner.OrganizationID)
 	if err != nil {
@@ -313,7 +313,7 @@ func TestAuthCallbackAssignsInvitedOrganization(t *testing.T) {
 
 func TestAuthCallbackRejectsInvalidInvite(t *testing.T) {
 	setupSessions()
-	h, queries := newTestHandlers(t, true)
+	h, queries := newTestHandlers(t)
 
 	orig := gothic.CompleteUserAuth
 	t.Cleanup(func() { gothic.CompleteUserAuth = orig })
@@ -344,7 +344,7 @@ func TestAuthCallbackRejectsInvalidInvite(t *testing.T) {
 }
 
 func TestLogout(t *testing.T) {
-	h, queries := newTestHandlers(t, false)
+	h, queries := newTestHandlers(t)
 	user := insertUser(t, queries)
 
 	req := httptest.NewRequest(http.MethodGet, "/logout", nil)
@@ -362,7 +362,7 @@ func TestLogout(t *testing.T) {
 }
 
 func TestAPILogout(t *testing.T) {
-	h, queries := newTestHandlers(t, false)
+	h, queries := newTestHandlers(t)
 	user := insertUser(t, queries)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/logout", nil)

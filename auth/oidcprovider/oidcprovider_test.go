@@ -15,6 +15,7 @@ import (
 
 	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/orgs"
 	"github.com/zitadel/oidc/v3/pkg/oidc"
 )
 
@@ -91,6 +92,7 @@ func insertTestOrg(t *testing.T, queries *sqlcgen.Queries) sqlcgen.Organization 
 	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
 		ID:        xid.New().String(),
 		Subdomain: "acme",
+		Status:    orgs.StatusActive,
 	})
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)

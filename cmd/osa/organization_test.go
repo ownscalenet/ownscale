@@ -14,8 +14,6 @@ import (
 	"time"
 
 	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/network"
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/rs/xid"
 
 	"github.com/ownscalenet/ownscale/config"
@@ -50,6 +48,7 @@ func insertOrg(t *testing.T, queries *dbpkg.TxQueries, subdomain string) sqlcgen
 	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
 		ID:        xid.New().String(),
 		Subdomain: subdomain,
+		Status:    orgs.StatusActive,
 	})
 	if err != nil {
 		t.Fatalf("insertOrg(%q): %v", subdomain, err)
@@ -120,76 +119,6 @@ func TestBaseDomain(t *testing.T) {
 		}
 		if got != "example.com" {
 			t.Errorf("baseDomain = %q, want %q", got, "example.com")
-		}
-	})
-}
-
-func TestCreateOrganization(t *testing.T) {
-	t.Run("invalid subdomain", func(t *testing.T) {
-		_, queries := newTestDB(t)
-		ctl := newTestCtl(t, &dockerfake.API{
-			ContainerCreateFn: func(context.Context, *container.Config, *container.HostConfig, *network.NetworkingConfig, *ocispec.Platform, string) (container.CreateResponse, error) {
-				t.Fatal("docker should not be invoked for an invalid subdomain")
-				return container.CreateResponse{}, nil
-			},
-		})
-		var out strings.Builder
-		err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com", "https://auth.example.com", config.DerpConfig{}), "ab")
-		if err == nil {
-			t.Fatal("expected an error for an invalid (too short) subdomain")
-		}
-	})
-
-	t.Run("duplicate subdomain", func(t *testing.T) {
-		_, queries := newTestDB(t)
-		insertOrg(t, queries, "acme")
-
-		ctl := newTestCtl(t, &dockerfake.API{})
-		var out strings.Builder
-		err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com", "https://auth.example.com", config.DerpConfig{}), "acme")
-		if err == nil {
-			t.Fatal("expected an error creating a duplicate subdomain")
-		}
-	})
-
-	t.Run("docker failure marks the organization failed (row stays)", func(t *testing.T) {
-		_, queries := newTestDB(t)
-
-		wantErr := errors.New("docker exploded")
-		ctl := newTestCtl(t, &dockerfake.API{
-			ContainerCreateFn: func(context.Context, *container.Config, *container.HostConfig, *network.NetworkingConfig, *ocispec.Platform, string) (container.CreateResponse, error) {
-				return container.CreateResponse{}, wantErr
-			},
-		})
-		var out strings.Builder
-		err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com", "https://auth.example.com", config.DerpConfig{}), "acme")
-		if err == nil || !strings.Contains(err.Error(), "docker exploded") {
-			t.Fatalf("got err %v, want it to wrap %v", err, wantErr)
-		}
-
-		org, err := queries.GetOrganizationBySubdomain(t.Context(), "acme")
-		if err != nil {
-			t.Fatalf("GetOrganizationBySubdomain: expected the row to still exist, got err %v", err)
-		}
-		if org.Status != orgs.StatusFailed {
-			t.Errorf("status = %q, want %q", org.Status, orgs.StatusFailed)
-		}
-	})
-
-	t.Run("success", func(t *testing.T) {
-		_, queries := newTestDB(t)
-
-		ctl := newTestCtl(t, &dockerfake.API{})
-		var out strings.Builder
-		if err := createOrganization(t.Context(), &out, orgs.NewService(queries, ctl, "example.com", "https://auth.example.com", config.DerpConfig{}), "acme"); err != nil {
-			t.Fatalf("createOrganization: %v", err)
-		}
-
-		if !strings.Contains(out.String(), "created organization acme.example.com") {
-			t.Errorf("output = %q, want it to mention the created organization", out.String())
-		}
-		if _, err := queries.GetOrganizationBySubdomain(t.Context(), "acme"); err != nil {
-			t.Fatalf("GetOrganizationBySubdomain: %v", err)
 		}
 	})
 }

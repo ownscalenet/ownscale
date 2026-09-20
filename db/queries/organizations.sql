@@ -1,6 +1,6 @@
 -- name: CreateOrganization :one
-INSERT INTO organizations (id, subdomain)
-VALUES (?, ?)
+INSERT INTO organizations (id, subdomain, status)
+VALUES (?, ?, ?)
 RETURNING *;
 
 -- name: GetOrganizationBySubdomain :one
@@ -12,11 +12,12 @@ SELECT * FROM organizations WHERE id = ?;
 -- name: ListOrganizations :many
 SELECT * FROM organizations ORDER BY subdomain;
 
--- name: ListPendingOrganizations :many
-SELECT * FROM organizations WHERE status = 'pending' ORDER BY created_at;
+-- name: ListReadyOrganizations :many
+SELECT * FROM organizations WHERE status = 'ready' ORDER BY created_at;
 
 -- name: CountActiveOrganizations :one
-SELECT COUNT(*) FROM organizations WHERE status = 'active';
+-- Counts active and ready organizations.
+SELECT COUNT(*) FROM organizations WHERE status IN ('active', 'ready');
 
 -- name: UpdateOrganizationStatus :one
 UPDATE organizations SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?

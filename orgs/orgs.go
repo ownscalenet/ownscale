@@ -1,6 +1,6 @@
-// Package orgs contains organization-provisioning logic shared by the CLI
-// (osa organization create) and the web server (auto-provisioning a new
-// organization for a first-time login).
+// Package orgs contains organization-provisioning logic shared by the
+// Provisioner (background pool of ready-to-assign organizations) and the
+// web server (assigning a pooled organization to a first-time login).
 package orgs
 
 import (
@@ -56,162 +56,105 @@ func (s *Service) ForOrg(org sqlcgen.Organization) *OrgService {
 	}
 }
 
-// CreatePending inserts an organizations row (status "pending") for
-// subdomain and returns it. It deliberately does none of the Docker/network
-// work that used to happen inline in Create: creating an organization's
-// isolated Docker network is picked up by the host OS as a network change,
-// which causes browsers (notably Firefox) to drop in-flight requests --
-// including the very request creating the org. Keeping this fast and
-// DB-only lets callers (the web handler) return a response before that
-// network change happens, and hand the actual provisioning off to
-// Provision, run either synchronously (CLI) or from the background
-// Provisioner (web).
-func (s *Service) CreatePending(ctx context.Context, subdomain string) (_ sqlcgen.Organization, err error) {
-	defer derrors.Wrap(&err, "s.CreatePending(%q)", subdomain)
-
+// provisionNew provisions a brand-new organization under subdomain
+// end-to-end and returns it already inserted with status successStatus.
+func (s *Service) provisionNew(ctx context.Context, subdomain, successStatus string) (_ sqlcgen.Organization, err error) {
 	if err := dockerctl.ValidateSubdomain(subdomain); err != nil {
 		return sqlcgen.Organization{}, err
 	}
 
-	org, err := s.queries.CreateOrganization(ctx, sqlcgen.CreateOrganizationParams{
-		ID:        xid.New().String(),
-		Subdomain: subdomain,
-	})
-	if err != nil {
-		return org, fmt.Errorf("create organization record (already exists?): %w", err)
-	}
-	return org, nil
-}
-
-// Provision does the actual work of standing up organization orgID: it
-// creates its OIDC client and its headscale container (via ctl),
-// then marks the organization "active". If any step fails, it marks the
-// organization "failed" (best-effort; the original error is still
-// returned) instead of leaving it stuck "pending" forever.
-func (s *Service) Provision(ctx context.Context, orgID string) (err error) {
-	defer derrors.Wrap(&err, "s.Provision(%q)", orgID)
-
-	org, err := s.queries.GetOrganization(ctx, orgID)
-	if err != nil {
-		return fmt.Errorf("get organization: %w", err)
-	}
-	// Guards against duplicate Provision calls for the same organization
-	// (e.g. a duplicate Signal, or a signal racing a poll tick): once an
-	// organization is active (or has permanently failed), there's nothing
-	// left to do.
-	if org.Status != StatusPending {
-		return nil
-	}
-
-	if err := s.provision(ctx, org); err != nil {
-		// Clean up whatever provision managed to create.
-		if cleanupErr := s.ctl.RemoveOrganization(ctx, org.Subdomain); cleanupErr != nil {
-			err = fmt.Errorf("%w (also failed to clean up partially-provisioned resources: %w)", err, cleanupErr)
-		}
-		if _, statusErr := s.queries.UpdateOrganizationStatus(ctx, sqlcgen.UpdateOrganizationStatusParams{
-			ID:     orgID,
-			Status: StatusFailed,
-		}); statusErr != nil {
-			return fmt.Errorf("%w (also failed to record failed status: %w)", err, statusErr)
-		}
-		return err
-	}
-
-	if _, err := s.queries.UpdateOrganizationStatus(ctx, sqlcgen.UpdateOrganizationStatusParams{
-		ID:     orgID,
-		Status: StatusActive,
-	}); err != nil {
-		return fmt.Errorf("mark organization active: %w", err)
-	}
-	return nil
-}
-
-// provision creates org's OIDC client (within its own transaction) and its
-// headscale container via ctl. It's split out of Provision so
-// the latter can uniformly handle the success/failure status update
-// regardless of which step fails.
-func (s *Service) provision(ctx context.Context, org sqlcgen.Organization) error {
-	subdomain := org.Subdomain
-
 	clientID, err := randomAlphaNum(8)
 	if err != nil {
-		return err
+		return sqlcgen.Organization{}, err
 	}
 	clientID = "os_" + subdomain + "_" + clientID
 	clientSecret, err := randomAlphaNum(32)
 	if err != nil {
-		return err
+		return sqlcgen.Organization{}, err
 	}
 	clientSecretHash, err := bcrypt.GenerateFromPassword([]byte(clientSecret), bcrypt.DefaultCost)
 	if err != nil {
-		return err
+		return sqlcgen.Organization{}, err
 	}
 	redirectURIsJSON, err := json.Marshal([]string{
 		"https://" + subdomain + "." + s.baseDomain + "/oidc/callback",
 		"https://" + subdomain + "." + s.baseDomain + "/admin/oidc/callback",
 	})
 	if err != nil {
-		return err
+		return sqlcgen.Organization{}, err
 	}
-	if _, err := s.queries.CreateOIDCClient(ctx, sqlcgen.CreateOIDCClientParams{
-		ID:               xid.New().String(),
-		OrganizationID:   org.ID,
-		ClientID:         clientID,
-		ClientSecretHash: string(clientSecretHash),
-		RedirectUris:     string(redirectURIsJSON),
-	}); err != nil {
-		return err
-	}
-
 	oidcCreds := dockerctl.OIDCClientCredentials{
 		Issuer:       s.issuer,
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
 	}
-
-	// Seed the config.yaml orgconfigs row with the same content
-	// CreateOrganization independently renders (via the same pure,
-	// deterministic BuildHeadscaleConfig call) and writes to disk, so the
-	// database has an authoritative copy from the moment the organization
-	// exists -- GetDNSSettings/SetDNSSettings/SetAuthRestrictions never
-	// read the file back, only this row.
+	// This config goes to DB and becomes the authority.
 	hsConfig, err := dockerctl.BuildHeadscaleConfig(subdomain, subdomain+"."+s.baseDomain, oidcCreds, s.derpCfg)
 	if err != nil {
-		return err
+		return sqlcgen.Organization{}, err
 	}
-	if _, err := s.queries.CreateOrgConfig(ctx, sqlcgen.CreateOrgConfigParams{
+
+	if _, err := s.ctl.CreateOrganization(ctx, subdomain, s.baseDomain, oidcCreds, s.derpCfg); err != nil {
+		// Best effort clean-up.
+		if cleanupErr := s.ctl.RemoveOrganization(ctx, subdomain); cleanupErr != nil {
+			err = fmt.Errorf("%w (also failed to clean up partially-created container: %w)", err, cleanupErr)
+		}
+		return sqlcgen.Organization{}, err
+	}
+
+	org, err := s.insertProvisioned(ctx, subdomain, successStatus, clientID, string(clientSecretHash), string(redirectURIsJSON), hsConfig)
+	if err != nil {
+		if cleanupErr := s.ctl.RemoveOrganization(ctx, subdomain); cleanupErr != nil {
+			err = fmt.Errorf("%w (also failed to clean up orphaned container: %w)", err, cleanupErr)
+		}
+		return sqlcgen.Organization{}, err
+	}
+	return org, nil
+}
+
+func (s *Service) insertProvisioned(ctx context.Context, subdomain, status, clientID, clientSecretHash, redirectURIsJSON, hsConfig string) (_ sqlcgen.Organization, err error) {
+	txQueries, commit, rollback, err := s.queries.StartTx(ctx)
+	if err != nil {
+		return sqlcgen.Organization{}, err
+	}
+	defer rollback()
+
+	org, err := txQueries.CreateOrganization(ctx, sqlcgen.CreateOrganizationParams{
+		ID:        xid.New().String(),
+		Subdomain: subdomain,
+		Status:    status,
+	})
+	if err != nil {
+		return sqlcgen.Organization{}, fmt.Errorf("create organization record (already exists?): %w", err)
+	}
+	if _, err := txQueries.CreateOIDCClient(ctx, sqlcgen.CreateOIDCClientParams{
+		ID:               xid.New().String(),
+		OrganizationID:   org.ID,
+		ClientID:         clientID,
+		ClientSecretHash: clientSecretHash,
+		RedirectUris:     redirectURIsJSON,
+	}); err != nil {
+		return sqlcgen.Organization{}, err
+	}
+	if _, err := txQueries.CreateOrgConfig(ctx, sqlcgen.CreateOrgConfigParams{
 		ID:             xid.New().String(),
 		OrganizationID: org.ID,
 		Path:           dockerctl.ConfigYAMLPath,
 		Content:        hsConfig,
 	}); err != nil {
-		return err
+		return sqlcgen.Organization{}, err
 	}
-
-	if _, err := s.ctl.CreateOrganization(ctx, subdomain, s.baseDomain, oidcCreds, s.derpCfg); err != nil {
-		return err
+	if err := commit(); err != nil {
+		return sqlcgen.Organization{}, err
 	}
-	return nil
+	return org, nil
 }
 
-// Create provisions an organization end-to-end: it inserts the
-// organizations row (CreatePending) and then synchronously runs the rest
-// of provisioning (Provision) before returning. It's used by callers that
-// want to block until provisioning is fully done or failed (e.g. the CLI),
-// as opposed to the web handler, which calls CreatePending and hands
-// Provision off to the background Provisioner instead.
+// Create provisions a brand-new organization end-to-end and marks it
+// "active" immediately. This func only exists for tests sake.
 func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organization, err error) {
 	defer derrors.Wrap(&err, "s.Create(%q)", subdomain)
-
-	org, err := s.CreatePending(ctx, subdomain)
-	if err != nil {
-		return org, err
-	}
-	if err := s.Provision(ctx, org.ID); err != nil {
-		return org, err
-	}
-	org.Status = StatusActive
-	return org, nil
+	return s.provisionNew(ctx, subdomain, StatusActive)
 }
 
 // randomAlphaNum generates a random os-prefixed alphanumeric string of 6 characters.
@@ -233,14 +176,12 @@ func randomAlphaNum(n int) (_ string, err error) {
 // Organization lifecycle statuses. These must stay in sync with the CHECK
 // constraint added to that column in migrations.
 const (
-	// StatusPending is the initial status of an organization that has
-	// only been recorded in the database (see Service.CreatePending) but
-	// not yet provisioned.
-	StatusPending = "pending"
-	// StatusActive is set once an organization has been fully provisioned.
+	// StatusReady is set on organizations provisioned by the Provisioner
+	// that are sitting in its pool, but not yet assigned to a user.
+	StatusReady = "ready"
+	// StatusActive is set once an organization has been fully provisioned
+	// and assigned to a user.
 	StatusActive = "active"
-	// StatusFailed is set if provisioning an organization fails permanently.
-	StatusFailed = "failed"
 	// StatusUpdatePending is set while an organization's headscale
 	// config is being applied. If the restart fails, status is left
 	// here rather than reverted, since the org's actual running

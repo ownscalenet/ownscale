@@ -16,6 +16,7 @@ import (
 	"github.com/ownscalenet/ownscale/dockerctl"
 	"github.com/ownscalenet/ownscale/dockerctl/dockerfake"
 	"github.com/ownscalenet/ownscale/headscaleclient"
+	"github.com/ownscalenet/ownscale/orgs"
 
 	"github.com/rs/xid"
 )
@@ -61,18 +62,25 @@ func noopDockerAPI() *dockerfake.API {
 const testBaseDomain = "example.com"
 
 // newTestHandlers builds a *Handlers backed by a real, freshly-migrated
-// SQLite database and (if withOrgs is true) a dockerfake-backed
-// dockerctl.Ctl, so organization provisioning is fully configured.
-func newTestHandlers(t *testing.T, withOrgs bool) (*Handlers, *dbpkg.TxQueries) {
+// SQLite database and a dockerfake-backed dockerctl.Ctl, so organization
+// provisioning always works and every user is guaranteed a real, active
+// organization -- matching production, where Handlers is never built with
+// a nil Ctl. baseDomain is "" (the WebAuthn RP falls back to "localhost");
+// use newTestHandlersWithBaseDomain for tests that need a real one, since
+// baseDomain is baked into the WebAuthn RP at construction time.
+func newTestHandlers(t *testing.T) (*Handlers, *dbpkg.TxQueries) {
+	t.Helper()
+	return newTestHandlersWithBaseDomain(t, "")
+}
+
+// newTestHandlersWithBaseDomain is newTestHandlers, but with baseDomain
+// wired into the WebAuthn RP ID/origin (e.g. testBaseDomain), matching how
+// production configures it.
+func newTestHandlersWithBaseDomain(t *testing.T, baseDomain string) (*Handlers, *dbpkg.TxQueries) {
 	t.Helper()
 	queries := newTestQueries(t)
 
-	var ctl *dockerctl.Ctl
-	baseDomain := ""
-	if withOrgs {
-		ctl = newTestCtl(t, noopDockerAPI())
-		baseDomain = testBaseDomain
-	}
+	ctl := newTestCtl(t, noopDockerAPI())
 	h, err := New(queries, ctl, baseDomain, t.TempDir(), nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{})
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -101,14 +109,14 @@ func withHeadscaleClient(req *http.Request, client *headscaleclient.Client) *htt
 	return req.WithContext(ctx)
 }
 
-// insertUser inserts a user row, together with a freshly created
-// organization it owns (every user always belongs to one), and returns
-// the user.
+// insertUser inserts a user row, together with a freshly created organization
+// it owns (every user always belongs to one), and returns the user.
 func insertUser(t *testing.T, queries *dbpkg.TxQueries) sqlcgen.User {
 	t.Helper()
 	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
 		ID:        xid.New().String(),
 		Subdomain: "acme-" + xid.New().String(),
+		Status:    orgs.StatusActive,
 	})
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
