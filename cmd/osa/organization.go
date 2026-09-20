@@ -263,7 +263,7 @@ func listOrganizations(ctx context.Context, out io.Writer, queries *db.TxQueries
 			return err
 		}
 
-		_, _ = fmt.Fprintf(out, "%-20s %-6d %-12s %-10s %-20s %s\n",
+		_, _ = fmt.Fprintf(out, "%-20s %-6d %-12s %-10s %-20s\n",
 			org.Subdomain, ucount, state, org.Status,
 			org.CreatedAt.Format("2006-01-02 15:04:05"))
 	}
