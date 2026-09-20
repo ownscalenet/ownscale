@@ -1,5 +1,13 @@
 import { expect, test } from '@playwright/test'
 
+// delete existing invites because tests rely on having zero pre-existing invites.
+test.beforeEach(async ({ page }) => {
+  const { invites } = await page.request.get('/api/invites').then((r) => r.json())
+  for (const invite of invites) {
+    await page.request.delete(`/api/invites/${invite.id}`)
+  }
+})
+
 test('creating and revoking an invite link', async ({ page }) => {
   await page.goto('/users')
   await expect(page.getByRole('heading', { name: 'Users' })).toBeVisible()
