@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test'
+import { sessionHeadscaleUserID } from './support/realMachine'
 
 // Uses a unique tag per run so repeat local runs against the same dev-up
 // stack (mingling with existing data is fine) don't collide with keys left
@@ -42,10 +43,7 @@ test('creating and expiring a reusable, ephemeral pre-auth key for a real user',
   const dialog = page.locator('dialog.modal[open]')
   // "Tag only" is unchecked by default, so a real user must be selected.
   const userSelect = dialog.getByRole('combobox')
-  await expect(userSelect.locator('option').nth(1)).toBeAttached()
-  const userOptions = await userSelect.locator('option').all()
-  const firstRealUser = await userOptions[1].getAttribute('value')
-  await userSelect.selectOption(firstRealUser ?? '')
+  await userSelect.selectOption(await sessionHeadscaleUserID(page))
   await dialog.getByPlaceholder('tag:server, tag:prod').fill(tag)
   await dialog.locator('label', { hasText: 'Reusable' }).click()
   await dialog.locator('label', { hasText: 'Ephemeral' }).click()

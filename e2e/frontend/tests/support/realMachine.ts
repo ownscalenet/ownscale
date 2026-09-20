@@ -25,6 +25,22 @@ export interface RealMachine {
   addresses: string[]
 }
 
+/** sessionHeadscaleUserID returns the authenticated user's Headscale ID. */
+export async function sessionHeadscaleUserID(page: Page): Promise<string> {
+  const response = await page.request.get('/api/session')
+  try {
+    if (!response.ok()) throw new Error(`session request returned HTTP ${response.status()}`)
+    const session = await response.json() as {
+      user?: { HeadscaleUserID?: { String?: string; Valid?: boolean } }
+    }
+    const id = session.user?.HeadscaleUserID
+    if (!id?.Valid || !id.String) throw new Error('signed-in user has no Headscale user ID')
+    return id.String
+  } finally {
+    await response.dispose()
+  }
+}
+
 export async function registerRealMachine(page: Page, orgSubdomain = 'aaaa'): Promise<RealMachine> {
   try {
     await lookup(`${orgSubdomain}.${baseDomain}`)
@@ -56,13 +72,8 @@ export async function registerRealMachine(page: Page, orgSubdomain = 'aaaa'): Pr
   }
   const createDialog = page.locator('dialog.modal[open]')
   const userSelect = createDialog.getByRole('combobox')
-  // Wait for the real (non-placeholder) user option to render before
-  // reading it -- the dialog's initial paint can otherwise race with this
-  // read.
-  await expect(userSelect.locator('option').nth(1)).toBeAttached()
-  const userOptions = await userSelect.locator('option').all()
-  const ownerID = await userOptions[1].getAttribute('value')
-  await userSelect.selectOption(ownerID ?? '')
+  const ownerID = await sessionHeadscaleUserID(page)
+  await userSelect.selectOption(ownerID)
   await createDialog.getByLabel('Reusable', { exact: true }).uncheck()
   await createDialog.getByLabel('Ephemeral', { exact: true }).check()
   // Creating the pre-auth key hits hs-aaaa directly and can transiently
