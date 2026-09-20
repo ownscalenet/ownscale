@@ -35,3 +35,6 @@ SELECT users.*, organizations.subdomain AS org_subdomain
 FROM users
 LEFT JOIN organizations ON users.organization_id = organizations.id
 ORDER BY organizations.subdomain, users.email;
+
+-- name: CountOrgUsers :one
+SELECT COUNT(*) FROM users WHERE organization_id = ?;

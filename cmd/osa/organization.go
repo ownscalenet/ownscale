@@ -16,6 +16,7 @@ import (
 
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/db"
+	"github.com/ownscalenet/ownscale/derrors"
 	"github.com/ownscalenet/ownscale/dockerctl"
 	"github.com/ownscalenet/ownscale/logging"
 )
@@ -240,26 +241,31 @@ func deleteOrganization(ctx context.Context, out io.Writer, queries *db.TxQuerie
 
 // listOrganizations prints every organization recorded in queries along
 // with its current container state (as reported by ctl) to out.
-func listOrganizations(ctx context.Context, out io.Writer, queries *db.TxQueries, ctl *dockerctl.Ctl) error {
+func listOrganizations(ctx context.Context, out io.Writer, queries *db.TxQueries, ctl *dockerctl.Ctl) (err error) {
+	defer derrors.Wrap(&err, "listOrganizations()")
 	organizations, err := queries.ListOrganizations(ctx)
 	if err != nil {
-		return fmt.Errorf("list organizations: %w", err)
+		return err
 	}
 	if len(organizations) == 0 {
 		_, _ = fmt.Fprintln(out, "no organizations")
 		return nil
 	}
 
-	_, _ = fmt.Fprintf(out, "%-20s %-12s %-20s %s\n", "SUBDOMAIN", "STATE", "CREATED", "CONTAINER")
+	_, _ = fmt.Fprintf(out, "%-20s %-6s %-12s %-10s %-20s\n", "SUBDOMAIN", "USERS", "DOCKER", "STATUS", "CREATED")
 	for _, org := range organizations {
 		state, err := ctl.ContainerState(ctx, org.Subdomain)
 		if err != nil {
 			state = "error: " + err.Error()
 		}
-		_, _ = fmt.Fprintf(out, "%-20s %-12s %-20s %s\n",
-			org.Subdomain, state,
-			org.CreatedAt.Format("2006-01-02 15:04:05"),
-			dockerctl.HSContainerName(org.Subdomain))
+		ucount, err := queries.CountOrgUsers(ctx, org.ID)
+		if err != nil {
+			return err
+		}
+
+		_, _ = fmt.Fprintf(out, "%-20s %-6d %-12s %-10s %-20s %s\n",
+			org.Subdomain, ucount, state, org.Status,
+			org.CreatedAt.Format("2006-01-02 15:04:05"))
 	}
 	return nil
 }
