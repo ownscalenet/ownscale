@@ -200,14 +200,7 @@ func TestDockerctlIntegration(t *testing.T) {
 			}
 		}
 
-		// Verify the rendered headscale config is written to the shared
-		// host file and mounted into the container.
-		hostConfigPath := filepath.Join(dataDir, "headscale-config", subdomain, "config.yaml")
-		hostConfig, err := os.ReadFile(hostConfigPath)
-		if err != nil {
-			t.Fatalf("read shared config host file: %v", err)
-		}
-
+		// Verify the rendered headscale config was copied into the container.
 		for _, name := range []string{hsName} {
 			reader, _, err := rawCli.CopyFromContainer(ctx, name, "/etc/headscale/config.yaml")
 			if err != nil {
@@ -218,8 +211,8 @@ func TestDockerctlIntegration(t *testing.T) {
 			if err != nil {
 				t.Fatalf("read config.yaml from container %q: %v", name, err)
 			}
-			if cfg != string(hostConfig) {
-				t.Errorf("container %q: /etc/headscale/config.yaml doesn't match the shared host file", name)
+			if !strings.Contains(cfg, subdomain) {
+				t.Errorf("container %q: /etc/headscale/config.yaml doesn't look like it was rendered for %q:\n%s", name, subdomain, cfg)
 			}
 		}
 
@@ -273,7 +266,6 @@ func TestDockerctlIntegration(t *testing.T) {
 		}
 		for _, dir := range []string{
 			filepath.Join(dataDir, "headscale", subdomain),
-			filepath.Join(dataDir, "headscale-config", subdomain),
 		} {
 			if _, err := os.Stat(dir); !os.IsNotExist(err) {
 				t.Errorf("os.Stat(%q) after RemoveOrganization: err = %v, want a not-exist error", dir, err)

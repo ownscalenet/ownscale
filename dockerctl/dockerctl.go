@@ -174,15 +174,6 @@ func (c *Ctl) headscaleHostDir(subdomain string) string {
 	return filepath.Join(c.dataDir, "headscale", subdomain)
 }
 
-// headscaleConfigHostDir returns the host directory for organization's
-// headscale config.yaml, bind-mounted read-only at ConfigYAMLPath into the
-// headscale container. It's a real directory (not a single file mount) so
-// DNS/auth-restriction edits can rewrite the file in place (see
-// WriteConfigYAML) and headscale picks up the change on its next restart.
-func (c *Ctl) headscaleConfigHostDir(subdomain string) string {
-	return filepath.Join(c.dataDir, "headscale-config", subdomain)
-}
-
 func (c *Ctl) Close() (err error) {
 	defer derrors.Wrap(&err, "c.Close()")
 	c.cancel()
@@ -568,15 +559,9 @@ func BuildHeadscaleConfig(subdomain, domain string, oidcCreds OIDCClientCredenti
 }
 
 // configTar wraps content in a tar archive containing a single file at path
-// (an absolute container path, e.g. "/etc/headscale/config.yaml"), along
-// with explicit directory entries for every intermediate path component.
-// It's meant to be extracted at the container's filesystem root ("/") via
-// client.CopyToContainer: some minimal images (e.g. distroless-style
-// headscale images) don't ship the config directory pre-created,
-// and CopyToContainer requires its destination directory to already exist,
-// so we can't extract directly into headscaleConfigDir.
-// Rooting the archive at "/" (which always exists) and including directory
-// entries lets the daemon's tar extraction create any missing directories.
+// along configTar is meant to be used with client.CopyToContainer.
+// Reason why configTar takes a path argument is because the file we want
+// to put in the container is at a path that does not yet exist.
 func configTar(path, content string) (_ *bytes.Buffer, err error) {
 	defer derrors.Wrap(&err, "configTar(%s)", path)
 	var buf bytes.Buffer
@@ -717,18 +702,8 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 		return "", fmt.Errorf("create data directory: %w", err)
 	}
 
-	configHostDir := c.headscaleConfigHostDir(subdomain)
-	if err := os.MkdirAll(configHostDir, 0o755); err != nil {
-		return "", fmt.Errorf("create config directory: %w", err)
-	}
-	configHostFile := filepath.Join(configHostDir, "config.yaml")
-	if err := os.WriteFile(configHostFile, []byte(cfg), 0o644); err != nil {
-		return "", fmt.Errorf("write config file: %w", err)
-	}
-
 	mounts := []mount.Mount{
 		{Type: mount.TypeBind, Source: hostDir, Target: "/var/lib/headscale"},
-		{Type: mount.TypeBind, Source: configHostFile, Target: ConfigYAMLPath, ReadOnly: true},
 	}
 	var env []string
 	if m, ok := c.localCAMount(); ok {
@@ -773,6 +748,14 @@ func (c *Ctl) CreateOrganization(ctx context.Context, subdomain, baseDomain stri
 	)
 	if err != nil {
 		return "", fmt.Errorf("create container: %w", err)
+	}
+
+	configTarBuf, err := configTar(ConfigYAMLPath, cfg)
+	if err != nil {
+		return "", err
+	}
+	if err := c.cli.CopyToContainer(ctx, resp.ID, "/", configTarBuf, container.CopyToContainerOptions{}); err != nil {
+		return "", fmt.Errorf("copy config file into container: %w", err)
 	}
 
 	if derpCfg.Enabled() {
@@ -906,10 +889,9 @@ func (c *Ctl) containerLogTail(ctx context.Context, containerID string) (string,
 }
 
 // RemoveOrganization stops and removes the headscale container and its
-// data (the headscale and headscale-config host directories under
-// DataDir), and the organization's own isolated Docker network
-// (disconnecting Caddy from it first). Missing resources are ignored so
-// removal is idempotent.
+// data (the headscale host directory under DataDir), and the
+// organization's own isolated Docker network (disconnecting Caddy from it
+// first). Missing resources are ignored so removal is idempotent.
 func (c *Ctl) RemoveOrganization(ctx context.Context, subdomain string) (err error) {
 	defer derrors.Wrap(&err, "c.RemoveOrganization(%q)", subdomain)
 
@@ -920,9 +902,6 @@ func (c *Ctl) RemoveOrganization(ctx context.Context, subdomain string) (err err
 	}
 	if err := os.RemoveAll(c.headscaleHostDir(subdomain)); err != nil {
 		return fmt.Errorf("remove data directory: %w", err)
-	}
-	if err := os.RemoveAll(c.headscaleConfigHostDir(subdomain)); err != nil {
-		return fmt.Errorf("remove config directory: %w", err)
 	}
 
 	c.removeOrgNetwork(ctx, subdomain)

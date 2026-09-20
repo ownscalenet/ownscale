@@ -3,8 +3,8 @@ package dockerctl
 import (
 	"context"
 	"fmt"
-	"os"
-	"path/filepath"
+
+	"github.com/docker/docker/api/types/container"
 
 	"github.com/ownscalenet/ownscale/derrors"
 	"gopkg.in/yaml.v3"
@@ -71,10 +71,6 @@ type OIDCConfig struct {
 	Rest map[string]any `json:"-" yaml:",inline"`
 }
 
-func (c *Ctl) headscaleConfigHostFile(subdomain string) string {
-	return filepath.Join(c.headscaleConfigHostDir(subdomain), "config.yaml")
-}
-
 func ParseHeadscaleFileConfig(content string) (*HeadscaleFileConfig, error) {
 	var cfg HeadscaleFileConfig
 	if err := yaml.Unmarshal([]byte(content), &cfg); err != nil {
@@ -91,10 +87,16 @@ func (cfg *HeadscaleFileConfig) Marshal() (string, error) {
 	return string(updated), nil
 }
 
+// WriteConfigYAML puts content into orgs's headscale container at ConfigYAMLPath.
 func (c *Ctl) WriteConfigYAML(ctx context.Context, subdomain, content string) (err error) {
 	defer derrors.Wrap(&err, "c.WriteConfigYAML(%q)", subdomain)
-	if err := os.WriteFile(c.headscaleConfigHostFile(subdomain), []byte(content), 0o644); err != nil {
-		return fmt.Errorf("write config file: %w", err)
+
+	tarBuf, err := configTar(ConfigYAMLPath, content)
+	if err != nil {
+		return err
+	}
+	if err := c.cli.CopyToContainer(ctx, HSContainerName(subdomain), "/", tarBuf, container.CopyToContainerOptions{}); err != nil {
+		return fmt.Errorf("copy config file into container: %w", err)
 	}
 	return nil
 }

@@ -12,8 +12,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
@@ -129,11 +127,10 @@ func TestServiceCreateCreatesOIDCClient(t *testing.T) {
 	if strings.Join(redirectURIs, ",") != strings.Join(wantRedirects, ",") {
 		t.Fatalf("redirect uris = %v, want %v", redirectURIs, wantRedirects)
 	}
-	hsCfgBytes, err := os.ReadFile(filepath.Join(dataDir, "headscale-config", "acme", "config.yaml"))
-	if err != nil {
-		t.Fatalf("read headscale config file: %v", err)
+	hsCfg, ok := copied[dockerctl.HSContainerName("acme")][strings.TrimPrefix(dockerctl.ConfigYAMLPath, "/")]
+	if !ok {
+		t.Fatalf("config.yaml not copied into container %q", dockerctl.HSContainerName("acme"))
 	}
-	hsCfg := string(hsCfgBytes)
 	secretLine := findLine(hsCfg, `  client_secret: "`)
 	secret := strings.TrimSuffix(strings.TrimPrefix(secretLine, `  client_secret: "`), `"`)
 	if err := bcrypt.CompareHashAndPassword([]byte(clientRow.ClientSecretHash), []byte(secret)); err != nil {

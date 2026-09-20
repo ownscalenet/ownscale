@@ -1,27 +1,20 @@
 package dockerctl
 
 import (
-	"os"
-	"path/filepath"
 	"testing"
 
 	"gopkg.in/yaml.v3"
 )
 
 func TestHeadscaleFileConfigRoundTripsUnknownKeys(t *testing.T) {
-	ctl, _ := newProvisionedTestCtl(t)
+	ctl, _, cf := newProvisionedTestCtl(t)
 
-	// The host file is only a fixture source here (production code never
-	// reads config.yaml back from disk -- the database row is the source
-	// of truth): read the file CreateOrganization wrote, as a stand-in for
-	// what would otherwise be read out of orgconfigs.
-	configHostFile := filepath.Join(ctl.headscaleConfigHostDir("acme"), "config.yaml")
-	raw, err := os.ReadFile(configHostFile)
-	if err != nil {
-		t.Fatalf("read config.yaml: %v", err)
+	raw, ok := cf.get(HSContainerName("acme"), ConfigYAMLPath)
+	if !ok {
+		t.Fatalf("config.yaml not copied into container %q", HSContainerName("acme"))
 	}
 
-	cfg, err := ParseHeadscaleFileConfig(string(raw))
+	cfg, err := ParseHeadscaleFileConfig(raw)
 	if err != nil {
 		t.Fatalf("ParseHeadscaleFileConfig: %v", err)
 	}
@@ -41,12 +34,12 @@ func TestHeadscaleFileConfigRoundTripsUnknownKeys(t *testing.T) {
 		t.Fatalf("WriteConfigYAML: %v", err)
 	}
 
-	raw, err = os.ReadFile(configHostFile)
-	if err != nil {
-		t.Fatalf("read config.yaml: %v", err)
+	raw, ok = cf.get(HSContainerName("acme"), ConfigYAMLPath)
+	if !ok {
+		t.Fatalf("config.yaml not copied into container %q after WriteConfigYAML", HSContainerName("acme"))
 	}
 	var doc map[string]any
-	if err := yaml.Unmarshal(raw, &doc); err != nil {
+	if err := yaml.Unmarshal([]byte(raw), &doc); err != nil {
 		t.Fatalf("parse config.yaml: %v", err)
 	}
 	if _, ok := doc["database"]; !ok {

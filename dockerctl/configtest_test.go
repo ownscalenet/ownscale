@@ -27,7 +27,7 @@ func TestConfigTest(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			ctl, _ := newProvisionedTestCtl(t)
+			ctl, _, _ := newProvisionedTestCtl(t)
 			api := ctl.cli.(*dockerfake.API)
 			api.ContainerExecInspectFn = func(ctx context.Context, execID string) (container.ExecInspect, error) {
 				return container.ExecInspect{ExitCode: tt.exitCode}, nil

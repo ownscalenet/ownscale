@@ -1,6 +1,7 @@
 package dockerctl
 
 import (
+	"archive/tar"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -11,8 +12,6 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
-	"os"
-	"path/filepath"
 	"slices"
 	"strings"
 	"sync"
@@ -34,6 +33,55 @@ import (
 
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
+}
+
+// containerFiles captures files written via CopyToContainer, keyed by
+// containerID then by path, so tests can assert what CreateOrganization/
+// WriteConfigYAML actually wrote into a container without a real Docker daemon.
+type containerFiles struct {
+	mu    sync.Mutex
+	files map[string]map[string]string // containerID -> path -> content
+}
+
+func newContainerFiles() *containerFiles {
+	return &containerFiles{files: make(map[string]map[string]string)}
+}
+
+// copyToContainerFn is a dockerfake.API.CopyToContainerFn that untars
+// content into this containerFiles instead of a real container.
+func (f *containerFiles) copyToContainerFn(_ context.Context, containerID, _ string, content io.Reader, _ container.CopyToContainerOptions) error {
+	tr := tar.NewReader(content)
+	for {
+		hdr, err := tr.Next()
+		if err == io.EOF {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if hdr.Typeflag == tar.TypeDir {
+			continue
+		}
+		var buf bytes.Buffer
+		if _, err := io.Copy(&buf, tr); err != nil {
+			return err
+		}
+		f.mu.Lock()
+		if f.files[containerID] == nil {
+			f.files[containerID] = make(map[string]string)
+		}
+		f.files[containerID]["/"+hdr.Name] = buf.String()
+		f.mu.Unlock()
+	}
+}
+
+// get returns the content written at path (an absolute container path,
+// e.g. ConfigYAMLPath) for containerID, and whether it was found.
+func (f *containerFiles) get(containerID, path string) (string, bool) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	content, ok := f.files[containerID][path]
+	return content, ok
 }
 
 // newTestCtl wraps NewWithClient and installs a fake MintClientFn that talks
@@ -143,11 +191,14 @@ func TestBuildDerpConfig(t *testing.T) {
 		}
 	}
 }
+
 func TestCreateOrganizationBootstrapsHeadscaleAPIKey(t *testing.T) {
+	cf := newContainerFiles()
 	api := &dockerfake.API{
 		ContainerCreateFn: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
 			return container.CreateResponse{ID: containerName}, nil
 		},
+		CopyToContainerFn: cf.copyToContainerFn,
 		ContainerExecCreateFn: func(ctx context.Context, containerID string, options container.ExecOptions) (container.ExecCreateResponse, error) {
 			return container.ExecCreateResponse{ID: "exec-1"}, nil
 		},
@@ -175,11 +226,11 @@ func TestCreateOrganizationBootstrapsHeadscaleAPIKey(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
-	hsCfg, err := os.ReadFile(filepath.Join(ctl.headscaleConfigHostDir("acme"), "config.yaml"))
-	if err != nil {
-		t.Fatalf("read headscale config file: %v", err)
+	hsCfg, ok := cf.get(HSContainerName("acme"), ConfigYAMLPath)
+	if !ok {
+		t.Fatalf("config.yaml not copied into container %q", HSContainerName("acme"))
 	}
-	if !strings.Contains(string(hsCfg), `issuer: "https://auth.example.com"`) {
+	if !strings.Contains(hsCfg, `issuer: "https://auth.example.com"`) {
 		t.Fatalf("unexpected headscale config:\n%s", hsCfg)
 	}
 }
@@ -703,38 +754,6 @@ func TestRemoveOrganizationCleansUpNetwork(t *testing.T) {
 	}
 }
 
-// TestRemoveOrganizationCleansUpConfigDir verifies RemoveOrganization also
-// removes the host directory holding the shared headscale config file
-// created by CreateOrganization (see headscaleConfigHostDir), so it
-// doesn't leak on disk after an organization is deleted.
-func TestRemoveOrganizationCleansUpConfigDir(t *testing.T) {
-	dataDir := t.TempDir()
-	api := &dockerfake.API{
-		ContainerCreateFn: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
-			return container.CreateResponse{ID: containerName}, nil
-		},
-	}
-	ctl := newTestCtl(t, api, dataDir, "")
-	t.Cleanup(func() { _ = ctl.Close() })
-
-	if _, err := ctl.CreateOrganization(t.Context(), "acme", "example.com", OIDCClientCredentials{}, config.DerpConfig{}); err != nil {
-		t.Fatalf("CreateOrganization: %v", err)
-	}
-
-	configHostDir := ctl.headscaleConfigHostDir("acme")
-	if _, err := os.Stat(filepath.Join(configHostDir, "config.yaml")); err != nil {
-		t.Fatalf("config file should exist after CreateOrganization: %v", err)
-	}
-
-	if err := ctl.RemoveOrganization(t.Context(), "acme"); err != nil {
-		t.Fatalf("RemoveOrganization: %v", err)
-	}
-
-	if _, err := os.Stat(configHostDir); !os.IsNotExist(err) {
-		t.Fatalf("config directory = %v, want it removed by RemoveOrganization", err)
-	}
-}
-
 // TestRemoveOrganizationIgnoresMissingNetwork verifies RemoveOrganization
 // doesn't fail when the organization's network is already gone.
 func TestRemoveOrganizationIgnoresMissingNetwork(t *testing.T) {
@@ -1192,15 +1211,19 @@ func TestRestartHeadscaleSerializesConcurrentCallsForSameSubdomain(t *testing.T)
 }
 
 // newProvisionedTestCtl provisions organization "acme" (so its
-// config.yaml exists on disk to patch) and returns a Ctl plus a pointer to
-// the list of restarted container names.
-func newProvisionedTestCtl(t *testing.T) (ctl *Ctl, restarted *[]string) {
+// config.yaml has been copied into its container to patch) and returns a
+// Ctl, a pointer to the list of restarted container names, and the
+// containerFiles capture of everything CopyToContainer wrote (config.yaml
+// included).
+func newProvisionedTestCtl(t *testing.T) (ctl *Ctl, restarted *[]string, files *containerFiles) {
 	t.Helper()
 	var restartedContainers []string
+	cf := newContainerFiles()
 	api := &dockerfake.API{
 		ContainerCreateFn: func(ctx context.Context, cfg *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
 			return container.CreateResponse{ID: containerName}, nil
 		},
+		CopyToContainerFn: cf.copyToContainerFn,
 		ContainerRestartFn: func(ctx context.Context, containerID string, options container.StopOptions) error {
 			restartedContainers = append(restartedContainers, containerID)
 			return nil
@@ -1215,5 +1238,5 @@ func newProvisionedTestCtl(t *testing.T) (ctl *Ctl, restarted *[]string) {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
 	restartedContainers = nil // ignore CreateOrganization's own container start, only ContainerRestart is tracked anyway
-	return ctl, &restartedContainers
+	return ctl, &restartedContainers, cf
 }
