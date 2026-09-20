@@ -11,7 +11,7 @@ const STORAGE_STATE = 'tests/.auth/admin.json'
 // below but via passkey self-registration instead of Dex SSO, so it lands
 // on the next seed org in the fixed pool (see orgs.DefaultSeedSubdomains)
 // deterministically rather than racing other specs for it.
-const PASSKEY_IDENTITY = { email: 'passkey@ownscale.test', org: 'dddd' }
+const PASSKEY_IDENTITY = 'passkey@ownscale.test'
 
 // Persists the WebAuthn credential minted the first time PASSKEY_IDENTITY
 // self-registers, so later runs (and passkey.spec.ts's "sign in again"
@@ -24,39 +24,17 @@ const PASSKEY_CREDENTIAL_STATE = 'tests/.auth/passkey-credential.json'
 // flow for PASSKEY_IDENTITY, starting from a fresh /login page.
 async function registerFreshPasskey(page: Page) {
   await page.getByRole('button', { name: 'New here? Create an account with a passkey' }).click()
-  await page.locator('#passkey-email').fill(PASSKEY_IDENTITY.email)
+  await page.locator('#passkey-email').fill(PASSKEY_IDENTITY)
   await page.getByRole('button', { name: 'Continue with passkey' }).click()
 }
 
-// Bootstraps the dev stack's three fixed Dex identities -- admin, user1,
-// user2 -- into their required organizations -- aaaa, bbbb, cccc,
-// respectively (see tests/connectivity/ui.ts's `identities`) -- plus the
-// fixed passkey identity below into dddd, in that exact order, before any
-// other spec in this suite runs.
+// Bootstraps the dev stack's three fixed Dex identities: admin, user1, user2
+// and their organizations: aaaa, bbbb, cccc.
 //
 // orgs.Provisioner hands out its fixed seed orgs strictly FIFO to whoever
 // self-registers first; it has no notion of "reserved for this identity".
 // admin/user1/user2 need to be the first three to register so they land on
-// aaaa/bbbb/cccc as tests/connectivity relies on (see e2e/README.md), and
-// the passkey identity needs to be the fourth so it reliably lands on
-// dddd. Any other self-registering spec (onboarding.spec.ts) that runs
-// before this bootstrap would race ahead and steal one of those seed
-// orgs -- this happened in practice once passkey self-registration was
-// exercised as its own later spec with a brand-new random user each run,
-// which is why that logic now lives here instead. Running this bootstrap
-// first, unconditionally, in the "setup" project (which "chromium" already
-// depends on -- see playwright.config.ts) removes that race entirely,
-// regardless of which order/how many times e2e-frontend and
-// e2e-connectivity are invoked: OrgUI.login is a real SSO login + org
-// readiness/assignment check, so it's a harmless idempotent re-login (not
-// a fresh registration) whenever an identity already exists; likewise the
-// passkey step below replays a saved credential instead of re-registering
-// once PASSKEY_IDENTITY already exists.
-//
-// describe.serial forces these to run in declared order, in a single
-// worker, regardless of this config's fullyParallel/workers settings --
-// without it, Playwright could run them concurrently across workers and
-// reintroduce the same race.
+// aaaa/bbbb/cccc.
 setup.describe.serial('bootstrap fixed dev identities', () => {
   for (const identity of identities) {
     setup(`${identity.name} claims ${identity.org}`, async ({ browser }) => {
@@ -80,7 +58,7 @@ setup.describe.serial('bootstrap fixed dev identities', () => {
   // registers PASSKEY_IDENTITY for the first time and saves the resulting
   // credential; on a repeat run it replays the saved credential to sign
   // back in, which is idempotent.
-  setup(`passkey user claims ${PASSKEY_IDENTITY.org}`, async ({ browser }) => {
+  setup(`passkey user claims an org}`, async ({ browser }) => {
     setup.setTimeout(90_000)
 
     const context = await browser.newContext({ baseURL, ignoreHTTPSErrors: true })
@@ -122,17 +100,14 @@ setup.describe.serial('bootstrap fixed dev identities', () => {
       await expect(page.getByRole('button', { name: 'Logout' })).toBeVisible({ timeout: 60_000 })
 
       const session = await page.request.get('/api/session').then(r => r.json())
-      if (session.user?.Email !== PASSKEY_IDENTITY.email) {
-        throw new Error(`${PASSKEY_IDENTITY.org}: unexpected signed-in passkey user`)
-      }
-      if (session.organization?.Domain !== `${PASSKEY_IDENTITY.org}.${baseDomain}`) {
-        throw new Error(`expected passkey belongs to: ${PASSKEY_IDENTITY.org}.${baseDomain}; got: ${session.organization?.Domain}`)
+      if (session.user?.Email !== PASSKEY_IDENTITY) {
+        throw new Error(`expected: ${PASSKEY_IDENTITY}; got: ${session.user?.Email}`)
       }
 
       if (registeredFresh) {
         const credential = await exportCredential(auth, consoleDomain)
         mkdirSync(dirname(PASSKEY_CREDENTIAL_STATE), { recursive: true })
-        writeFileSync(PASSKEY_CREDENTIAL_STATE, JSON.stringify({ email: PASSKEY_IDENTITY.email, credential }))
+        writeFileSync(PASSKEY_CREDENTIAL_STATE, JSON.stringify({ email: PASSKEY_IDENTITY, org: session.organization?.Domain, credential }))
       }
     } finally {
       await context.close()
