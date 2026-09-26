@@ -43,8 +43,7 @@ test('adding a passkey in User settings and signing in with it', async ({ page }
 // Unauthenticated sign-in as the fixed passkey identity that
 // global.setup.ts's bootstrap self-registered into org "dddd" (see
 // PASSKEY_IDENTITY there). Rather than self-registering another brand-new
-// user here (which used to race other specs for a fixed subdomain and,
-// with retries enabled, could exhaust the fixed 6-subdomain pool in
+// user here (which would use up one of the fixed subdomains handed out by
 // orgs.Service.NextSubdomain), this replays the credential that bootstrap saved -- exercising
 // the discoverable/usernameless passkey login as "logging in again in
 // some other test" with the *same* passkey, consuming no additional org.

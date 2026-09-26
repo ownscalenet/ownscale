@@ -24,9 +24,6 @@ import (
 func noisePath(dataDir, subdomain string) string {
 	return filepath.Join(dataDir, subdomain, "noise_private.key")
 }
-func derpPath(dataDir, subdomain string) string {
-	return filepath.Join(dataDir, subdomain, "derp.yaml")
-}
 func sqlitePath(dataDir, subdomain string) string {
 	return filepath.Join(dataDir, subdomain, "db.sqlite")
 }
@@ -83,14 +80,8 @@ func createHeadscale(
 		UpdateFrequency: time.Hour * 3,
 	}
 	if derpCfg.Enabled() {
-		derpYAML, err := buildDerpConfig(derpCfg)
-		if err != nil {
-			return nil, err
-		}
-		if err := os.WriteFile(derpPath(dataDir, subdomain), []byte(derpYAML), 0600); err != nil {
-			return nil, err
-		}
-		derp.Paths = []string{derpPath(dataDir, subdomain)}
+		region := derpCfg.Region()
+		derp.DERPMap = &tailcfg.DERPMap{Regions: map[tailcfg.DERPRegionID]*tailcfg.DERPRegion{region.RegionID: region}}
 	}
 
 	dns := ownscaleDNSToTypes(fileCfg.DNS)

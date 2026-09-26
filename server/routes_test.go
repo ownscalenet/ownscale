@@ -37,14 +37,7 @@ func discardLogger() *slog.Logger {
 func newTestQueries(t *testing.T) *dbpkg.TxQueries {
 	t.Helper()
 
-	pool, queries := dbtest.New(t)
-	// Migration 000008 seeds placeholder organizations (aaaa..ffff) so a real
-	// deployment's provisioner has something to recover at startup; tests
-	// assume a clean organizations table, so remove them here.
-	if _, err := pool.ExecContext(t.Context(), `DELETE FROM organizations WHERE id LIKE 'seed-%'`); err != nil {
-		t.Fatalf("clear seeded organizations: %v", err)
-	}
-
+	_, queries := dbtest.New(t)
 	return queries
 }
 

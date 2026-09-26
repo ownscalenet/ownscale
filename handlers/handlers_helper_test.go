@@ -99,7 +99,7 @@ func insertOrg(t *testing.T, queries *dbpkg.TxQueries, subdomain string) sqlcgen
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
-	hsConfig, err := orgs.BuildHeadscaleConfig(subdomain, subdomain+".example.com", orgs.OIDCClientCredentials{Issuer: "https://auth.example.com"}, config.DerpConfig{})
+	hsConfig, err := orgs.BuildHeadscaleConfig(subdomain, orgs.OIDCConfig{Issuer: "https://auth.example.com"})
 	if err != nil {
 		t.Fatalf("BuildHeadscaleConfig: %v", err)
 	}

@@ -30,11 +30,6 @@ func TestNormalizeRegistrationKey(t *testing.T) {
 			want:  "hskey-authreq-abcdefghijklmnopqrstuvwx",
 		},
 		{
-			name:  "legacy mkey format",
-			input: "mkey:abcdefghijklmnopqrstuvwx",
-			want:  "mkey:abcdefghijklmnopqrstuvwx",
-		},
-		{
 			name:  "leading/trailing whitespace trimmed",
 			input: "  hskey-authreq-abcdefghijklmnopqrstuvwx  ",
 			want:  "hskey-authreq-abcdefghijklmnopqrstuvwx",

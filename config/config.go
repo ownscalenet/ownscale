@@ -11,6 +11,7 @@ import (
 	"github.com/ownscalenet/ownscale/derrors"
 
 	"github.com/caarlos0/env/v11"
+	"tailscale.com/tailcfg"
 )
 
 // Config is the admin panel's runtime configuration.
@@ -114,6 +115,24 @@ type DerpConfig struct {
 
 // Enabled reports whether a self-hosted DERP relay is configured.
 func (d DerpConfig) Enabled() bool { return d.Hostname != "" }
+
+// Region returns the DERP region describing the self-hosted relay, for
+// adding to headscale's DERP map. Only meaningful when Enabled.
+func (d DerpConfig) Region() *tailcfg.DERPRegion {
+	return &tailcfg.DERPRegion{
+		RegionID:   tailcfg.DERPRegionID(d.RegionID),
+		RegionCode: d.RegionCode,
+		RegionName: d.RegionName,
+		Nodes: []*tailcfg.DERPNode{{
+			Name:     d.RegionCode + "a",
+			RegionID: tailcfg.DERPRegionID(d.RegionID),
+			HostName: d.Hostname,
+			IPv4:     d.IPv4,
+			IPv6:     d.IPv6,
+			STUNPort: d.STUNPort,
+		}},
+	}
+}
 
 func defaults() *Config {
 	return &Config{

@@ -241,10 +241,8 @@ func TestSetupCookieOptions(t *testing.T) {
 // newTestOIDCServer spins up a plain HTTP test server serving a minimal
 // OIDC discovery document, so RegisterUpstreamOIDC can be exercised
 // end-to-end against a real HTTP GET. Plain HTTP (rather than TLS) is fine
-// here: trust-store behavior is no longer RegisterUpstreamOIDC's concern
-// (see its doc comment) -- that's established at the OS level, ahead of
-// time, via LocalCADir/SSL_CERT_DIR (see localca and
-// docker-compose.yml).
+// here: trust-store behavior is established at the OS level, ahead of time,
+// via LocalCADir/SSL_CERT_DIR (see localca and docker-compose.yml).
 func newTestOIDCServer(t *testing.T) *httptest.Server {
 	t.Helper()
 	mux := http.NewServeMux()

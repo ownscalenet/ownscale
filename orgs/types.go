@@ -4,9 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"strings"
-	"text/template"
 
-	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/derrors"
 	"gopkg.in/yaml.v3"
 )
@@ -23,14 +21,6 @@ const (
 
 func ConsoleDomain(baseDomain string) string {
 	return ConsoleSubdomain + "." + baseDomain
-}
-
-// OIDCClientCredentials are the per-organization relying-party credentials
-// templated into headscale.
-type OIDCClientCredentials struct {
-	Issuer       string
-	ClientID     string
-	ClientSecret string
 }
 
 // InvalidConfigError is returned when a headscale config fails validation.
@@ -127,128 +117,27 @@ func ValidateSubdomain(s string) (err error) {
 	return nil
 }
 
-// configTemplateHS is the template for the headscale config.yaml snapshot
-// stored in orgconfigs. This is ownscale's source of truth for DNS/OIDC
-// settings; headscale itself is configured via types.Config in-process.
-var configTemplateHS = template.Must(template.New("headscaleConfig").Parse(`
-server_url: https://{{.ServerURL}}
-listen_addr: 0.0.0.0:8080
-metrics_listen_addr: 127.0.0.1:9090
-
-noise:
-  private_key_path: /var/lib/headscale/noise_private.key
-
-prefixes:
-  v4: 100.64.0.0/10
-  v6: fd7a:115c:a1e0::/48
-  allocation: sequential
-
-derp:
-{{- if .HasCustomDerp}}
-  paths:
-    - /etc/headscale/derp.yaml
-  urls: []
-{{- else}}
-  urls:
-    - https://controlplane.tailscale.com/derpmap/default
-{{- end}}
-  auto_update_enabled: true
-  update_frequency: 3h
-  server:
-    enabled: false
-
-database:
-  type: sqlite
-  sqlite:
-    path: /var/lib/headscale/db.sqlite
-    write_ahead_log: true
-
-log:
-  level: info
-  format: text
-
-taildrop:
-  enabled: true
-
-dns:
-  magic_dns: true
-  base_domain: {{.Subdomain}}.ownscale
-  nameservers:
-    global:
-      - 1.1.1.1
-
-unix_socket: /var/lib/headscale/headscale.sock
-unix_socket_permission: "0770"
-
-policy:
-  mode: database
-
-oidc:
-  issuer: "{{.OIDCIssuer}}"
-  client_id: "{{.OIDCClientID}}"
-  client_secret: "{{.OIDCClientSecret}}"
-  scope: ["openid", "profile", "email", "offline_access"]
-  pkce:
-    enabled: true
-    method: S256
-`))
-
-// BuildHeadscaleConfig renders the headscale config.yaml snapshot stored
-// in orgconfigs. This snapshot is ownscale's source of truth for DNS and
-// OIDC settings; headscale itself uses the in-process types.Config.
-func BuildHeadscaleConfig(subdomain, domain string, oidcCreds OIDCClientCredentials, derpCfg config.DerpConfig) (_ string, err error) {
-	defer derrors.Wrap(&err, "BuildHeadscaleConfig(%q, %q)", subdomain, domain)
-
-	var buf strings.Builder
-	if err := configTemplateHS.Execute(&buf, struct {
-		Subdomain        string
-		ServerURL        string
-		OIDCIssuer       string
-		OIDCClientID     string
-		OIDCClientSecret string
-		HasCustomDerp    bool
-	}{
-		Subdomain:        subdomain,
-		ServerURL:        domain,
-		OIDCIssuer:       oidcCreds.Issuer,
-		OIDCClientID:     oidcCreds.ClientID,
-		OIDCClientSecret: oidcCreds.ClientSecret,
-		HasCustomDerp:    derpCfg.Enabled(),
-	}); err != nil {
-		return "", err
+// newFileConfig returns the initial stored config for an organization:
+// MagicDNS on its own tailnet domain, and the OIDC client credentials. This
+// snapshot is ownscale's source of truth for DNS and OIDC settings; headscale
+// itself is configured from it in createHeadscale.
+func newFileConfig(subdomain string, oidc OIDCConfig) *HeadscaleFileConfig {
+	oidc.Scope = []string{"openid", "profile", "email", "offline_access"}
+	oidc.PKCE.Enabled = true
+	oidc.PKCE.Method = "S256"
+	return &HeadscaleFileConfig{
+		DNS: DNSConfig{
+			MagicDNS:    true,
+			BaseDomain:  subdomain + ".ownscale",
+			Nameservers: Nameservers{Global: []string{"1.1.1.1"}},
+		},
+		OIDC: oidc,
 	}
-	return buf.String(), nil
 }
 
-// configTemplateDerp is the template for the custom DERP relay config.
-var configTemplateDerp = template.Must(template.New("derpConfig").Parse(`regions:
-  {{.RegionID}}:
-    regionid: {{.RegionID}}
-    regioncode: {{.RegionCode}}
-    regionname: {{.RegionName}}
-    nodes:
-      - name: {{.RegionCode}}a
-        regionid: {{.RegionID}}
-        hostname: {{.Hostname}}
-        {{- if .IPv4}}
-        ipv4: {{.IPv4}}
-        {{- end}}
-        {{- if .IPv6}}
-        ipv6: {{.IPv6}}
-        {{- end}}
-        stunport: {{.STUNPort}}
-        stunonly: false
-        derpport: 0
-`))
-
-// buildDerpConfig renders the custom derp.yaml content for an organization
-// from derpCfg. Only called when derpCfg.Enabled().
-func buildDerpConfig(derpCfg config.DerpConfig) (_ string, err error) {
-	defer derrors.Wrap(&err, "buildDerpConfig(%q)", derpCfg.Hostname)
-
-	var buf strings.Builder
-	if err := configTemplateDerp.Execute(&buf, derpCfg); err != nil {
-		return "", err
-	}
-	return buf.String(), nil
+// BuildHeadscaleConfig renders the initial stored config YAML for an
+// organization (see newFileConfig).
+func BuildHeadscaleConfig(subdomain string, oidc OIDCConfig) (_ string, err error) {
+	defer derrors.Wrap(&err, "BuildHeadscaleConfig(%q)", subdomain)
+	return newFileConfig(subdomain, oidc).Marshal()
 }

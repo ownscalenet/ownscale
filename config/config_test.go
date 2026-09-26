@@ -334,3 +334,19 @@ func TestDatabase(t *testing.T) {
 		t.Errorf("Database() = %q, want %q", got, want)
 	}
 }
+
+func TestDerpRegion(t *testing.T) {
+	d := DerpConfig{
+		Hostname: "derp.example.com", IPv4: "203.0.113.5", IPv6: "2001:db8::1",
+		STUNPort: 3478, RegionID: 900, RegionCode: "custom", RegionName: "Custom",
+	}
+	r := d.Region()
+	if r.RegionID != 900 || r.RegionCode != "custom" || r.RegionName != "Custom" || len(r.Nodes) != 1 {
+		t.Fatalf("region = %+v", r)
+	}
+	n := r.Nodes[0]
+	if n.Name != "customa" || n.RegionID != 900 || n.HostName != "derp.example.com" ||
+		n.IPv4 != "203.0.113.5" || n.IPv6 != "2001:db8::1" || n.STUNPort != 3478 || n.STUNOnly || n.DERPPort != 0 {
+		t.Errorf("node = %+v", n)
+	}
+}

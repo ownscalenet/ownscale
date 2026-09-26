@@ -16,7 +16,7 @@ import (
 // newMigrateCommand builds the "migrate" subcommand group (up/down/status),
 // which applies schema migrations (embedded from db/migrations)
 // against the sqlite database configured via OWNSCALE_* env vars, using
-// goose as a library. It mirrors what used to be the standalone cmd/migrate binary.
+// goose as a library.
 func newMigrateCommand(rootFlags *ff.FlagSet) *ff.Command {
 	migrateFlags := ff.NewFlagSet("migrate").SetParent(rootFlags)
 	migrateCmd := &ff.Command{

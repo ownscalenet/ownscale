@@ -262,17 +262,8 @@ func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organ
 	if err != nil {
 		return sqlcgen.Organization{}, err
 	}
-	oidcCreds := OIDCClientCredentials{
-		Issuer:       s.issuer,
-		ClientID:     clientID,
-		ClientSecret: clientSecret,
-	}
-	hsConfig, err := BuildHeadscaleConfig(subdomain, subdomain+"."+s.baseDomain, oidcCreds, s.derpCfg)
-	if err != nil {
-		return sqlcgen.Organization{}, err
-	}
-
-	fileCfg, err := ParseHeadscaleFileConfig(hsConfig)
+	fileCfg := newFileConfig(subdomain, OIDCConfig{Issuer: s.issuer, ClientID: clientID, ClientSecret: clientSecret})
+	hsConfig, err := fileCfg.Marshal()
 	if err != nil {
 		return sqlcgen.Organization{}, err
 	}
