@@ -4,7 +4,7 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/ownscalenet/ownscale/dockerctl"
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 func (h *Handlers) GetDNSSettings(w http.ResponseWriter, r *http.Request) {
@@ -34,13 +34,13 @@ func (h *Handlers) UpdateDNSSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var req dockerctl.DNSConfig
+	var req orgs.DNSConfig
 	if !h.decodeJSONBody(w, r, &req) {
 		return
 	}
 
 	if err := h.orgs.ForOrg(org).SetDNSSettings(r.Context(), req); err != nil {
-		if invalid, ok := errors.AsType[*dockerctl.InvalidConfigError](err); ok {
+		if invalid, ok := errors.AsType[*orgs.InvalidConfigError](err); ok {
 			h.writeError(w, http.StatusBadRequest, invalid.Error())
 			return
 		}

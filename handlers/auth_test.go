@@ -190,7 +190,7 @@ func TestAuthCallbackAutoAssignsOrganization(t *testing.T) {
 
 	provisionerCtx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	h.StartProvisioner(provisionerCtx)
+	h.Start(provisionerCtx)
 
 	orig := gothic.CompleteUserAuth
 	t.Cleanup(func() { gothic.CompleteUserAuth = orig })

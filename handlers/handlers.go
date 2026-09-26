@@ -15,7 +15,6 @@ import (
 	"github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/derrors"
-	"github.com/ownscalenet/ownscale/dockerctl"
 	"github.com/ownscalenet/ownscale/funnelproxy"
 	"github.com/ownscalenet/ownscale/headscaleclient"
 	"github.com/ownscalenet/ownscale/orgs"
@@ -24,7 +23,6 @@ import (
 type Handlers struct {
 	queries         *db.TxQueries
 	orgs            *orgs.Service
-	provisioner     *orgs.Provisioner
 	hs              *headscaleclient.Registry
 	baseDomain      string
 	oidc            *oidcprovider.Storage
@@ -34,29 +32,26 @@ type Handlers struct {
 	passkeySessions *passkeyCeremonyStore
 }
 
-// New builds the Handlers, wiring queries/ctl/baseDomain into the
-// orgs.Service used for organization creation and the orgs.Provisioner
-// that runs provisioning in the background. dataDir is used only to give
-// the funnel proxy's per-organization tsnet.Server instances a stable
-// state directory (see funnelproxy.NewPool); pass "" in tests that never
-// exercise funnel routing. Returns an error if the WebAuthn relying party
-// cannot be configured.
+// New builds the Handlers, wiring queries/baseDomain/dataDir into the
+// orgs.Service that manages in-process headscale instances. dataDir is
+// also used by the funnel proxy's per-organization tsnet.Server instances
+// (see funnelproxy.NewPool); pass "" in tests that never exercise funnel
+// routing. Returns an error if the WebAuthn relying party cannot be
+// configured.
 func New(
 	queries *db.TxQueries,
-	ctl *dockerctl.Ctl,
 	baseDomain, dataDir string,
 	oidc *oidcprovider.Storage,
 	logger *slog.Logger,
-	derpCfg config.DerpConfig,
-	provisionerCfg config.ProvisionerConfig) (_ *Handlers, err error) {
+	derpCfg config.DerpConfig) (_ *Handlers, err error) {
 	defer derrors.Wrap(&err, "handlers.New(%q)", baseDomain)
 
 	issuer := ""
 	if oidc != nil {
 		issuer = oidc.Issuer()
 	}
-	orgSvc := orgs.NewService(queries, ctl, baseDomain, issuer, derpCfg)
-	hs := headscaleclient.NewRegistry(ctl)
+	orgSvc := orgs.NewService(queries, baseDomain, issuer, derpCfg, logger, dataDir)
+	hs := headscaleclient.NewRegistry(orgSvc)
 
 	// The console is served on console.baseDomain (per-org subdomains are
 	// only used for headscale/tailnet traffic, not this admin UI), so one
@@ -65,7 +60,7 @@ func New(
 	// baseDomain; WebAuthn permits http://localhost as a secure context.
 	rpID, rpOrigin := "", ""
 	if baseDomain != "" {
-		rpID = dockerctl.ConsoleDomain(baseDomain)
+		rpID = orgs.ConsoleDomain(baseDomain)
 		rpOrigin = "https://" + rpID
 	} else {
 		rpID, rpOrigin = "localhost", "http://localhost"
@@ -81,9 +76,8 @@ func New(
 		oidc:            oidc,
 		logger:          logger,
 		orgs:            orgSvc,
-		provisioner:     orgs.NewProvisioner(orgSvc, logger, 0, provisionerCfg.QueueCapacity, provisionerCfg.MaxOrgs),
 		hs:              hs,
-		funnel:          funnelproxy.NewPool(queries, hs, dataDir, logger),
+		funnel:          funnelproxy.NewPool(queries, hs, dataDir, logger, orgSvc),
 		webauthn:        wa,
 		passkeySessions: newPasskeyCeremonyStore(),
 	}, nil
@@ -113,13 +107,17 @@ func (h *Handlers) ServeFunnelIfMatched(w http.ResponseWriter, r *http.Request) 
 	return true
 }
 
-// StartProvisioner launches the background organization provisioner (see
-// orgs.Provisioner) in its own goroutine. It returns immediately; the
-// goroutine runs until ctx is canceled.
-func (h *Handlers) StartProvisioner(ctx context.Context) {
+// LookupPort returns the TCP port for subdomain's in-process headscale
+// instance. Used by server.NewSubdomainProxy to route subdomain traffic.
+func (h *Handlers) LookupPort(subdomain string) (int, bool) {
+	return h.orgs.LookupPort(subdomain)
+}
+
+// Start restarts existing orgs' headscale instances. It is non-blocking.
+func (h *Handlers) Start(ctx context.Context) {
 	go func() {
-		if err := h.provisioner.Run(ctx); err != nil {
-			h.logger.Error("organization provisioner stopped", "error", err)
+		if err := h.orgs.Start(ctx); err != nil {
+			h.logger.Error("org service startup failed", "error", err)
 		}
 	}()
 }

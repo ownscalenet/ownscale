@@ -4,7 +4,7 @@
 # (go:embed needs real files at Go build time), so run `make frontend`
 # whenever frontend/ changes and commit the updated webui/dist.
 
-.PHONY: build frontend backend osa restore test test-integration coverage migration archive docker-image caddy-image rm-orphans purge ci docs load-cert dev-up devbox e2e e2e-frontend e2e-connectivity e2e-remote e2e-remote-frontend e2e-remote-connectivity
+.PHONY: build frontend backend osa restore test coverage migration archive docker-image caddy-image purge ci docs load-cert dev-up devbox e2e e2e-frontend e2e-connectivity e2e-remote e2e-remote-frontend e2e-remote-connectivity
 
 DOCKER_IMAGE := ownscale:latest
 CADDY_IMAGE := ownscale-caddy:latest
@@ -13,7 +13,6 @@ DEVBOX_IMAGE := ownscale-devbox:latest
 # Ensure containers run with same host user.
 export HOST_UID := $(shell id -u)
 export HOST_GID := $(shell id -g)
-export HOST_DOCKER_GID := $(shell getent group docker 2>/dev/null | cut -d: -f3)
 
 # Resolved the same way BASE_DOMAIN is below, so dev-up works without
 # requiring OWNSCALE_DATA_DIR to already be exported into the shell.
@@ -32,14 +31,14 @@ osa:
 	docker compose exec ownscale ./osa $(filter-out osa,$(MAKECMDGOALS))
 
 # Build the images, start the full stack, then stream logs from all
-# containers (the ownscale process seeds the fixed dev organizations --
-# aaaa/bbbb/cccc/dddd/eeee/ffff -- itself on startup, see
-# orgs.Provisioner.seedFixed / orgs.DefaultSeedSubdomains).
+# containers. Organizations are created on each new user's first login; the
+# first six get the fixed subdomains aaaa/bbbb/cccc/dddd/eeee/ffff (see
+# orgs.Service.NextSubdomain).
 #
 # Pre-creates .litestream-backups as the host user before compose runs, so it's
 # not created later as root.
 #
-# Also upserts HOST_UID/HOST_GID/HOST_DOCKER_GID into .env: docker-compose.yml's
+# Also upserts HOST_UID/HOST_GID into .env: docker-compose.yml's
 # user: "${HOST_UID:-0}:${HOST_GID:-0}" only sees these if they're in the shell
 # env or in .env -- persisting them to .env means a bare `docker compose ...`
 # (bypassing make) still runs containers as the host user instead of
@@ -50,33 +49,27 @@ BUILD ?=
 dev-up:
 	mkdir -p "$(DATA_DIR)/.litestream-backups"
 	@touch .env
-	@for kv in HOST_UID=$(HOST_UID) HOST_GID=$(HOST_GID) HOST_DOCKER_GID=$(HOST_DOCKER_GID); do \
+	@for kv in HOST_UID=$(HOST_UID) HOST_GID=$(HOST_GID); do \
 		key=$${kv%%=*}; \
 		grep -q "^$$key=" .env && sed -i "s|^$$key=.*|$$kv|" .env || echo "$$kv" >> .env; \
 	done
 	docker compose up $(if $(BUILD),--build)
 
 # Spin up a throwaway ubuntu container running tailscaled, auto-join it to
-# an org's headscale server (ORG, default aaaa -- see
-# orgs.DefaultSeedSubdomains) via a freshly-minted ephemeral pre-auth key,
+# an org's in-process headscale (ORG, default aaaa, the first org created --
+# see orgs.Service.NextSubdomain) via a freshly-minted ephemeral pre-auth key,
 # then drop into an interactive shell in that container. Requires
-# `make dev-up` already running.
+# `make dev-up` already running and that org to exist (log in once first).
 ORG ?= aaaa
 BASE_DOMAIN := $(shell grep -m1 '^BASE_DOMAIN=' .env 2>/dev/null | cut -d= -f2)
 BASE_DOMAIN := $(if $(BASE_DOMAIN),$(BASE_DOMAIN),ownscale.test)
 
 devbox:
-	@command -v jq >/dev/null 2>&1 || { echo "jq is required -- please install it"; exit 1; }
-	@docker inspect hs-$(ORG) >/dev/null 2>&1 || { echo "hs-$(ORG) is not running -- run 'make dev-up' first (or make devbox ORG=<subdomain>)"; exit 1; }
+	@docker compose ps --status running --services | grep -qx ownscale || { echo "ownscale is not running -- run 'make dev-up' first"; exit 1; }
 	@test -f $(CERT) || { echo "$(CERT) not found -- start docker compose (local-ca-init) first"; exit 1; }
 	@docker image inspect $(DEVBOX_IMAGE) >/dev/null 2>&1 || docker build -t $(DEVBOX_IMAGE) e2e/devbox
-	@echo "minting a pre-auth key against hs-$(ORG)..."
-	@user_id=$$(docker exec hs-$(ORG) headscale users list -o json | jq -r '.[0].id // empty'); \
-	if [ -z "$$user_id" ]; then \
-		docker exec hs-$(ORG) headscale users create devbox >/dev/null; \
-		user_id=$$(docker exec hs-$(ORG) headscale users list -o json | jq -r '.[0].id // empty'); \
-	fi; \
-	authkey=$$(docker exec hs-$(ORG) headscale preauthkeys create -u $$user_id --ephemeral -e 10m -o json | jq -r '.key // empty'); \
+	@echo "minting a pre-auth key for $(ORG)..."
+	@authkey=$$(docker compose exec -T ownscale ./osa devbox-key $(ORG)); \
 	test -n "$$authkey" || { echo "failed to mint a pre-auth key"; exit 1; }; \
 	echo "connecting to https://$(ORG).$(BASE_DOMAIN) as devbox-$(ORG)..."; \
 	docker run --rm -it \
@@ -106,7 +99,7 @@ e2e-connectivity:
 	mkdir -p bin/connectivity-work
 	TMPDIR="$(CURDIR)/bin/connectivity-work" npm --prefix e2e/frontend run test:connectivity
 
-REMOTE_BASE_DOMAIN ?= ""
+REMOTE_BASE_DOMAIN ?= "beastbb.bond"
 
 e2e-remote: e2e-remote-frontend e2e-remote-connectivity
 
@@ -154,9 +147,6 @@ run:
 test:
 	go test ./...
 
-test-integration:
-	go test -count=1 -tags=integration ./...
-
 BROWSER := firefox
 coverage:
 	go test -coverprofile=coverage.out ./...
@@ -189,35 +179,8 @@ archive: docker-image caddy-image
 
 purge:
 	docker compose down
-	# rm all except data/local-ca
-	sudo rm -rf data/headscale data/.litestream-backups data/.ownscale.sqlite-litestream
-	sudo rm -rf data/backup
-	sudo rm -rf data/funnel-tsnet
-	sudo rm -rf data/headscale-config
-	sudo rm -f data/*.*
-	docker ps -aq --filter "label=ownscale.organization=true" | xargs -r docker stop | xargs -r docker rm
-	# org DB is gone (wiped above), so every org-<subdomain>-net network
-	# (see dockerctl.OrgNetworkName) left behind by past orgs is orphaned;
-	# list them and their br-* bridge interfaces, then remove them.
-	@nets="$$(docker network ls --format '{{.Name}}' | grep -E '^org-.*-net$$' || true)"; \
-	if [ -z "$$nets" ]; then \
-		echo "no leftover per-org Docker networks to remove"; \
-	else \
-		echo "removing leftover per-org Docker networks (and their bridge interfaces):"; \
-		for net in $$nets; do \
-			id=$$(docker network inspect -f '{{.Id}}' "$$net" 2>/dev/null | cut -c1-12); \
-			echo "  $$net (br-$$id)"; \
-		done; \
-		for net in $$nets; do \
-			for c in $$(docker network inspect -f '{{range .Containers}}{{.Name}} {{end}}' "$$net" 2>/dev/null); do \
-				docker network disconnect -f "$$net" "$$c" >/dev/null 2>&1 || true; \
-			done; \
-			docker network rm "$$net" >/dev/null 2>&1 || true; \
-		done; \
-	fi
-
-rm-orphans:
-	docker ps -aq --filter "label=ownscale.organization=true" | xargs -r docker stop | xargs -r docker rm
+	# rm everything under data/ (org dirs, DBs, backups) except data/local-ca
+	sudo find data -mindepth 1 -maxdepth 1 ! -name local-ca -exec rm -rf {} +
 
 # ghetto script for trusting caddy's self-signed certificates.
 # To manually trust the certificates in firefox:

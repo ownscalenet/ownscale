@@ -83,7 +83,7 @@ func TestPasskeyRegisterSelfServiceProvisionsOrganization(t *testing.T) {
 	h, queries := newTestHandlersWithBaseDomain(t, testBaseDomain)
 	provisionerCtx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	h.StartProvisioner(provisionerCtx)
+	h.Start(provisionerCtx)
 
 	rp := testRelyingParty(testBaseDomain)
 	authenticator := vwa.NewAuthenticator()
@@ -141,7 +141,7 @@ func TestPasskeyRegisterFinishAssignsInvitedOrganization(t *testing.T) {
 	h, queries := newTestHandlersWithBaseDomain(t, testBaseDomain)
 	provisionerCtx, cancel := context.WithCancel(context.Background())
 	t.Cleanup(cancel)
-	h.StartProvisioner(provisionerCtx)
+	h.Start(provisionerCtx)
 
 	owner := insertUser(t, queries)
 	org, err := queries.GetOrganization(t.Context(), owner.OrganizationID)

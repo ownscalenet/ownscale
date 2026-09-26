@@ -157,15 +157,12 @@ sudo update-ca-certificates
 2. Authorities tab → Import → select `${OWNSCALE_DATA_DIR}/local-ca/root.crt`
 3. Check "Trust this CA to identify websites"
 
-Organization headscale containers trust this same local CA automatically:
-they mount the `caddy-data` volume read-only and, if Caddy's local CA is
-present there, headscale gets it appended to its system CA bundle. The
-`ownscale` service itself does the same (see `auth.go`), so it can
-trust its own upstream OIDC provider (e.g. the bundled Dex instance) when
-that's also proxied through Caddy under a non-public `BASE_DOMAIN`. This
-only matters for a non-public `BASE_DOMAIN` (e.g. `ownscale.test`), where
-Caddy issues its own self-signed certs instead of publicly-trusted ones;
-it's a no-op in production. Additionally, dockerctl connects the running
-Caddy container to each organization's Docker network with
-`console.{BASE_DOMAIN}` as an alias, so those containers can resolve
-`https://console.{BASE_DOMAIN}` straight to Caddy for OIDC discovery.
+The `ownscale` service trusts this same local CA (via `SSL_CERT_DIR`), so it
+and the headscale instances running inside it can reach their OIDC
+providers (the console itself and, e.g., the bundled Dex instance) when
+they're proxied through Caddy under a non-public `BASE_DOMAIN`. This only
+matters for a non-public `BASE_DOMAIN` (e.g. `ownscale.test`), where Caddy
+issues its own self-signed certs instead of publicly-trusted ones; it's a
+no-op in production. Caddy has `console.{BASE_DOMAIN}` and
+`dex.{BASE_DOMAIN}` as network aliases on `os-net` (see
+`docker-compose.yml`), so `ownscale` resolves those names straight to Caddy.

@@ -3,6 +3,7 @@ package auth
 import (
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/gorilla/sessions"
@@ -14,6 +15,12 @@ import (
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/orgs"
 )
+
+// port is required and unique so use atomic to prevent race conditions
+// in concurrent tests.
+var nextTestPort atomic.Int64
+
+func testPort() int64 { return 10_000 + nextTestPort.Add(1) - 1 }
 
 // newTestQueries returns queries backed by a copy of the shared, already
 // migrated dbtest template (see db/dbtest), avoiding a full goose run per
@@ -34,6 +41,7 @@ func insertUser(t *testing.T, queries *sqlcgen.Queries) sqlcgen.User {
 		ID:        xid.New().String(),
 		Subdomain: id,
 		Status:    orgs.StatusActive,
+		Port:      testPort(),
 	})
 	if err != nil {
 		t.Fatalf("insertUser: CreateOrganization: %v", err)

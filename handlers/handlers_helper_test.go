@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/ownscalenet/ownscale/auth"
@@ -13,13 +14,17 @@ import (
 	dbpkg "github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/dockerctl"
-	"github.com/ownscalenet/ownscale/dockerctl/dockerfake"
 	"github.com/ownscalenet/ownscale/headscaleclient"
 	"github.com/ownscalenet/ownscale/orgs"
 
 	"github.com/rs/xid"
 )
+
+// port is required and unique so use atomic to prevent race conditions
+// in concurrent tests.
+var nextTestPort atomic.Int64
+
+func testPort() int64 { return 20_000 + nextTestPort.Add(1) - 1 }
 
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -34,36 +39,11 @@ func newTestQueries(t *testing.T) *dbpkg.TxQueries {
 	return queries
 }
 
-// newTestCtl builds a *dockerctl.Ctl backed by api (whose zero value already
-// fakes every Docker call as a success), so organization creation can be
-// exercised without a real Docker daemon. It installs a fake MintClientFn
-// (backed by newFakePolicyServer) so CreateOrganization's default-policy
-// seeding step doesn't attempt a real network round trip to a container
-// hostname that doesn't actually exist under dockerfake.
-func newTestCtl(t *testing.T, api *dockerfake.API) *dockerctl.Ctl {
-	t.Helper()
-	ctl, err := dockerctl.NewWithClient(api, t.TempDir(), "", discardLogger())
-	if err != nil {
-		t.Fatalf("dockerctl.NewWithClient: %v", err)
-	}
-	ctl.MintClientFn = func(ctx context.Context, subdomain string) (*headscaleclient.Client, error) {
-		client, _ := newFakePolicyServer(t, "")
-		return client, nil
-	}
-	return ctl
-}
-
-// noopDockerAPI is a *dockerfake.API whose zero value already fakes every
-// Docker call as a success (containers "exist" and run immediately).
-func noopDockerAPI() *dockerfake.API {
-	return &dockerfake.API{}
-}
-
 const testBaseDomain = "example.com"
 
 // newTestHandlers builds a *Handlers backed by a real, freshly-migrated SQLite
-// database and a dockerfake-backed dockerctl.Ctl, so organization provisioning
-// always works and every user is guaranteed a real, active organization.
+// database, so organization provisioning always works and every user is
+// guaranteed a real, active organization.
 func newTestHandlers(t *testing.T) (*Handlers, *dbpkg.TxQueries) {
 	t.Helper()
 	return newTestHandlersWithBaseDomain(t, "")
@@ -76,8 +56,7 @@ func newTestHandlersWithBaseDomain(t *testing.T, baseDomain string) (*Handlers, 
 	t.Helper()
 	queries := newTestQueries(t)
 
-	ctl := newTestCtl(t, noopDockerAPI())
-	h, err := New(queries, ctl, baseDomain, t.TempDir(), nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{})
+	h, err := New(queries, baseDomain, t.TempDir(), nil, discardLogger(), config.DerpConfig{})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -106,18 +85,40 @@ func withHeadscaleClientOrg(req *http.Request, client *headscaleclient.Client, o
 	return req.WithContext(ctx)
 }
 
-// insertUser inserts a user row, together with a freshly created organization
-// it owns (every user always belongs to one), and returns the user.
-func insertUser(t *testing.T, queries *dbpkg.TxQueries) sqlcgen.User {
+// insertOrg inserts an active organization row and its headscale config
+// directly, as orgs.Service.Create would, but without starting a headscale
+// instance for it.
+func insertOrg(t *testing.T, queries *dbpkg.TxQueries, subdomain string) sqlcgen.Organization {
 	t.Helper()
 	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
 		ID:        xid.New().String(),
-		Subdomain: "acme-" + xid.New().String(),
+		Subdomain: subdomain,
 		Status:    orgs.StatusActive,
+		Port:      testPort(),
 	})
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
+	hsConfig, err := orgs.BuildHeadscaleConfig(subdomain, subdomain+".example.com", orgs.OIDCClientCredentials{Issuer: "https://auth.example.com"}, config.DerpConfig{})
+	if err != nil {
+		t.Fatalf("BuildHeadscaleConfig: %v", err)
+	}
+	if _, err := queries.CreateOrgConfig(t.Context(), sqlcgen.CreateOrgConfigParams{
+		ID:             xid.New().String(),
+		OrganizationID: org.ID,
+		Path:           orgs.ConfigYAMLPath,
+		Content:        hsConfig,
+	}); err != nil {
+		t.Fatalf("CreateOrgConfig: %v", err)
+	}
+	return org
+}
+
+// insertUser inserts a user row, together with a freshly created organization
+// it owns (every user always belongs to one), and returns the user.
+func insertUser(t *testing.T, queries *dbpkg.TxQueries) sqlcgen.User {
+	t.Helper()
+	org := insertOrg(t, queries, "acme-"+xid.New().String())
 	id := xid.New().String()
 	user, err := queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
 		ID:             id,

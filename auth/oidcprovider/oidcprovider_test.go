@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,6 +19,12 @@ import (
 	"github.com/ownscalenet/ownscale/orgs"
 	"github.com/zitadel/oidc/v3/pkg/oidc"
 )
+
+// port is required and unique so use atomic to prevent race conditions
+// in concurrent tests.
+var nextTestPort atomic.Int64
+
+func testPort() int64 { return 10_000 + nextTestPort.Add(1) - 1 }
 
 // newTestQueries returns queries backed by a copy of the shared, already
 // migrated dbtest template (see db/dbtest), avoiding a full goose run per
@@ -93,6 +100,7 @@ func insertTestOrg(t *testing.T, queries *sqlcgen.Queries) sqlcgen.Organization 
 		ID:        xid.New().String(),
 		Subdomain: "acme",
 		Status:    orgs.StatusActive,
+		Port:      testPort(),
 	})
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)

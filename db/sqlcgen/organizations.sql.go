@@ -10,10 +10,10 @@ import (
 )
 
 const countActiveOrganizations = `-- name: CountActiveOrganizations :one
-SELECT COUNT(*) FROM organizations WHERE status IN ('active', 'ready')
+SELECT COUNT(*) FROM organizations WHERE status = 'active'
 `
 
-// Counts active and ready organizations.
+// Counts active organizations.
 func (q *Queries) CountActiveOrganizations(ctx context.Context) (int64, error) {
 	row := q.db.QueryRowContext(ctx, countActiveOrganizations)
 	var count int64
@@ -22,23 +22,30 @@ func (q *Queries) CountActiveOrganizations(ctx context.Context) (int64, error) {
 }
 
 const createOrganization = `-- name: CreateOrganization :one
-INSERT INTO organizations (id, subdomain, status)
-VALUES (?, ?, ?)
-RETURNING id, subdomain, created_at, updated_at, status
+INSERT INTO organizations (id, subdomain, status, port)
+VALUES (?, ?, ?, ?)
+RETURNING id, subdomain, port, created_at, updated_at, status
 `
 
 type CreateOrganizationParams struct {
 	ID        string
 	Subdomain string
 	Status    string
+	Port      int64
 }
 
 func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error) {
-	row := q.db.QueryRowContext(ctx, createOrganization, arg.ID, arg.Subdomain, arg.Status)
+	row := q.db.QueryRowContext(ctx, createOrganization,
+		arg.ID,
+		arg.Subdomain,
+		arg.Status,
+		arg.Port,
+	)
 	var i Organization
 	err := row.Scan(
 		&i.ID,
 		&i.Subdomain,
+		&i.Port,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Status,
@@ -56,7 +63,7 @@ func (q *Queries) DeleteOrganization(ctx context.Context, id string) error {
 }
 
 const getOrganization = `-- name: GetOrganization :one
-SELECT id, subdomain, created_at, updated_at, status FROM organizations WHERE id = ?
+SELECT id, subdomain, port, created_at, updated_at, status FROM organizations WHERE id = ?
 `
 
 func (q *Queries) GetOrganization(ctx context.Context, id string) (Organization, error) {
@@ -65,6 +72,7 @@ func (q *Queries) GetOrganization(ctx context.Context, id string) (Organization,
 	err := row.Scan(
 		&i.ID,
 		&i.Subdomain,
+		&i.Port,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Status,
@@ -73,7 +81,7 @@ func (q *Queries) GetOrganization(ctx context.Context, id string) (Organization,
 }
 
 const getOrganizationBySubdomain = `-- name: GetOrganizationBySubdomain :one
-SELECT id, subdomain, created_at, updated_at, status FROM organizations WHERE subdomain = ?
+SELECT id, subdomain, port, created_at, updated_at, status FROM organizations WHERE subdomain = ?
 `
 
 func (q *Queries) GetOrganizationBySubdomain(ctx context.Context, subdomain string) (Organization, error) {
@@ -82,6 +90,7 @@ func (q *Queries) GetOrganizationBySubdomain(ctx context.Context, subdomain stri
 	err := row.Scan(
 		&i.ID,
 		&i.Subdomain,
+		&i.Port,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Status,
@@ -90,7 +99,7 @@ func (q *Queries) GetOrganizationBySubdomain(ctx context.Context, subdomain stri
 }
 
 const listOrganizations = `-- name: ListOrganizations :many
-SELECT id, subdomain, created_at, updated_at, status FROM organizations ORDER BY subdomain
+SELECT id, subdomain, port, created_at, updated_at, status FROM organizations ORDER BY subdomain
 `
 
 func (q *Queries) ListOrganizations(ctx context.Context) ([]Organization, error) {
@@ -105,39 +114,7 @@ func (q *Queries) ListOrganizations(ctx context.Context) ([]Organization, error)
 		if err := rows.Scan(
 			&i.ID,
 			&i.Subdomain,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-			&i.Status,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listReadyOrganizations = `-- name: ListReadyOrganizations :many
-SELECT id, subdomain, created_at, updated_at, status FROM organizations WHERE status = 'ready' ORDER BY created_at
-`
-
-func (q *Queries) ListReadyOrganizations(ctx context.Context) ([]Organization, error) {
-	rows, err := q.db.QueryContext(ctx, listReadyOrganizations)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []Organization
-	for rows.Next() {
-		var i Organization
-		if err := rows.Scan(
-			&i.ID,
-			&i.Subdomain,
+			&i.Port,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Status,
@@ -157,7 +134,7 @@ func (q *Queries) ListReadyOrganizations(ctx context.Context) ([]Organization, e
 
 const updateOrganizationStatus = `-- name: UpdateOrganizationStatus :one
 UPDATE organizations SET status = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-RETURNING id, subdomain, created_at, updated_at, status
+RETURNING id, subdomain, port, created_at, updated_at, status
 `
 
 type UpdateOrganizationStatusParams struct {
@@ -171,6 +148,7 @@ func (q *Queries) UpdateOrganizationStatus(ctx context.Context, arg UpdateOrgani
 	err := row.Scan(
 		&i.ID,
 		&i.Subdomain,
+		&i.Port,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Status,

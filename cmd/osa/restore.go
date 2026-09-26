@@ -134,7 +134,7 @@ func newRestoreOrganizationsCommand(parent *ff.FlagSet) *ff.Command {
 			if len(args) != 0 {
 				return errors.New("usage: osa restore organizations")
 			}
-			res, cleanup, err := newOrgResources(true, false)
+			res, cleanup, err := newOrgResources()
 			defer cleanup()
 			if err != nil {
 				return err

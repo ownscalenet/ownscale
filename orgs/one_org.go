@@ -9,66 +9,60 @@ import (
 	"strings"
 	"time"
 
+	"github.com/ownscalenet/headscale/hscontrol"
+	"github.com/ownscalenet/headscale/hscontrol/types/change"
 	"github.com/rs/xid"
 	"github.com/tailscale/hujson"
 
 	"github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/derrors"
-	"github.com/ownscalenet/ownscale/dockerctl"
 )
 
-// applyHeadscaleConfigTimeout bounds the background context used for
-// applyHeadscaleConfig's write/restart tail (see SetAuthRestrictions/
-// SetDNSSettings), once decoupled from the HTTP request's context. It
-// must comfortably cover WriteConfigYAML + ConfigTest + both DB writes +
-// RestartHeadscale, which itself now blocks until headscale reports
-// healthy again after the restart.
+// applyHeadscaleConfigTimeout bounds the context timeout used when
+// writing and applying a new headscale config.
 const applyHeadscaleConfigTimeout = 45 * time.Second
 
-// OrgService holds methods for operating with a single organization.
+// OrgService holds methods for operating on a single organization.
 type OrgService struct {
-	queries   *db.TxQueries
-	ctl       *dockerctl.Ctl
-	orgID     string
-	subdomain string
+	queries      *db.TxQueries
+	orgID        string
+	subdomain    string
+	getHeadscale func() (*hscontrol.Headscale, bool)
 }
 
-func (o *OrgService) getHeadscaleConfig(ctx context.Context) (_ *dockerctl.HeadscaleFileConfig, err error) {
+func (o *OrgService) getHeadscaleConfig(ctx context.Context) (_ *HeadscaleFileConfig, err error) {
 	defer derrors.Wrap(&err, "o.getHeadscaleConfig(%q)", o.orgID)
 
 	row, err := o.queries.GetOrgConfig(ctx, sqlcgen.GetOrgConfigParams{
 		OrganizationID: o.orgID,
-		Path:           dockerctl.ConfigYAMLPath,
+		Path:           ConfigYAMLPath,
 	})
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := dockerctl.ParseHeadscaleFileConfig(row.Content)
+	cfg, err := ParseHeadscaleFileConfig(row.Content)
 	if err != nil {
 		return nil, err
 	}
 	return cfg, nil
 }
 
-// applyHeadscaleConfig writes cfg to o's headscale config.yaml (both the
-// on-disk file and its orgconfigs row) and restarts headscale so it picks
-// it up. extraWrites, if non-nil, runs within the same short transaction
-// as the config.yaml row write.
+// applyHeadscaleConfig persists cfg to the orgconfigs row, marks the
+// org update_pending, and restarts its headscale instance so the new
+// config takes effect. extraWrites runs within the same short transaction
+// as the config row write.
 //
-// This function is NOT a single big transaction because the headscale restarting
-// takes several seconds and that would block all other DB operations.
-func (o *OrgService) applyHeadscaleConfig(ctx context.Context, cfg *dockerctl.HeadscaleFileConfig, extraWrites func(ctx context.Context, txQueries *sqlcgen.Queries) error) (err error) {
+// This function is NOT a single big transaction because headscale
+// restarting takes several seconds and that would block all other DB ops.
+func (o *OrgService) applyHeadscaleConfig(ctx context.Context, cfg *HeadscaleFileConfig, extraWrites func(ctx context.Context, txQueries *sqlcgen.Queries) error) (err error) {
 	defer derrors.Wrap(&err, "o.applyHeadscaleConfig(%q, %q)", o.orgID, o.subdomain)
 
 	updated, err := cfg.Marshal()
 	if err != nil {
 		return err
 	}
-	if err := o.ctl.WriteConfigYAML(ctx, o.subdomain, updated); err != nil {
-		return err
-	}
-	if err := o.ctl.ConfigTest(ctx, o.subdomain); err != nil {
+	if err := validateConfigYAML(updated); err != nil {
 		return err
 	}
 
@@ -76,8 +70,11 @@ func (o *OrgService) applyHeadscaleConfig(ctx context.Context, cfg *dockerctl.He
 		return err
 	}
 
-	if err := o.ctl.RestartHeadscale(ctx, o.subdomain); err != nil {
-		return err
+	if o.getHeadscale != nil {
+		if app, ok := o.getHeadscale(); ok {
+			app.GetState().DebugConfig().TailcfgDNSConfig = buildTailcfgDNS(ownscaleDNSToTypes(cfg.DNS))
+			app.Change(change.DNSConfig())
+		}
 	}
 
 	if _, err := o.queries.UpdateOrganizationStatus(ctx, sqlcgen.UpdateOrganizationStatusParams{
@@ -87,6 +84,16 @@ func (o *OrgService) applyHeadscaleConfig(ctx context.Context, cfg *dockerctl.He
 		return fmt.Errorf("mark organization active: %w", err)
 	}
 	return nil
+}
+
+// validateConfigYAML parses content and validates the DNS block.
+// Replaces the previous `headscale configtest` exec approach.
+func validateConfigYAML(content string) error {
+	cfg, err := ParseHeadscaleFileConfig(content)
+	if err != nil {
+		return err
+	}
+	return validateDNSSettings(cfg.DNS)
 }
 
 // persistConfigAndMarkUpdatePending runs extraWrites (if non-nil),
@@ -114,7 +121,7 @@ func (o *OrgService) persistConfigAndMarkUpdatePending(
 	if _, err := txQueries.UpsertOrgConfig(ctx, sqlcgen.UpsertOrgConfigParams{
 		ID:             xid.New().String(),
 		OrganizationID: o.orgID,
-		Path:           dockerctl.ConfigYAMLPath,
+		Path:           ConfigYAMLPath,
 		Content:        updated,
 	}); err != nil {
 		return fmt.Errorf("save config: %w", err)
@@ -150,9 +157,7 @@ type authRestrictions struct {
 	Users   []string `json:"users"`
 }
 
-// GetAuthRestrictions returns o's stored OIDC login allowlist as
-// HuJSON. A missing row falls back to defaultAuthRestrictions rather than
-// erroring.
+// GetAuthRestrictions returns o's stored OIDC login allowlist as HuJSON.
 func (o *OrgService) GetAuthRestrictions(ctx context.Context) (_ string, err error) {
 	defer derrors.Wrap(&err, "o.GetAuthRestrictions(%q)", o.orgID)
 
@@ -171,9 +176,7 @@ func (o *OrgService) GetAuthRestrictions(ctx context.Context) (_ string, err err
 
 // SetAuthRestrictions validates content as HuJSON, persists it as o's
 // OIDC login allowlist (orgconfigs), then patches the equivalent
-// domains/groups/users into o's config.yaml (both its orgconfigs row
-// and its running headscale container) and restarts headscale so
-// it reloads it.
+// domains/groups/users into o's config.yaml and restarts headscale.
 func (o *OrgService) SetAuthRestrictions(ctx context.Context, content string) (err error) {
 	defer derrors.Wrap(&err, "o.SetAuthRestrictions(%q)", o.orgID)
 
@@ -195,15 +198,6 @@ func (o *OrgService) SetAuthRestrictions(ctx context.Context, content string) (e
 	cfg.OIDC.AllowedGroups = r.Groups
 	cfg.OIDC.AllowedUsers = r.Users
 
-	// From here on, content is validated; applyHeadscaleConfig persists
-	// it (via extraWrites, atomically with the config.yaml row and the
-	// update_pending status transition) and restarts headscale as three
-	// separate steps (see its doc comment) -- decouple from ctx (the
-	// HTTP request's context) with a bounded timeout so a client-side
-	// disconnect/network blip (e.g. the request's own fetch getting
-	// aborted by the headscale container restart's brief interface churn)
-	// can't abort an already-validated save partway through, forcing the
-	// caller to redo it.
 	applyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), applyHeadscaleConfigTimeout)
 	defer cancel()
 
@@ -218,29 +212,20 @@ func (o *OrgService) SetAuthRestrictions(ctx context.Context, content string) (e
 	})
 }
 
-// GetDNSSettings returns o's live DNS settings, read from its
-// config.yaml orgconfigs row (the database row is the single source of
-// truth; the file on disk is write-only, never read back by ownscale).
-func (o *OrgService) GetDNSSettings(ctx context.Context) (_ dockerctl.DNSConfig, err error) {
+// GetDNSSettings returns o's live DNS settings from its config.yaml row.
+func (o *OrgService) GetDNSSettings(ctx context.Context) (_ DNSConfig, err error) {
 	defer derrors.Wrap(&err, "o.GetDNSSettings(%q)", o.orgID)
 
 	cfg, err := o.getHeadscaleConfig(ctx)
 	if err != nil {
-		return dockerctl.DNSConfig{}, err
+		return DNSConfig{}, err
 	}
 	return normalizeDNSConfig(cfg.DNS), nil
 }
 
-// SetDNSSettings validates dns, then persists it into o's config.yaml
-// (both the orgconfigs row and its running headscale container)
-// and restarts headscale so it's applied. Validation happens before any
-// write, mirroring SetACLPolicy/SetAuthRestrictions' validate-then-persist
-// ordering. Most of what headscale itself would consider invalid (e.g. a
-// malformed nameserver or an empty base_domain with magic_dns enabled) is
-// instead caught by the headscale-configtest step in applyHeadscaleConfig;
-// validateDNSSettings only covers the handful of structural cases
-// configtest doesn't catch at all.
-func (o *OrgService) SetDNSSettings(ctx context.Context, dns dockerctl.DNSConfig) (err error) {
+// SetDNSSettings validates dns, persists it into o's config.yaml row,
+// and restarts headscale so it's applied.
+func (o *OrgService) SetDNSSettings(ctx context.Context, dns DNSConfig) (err error) {
 	defer derrors.Wrap(&err, "o.SetDNSSettings(%q)", o.orgID)
 
 	if err := validateDNSSettings(dns); err != nil {
@@ -253,37 +238,31 @@ func (o *OrgService) SetDNSSettings(ctx context.Context, dns dockerctl.DNSConfig
 	}
 	cfg.DNS = dns
 
-	// See SetAuthRestrictions: decouple the write/restart tail from the
-	// HTTP request's context so a client-side network blip can't abort an
-	// already-validated save.
 	applyCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), applyHeadscaleConfigTimeout)
 	defer cancel()
 
 	return o.applyHeadscaleConfig(applyCtx, cfg, nil)
 }
 
-// validateDNSSettings runs the minimal structural checks headscale's own
-// "headscale configtest" (invoked by applyHeadscaleConfig) doesn't
-// perform: it accepts an empty base domain as long as magic_dns is off,
-// silently drops malformed nameservers/extra_records rather than
-// rejecting them, and doesn't reject duplicate records.
-func validateDNSSettings(dns dockerctl.DNSConfig) error {
+// validateDNSSettings runs structural checks that headscale's configtest
+// doesn't catch: empty base domain, empty record names/values, duplicates.
+func validateDNSSettings(dns DNSConfig) error {
 	if strings.TrimSpace(dns.BaseDomain) == "" {
-		return dockerctl.NewInvalidConfigError("tailnet name must not be empty")
+		return NewInvalidConfigError("tailnet name must not be empty")
 	}
 
 	seen := make(map[[2]string]bool, len(dns.ExtraRecords))
 	for _, r := range dns.ExtraRecords {
 		if strings.TrimSpace(r.Name) == "" {
-			return dockerctl.NewInvalidConfigError("DNS record name must not be empty")
+			return NewInvalidConfigError("DNS record name must not be empty")
 		}
 		if strings.TrimSpace(r.Value) == "" {
-			return dockerctl.NewInvalidConfigError("DNS record value must not be empty for " + r.Name)
+			return NewInvalidConfigError("DNS record value must not be empty for " + r.Name)
 		}
 		typ := strings.ToUpper(r.Type)
 		key := [2]string{r.Name, typ}
 		if seen[key] {
-			return dockerctl.NewInvalidConfigError("duplicate DNS record " + r.Name + " of type " + typ)
+			return NewInvalidConfigError("duplicate DNS record " + r.Name + " of type " + typ)
 		}
 		seen[key] = true
 	}
@@ -291,13 +270,9 @@ func validateDNSSettings(dns dockerctl.DNSConfig) error {
 	return nil
 }
 
-// normalizeDNSConfig fills in empty slices for any nil slice field so the
-// JSON response always has arrays (never null) for the frontend to
-// .map/.length over. Headscale's own config.yaml omits empty dns keys
-// (see the omitempty yaml tags on DNSConfig/Nameservers), so a freshly
-// parsed config routinely has nil ExtraRecords/SearchDomains/
-// Nameservers.Global.
-func normalizeDNSConfig(dns dockerctl.DNSConfig) dockerctl.DNSConfig {
+// normalizeDNSConfig fills in empty slices for nil slice fields so the
+// JSON response always has arrays (never null) for the frontend.
+func normalizeDNSConfig(dns DNSConfig) DNSConfig {
 	if dns.Nameservers.Global == nil {
 		dns.Nameservers.Global = []string{}
 	}
@@ -305,7 +280,7 @@ func normalizeDNSConfig(dns dockerctl.DNSConfig) dockerctl.DNSConfig {
 		dns.SearchDomains = []string{}
 	}
 	if dns.ExtraRecords == nil {
-		dns.ExtraRecords = []dockerctl.DNSRecord{}
+		dns.ExtraRecords = []DNSRecord{}
 	}
 	return dns
 }

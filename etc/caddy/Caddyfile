@@ -69,20 +69,13 @@ dex.{$BASE_DOMAIN} {
 	reverse_proxy dex:5556
 }
 
-# Route https://<sub>.{$BASE_DOMAIN} to the hs-<sub> container, and
-# https://<label>-<sub>.{$BASE_DOMAIN} (funnel) to the ownscale container
-# itself, which proxies the request into the org's tailnet via an
-# in-process tsnet client.
+# Route https://<sub>.{$BASE_DOMAIN} and https://<label>-<sub>.{$BASE_DOMAIN}
+# (funnel) to the ownscale container. ownscale's SubdomainProxy dispatches
+# org-subdomain traffic to the right in-process headscale port, and its
+# funnelproxy routes funnel traffic into the org's tailnet.
 *.{$BASE_DOMAIN} {
-	map {host} {backend} {
-		~^([a-z0-9]+)-([a-z0-9-]+)\. "ownscale:8080"
-		~^([a-z0-9-]+)\. "hs-${1}:8080"
-	}
-
 	handle {
-		reverse_proxy {backend} {
-			# No other way to reload headscale config.yaml, other than restart,
-			# which means a brief moment of unavailability. Add a bit of retry.
+		reverse_proxy ownscale:8080 {
 			lb_try_duration 5s
 			lb_try_interval 250ms
 		}

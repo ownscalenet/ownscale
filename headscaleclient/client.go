@@ -9,6 +9,7 @@ package headscaleclient
 
 import (
 	"context"
+	"net"
 	"net/http"
 	"time"
 
@@ -100,6 +101,8 @@ func (rt authRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 	return rt.next.RoundTrip(req)
 }
 
+// New returns a Client for the headscale API at host, authenticating with
+// apiKey.
 func New(host, apiKey string) *Client {
 	transport := httptransport.New(host, "/", []string{"http"})
 	next := transport.Transport
@@ -107,6 +110,19 @@ func New(host, apiKey string) *Client {
 		next = http.DefaultTransport
 	}
 	transport.Transport = authRoundTripper{apiKey: apiKey, next: next}
+	return &Client{api: hsclient.New(transport, strfmt.Default)}
+}
+
+// NewUnix returns a Client that talks to headscale over its local unix
+// socket, which needs no API key.
+func NewUnix(socketPath string) *Client {
+	transport := httptransport.New("local", "/", []string{"http"})
+	transport.Transport = &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			var d net.Dialer
+			return d.DialContext(ctx, "unix", socketPath)
+		},
+	}
 	return &Client{api: hsclient.New(transport, strfmt.Default)}
 }
 

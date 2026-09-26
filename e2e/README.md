@@ -67,7 +67,7 @@ Other useful commands (from `e2e/frontend/`):
   authenticated. Specs that need to exercise the login/logout flow itself
   (`login.spec.ts`, `onboarding.spec.ts`) opt out of that cached state.
   That same setup also self-registers a fixed `passkey@ownscale.test`
-  identity via passkey, claiming seed org `dddd`, and caches its WebAuthn
+  identity via passkey, creating org `dddd`, and caches its WebAuthn
   credential in `tests/.auth/passkey-credential.json` (gitignored) so
   `passkey.spec.ts` can sign back in as that identity without registering
   another brand-new user/org.

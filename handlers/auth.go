@@ -57,13 +57,17 @@ func (e *inviteInvalidError) Error() string { return e.msg }
 // createNewUser creates a brand-new user row, always with a resolved
 // organization and role: either the invite's organization+role (when next
 // points at an invite-accept path, consuming the invite atomically with
-// user creation), or a freshly pool-assigned organization with the owner role.
+// user creation), or a freshly created organization with the owner role.
 func (h *Handlers) createNewUser(ctx context.Context, params sqlcgen.CreateUserParams, next string) (_ sqlcgen.User, err error) {
 	defer derrors.Wrap(&err, "h.createNewUser(%q)", next)
 
 	token, isInvite := inviteTokenFromNext(next)
 	if !isInvite {
-		org, err := h.provisioner.Take(ctx)
+		subdomain, err := h.orgs.NextSubdomain(ctx)
+		if err != nil {
+			return sqlcgen.User{}, err
+		}
+		org, err := h.orgs.Create(ctx, subdomain)
 		if err != nil {
 			return sqlcgen.User{}, err
 		}

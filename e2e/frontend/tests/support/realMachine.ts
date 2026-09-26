@@ -76,20 +76,8 @@ export async function registerRealMachine(page: Page, orgSubdomain = 'aaaa'): Pr
   await userSelect.selectOption(ownerID)
   await createDialog.getByLabel('Reusable', { exact: true }).uncheck()
   await createDialog.getByLabel('Ephemeral', { exact: true }).check()
-  // Creating the pre-auth key hits hs-aaaa directly and can transiently
-  // fail while another spec's DNS/auth-restrictions save is mid-restart
-  // of that same container -- the dialog stays open with an inline error
-  // on failure, so retrying the Create click is safe.
-  for (let attempt = 1; ; attempt++) {
-    await createDialog.getByRole('button', { name: 'Create', exact: true }).click()
-    try {
-      await expect(createDialog.getByText('Pre-auth key created')).toBeVisible({ timeout: 8_000 })
-      break
-    } catch (err) {
-      if (attempt >= 5) throw err
-      await page.waitForTimeout(3_000)
-    }
-  }
+  await createDialog.getByRole('button', { name: 'Create', exact: true }).click()
+  await expect(createDialog.getByText('Pre-auth key created')).toBeVisible({ timeout: 8_000 })
   const authKey = await createDialog.locator('pre code').first().textContent()
   await createDialog.getByRole('button', { name: 'Done' }).click()
   if (!authKey) {

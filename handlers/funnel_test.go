@@ -156,10 +156,7 @@ func TestDeleteFunnelRouteRequiresManagerAndScopesToOrg(t *testing.T) {
 	}
 
 	// Deleting an id from a different org 404s (scoped lookup).
-	otherOrg, err := h.orgs.Create(t.Context(), "other")
-	if err != nil {
-		t.Fatalf("orgs.Create: %v", err)
-	}
+	otherOrg := insertOrg(t, h.queries, "other")
 	otherOwner := insertUser(t, h.queries)
 	if err := h.queries.SetUserOrganizationAndRole(t.Context(), sqlcgen.SetUserOrganizationAndRoleParams{
 		OrganizationID: otherOrg.ID,

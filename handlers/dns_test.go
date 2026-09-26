@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ownscalenet/ownscale/dockerctl"
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 func TestGetDNSSettingsReflectsProvisionedDefaults(t *testing.T) {
@@ -22,8 +22,8 @@ func TestGetDNSSettingsReflectsProvisionedDefaults(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 	var resp struct {
-		DNS       dockerctl.DNSConfig `json:"dns"`
-		CanManage bool                `json:"canManage"`
+		DNS       orgs.DNSConfig `json:"dns"`
+		CanManage bool           `json:"canManage"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
@@ -86,8 +86,8 @@ func TestUpdateDNSSettingsPersistsAndReturnsOK(t *testing.T) {
 	h.GetDNSSettings(getRec, getReq)
 
 	var resp struct {
-		DNS       dockerctl.DNSConfig `json:"dns"`
-		CanManage bool                `json:"canManage"`
+		DNS       orgs.DNSConfig `json:"dns"`
+		CanManage bool           `json:"canManage"`
 	}
 	if err := json.Unmarshal(getRec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)

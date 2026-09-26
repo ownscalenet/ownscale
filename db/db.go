@@ -6,9 +6,10 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/ownscalenet/ownscale/derrors"
+	// Register the "sqlite" database/sql driver used by sql.Open in Connect.
+	_ "github.com/glebarez/go-sqlite"
 
-	_ "modernc.org/sqlite"
+	"github.com/ownscalenet/ownscale/derrors"
 )
 
 // MigrationsFS embeds the SQL migration files (db/migrations),

@@ -9,7 +9,7 @@ const STORAGE_STATE = 'tests/.auth/admin.json'
 
 // Fourth fixed identity, bootstrapped the same way as admin/user1/user2
 // below but via passkey self-registration instead of Dex SSO, so it lands
-// on the next seed org in the fixed pool (see orgs.DefaultSeedSubdomains)
+// on the next fixed subdomain (see orgs.Service.NextSubdomain)
 // deterministically rather than racing other specs for it.
 const PASSKEY_IDENTITY = 'passkey@ownscale.test'
 
@@ -31,8 +31,9 @@ async function registerFreshPasskey(page: Page) {
 // Bootstraps the dev stack's three fixed Dex identities: admin, user1, user2
 // and their organizations: aaaa, bbbb, cccc.
 //
-// orgs.Provisioner hands out its fixed seed orgs strictly FIFO to whoever
-// self-registers first; it has no notion of "reserved for this identity".
+// orgs.Service.NextSubdomain hands out the fixed subdomains in order to
+// whoever self-registers first; it has no notion of "reserved for this
+// identity".
 // admin/user1/user2 need to be the first three to register so they land on
 // aaaa/bbbb/cccc.
 setup.describe.serial('bootstrap fixed dev identities', () => {
@@ -53,7 +54,7 @@ setup.describe.serial('bootstrap fixed dev identities', () => {
     })
   }
 
-  // Claims the fourth seed org (dddd) via passkey self-registration,
+  // Creates the fourth fixed org (dddd) via passkey self-registration,
   // right after admin/user1/user2 claim aaaa/bbbb/cccc above. On a fresh stack this
   // registers PASSKEY_IDENTITY for the first time and saves the resulting
   // credential; on a repeat run it replays the saved credential to sign

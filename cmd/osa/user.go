@@ -42,7 +42,7 @@ func newUserListCommand(parent *ff.FlagSet) *ff.Command {
 			if len(args) != 0 {
 				return errors.New("usage: osa user list")
 			}
-			res, cleanup, err := newOrgResources(true, false)
+			res, cleanup, err := newOrgResources()
 			defer cleanup()
 			if err != nil {
 				return err
@@ -98,7 +98,7 @@ func newUserDeleteCommand(parent *ff.FlagSet) *ff.Command {
 			if len(args) != 1 {
 				return errors.New("usage: osa user delete <user_id>")
 			}
-			res, cleanup, err := newOrgResources(true, false)
+			res, cleanup, err := newOrgResources()
 			defer cleanup()
 			if err != nil {
 				return err

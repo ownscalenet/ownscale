@@ -26,7 +26,7 @@ import (
 
 // fakeClientMinter is a headscaleclient.ClientMinter test double that
 // always returns a *headscaleclient.Client pointed at an httptest.Server,
-// instead of a real hs-<subdomain>:8080 Docker container.
+// instead of a real in-process headscale instance.
 type fakeClientMinter struct {
 	client *headscaleclient.Client
 	err    error
@@ -193,7 +193,7 @@ func activeOrgUserWithPolicy(t *testing.T, h *Handlers, queries *dbpkg.TxQueries
 	user := insertUser(t, queries)
 
 	orgID := xid.New().String()
-	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{ID: orgID, Subdomain: "acme", Status: orgs.StatusActive})
+	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{ID: orgID, Subdomain: "acme", Status: orgs.StatusActive, Port: testPort()})
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
@@ -221,7 +221,7 @@ func activeOrgUserWithPolicy(t *testing.T, h *Handlers, queries *dbpkg.TxQueries
 func newMachinesTestHandlers(t *testing.T) (*Handlers, *dbpkg.TxQueries) {
 	t.Helper()
 	queries := newTestQueries(t)
-	h, err := New(queries, nil, "", "", nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{})
+	h, err := New(queries, "", "", nil, discardLogger(), config.DerpConfig{})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -567,7 +567,7 @@ func TestDeleteMachineCascadesFunnelRoutesForInternalMachine(t *testing.T) {
 	user := insertUser(t, queries)
 
 	orgID := xid.New().String()
-	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{ID: orgID, Subdomain: "acme", Status: orgs.StatusActive})
+	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{ID: orgID, Subdomain: "acme", Status: orgs.StatusActive, Port: testPort()})
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}

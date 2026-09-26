@@ -2,328 +2,162 @@ package orgs
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"io"
 	"log/slog"
-	"net"
-	"sync"
+	"slices"
 	"testing"
-	"time"
 
-	"github.com/docker/docker/api/types"
-	"github.com/docker/docker/api/types/container"
-	"github.com/docker/docker/api/types/network"
-	"github.com/docker/docker/pkg/stdcopy"
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
-	"github.com/rs/xid"
-
+	"github.com/ownscalenet/headscale/hscontrol"
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/dockerctl"
-	"github.com/ownscalenet/ownscale/dockerctl/dockerfake"
-	"github.com/ownscalenet/ownscale/headscaleclient"
 )
 
-// newTestService builds a Service backed by a temporary sqlite DB (see
-// newTestQueries in orgs_test.go) and a fake Docker API that always
-// succeeds, for exercising Provisioner without touching real Docker.
+// newTestService builds a Service backed by a temporary sqlite DB with
+// a noop createFn so tests don't attempt to spin up a real headscale
+// instance.
 func newTestService(t *testing.T) *Service {
 	t.Helper()
-	queries := newTestQueries(t)
-	api := &dockerfake.API{
-		ContainerCreateFn: func(ctx context.Context, config *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
-			return container.CreateResponse{ID: containerName}, nil
-		},
-		ContainerExecCreateFn: func(ctx context.Context, containerID string, options container.ExecOptions) (container.ExecCreateResponse, error) {
-			return container.ExecCreateResponse{ID: xid.New().String()}, nil
-		},
-		ContainerExecAttachFn: func(ctx context.Context, execID string, options container.ExecAttachOptions) (types.HijackedResponse, error) {
-			clientConn, serverConn := net.Pipe()
-			go func() {
-				w := stdcopy.NewStdWriter(serverConn, stdcopy.Stdout)
-				_, _ = w.Write([]byte("headscale-api-key\n"))
-				_ = serverConn.Close()
-			}()
-			return types.NewHijackedResponse(clientConn, ""), nil
-		},
-		ContainerExecInspectFn: func(ctx context.Context, execID string) (container.ExecInspect, error) {
-			return container.ExecInspect{ExitCode: 0}, nil
-		},
-	}
-	ctl, err := dockerctl.NewWithClient(api, t.TempDir(), "", slog.New(slog.NewTextHandler(io.Discard, nil)))
-	if err != nil {
-		t.Fatalf("dockerctl.NewWithClient: %v", err)
-	}
-	ctl.MintClientFn = func(ctx context.Context, subdomain string) (*headscaleclient.Client, error) {
-		return newFakePolicyClient(t), nil
-	}
-	t.Cleanup(func() { _ = ctl.Close() })
-	return NewService(queries, ctl, "example.com", "https://auth.example.com", config.DerpConfig{})
+	svc := NewService(newTestQueries(t), "example.com", "https://auth.example.com", config.DerpConfig{}, discardLogger(), t.TempDir())
+	svc.createFn = noopCreateFn
+	return svc
 }
 
-func TestProvisionerTakeReturnsProvisionedOrganization(t *testing.T) {
-	svc := newTestService(t)
-	p := NewProvisioner(svc, discardLogger(), time.Hour, 1, 0)
-
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
-	go func() { _ = p.Run(ctx) }()
-
-	org, err := p.Take(ctx)
-	if err != nil {
-		t.Fatalf("Take: %v", err)
-	}
-	if org.Status != StatusActive {
-		t.Errorf("org.Status = %q, want %q", org.Status, StatusActive)
-	}
-}
-
-// TestProvisionerReplenishesAfterTake checks that removing an organization
-// from the pool causes another to be produced to take its place, up to the
-// configured capacity.
-func TestProvisionerReplenishesAfterTake(t *testing.T) {
-	svc := newTestService(t)
-	p := NewProvisioner(svc, discardLogger(), time.Hour, 1, 0)
-
-	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
-	defer cancel()
-	go func() { _ = p.Run(ctx) }()
-
-	first, err := p.Take(ctx)
-	if err != nil {
-		t.Fatalf("first Take: %v", err)
-	}
-	second, err := p.Take(ctx)
-	if err != nil {
-		t.Fatalf("second Take: %v", err)
-	}
-	if first.ID == second.ID {
-		t.Errorf("second Take returned the same organization as the first: %q", first.ID)
-	}
-	if second.Status != StatusActive {
-		t.Errorf("second.Status = %q, want %q", second.Status, StatusActive)
-	}
-}
-
-// TestProvisionerRecoversReadyOnStart checks that an organization left "ready"
-// is re-pooled as soon as Run starts, without being re-provisioned.
-func TestProvisionerRecoversReadyOnStart(t *testing.T) {
-	svc := newTestService(t)
-	org, err := svc.provisionNew(t.Context(), "acme", StatusReady)
-	if err != nil {
-		t.Fatalf("provisionNew: %v", err)
-	}
-	if org.Status != StatusReady {
-		t.Fatalf("org.Status after provisionNew = %q, want %q", org.Status, StatusReady)
-	}
-
-	// A brand new Provisioner, as if the process had just restarted.
-	p := NewProvisioner(svc, discardLogger(), time.Hour, 1, 0)
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel()
-	go func() { p.Run(ctx) }()
-
-	// Drain organizations until "acme" shows up: DefaultSeedSubdomains are
-	// also being recovered/created concurrently, in no guaranteed order.
-	var got sqlcgen.Organization
-	for range len(DefaultSeedSubdomains) + 1 {
-		next, err := p.Take(ctx)
-		if err != nil {
-			t.Fatalf("Take: %v", err)
-		}
-		if next.Subdomain == "acme" {
-			got = next
-			break
-		}
-	}
-	if got.ID == "" {
-		t.Fatal("Take never returned the recovered \"acme\" organization")
-	}
-	if got.Status != StatusActive {
-		t.Errorf("org.Status = %q, want %q", got.Status, StatusActive)
-	}
-}
-
-func TestProvisionerTakeReturnsContextErrorWhenPoolEmpty(t *testing.T) {
-	svc := newTestService(t)
-	// A Provisioner that's never Run: the pool never fills, so Take must
-	// return once ctx is done instead of blocking forever.
-	p := NewProvisioner(svc, discardLogger(), time.Hour, 1, 0)
-
-	ctx, cancel := context.WithTimeout(t.Context(), 100*time.Millisecond)
-	defer cancel()
-	if _, err := p.Take(ctx); err == nil {
-		t.Fatal("Take: want error when the pool never fills and ctx is done, got nil")
-	}
-}
-
-func TestProvisionerRunStopsOnContextCancel(t *testing.T) {
-	svc := newTestService(t)
-	p := NewProvisioner(svc, discardLogger(), time.Hour, 1, 0)
-
-	ctx, cancel := context.WithCancel(t.Context())
-	done := make(chan error, 1)
-	go func() { done <- p.Run(ctx) }()
-	cancel()
-
-	select {
-	case err := <-done:
-		if err != nil {
-			t.Fatalf("Run returned %v, want nil", err)
-		}
-	case <-time.After(2 * time.Second):
-		t.Fatal("Run did not return after context cancellation")
-	}
+// noopCreateFn is a createFn that immediately returns nil (no headscale
+// instance started).
+func noopCreateFn(_ context.Context, _, _, _ string, _ int, _ OIDCClientCredentials, _ config.DerpConfig) (*hscontrol.Headscale, error) {
+	return nil, nil
 }
 
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
 }
 
-func TestProvisionerStopsReplenishingAtMaxOrgs(t *testing.T) {
+func TestCreateReturnsActiveOrganization(t *testing.T) {
 	svc := newTestService(t)
-	maxOrgs := len(DefaultSeedSubdomains) + 1
-	p := NewProvisioner(svc, discardLogger(), time.Hour, 1, maxOrgs)
 
-	ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
-	defer cancel()
-	go func() { _ = p.Run(ctx) }()
-
-	// Drain exactly maxOrgs organizations: the 3 fixed seeds plus one
-	// replenished org, all of which should be produced normally.
-	for i := range maxOrgs {
-		if _, err := p.Take(ctx); err != nil {
-			t.Fatalf("Take %d: %v", i, err)
-		}
+	org, err := svc.Create(t.Context(), "myteam")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
 	}
-
-	// The cap is now reached, so no further organization should ever be
-	// produced: Take should time out instead of returning one.
-	shortCtx, shortCancel := context.WithTimeout(t.Context(), 500*time.Millisecond)
-	defer shortCancel()
-	if _, err := p.Take(shortCtx); err == nil {
-		t.Fatal("Take after reaching max_orgs: want a context error, got an organization")
+	if org.Status != StatusActive {
+		t.Errorf("org.Status = %q, want %q", org.Status, StatusActive)
+	}
+	if org.Subdomain != "myteam" {
+		t.Errorf("org.Subdomain = %q, want %q", org.Subdomain, "myteam")
 	}
 }
 
-func TestProvisionerCircuitBreakerBacksOffAfterConsecutiveFailures(t *testing.T) {
+func TestCreateRejectsInvalidSubdomain(t *testing.T) {
+	svc := newTestService(t)
+
+	if _, err := svc.Create(t.Context(), "INVALID!"); err == nil {
+		t.Fatal("Create with invalid subdomain: want error, got nil")
+	}
+}
+
+func TestCreateSurfacesHeadscaleFailure(t *testing.T) {
+	svc := newTestService(t)
+	svc.createFn = func(_ context.Context, _, _, _ string, _ int, _ OIDCClientCredentials, _ config.DerpConfig) (*hscontrol.Headscale, error) {
+		return nil, errors.New("headscale failed (injected)")
+	}
+
+	if _, err := svc.Create(t.Context(), "acme"); err == nil {
+		t.Fatal("Create: want error when createFn fails, got nil")
+	}
+	if _, err := svc.queries.GetOrganizationBySubdomain(t.Context(), "acme"); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("organization row after failed Create: err = %v, want sql.ErrNoRows", err)
+	}
+}
+
+func TestNextSubdomain(t *testing.T) {
+	tests := []struct {
+		name  string
+		taken []string
+		want  string // "" means a random subdomain
+	}{
+		{"empty database", nil, "aaaa"},
+		{"skips taken fixed subdomains", []string{"aaaa", "bbbb"}, "cccc"},
+		{"falls back to random", fixedSubdomains, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := newTestService(t)
+			for _, sub := range tt.taken {
+				if _, err := svc.Create(t.Context(), sub); err != nil {
+					t.Fatalf("Create(%q): %v", sub, err)
+				}
+			}
+			got, err := svc.NextSubdomain(t.Context())
+			if err != nil {
+				t.Fatalf("NextSubdomain: %v", err)
+			}
+			if tt.want != "" && got != tt.want {
+				t.Errorf("NextSubdomain = %q, want %q", got, tt.want)
+			}
+			if tt.want == "" {
+				if slices.Contains(fixedSubdomains, got) {
+					t.Errorf("NextSubdomain = %q, want a random subdomain", got)
+				}
+				if err := ValidateSubdomain(got); err != nil {
+					t.Errorf("random subdomain %q is invalid: %v", got, err)
+				}
+			}
+		})
+	}
+}
+
+// TestStartRecoversOrganizations checks that Start restarts the headscale
+// instance of an organization left over from a previous process.
+func TestStartRecoversOrganizations(t *testing.T) {
 	queries := newTestQueries(t)
-
-	fixedContainers := make(map[string]bool)
-	for _, subdomain := range DefaultSeedSubdomains {
-		fixedContainers[dockerctl.HSContainerName(subdomain)] = true
+	seed := NewService(queries, "example.com", "https://auth.example.com", config.DerpConfig{}, discardLogger(), t.TempDir())
+	seed.createFn = noopCreateFn
+	if _, err := seed.Create(t.Context(), "acme"); err != nil {
+		t.Fatalf("Create: %v", err)
 	}
 
-	failAt := []bool{true, true, false, true, false}
+	// A second Service simulates a process restart.
+	svc := NewService(queries, "example.com", "https://auth.example.com", config.DerpConfig{}, discardLogger(), t.TempDir())
+	svc.createFn = noopCreateFn
 
-	var mu sync.Mutex
-	var attemptTimes []time.Time
-	healthyContainer := make(map[string]bool)
-
-	api := &dockerfake.API{
-		ContainerCreateFn: func(ctx context.Context, cfg *container.Config, hostConfig *container.HostConfig, networkingConfig *network.NetworkingConfig, platform *ocispec.Platform, containerName string) (container.CreateResponse, error) {
-			mu.Lock()
-			defer mu.Unlock()
-			if fixedContainers[containerName] {
-				healthyContainer[containerName] = true
-				return container.CreateResponse{ID: containerName}, nil
-			}
-			i := len(attemptTimes)
-			attemptTimes = append(attemptTimes, time.Now())
-			healthyContainer[containerName] = i >= len(failAt) || !failAt[i]
-			return container.CreateResponse{ID: containerName}, nil
-		},
-		ContainerInspectFn: func(ctx context.Context, containerID string) (container.InspectResponse, error) {
-			mu.Lock()
-			healthy := healthyContainer[containerID]
-			mu.Unlock()
-			status := container.Healthy
-			if !healthy {
-				status = container.Unhealthy
-			}
-			return container.InspectResponse{
-				ContainerJSONBase: &container.ContainerJSONBase{
-					State: &container.State{Status: "running", Health: &container.Health{Status: status}},
-				},
-			}, nil
-		},
-		ContainerExecCreateFn: func(ctx context.Context, containerID string, options container.ExecOptions) (container.ExecCreateResponse, error) {
-			return container.ExecCreateResponse{ID: xid.New().String()}, nil
-		},
-		ContainerExecAttachFn: func(ctx context.Context, execID string, options container.ExecAttachOptions) (types.HijackedResponse, error) {
-			clientConn, serverConn := net.Pipe()
-			go func() {
-				w := stdcopy.NewStdWriter(serverConn, stdcopy.Stdout)
-				_, _ = w.Write([]byte("headscale-api-key\n"))
-				_ = serverConn.Close()
-			}()
-			return types.NewHijackedResponse(clientConn, ""), nil
-		},
-		ContainerExecInspectFn: func(ctx context.Context, execID string) (container.ExecInspect, error) {
-			return container.ExecInspect{ExitCode: 0}, nil
-		},
+	if err := svc.Start(t.Context()); err != nil {
+		t.Fatalf("Start: %v", err)
 	}
+	if _, ok := svc.ports.Load("acme"); !ok {
+		t.Error("port not registered for recovered org \"acme\"")
+	}
+}
 
-	ctl, err := dockerctl.NewWithClient(api, t.TempDir(), "", discardLogger())
+// TestStartRecoveryWithNoOrgsIsNoop verifies Start doesn't error on an
+// empty DB.
+func TestStartRecoveryWithNoOrgsIsNoop(t *testing.T) {
+	svc := newTestService(t)
+
+	if err := svc.Start(t.Context()); err != nil {
+		t.Fatalf("Start on empty DB: %v", err)
+	}
+}
+
+// TestCreateSeedsOrgConfig verifies that Create writes the headscale
+// config YAML (with issuer) to orgconfigs.
+func TestCreateSeedsOrgConfig(t *testing.T) {
+	svc := newTestService(t)
+
+	org, err := svc.Create(t.Context(), "acme")
 	if err != nil {
-		t.Fatalf("dockerctl.NewWithClient: %v", err)
-	}
-	ctl.MintClientFn = func(ctx context.Context, subdomain string) (*headscaleclient.Client, error) {
-		return newFakePolicyClient(t), nil
-	}
-	t.Cleanup(func() { _ = ctl.Close() })
-
-	svc := NewService(queries, ctl, "example.com", "https://auth.example.com", config.DerpConfig{})
-
-	const (
-		retryBackoff = 30 * time.Millisecond
-		// bcrypt function with -race is very slow.
-		longBackoff = 5 * time.Second
-	)
-	p := NewProvisioner(svc, discardLogger(), retryBackoff, 1, 0)
-	p.failureThreshold = 2
-	p.longBackoff = longBackoff
-
-	ctx, cancel := context.WithTimeout(t.Context(), 30*time.Second)
-	defer cancel()
-	go func() { p.Run(ctx) }()
-
-	// Drain the fixed dev subdomains seedFixed provisions up front
-	// (capacity 1 forces each push to wait for a Take, same as the
-	// replenish-loop attempts below) before measuring the breaker timing.
-	for range DefaultSeedSubdomains {
-		if _, err := p.Take(ctx); err != nil {
-			t.Fatalf("Take (draining fixed seed organizations): %v", err)
-		}
+		t.Fatalf("Create: %v", err)
 	}
 
-	if _, err := p.Take(ctx); err != nil {
-		t.Fatalf("first Take (after the breaker trips and resets): %v", err)
+	cfgRow, err := svc.queries.GetOrgConfig(t.Context(), sqlcgen.GetOrgConfigParams{
+		OrganizationID: org.ID,
+		Path:           ConfigYAMLPath,
+	})
+	if err != nil {
+		t.Fatalf("GetOrgConfig: %v", err)
 	}
-	if _, err := p.Take(ctx); err != nil {
-		t.Fatalf("second Take (after the breaker resets): %v", err)
-	}
-
-	mu.Lock()
-	times := append([]time.Time(nil), attemptTimes...)
-	mu.Unlock()
-	if len(times) < len(failAt) {
-		t.Fatalf("got %d provisioning attempts, want at least %d", len(times), len(failAt))
-	}
-
-	gap := func(i, j int) time.Duration { return times[j].Sub(times[i]) }
-
-	// attempt 0 -> 1: only 1 consecutive failure so far, short backoff.
-	if g := gap(0, 1); g >= longBackoff {
-		t.Errorf("gap between attempts 1 and 2 = %s, want well under longBackoff (%s): breaker should not have tripped yet", g, longBackoff)
-	}
-	// attempt 1 -> 2: 2 consecutive failures reached failureThreshold, so
-	// the breaker should have tripped to longBackoff.
-	if g := gap(1, 2); g < longBackoff {
-		t.Errorf("gap between attempts 2 and 3 = %s, want at least longBackoff (%s): breaker should have tripped", g, longBackoff)
-	}
-	// attempt 3 -> 4: attempt 2 succeeded and reset the failure counter, so
-	// the single new failure (attempt 3) uses the short backoff again.
-	if g := gap(3, 4); g >= longBackoff {
-		t.Errorf("gap between attempts 4 and 5 = %s, want well under longBackoff (%s): breaker should have reset after the success", g, longBackoff)
+	if cfgRow.Content == "" {
+		t.Error("orgconfigs row is empty after Create")
 	}
 }

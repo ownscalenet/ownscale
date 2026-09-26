@@ -67,8 +67,8 @@ func (c *Ctl) MethodName(ctx context.Context, subdomain string) (_ string, err e
 ## Testing
 
 Try to create as few as possible fakes/mocks when testing the code. For example,
-code that relies on dockerctl.Ctl are running with a real implementation of Ctl,
-not a fake. The fake is done at the outside edge with docker's client.Client.
+code that relies on headscaleclient.Client runs against a real Client, not a
+fake. The fake is done at the outside edge, with an httptest server.
 For tests that rely on a database, use a temporary sqlite which had the migrations
 applied. When testing, try not to assert that some expected functions have been
 called a number of times with specific arguments. Instead assert the results and

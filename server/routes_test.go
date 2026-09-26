@@ -1,10 +1,13 @@
 package server
 
 import (
+	"bytes"
+	"encoding/json"
 	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 
 	"github.com/rs/xid"
@@ -17,6 +20,12 @@ import (
 	"github.com/ownscalenet/ownscale/handlers"
 	"github.com/ownscalenet/ownscale/orgs"
 )
+
+// port is required and unique so use atomic to prevent race conditions
+// in concurrent tests.
+var nextTestPort atomic.Int64
+
+func testPort() int64 { return 10_000 + nextTestPort.Add(1) - 1 }
 
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -42,7 +51,7 @@ func newTestQueries(t *testing.T) *dbpkg.TxQueries {
 func newTestMux(t *testing.T) http.Handler {
 	t.Helper()
 	queries := newTestQueries(t)
-	h, err := handlers.New(queries, nil, "", "", nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{})
+	h, err := handlers.New(queries, "", "", nil, discardLogger(), config.DerpConfig{})
 	if err != nil {
 		t.Fatalf("handlers.New: %v", err)
 	}
@@ -73,7 +82,7 @@ func TestNewMuxProtectedRoutesRequireAuth(t *testing.T) {
 
 func TestNewMuxUnmatchedPathFallsBackToStatic(t *testing.T) {
 	queries := newTestQueries(t)
-	h, err := handlers.New(queries, nil, "", "", nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{})
+	h, err := handlers.New(queries, "", "", nil, discardLogger(), config.DerpConfig{})
 	if err != nil {
 		t.Fatalf("handlers.New: %v", err)
 	}
@@ -102,7 +111,7 @@ func TestNewMuxUnmatchedPathFallsBackToStatic(t *testing.T) {
 
 func TestNewMuxAuthenticatedSession(t *testing.T) {
 	queries := newTestQueries(t)
-	h, err := handlers.New(queries, nil, "", "", nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{})
+	h, err := handlers.New(queries, "", "", nil, discardLogger(), config.DerpConfig{})
 	if err != nil {
 		t.Fatalf("handlers.New: %v", err)
 	}
@@ -116,7 +125,8 @@ func TestNewMuxAuthenticatedSession(t *testing.T) {
 	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
 		ID:        xid.New().String(),
 		Subdomain: id,
-		Status:    orgs.StatusReady,
+		Status:    orgs.StatusActive,
+		Port:      testPort(),
 	})
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
@@ -148,4 +158,116 @@ func TestNewMuxAuthenticatedSession(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
+}
+
+// TestNewMuxOverHTTP builds the same mux cmd/ownscale/main.go does, backed
+// by a real database, and drives it via httptest.NewServer over real HTTP
+// (not the httptest.NewRecorder used by the other tests here). It bypasses real Google OAuth (not practical to
+// exercise in CI) by seeding a user and minting its session cookie directly
+// via auth.StoreUserSession.
+func TestNewMuxOverHTTP(t *testing.T) {
+	logger := discardLogger()
+	queries := newTestQueries(t)
+
+	const baseDomain = "srvit.test"
+
+	h, err := handlers.New(queries, baseDomain, t.TempDir(), nil, logger, config.DerpConfig{})
+	if err != nil {
+		t.Fatalf("handlers.New: %v", err)
+	}
+	auth.Setup("test-session-secret-at-least-32-bytes-long")
+	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
+		return auth.RequireAuthAPI(queries.Queries, next)
+	}
+	mux := NewMux(h, requireAuthAPI, logger, http.NotFoundHandler(), nil)
+
+	ts := httptest.NewServer(mux)
+	t.Cleanup(ts.Close)
+
+	// Create an org directly in the DB (no in-process headscale started, as
+	// it isn't needed for these HTTP-layer tests).
+	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
+		ID:        xid.New().String(),
+		Subdomain: "srvittest",
+		Status:    orgs.StatusActive,
+		Port:      testPort(),
+	})
+	if err != nil {
+		t.Fatalf("CreateOrganization: %v", err)
+	}
+
+	// Seed a user and mint its session cookie directly, bypassing the
+	// real OAuth redirect flow.
+	id := xid.New().String()
+	user, err := queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
+		ID:             id,
+		OrganizationID: org.ID,
+		Role:           handlers.RoleOwner,
+		Provider:       "oidc",
+		ProviderUserID: id,
+		Email:          id + "@example.com",
+		Name:           "Integration Test User",
+	})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	storeRec := httptest.NewRecorder()
+	if err := auth.StoreUserSession(storeRec, httptest.NewRequest(http.MethodGet, "/", nil), user.ID); err != nil {
+		t.Fatalf("StoreUserSession: %v", err)
+	}
+	sessionCookies := storeRec.Result().Cookies()
+
+	authedRequest := func(t *testing.T, method, path string, body []byte) *http.Response {
+		t.Helper()
+		var reqBody io.Reader
+		if body != nil {
+			reqBody = bytes.NewReader(body)
+		}
+		req, err := http.NewRequest(method, ts.URL+path, reqBody)
+		if err != nil {
+			t.Fatalf("NewRequest: %v", err)
+		}
+		for _, c := range sessionCookies {
+			req.AddCookie(c)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("%s %s: %v", method, path, err)
+		}
+		return resp
+	}
+
+	t.Run("GET /api/session returns the seeded user", func(t *testing.T) {
+		resp := authedRequest(t, http.MethodGet, "/api/session", nil)
+		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			t.Fatalf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+		}
+		var body struct {
+			User sqlcgen.User `json:"user"`
+		}
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatalf("decode response: %v", err)
+		}
+		if body.User.ID != user.ID {
+			t.Errorf("session user id = %q, want %q", body.User.ID, user.ID)
+		}
+	})
+
+	t.Run("POST /api/logout clears the session", func(t *testing.T) {
+		logoutResp := authedRequest(t, http.MethodPost, "/api/logout", nil)
+		defer logoutResp.Body.Close()
+		if logoutResp.StatusCode != http.StatusNoContent {
+			t.Fatalf("logout status = %d, want %d", logoutResp.StatusCode, http.StatusNoContent)
+		}
+
+		// Replace the session cookies with whatever logout just set
+		// (cleared/expired), then confirm a follow-up request 401s.
+		sessionCookies = logoutResp.Cookies()
+		afterResp := authedRequest(t, http.MethodGet, "/api/session", nil)
+		defer afterResp.Body.Close()
+		if afterResp.StatusCode != http.StatusUnauthorized {
+			t.Errorf("session status after logout = %d, want %d", afterResp.StatusCode, http.StatusUnauthorized)
+		}
+	})
 }

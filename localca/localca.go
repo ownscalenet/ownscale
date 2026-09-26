@@ -2,18 +2,6 @@
 // local development, when BASE_DOMAIN isn't a real, publicly resolvable
 // domain and Caddy therefore can't get publicly-trusted ACME certificates
 // (see docker-compose.yml's CADDY_LOCAL_CERTS env var).
-//
-// Unlike Caddy's own built-in local CA (which it generates lazily, the
-// first time it issues an internal certificate), this CA is generated
-// ahead of time -- via the `osa gen-local-ca` subcommand, run once before
-// Caddy or ownscale ever start (see docker-compose.yml's "local-ca-init"
-// service) -- so its root certificate is a plain, already-existing file
-// from the very start. That lets every container that needs to trust it
-// (Caddy itself, which is configured to sign all its local certs from
-// this CA -- see etc/caddy/Caddyfile's "pki" block -- plus ownscale and
-// headscale, which just need to trust it) get there via a single, static,
-// read-only bind-mount, with no Docker-API file copying or merging between
-// containers at runtime.
 package localca
 
 import (
@@ -33,8 +21,7 @@ import (
 
 // RootCertFileName and RootKeyFileName are the fixed file names
 // LoadOrGenerate reads/writes within a LocalCADir, and that Caddy's own
-// "pki" config (etc/caddy/Caddyfile) and dockerctl's bind-mounts into
-// organization containers both expect.
+// "pki" config (etc/caddy/Caddyfile) expects.
 const (
 	RootCertFileName = "root.crt"
 	RootKeyFileName  = "root.key"
@@ -141,7 +128,7 @@ func ResetCaddyState(caddyDataDir string) (err error) {
 // parseCertAndKey validates that certPEM/keyPEM decode into a well-formed
 // certificate and RSA private key, without otherwise doing anything with
 // them -- just a sanity check so a corrupted or truncated CA on disk fails
-// loudly instead of Caddy/dockerctl discovering it much later.
+// loudly instead of Caddy discovering it much later.
 func parseCertAndKey(certPEM, keyPEM []byte) (*x509.Certificate, error) {
 	certBlock, _ := pem.Decode(certPEM)
 	if certBlock == nil || certBlock.Type != "CERTIFICATE" {

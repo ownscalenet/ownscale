@@ -25,7 +25,7 @@ func (h *Handlers) GetAccessControlPolicy(w http.ResponseWriter, r *http.Request
 		h.serverError(w, r, err)
 		return
 	}
-	// dockerctl.CreateOrganization seeds every organization with a default
+	// Each organization is seeded with a default
 	// policy via headscale's own API at provisioning time, so an empty
 	// response here just means headscale genuinely has no policy -- return
 	// it as-is, with no special-casing.

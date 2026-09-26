@@ -9,8 +9,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"net/netip"
-	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -19,6 +17,14 @@ import (
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/headscaleclient"
 )
+
+// fakePortLookup satisfies PortLookup for tests; returns a fixed port for
+// any subdomain.
+type fakePortLookup struct{ port int }
+
+func (f *fakePortLookup) LookupPort(_ string) (int, bool) { return f.port, f.port != 0 }
+
+func defaultPortLookup() *fakePortLookup { return &fakePortLookup{port: 19999} }
 
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(nopWriter{}, nil))
@@ -105,7 +111,7 @@ func newFakeNodeServer(t *testing.T, nodesJSON string) *headscaleclient.Client {
 }
 
 func TestServeHTTPRouteNotFound(t *testing.T) {
-	pool := NewPool(&fakeQueries{routes: map[string]sqlcgen.FunnelRoute{}}, &fakeHeadscaleClients{}, t.TempDir(), discardLogger())
+	pool := NewPool(&fakeQueries{routes: map[string]sqlcgen.FunnelRoute{}}, &fakeHeadscaleClients{}, t.TempDir(), discardLogger(), defaultPortLookup())
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -117,7 +123,7 @@ func TestServeHTTPRouteNotFound(t *testing.T) {
 }
 
 func TestServeHTTPQueriesError(t *testing.T) {
-	pool := NewPool(&fakeQueries{err: errors.New("boom")}, &fakeHeadscaleClients{}, t.TempDir(), discardLogger())
+	pool := NewPool(&fakeQueries{err: errors.New("boom")}, &fakeHeadscaleClients{}, t.TempDir(), discardLogger(), defaultPortLookup())
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -132,7 +138,7 @@ func TestServeHTTPHeadscaleClientError(t *testing.T) {
 	queries := &fakeQueries{routes: map[string]sqlcgen.FunnelRoute{
 		"acme/web": {ID: "1", Label: "web", TargetNodeID: "1", TargetPort: 8080},
 	}}
-	pool := NewPool(queries, &fakeHeadscaleClients{err: errors.New("mint failed")}, t.TempDir(), discardLogger())
+	pool := NewPool(queries, &fakeHeadscaleClients{err: errors.New("mint failed")}, t.TempDir(), discardLogger(), defaultPortLookup())
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -148,7 +154,7 @@ func TestServeHTTPTargetNodeMissing(t *testing.T) {
 		"acme/web": {ID: "1", Label: "web", TargetNodeID: "does-not-exist", TargetPort: 8080},
 	}}
 	client := newFakeNodeServer(t, `{"nodes":[{"id":"1","name":"node1","ipAddresses":["100.64.0.1"]}]}`)
-	pool := NewPool(queries, &fakeHeadscaleClients{client: client}, t.TempDir(), discardLogger())
+	pool := NewPool(queries, &fakeHeadscaleClients{client: client}, t.TempDir(), discardLogger(), defaultPortLookup())
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -220,7 +226,7 @@ func newFakeUserPreAuthKeyServer(t *testing.T, existingUsers string) (*headscale
 // same on-disk state directory.
 func TestGetOrCreateServerConcurrentDedup(t *testing.T) {
 	client, preAuthKeyBodies := newFakeUserPreAuthKeyServer(t, `{"users":[]}`)
-	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{client: client}, t.TempDir(), discardLogger())
+	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{client: client}, t.TempDir(), discardLogger(), defaultPortLookup())
 	pool.upTimeout = 2 * time.Second
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -258,7 +264,7 @@ func TestGetOrCreateServerUpTimeout(t *testing.T) {
 	t.Cleanup(blockServer.Close)
 
 	client, _ := newFakeUserPreAuthKeyServer(t, `{"users":[]}`)
-	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{client: client}, t.TempDir(), discardLogger())
+	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{client: client}, t.TempDir(), discardLogger(), defaultPortLookup())
 	pool.upTimeout = 200 * time.Millisecond
 	pool.controlURL = func(_ context.Context, _ string) (string, error) { return blockServer.URL, nil }
 
@@ -274,36 +280,5 @@ func TestGetOrCreateServerUpTimeout(t *testing.T) {
 	}
 	if elapsed > 5*time.Second {
 		t.Errorf("getOrCreateServer took %s to return, want well under upTimeout=%s plus overhead (it should not hang indefinitely)", elapsed, pool.upTimeout)
-	}
-}
-
-// TestResolveControlURLReturnsIPLiteral guards against regressing back to
-// a bare-DNS-name ControlURL: tailscale's control-dial client only
-// disables its HTTPS/443 fallback path (see forceNoise443 in
-// control/controlhttp) for a ControlURL whose host is a literal
-// private/loopback IP address, never a DNS name that merely resolves to
-// one, so resolveControlURL must always hand back an IP literal.
-func TestResolveControlURLReturnsIPLiteral(t *testing.T) {
-	got, err := resolveControlURL(t.Context(), "localhost")
-	if err != nil {
-		t.Fatalf("resolveControlURL(%q) = _, %v, want nil error", "localhost", err)
-	}
-	u, err := url.Parse(got)
-	if err != nil {
-		t.Fatalf("resolveControlURL returned an unparseable URL %q: %v", got, err)
-	}
-	if u.Scheme != "http" || u.Port() != "8080" {
-		t.Errorf("resolveControlURL(%q) = %q, want scheme http and port 8080", "localhost", got)
-	}
-	if _, err := netip.ParseAddr(u.Hostname()); err != nil {
-		t.Errorf("resolveControlURL(%q) = %q, host %q is not an IP literal: %v", "localhost", got, u.Hostname(), err)
-	}
-}
-
-// TestResolveControlURLUnresolvableHost guards against silently returning
-// a broken ControlURL when the host doesn't resolve.
-func TestResolveControlURLUnresolvableHost(t *testing.T) {
-	if _, err := resolveControlURL(t.Context(), "this-host-does-not-exist.invalid"); err == nil {
-		t.Fatal("resolveControlURL: got nil error, want a DNS resolution failure")
 	}
 }

@@ -1,65 +1,173 @@
-// Package orgs contains organization-provisioning logic shared by the
-// Provisioner (background pool of ready-to-assign organizations) and the
-// web server (assigning a pooled organization to a first-time login).
+// Package orgs provisions and manages organizations and their in-process
+// headscale instances.
 package orgs
 
 import (
 	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"log/slog"
+	"slices"
+	"sync"
+	"time"
+
+	"github.com/ownscalenet/headscale/hscontrol"
+	"github.com/rs/xid"
+	"golang.org/x/crypto/bcrypt"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/derrors"
-	"github.com/ownscalenet/ownscale/dockerctl"
-
-	"github.com/rs/xid"
-	"golang.org/x/crypto/bcrypt"
+	"github.com/ownscalenet/ownscale/headscaleclient"
+	"github.com/ownscalenet/ownscale/utils"
 )
 
-// Service provisions organizations against a fixed set of queries, Docker
-// controller, and base domain. It's shared by the CLI (cmd/osa) and the web
-// server (handlers) so both wire it up once instead of threading
-// the same dependencies through every call site.
+const (
+	maxSubdomainAttempts = 5
+	initialPort          = 10_000
+)
+
+// fixedSubdomains are handed out in order to the first organizations
+// created, so development identities land on predictable subdomains.
+var fixedSubdomains = []string{"aaaa", "bbbb", "cccc", "dddd", "eeee", "ffff"}
+
+// Service provisions organizations and manages the lifecycle of every
+// org's in-process hscontrol.Headscale instance.
 type Service struct {
 	queries    *db.TxQueries
-	ctl        *dockerctl.Ctl
 	baseDomain string
 	issuer     string
 	derpCfg    config.DerpConfig
+	logger     *slog.Logger
+	dataDir    string
+
+	instances utils.Map[string, *hscontrol.Headscale]
+	ports     utils.Map[string, int]
+	grp       *errgroup.Group
+
+	// startMu serializes headscale startup (headscale's DERP map shuffling
+	// shares one non-thread-safe rand.Rand across instances) and guards
+	// nextPort, which is only ever handed out as part of a startup.
+	// This is not enough no prevent races, there's still a race because the
+	// derp worker (usually at 3h interval) calls GetDERPMap, which again
+	// touches the global rand.Rand.
+	startMu  sync.Mutex
+	nextPort int
+
+	// createFn defaults to createHeadscale; override in tests to skip
+	// real headscale startup.
+	createFn func(ctx context.Context, dataDir, subdomain, baseDomain string, port int, oidcCreds OIDCClientCredentials, derpCfg config.DerpConfig) (*hscontrol.Headscale, error)
 }
 
-// NewService builds a Service backed by queries and ctl, provisioning
-// organizations under baseDomain. derpCfg configures a self-hosted DERP
-// relay for every organization's headscale container (see
-// config.DerpConfig); its zero value keeps using Tailscale's public DERP
-// map, unchanged from before this parameter existed.
-func NewService(queries *db.TxQueries, ctl *dockerctl.Ctl, baseDomain, issuer string, derpCfg config.DerpConfig) *Service {
-	return &Service{queries: queries, ctl: ctl, baseDomain: baseDomain, issuer: issuer, derpCfg: derpCfg}
+// NewService builds a Service that manages organizations under baseDomain.
+func NewService(queries *db.TxQueries, baseDomain, issuer string, derpCfg config.DerpConfig, logger *slog.Logger, dataDir string) *Service {
+	grp := &errgroup.Group{}
+	// Keep the errgroup alive even when no org goroutines are running yet.
+	grp.Go(func() error {
+		time.Sleep(999999 * time.Hour)
+		return nil
+	})
+	return &Service{
+		queries:    queries,
+		baseDomain: baseDomain,
+		issuer:     issuer,
+		derpCfg:    derpCfg,
+		logger:     logger,
+		dataDir:    dataDir,
+		nextPort:   initialPort,
+		grp:        grp,
+		createFn:   createHeadscale,
+	}
 }
 
-// BaseDomain returns the domain organizations are provisioned under (e.g.
-// "example.com" for "<sub>.example.com").
+// BaseDomain returns the domain organizations are provisioned under.
 func (s *Service) BaseDomain() string {
 	return s.baseDomain
 }
 
-// ForOrg instantiates an OrgService.
+// ForOrg instantiates an OrgService for the given organization.
 func (s *Service) ForOrg(org sqlcgen.Organization) *OrgService {
+	sub := org.Subdomain
 	return &OrgService{
 		queries:   s.queries,
-		ctl:       s.ctl,
 		orgID:     org.ID,
-		subdomain: org.Subdomain,
+		subdomain: sub,
+		getHeadscale: func() (*hscontrol.Headscale, bool) {
+			return s.instances.Load(sub)
+		},
 	}
 }
 
-// provisionNew provisions a brand-new organization under subdomain
-// end-to-end and returns it already inserted with status successStatus.
-func (s *Service) provisionNew(ctx context.Context, subdomain, successStatus string) (_ sqlcgen.Organization, err error) {
-	if err := dockerctl.ValidateSubdomain(subdomain); err != nil {
+// MintClient implements headscaleclient.ClientMinter: it creates a fresh
+// API key via the headscale instance's in-process state and returns a
+// Client pointed at http://127.0.0.1:{port}.
+func (s *Service) MintClient(ctx context.Context, subdomain string) (_ *headscaleclient.Client, err error) {
+	defer derrors.Wrap(&err, "s.MintClient(%q)", subdomain)
+	app, ok := s.instances.Load(subdomain)
+	if !ok {
+		return nil, fmt.Errorf("no headscale instance running for %q", subdomain)
+	}
+	port, _ := s.ports.Load(subdomain)
+
+	expiry := time.Now().Add(87600 * time.Hour) // 10 years
+	key, _, err := app.GetState().CreateAPIKey(&expiry)
+	if err != nil {
+		return nil, fmt.Errorf("create headscale API key: %w", err)
+	}
+	return headscaleclient.New(fmt.Sprintf("127.0.0.1:%d", port), key), nil
+}
+
+// LookupPort returns the TCP port assigned to subdomain's headscale
+// instance, or false if none is running.
+func (s *Service) LookupPort(subdomain string) (int, bool) {
+	return s.ports.Load(subdomain)
+}
+
+// Start restarts the headscale instances of existing organizations. It
+// returns once startup recovery is complete.
+func (s *Service) Start(ctx context.Context) error {
+	if err := s.recoverActive(ctx); err != nil && ctx.Err() == nil {
+		return err
+	}
+	return nil
+}
+
+// NextSubdomain returns an unused subdomain for a new organization: the
+// first free one of fixedSubdomains, else a random one.
+func (s *Service) NextSubdomain(ctx context.Context) (_ string, err error) {
+	defer derrors.Wrap(&err, "s.NextSubdomain()")
+
+	candidates := slices.Clone(fixedSubdomains)
+	for range maxSubdomainAttempts {
+		suffix, err := randomAlphaNum(6)
+		if err != nil {
+			return "", err
+		}
+		candidates = append(candidates, suffix)
+	}
+	for _, subdomain := range candidates {
+		_, err := s.queries.GetOrganizationBySubdomain(ctx, subdomain)
+		if errors.Is(err, sql.ErrNoRows) {
+			return subdomain, nil
+		}
+		if err != nil {
+			return "", err
+		}
+	}
+	return "", errors.New("no unused subdomain found")
+}
+
+// Create provisions a new active organization with the given subdomain and
+// starts its headscale instance.
+func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organization, err error) {
+	defer derrors.Wrap(&err, "s.Create(%q)", subdomain)
+
+	if err := ValidateSubdomain(subdomain); err != nil {
 		return sqlcgen.Organization{}, err
 	}
 
@@ -83,36 +191,25 @@ func (s *Service) provisionNew(ctx context.Context, subdomain, successStatus str
 	if err != nil {
 		return sqlcgen.Organization{}, err
 	}
-	oidcCreds := dockerctl.OIDCClientCredentials{
+	oidcCreds := OIDCClientCredentials{
 		Issuer:       s.issuer,
 		ClientID:     clientID,
 		ClientSecret: clientSecret,
 	}
-	// This config goes to DB and becomes the authority.
-	hsConfig, err := dockerctl.BuildHeadscaleConfig(subdomain, subdomain+"."+s.baseDomain, oidcCreds, s.derpCfg)
+	hsConfig, err := BuildHeadscaleConfig(subdomain, subdomain+"."+s.baseDomain, oidcCreds, s.derpCfg)
 	if err != nil {
 		return sqlcgen.Organization{}, err
 	}
 
-	if _, err := s.ctl.CreateOrganization(ctx, subdomain, s.baseDomain, oidcCreds, s.derpCfg); err != nil {
-		// Best effort clean-up.
-		if cleanupErr := s.ctl.RemoveOrganization(ctx, subdomain); cleanupErr != nil {
-			err = fmt.Errorf("%w (also failed to clean up partially-created container: %w)", err, cleanupErr)
-		}
+	port, err := s.startHeadscale(ctx, subdomain, 0, oidcCreds, s.derpCfg)
+	if err != nil {
 		return sqlcgen.Organization{}, err
 	}
 
-	org, err := s.insertProvisioned(ctx, subdomain, successStatus, clientID, string(clientSecretHash), string(redirectURIsJSON), hsConfig)
-	if err != nil {
-		if cleanupErr := s.ctl.RemoveOrganization(ctx, subdomain); cleanupErr != nil {
-			err = fmt.Errorf("%w (also failed to clean up orphaned container: %w)", err, cleanupErr)
-		}
-		return sqlcgen.Organization{}, err
-	}
-	return org, nil
+	return s.insertProvisioned(ctx, subdomain, StatusActive, port, clientID, string(clientSecretHash), string(redirectURIsJSON), hsConfig)
 }
 
-func (s *Service) insertProvisioned(ctx context.Context, subdomain, status, clientID, clientSecretHash, redirectURIsJSON, hsConfig string) (_ sqlcgen.Organization, err error) {
+func (s *Service) insertProvisioned(ctx context.Context, subdomain, status string, port int, clientID, clientSecretHash, redirectURIsJSON, hsConfig string) (_ sqlcgen.Organization, err error) {
 	txQueries, commit, rollback, err := s.queries.StartTx(ctx)
 	if err != nil {
 		return sqlcgen.Organization{}, err
@@ -123,6 +220,7 @@ func (s *Service) insertProvisioned(ctx context.Context, subdomain, status, clie
 		ID:        xid.New().String(),
 		Subdomain: subdomain,
 		Status:    status,
+		Port:      int64(port),
 	})
 	if err != nil {
 		return sqlcgen.Organization{}, fmt.Errorf("create organization record (already exists?): %w", err)
@@ -139,7 +237,7 @@ func (s *Service) insertProvisioned(ctx context.Context, subdomain, status, clie
 	if _, err := txQueries.CreateOrgConfig(ctx, sqlcgen.CreateOrgConfigParams{
 		ID:             xid.New().String(),
 		OrganizationID: org.ID,
-		Path:           dockerctl.ConfigYAMLPath,
+		Path:           ConfigYAMLPath,
 		Content:        hsConfig,
 	}); err != nil {
 		return sqlcgen.Organization{}, err
@@ -150,16 +248,107 @@ func (s *Service) insertProvisioned(ctx context.Context, subdomain, status, clie
 	return org, nil
 }
 
-// Create provisions a brand-new organization end-to-end and marks it
-// "active" immediately. This func only exists for tests sake.
-func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organization, err error) {
-	defer derrors.Wrap(&err, "s.Create(%q)", subdomain)
-	return s.provisionNew(ctx, subdomain, StatusActive)
+// recoverActive starts headscale instances for all active
+// organizations that were running before this process restart.
+func (s *Service) recoverActive(ctx context.Context) error {
+	orgs, err := s.queries.ListOrganizations(ctx)
+	if err != nil {
+		return err
+	}
+	for _, org := range orgs {
+		if org.Status != StatusActive && org.Status != StatusUpdatePending {
+			continue
+		}
+		cfgRow, err := s.queries.GetOrgConfig(ctx, sqlcgen.GetOrgConfigParams{
+			OrganizationID: org.ID,
+			Path:           ConfigYAMLPath,
+		})
+		if err != nil {
+			s.logger.Warn("load org config for recovery; skipping", "subdomain", org.Subdomain, "error", err)
+			continue
+		}
+		parsedCfg, err := ParseHeadscaleFileConfig(cfgRow.Content)
+		if err != nil {
+			s.logger.Warn("parse org config for recovery; skipping", "subdomain", org.Subdomain, "error", err)
+			continue
+		}
+		oidcCreds := OIDCClientCredentials{
+			Issuer:       parsedCfg.OIDC.Issuer,
+			ClientID:     parsedCfg.OIDC.ClientID,
+			ClientSecret: parsedCfg.OIDC.ClientSecret,
+		}
+
+		if _, err := s.startHeadscale(ctx, org.Subdomain, int(org.Port), oidcCreds, s.derpCfg); err != nil {
+			s.logger.Error("recover active org headscale instance", "subdomain", org.Subdomain, "error", err)
+		}
+	}
+	return nil
 }
 
-// randomAlphaNum generates a random os-prefixed alphanumeric string of 6 characters.
+// startHeadscale creates and launches an hscontrol.Headscale instance for
+// subdomain, registering it in the in-memory maps, and returns the port it
+// listens on. A port of 0 allocates the next free one; otherwise port is an
+// already-persisted port that must not be handed out again. If headscale's
+// DB has no policy yet the default ACL policy is written before Serve
+// starts, so GetPolicy never returns "acl policy not found".
+//
+// Instances start one at a time: this returns only once Serve has loaded
+// its DERP map, or has failed.
+func (s *Service) startHeadscale(ctx context.Context, subdomain string, port int, oidcCreds OIDCClientCredentials, derpCfg config.DerpConfig) (_ int, err error) {
+	s.startMu.Lock()
+	defer s.startMu.Unlock()
+
+	if port == 0 {
+		port = s.nextPort
+	}
+	s.nextPort = max(s.nextPort, port+1)
+
+	app, err := s.createFn(ctx, s.dataDir, subdomain, s.baseDomain, port, oidcCreds, derpCfg)
+	if err != nil {
+		return 0, fmt.Errorf("create headscale instance for %q: %w", subdomain, err)
+	}
+	s.ports.Store(subdomain, port)
+	if app == nil {
+		return port, nil
+	}
+
+	if _, err := app.GetState().GetPolicy(); err != nil {
+		if _, err := app.GetState().SetPolicyInDB(defaultACLPolicy); err != nil {
+			s.logger.Warn("seed default ACL policy", "subdomain", subdomain, "error", err)
+		}
+	}
+	s.instances.Store(subdomain, app)
+
+	exited := make(chan struct{})
+	// TODO: tie to a per-org context so orgs can be stopped and restarted.
+	s.grp.Go(func() error {
+		defer close(exited)
+		return app.Serve(context.Background())
+	})
+	waitForDERPMap(ctx, app, exited)
+	return port, nil
+}
+
+// waitForDERPMap blocks until app's Serve has loaded the DERP map, Serve
+// has exited, or ctx is done.
+func waitForDERPMap(ctx context.Context, app *hscontrol.Headscale, exited <-chan struct{}) {
+	t := time.NewTicker(10 * time.Millisecond)
+	defer t.Stop()
+	for !app.GetState().DERPMap().Valid() {
+		select {
+		case <-t.C:
+		case <-exited:
+			return
+		case <-ctx.Done():
+			return
+		}
+	}
+}
+
+// randomAlphaNum generates a random alphanumeric string of n characters
+// prefixed with "os".
 func randomAlphaNum(n int) (_ string, err error) {
-	defer derrors.Wrap(&err, "orgs.randomSubdomain()")
+	defer derrors.Wrap(&err, "orgs.randomAlphaNum()")
 
 	const chars = "abcdefghijklmnopqrstuvwxyz0123456789"
 	buf := make([]byte, n)
@@ -176,15 +365,10 @@ func randomAlphaNum(n int) (_ string, err error) {
 // Organization lifecycle statuses. These must stay in sync with the CHECK
 // constraint added to that column in migrations.
 const (
-	// StatusReady is set on organizations provisioned by the Provisioner
-	// that are sitting in its pool, but not yet assigned to a user.
-	StatusReady = "ready"
-	// StatusActive is set once an organization has been fully provisioned
-	// and assigned to a user.
+	// StatusInactive does not yet have a use.
+	StatusInactive = "inactive"
+	// StatusActive is set on a provisioned organization.
 	StatusActive = "active"
-	// StatusUpdatePending is set while an organization's headscale
-	// config is being applied. If the restart fails, status is left
-	// here rather than reverted, since the org's actual running
-	// headscale config no longer necessarily matches what's stored.
+	// StatusUpdatePending is set while an organization's headscale config is applied.
 	StatusUpdatePending = "update_pending"
 )

@@ -9,10 +9,9 @@ import (
 
 // ClientMinter builds a fresh Client for the organization identified by
 // subdomain, minting an independent headscale API key and pointing the
-// client at that org's headscale instance. Implemented by *dockerctl.Ctl;
-// declared here as a narrow interface (rather than importing dockerctl
-// directly) so Registry stays decoupled from Docker specifics and easy to
-// test with a fake.
+// client at that org's headscale instance. Implemented by *orgs.Service;
+// declared here as a narrow interface (rather than importing orgs
+// directly) so Registry stays decoupled and easy to test with a fake.
 type ClientMinter interface {
 	MintClient(ctx context.Context, subdomain string) (*Client, error)
 }

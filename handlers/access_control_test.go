@@ -47,17 +47,13 @@ func newFakePolicyServer(t *testing.T, initial string) (*headscaleclient.Client,
 }
 
 // newAccessControlTestHandlers builds Handlers with organization
-// provisioning configured (dockerfake-backed), synchronously creates and
-// provisions an active organization, and inserts one user per role in
+// provisioning configured, inserts an active organization, and inserts one user per role in
 // roles (in order).
 func newAccessControlTestHandlers(t *testing.T, roles ...string) (*Handlers, sqlcgen.Organization, []sqlcgen.User) {
 	t.Helper()
 	h, queries := newTestHandlers(t)
 
-	org, err := h.orgs.Create(t.Context(), "acme")
-	if err != nil {
-		t.Fatalf("orgs.Create: %v", err)
-	}
+	org := insertOrg(t, queries, "acme")
 
 	users := make([]sqlcgen.User, 0, len(roles))
 	for _, role := range roles {
@@ -69,7 +65,7 @@ func newAccessControlTestHandlers(t *testing.T, roles ...string) (*Handlers, sql
 		}); err != nil {
 			t.Fatalf("SetUserOrganizationAndRole: %v", err)
 		}
-		u, err = queries.GetUserByID(t.Context(), u.ID)
+		u, err := queries.GetUserByID(t.Context(), u.ID)
 		if err != nil {
 			t.Fatalf("GetUserByID: %v", err)
 		}
@@ -81,7 +77,7 @@ func newAccessControlTestHandlers(t *testing.T, roles ...string) (*Handlers, sql
 func TestGetAccessControlPolicyReturnsEmptyStringAsIs(t *testing.T) {
 	h, _, users := newAccessControlTestHandlers(t, RoleMember)
 	member := users[0]
-	// dockerctl.CreateOrganization seeds every organization with a default
+	// orgs.Service seeds every organization with a default
 	// policy via headscale's API at provisioning time; this test simulates
 	// the (otherwise-unexpected) case where headscale genuinely reports no
 	// policy configured, and asserts the handler passes it through as-is

@@ -30,6 +30,7 @@ func main() {
 		newGenLocalCACommand(rootFlags),
 		newRestoreCommand(rootFlags),
 		newVerifyCommand(rootFlags),
+		newDevboxKeyCommand(rootFlags),
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

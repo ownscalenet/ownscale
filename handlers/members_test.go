@@ -25,7 +25,7 @@ import (
 func newMembersTestHandlers(t *testing.T, roles ...string) (*Handlers, *dbpkg.TxQueries, []sqlcgen.User) {
 	t.Helper()
 	queries := newTestQueries(t)
-	h, err := New(queries, nil, "", "", nil, discardLogger(), config.DerpConfig{}, config.ProvisionerConfig{})
+	h, err := New(queries, "", "", nil, discardLogger(), config.DerpConfig{})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -34,7 +34,7 @@ func newMembersTestHandlers(t *testing.T, roles ...string) (*Handlers, *dbpkg.Tx
 	h.hs = headscaleclient.NewRegistry(&fakeClientMinter{err: errors.New("headscale unreachable")})
 
 	orgID := xid.New().String()
-	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{ID: orgID, Subdomain: "acme", Status: orgs.StatusActive})
+	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{ID: orgID, Subdomain: "acme", Status: orgs.StatusActive, Port: testPort()})
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}

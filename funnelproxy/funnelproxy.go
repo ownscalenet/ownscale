@@ -27,7 +27,6 @@ import (
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/derrors"
-	"github.com/ownscalenet/ownscale/dockerctl"
 	"github.com/ownscalenet/ownscale/headscaleclient"
 )
 
@@ -67,12 +66,18 @@ type Pool struct {
 	controlURL func(ctx context.Context, subdomain string) (string, error)
 }
 
-// NewPool builds a Pool. dataDir is the same directory dockerctl.Ctl uses
-// for its own per-organization host state (each tsnet.Server gets its own
-// subdirectory under dataDir/funnel-tsnet/<subdomain>, so it registers as
-// a stable node across process restarts instead of re-registering on
-// every request).
-func NewPool(queries Queries, hs HeadscaleClients, dataDir string, logger *slog.Logger) *Pool {
+// PortLookup returns the TCP port for subdomain's headscale instance, or
+// false if no instance is running. Implemented by *orgs.Service.
+type PortLookup interface {
+	LookupPort(subdomain string) (int, bool)
+}
+
+// NewPool builds a Pool. dataDir is used to give each org's tsnet.Server
+// a stable on-disk state directory (funnel-tsnet/<subdomain>) so it
+// registers as a stable tailnet node across process restarts instead of
+// re-registering on every request. portLookup maps subdomains to the TCP
+// port where their in-process headscale instance is listening.
+func NewPool(queries Queries, hs HeadscaleClients, dataDir string, logger *slog.Logger, portLookup PortLookup) *Pool {
 	// The symptoms of having this enabled: only funnels from one org work,
 	// all others timeout.
 	netns.SetEnabled(false)
@@ -84,43 +89,14 @@ func NewPool(queries Queries, hs HeadscaleClients, dataDir string, logger *slog.
 		logger:    logger,
 		servers:   make(map[string]*tsnet.Server),
 		upTimeout: funnelUpTimeout,
-		controlURL: func(ctx context.Context, subdomain string) (string, error) {
-			return resolveControlURL(ctx, dockerctl.HSContainerName(subdomain))
+		controlURL: func(_ context.Context, subdomain string) (string, error) {
+			port, ok := portLookup.LookupPort(subdomain)
+			if !ok {
+				return "", fmt.Errorf("no headscale instance running for %q", subdomain)
+			}
+			return fmt.Sprintf("http://127.0.0.1:%d", port), nil
 		},
 	}
-}
-
-// resolveControlURL resolves host (a Docker-network container name) to its
-// current literal IP address and returns an "http://<ip>:8080" ControlURL
-// built from that IP rather than the bare DNS name.
-//
-// ts2021.NewClient has a fallback: if the request to a controlURL fails
-// and the controlURL is not a private/loopback IP address, then subsequent
-// requests are done on HTTPS/443. The internal address of headscale, ie
-// http://hs-aaaa:8080, is not a private/loopback IP, so tailscale client
-// switches to https/443 and continuously errors.
-func resolveControlURL(ctx context.Context, host string) (_ string, err error) {
-	defer derrors.Wrap(&err, "resolveControlURL(%q)", host)
-
-	addrs, err := net.DefaultResolver.LookupIPAddr(ctx, host)
-	if err != nil {
-		return "", err
-	}
-	// Prefer an IPv4 address to match the Docker bridge network's address
-	// family; fall back to IPv6 only if no IPv4 address was returned.
-	var ipv6 string
-	for _, addr := range addrs {
-		if ipv4 := addr.IP.To4(); ipv4 != nil {
-			return "http://" + net.JoinHostPort(ipv4.String(), "8080"), nil
-		}
-		if ipv6 == "" {
-			ipv6 = addr.IP.String()
-		}
-	}
-	if ipv6 == "" {
-		return "", fmt.Errorf("no addresses found for %q", host)
-	}
-	return "http://" + net.JoinHostPort(ipv6, "8080"), nil
 }
 
 // Close shuts down every cached tsnet.Server. Intended to be called once,
@@ -208,7 +184,7 @@ func (p *Pool) ServeHTTP(w http.ResponseWriter, r *http.Request, label, subdomai
 			pr.Out.URL.Host = targetAddr
 			// Preserve the public-facing Host header rather than
 			// overwriting it with targetAddr -- matches how Caddy's own
-			// reverse_proxy to hs-<sub> already behaves, and how a
+			// reverse_proxy already behaves, and how a
 			// target app listening on a fixed port has no reason to
 			// expect anything else.
 			pr.Out.Host = pr.In.Host
@@ -220,6 +196,29 @@ func (p *Pool) ServeHTTP(w http.ResponseWriter, r *http.Request, label, subdomai
 		},
 	}
 	proxy.ServeHTTP(w, r)
+}
+
+// waitForDERP polls lc.Status until the tsnet node has a relay (DERP
+// region) assigned, which means it can route packets to peers. It returns
+// when relay is set, when ctx is done, or after timeout, whichever is first.
+func waitForDERP(ctx context.Context, srv *tsnet.Server, timeout time.Duration) error {
+	lc, err := srv.LocalClient()
+	if err != nil {
+		return fmt.Errorf("get local client: %w", err)
+	}
+	ctx, cancel := context.WithTimeout(ctx, timeout)
+	defer cancel()
+	for {
+		st, err := lc.Status(ctx)
+		if err == nil && st.Self != nil && st.Self.Relay != "" {
+			return nil
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(500 * time.Millisecond):
+		}
+	}
 }
 
 func targetNodeIP(ctx context.Context, client *headscaleclient.Client, nodeID string) (string, error) {
@@ -307,6 +306,14 @@ func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *
 				return nil, fmt.Errorf("tsnet server up: timed out after %s: %w", p.upTimeout, err)
 			}
 			return nil, fmt.Errorf("tsnet server up: %w", err)
+		}
+
+		// Wait for DERP to be established before declaring the server
+		// ready. srv.Up only waits for the control-plane connection, not
+		// for DERP relay probing to complete; a custom DERP region that
+		// is temporarily down can delay convergence by its probe timeout.
+		if err := waitForDERP(context.Background(), srv, p.upTimeout); err != nil {
+			p.logger.Warn("funnel: DERP not ready after wait; first dials may fail", "subdomain", subdomain, "error", err)
 		}
 
 		if err := client.DeletePreAuthKey(context.WithoutCancel(ctx), authKey.ID); err != nil {

@@ -16,7 +16,6 @@ import (
 	"github.com/ownscalenet/ownscale/auth/oidcprovider"
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/db"
-	"github.com/ownscalenet/ownscale/dockerctl"
 	"github.com/ownscalenet/ownscale/handlers"
 	"github.com/ownscalenet/ownscale/logging"
 	"github.com/ownscalenet/ownscale/server"
@@ -37,8 +36,7 @@ func main() {
 }
 
 // run wires up and serves the admin panel, returning (rather than calling
-// os.Exit) on failure so every deferred cleanup (closing the DB pool, the
-// Docker client, etc.) always runs.
+// os.Exit) on failure so every deferred cleanup always runs.
 func run() error {
 	cfg, err := config.Load()
 	if err != nil {
@@ -59,52 +57,15 @@ func run() error {
 	}
 	defer pool.Close()
 
-	ctl, err := dockerctl.New(cfg.DataDir, cfg.LocalCADir, logger)
-	if err != nil {
-		return err
-	}
-	defer ctl.Close()
 	ctx := context.Background()
-
 	queries := db.New(pool, logger)
-
-	// Re-assert Caddy's network alias for BaseDomain on every startup: it's
-	// set imperatively via the Docker API (not declared in
-	// docker-compose.yml), so it's lost whenever Caddy's container gets
-	// recreated (image rebuild, `docker compose up`, ...). This covers the
-	// shared network (used by the ownscale app container itself), plus --
-	// since each organization's headscale container lives only on
-	// their own isolated network, not the shared one -- every existing
-	// organization's own network individually, so their OIDC login doesn't
-	// silently break until the alias is restored.
-	if cfg.BaseDomain != "" {
-		if err := ctl.EnsureCaddyNetworkAlias(ctx, dockerctl.ConsoleDomain(cfg.BaseDomain)); err != nil {
-			logger.Warn("ensure caddy network alias", "error", err)
-		}
-		if organizations, err := queries.ListOrganizations(ctx); err != nil {
-			logger.Warn("list organizations for caddy network alias reconciliation", "error", err)
-		} else {
-			for _, org := range organizations {
-				if err := ctl.EnsureCaddyNetworkAliasForOrg(ctx, org.Subdomain, dockerctl.ConsoleDomain(cfg.BaseDomain)); err != nil {
-					logger.Warn("ensure caddy network alias for organization", "subdomain", org.Subdomain, "error", err)
-				}
-				// Likewise, ownscale's own membership in each organization's
-				// network (needed to reach hs-<subdomain>:8080 directly for
-				// the Machines tab) is set imperatively too, so it must be
-				// reconciled the same way.
-				if err := ctl.EnsureOwnscaleNetworkForOrg(ctx, org.Subdomain); err != nil {
-					logger.Warn("ensure ownscale network join for organization", "subdomain", org.Subdomain, "error", err)
-				}
-			}
-		}
-	}
 
 	auth.Setup(cfg.Auth.SessionSecret)
 	provider, oidcStorage, err := oidcprovider.New(cfg, queries.Queries)
 	if err != nil {
 		return err
 	}
-	h, err := handlers.New(queries, ctl, cfg.BaseDomain, cfg.DataDir, oidcStorage, logger, cfg.Derp, cfg.Provisioner)
+	h, err := handlers.New(queries, cfg.BaseDomain, cfg.DataDir, oidcStorage, logger, cfg.Derp)
 	if err != nil {
 		return err
 	}
@@ -113,13 +74,14 @@ func run() error {
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
 		return auth.RequireAuthAPI(queries.Queries, next)
 	}
-	mux := server.NewMux(h, requireAuthAPI, logger, webui.Handler(cfg.Development), provider)
+	consoleMux := server.NewMux(h, requireAuthAPI, logger, webui.Handler(cfg.Development), provider)
+	handler := server.NewSubdomainProxy(consoleMux, cfg.BaseDomain, h.LookupPort)
 
-	srv := &http.Server{Addr: cfg.Addr, Handler: mux}
+	srv := &http.Server{Addr: cfg.Addr, Handler: handler}
 
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	h.StartProvisioner(ctx)
+	h.Start(ctx)
 
 	// Listen before RegisterUpstreamOIDC because that call needs the server to be up.
 	ln, err := net.Listen("tcp", cfg.Addr)
