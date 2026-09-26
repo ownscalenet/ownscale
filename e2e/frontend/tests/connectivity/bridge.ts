@@ -10,6 +10,16 @@ export interface NodeInfo {
   backendState: string
 }
 
+/** The DNS configuration a node received from its control server. */
+export interface DNSInfo {
+  node: string
+  magicDns: boolean
+  domains: string[]
+  resolvers: string[]
+  fallbackResolvers: string[]
+  extraRecords: { name: string; type: string; value: string }[]
+}
+
 export interface ServiceInfo {
   node: string
   service: string
@@ -67,6 +77,15 @@ const nodeInfo = (v: unknown): v is NodeInfo => object(v) &&
   handle(v.node) && handle(v.hostname) && text(v.backendState, 64) &&
   Array.isArray(v.addresses) && v.addresses.length <= 16 &&
   v.addresses.every(a => typeof a === 'string' && isIP(a) !== 0)
+const textList = (v: unknown): v is string[] =>
+  Array.isArray(v) && v.length <= 64 && v.every(item => text(item, 512))
+const dnsInfo = (v: unknown): v is DNSInfo => object(v) &&
+  keys(v, ['node', 'magicDns', 'domains', 'resolvers', 'fallbackResolvers', 'extraRecords']) &&
+  handle(v.node) && typeof v.magicDns === 'boolean' &&
+  textList(v.domains) && textList(v.resolvers) && textList(v.fallbackResolvers) &&
+  Array.isArray(v.extraRecords) && v.extraRecords.length <= 256 &&
+  v.extraRecords.every(r => object(r) && keys(r, ['name', 'type', 'value']) &&
+    text(r.name, 512) && text(r.type, 16) && text(r.value, 512))
 const serviceInfo = (v: unknown): v is ServiceInfo => object(v) &&
   keys(v, ['node', 'service', 'identity', 'addresses', 'port']) &&
   handle(v.node) && handle(v.service) && text(v.identity) && v.identity.length > 0 &&
@@ -164,6 +183,10 @@ export class Bridge {
 
   status(node: string): Promise<NodeInfo> {
     return this.call('status', { node }, 5000, v => nodeInfo(v) && v.node === node)
+  }
+
+  dns(node: string): Promise<DNSInfo> {
+    return this.call('dns', { node }, 10_000, v => dnsInfo(v) && v.node === node)
   }
 
   serve(node: string, service: string, port: number): Promise<ServiceInfo> {

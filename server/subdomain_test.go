@@ -1,9 +1,13 @@
 package server
 
 import (
+	"context"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 func TestExtractSubdomain(t *testing.T) {
@@ -47,7 +51,7 @@ func TestSubdomainProxyFunnelPassthrough(t *testing.T) {
 	p := &SubdomainProxy{
 		next:       next,
 		baseDomain: "ownscale.test",
-		lookupPort: func(string) (int, bool) { return 0, false },
+		dial:       func(context.Context, string) (net.Conn, error) { return nil, orgs.ErrNotRunning },
 	}
 
 	req := httptest.NewRequest("GET", "https://web2-aaaa.ownscale.test/", nil)
@@ -59,6 +63,54 @@ func TestSubdomainProxyFunnelPassthrough(t *testing.T) {
 		t.Error("next handler was not called for funnel hostname; expected pass-through")
 	}
 	if rr.Code == http.StatusServiceUnavailable {
-		t.Error("got 503; funnel hostname must not hit the lookupPort path")
+		t.Error("got 503; funnel hostname must not hit the org dial path")
+	}
+}
+
+func TestSubdomainProxyRoutesToOrg(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-Seen-Host", r.Host)
+		_, _ = w.Write([]byte("from org"))
+	}))
+	t.Cleanup(backend.Close)
+
+	var dialed []string
+	dial := func(ctx context.Context, subdomain string) (net.Conn, error) {
+		dialed = append(dialed, subdomain)
+		if subdomain == "gone" {
+			return nil, orgs.ErrNotRunning
+		}
+		return (&net.Dialer{}).DialContext(ctx, "tcp", backend.Listener.Addr().String())
+	}
+	p := NewSubdomainProxy(http.NotFoundHandler(), "ownscale.test", dial)
+
+	tests := []struct {
+		host     string
+		wantCode int
+		wantBody string
+	}{
+		{"aaaa.ownscale.test", http.StatusOK, "from org"},
+		{"gone.ownscale.test", http.StatusServiceUnavailable, ""},
+		{"console.ownscale.test", http.StatusNotFound, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.host, func(t *testing.T) {
+			req := httptest.NewRequest("GET", "https://"+tt.host+"/", nil)
+			rr := httptest.NewRecorder()
+			p.ServeHTTP(rr, req)
+
+			if rr.Code != tt.wantCode {
+				t.Fatalf("status = %d, want %d", rr.Code, tt.wantCode)
+			}
+			if tt.wantBody != "" && rr.Body.String() != tt.wantBody {
+				t.Errorf("body = %q, want %q", rr.Body.String(), tt.wantBody)
+			}
+			if tt.wantBody != "" && rr.Header().Get("X-Seen-Host") != tt.host {
+				t.Errorf("backend saw Host %q, want %q", rr.Header().Get("X-Seen-Host"), tt.host)
+			}
+		})
+	}
+	if len(dialed) != 2 || dialed[0] != "aaaa" || dialed[1] != "gone" {
+		t.Errorf("dialed = %v, want [aaaa gone]", dialed)
 	}
 }

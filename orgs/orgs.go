@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
+	"net"
 	"slices"
 	"sync"
 	"time"
@@ -46,7 +48,7 @@ type Service struct {
 	logger     *slog.Logger
 	dataDir    string
 
-	instances utils.Map[string, *hscontrol.Headscale]
+	instances utils.Map[string, *instance]
 	ports     utils.Map[string, int]
 	grp       *errgroup.Group
 
@@ -59,9 +61,24 @@ type Service struct {
 	startMu  sync.Mutex
 	nextPort int
 
+	// conns tracks the connections DialOrg handed out, per organization, so
+	// a restart can close them: headscale hijacks its device connections,
+	// so stopping the server leaves them attached to the stopped instance
+	// instead of letting the devices reconnect to the new one.
+	connsMu sync.Mutex
+	conns   map[string]map[net.Conn]struct{}
+
 	// createFn defaults to createHeadscale; override in tests to skip
 	// real headscale startup.
-	createFn func(ctx context.Context, dataDir, subdomain, baseDomain string, port int, oidcCreds OIDCClientCredentials, derpCfg config.DerpConfig) (*hscontrol.Headscale, error)
+	createFn func(ctx context.Context, dataDir, subdomain, baseDomain string, port int, fileCfg *HeadscaleFileConfig, derpCfg config.DerpConfig) (*hscontrol.Headscale, error)
+}
+
+// instance is a running headscale server and the means to stop it.
+type instance struct {
+	app    *hscontrol.Headscale
+	cancel context.CancelFunc
+	// exited is closed once app.Serve has returned.
+	exited chan struct{}
 }
 
 // NewService builds a Service that manages organizations under baseDomain.
@@ -72,6 +89,7 @@ func NewService(queries *db.TxQueries, baseDomain, issuer string, derpCfg config
 		time.Sleep(999999 * time.Hour)
 		return nil
 	})
+
 	return &Service{
 		queries:    queries,
 		baseDomain: baseDomain,
@@ -81,6 +99,7 @@ func NewService(queries *db.TxQueries, baseDomain, issuer string, derpCfg config
 		dataDir:    dataDir,
 		nextPort:   initialPort,
 		grp:        grp,
+		conns:      make(map[string]map[net.Conn]struct{}),
 		createFn:   createHeadscale,
 	}
 }
@@ -97,8 +116,8 @@ func (s *Service) ForOrg(org sqlcgen.Organization) *OrgService {
 		queries:   s.queries,
 		orgID:     org.ID,
 		subdomain: sub,
-		getHeadscale: func() (*hscontrol.Headscale, bool) {
-			return s.instances.Load(sub)
+		restart: func(ctx context.Context) error {
+			return s.restartHeadscale(ctx, sub)
 		},
 	}
 }
@@ -108,18 +127,70 @@ func (s *Service) ForOrg(org sqlcgen.Organization) *OrgService {
 // Client pointed at http://127.0.0.1:{port}.
 func (s *Service) MintClient(ctx context.Context, subdomain string) (_ *headscaleclient.Client, err error) {
 	defer derrors.Wrap(&err, "s.MintClient(%q)", subdomain)
-	app, ok := s.instances.Load(subdomain)
+	inst, ok := s.instances.Load(subdomain)
 	if !ok {
 		return nil, fmt.Errorf("no headscale instance running for %q", subdomain)
 	}
 	port, _ := s.ports.Load(subdomain)
 
-	expiry := time.Now().Add(87600 * time.Hour) // 10 years
-	key, _, err := app.GetState().CreateAPIKey(&expiry)
+	expiry := time.Now().Add(10 * 365 * 24 * time.Hour)
+	key, _, err := inst.app.GetState().CreateAPIKey(&expiry)
 	if err != nil {
 		return nil, fmt.Errorf("create headscale API key: %w", err)
 	}
 	return headscaleclient.New(fmt.Sprintf("127.0.0.1:%d", port), key), nil
+}
+
+// ErrNotRunning is returned by DialOrg for an organization without a
+// running headscale instance.
+var ErrNotRunning = errors.New("organization not running")
+
+// DialOrg connects to subdomain's headscale instance. The connection is
+// closed when the instance is restarted.
+func (s *Service) DialOrg(ctx context.Context, subdomain string) (net.Conn, error) {
+	port, ok := s.ports.Load(subdomain)
+	if !ok {
+		return nil, ErrNotRunning
+	}
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	if err != nil {
+		return nil, err
+	}
+	tc := &trackedConn{Conn: conn}
+	tc.untrack = func() {
+		s.connsMu.Lock()
+		defer s.connsMu.Unlock()
+		delete(s.conns[subdomain], tc)
+	}
+	s.connsMu.Lock()
+	defer s.connsMu.Unlock()
+	if s.conns[subdomain] == nil {
+		s.conns[subdomain] = make(map[net.Conn]struct{})
+	}
+	s.conns[subdomain][tc] = struct{}{}
+	return tc, nil
+}
+
+// closeConns closes every connection DialOrg handed out for subdomain.
+func (s *Service) closeConns(subdomain string) {
+	s.connsMu.Lock()
+	conns := slices.Collect(maps.Keys(s.conns[subdomain]))
+	s.connsMu.Unlock()
+	for _, c := range conns {
+		c.Close()
+	}
+}
+
+// trackedConn removes itself from its Service's tracking when closed.
+type trackedConn struct {
+	net.Conn
+	untrack func()
+	once    sync.Once
+}
+
+func (c *trackedConn) Close() error {
+	c.once.Do(c.untrack)
+	return c.Conn.Close()
 }
 
 // LookupPort returns the TCP port assigned to subdomain's headscale
@@ -201,7 +272,11 @@ func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organ
 		return sqlcgen.Organization{}, err
 	}
 
-	port, err := s.startHeadscale(ctx, subdomain, 0, oidcCreds, s.derpCfg)
+	fileCfg, err := ParseHeadscaleFileConfig(hsConfig)
+	if err != nil {
+		return sqlcgen.Organization{}, err
+	}
+	port, err := s.startHeadscale(ctx, subdomain, 0, fileCfg, s.derpCfg)
 	if err != nil {
 		return sqlcgen.Organization{}, err
 	}
@@ -272,13 +347,8 @@ func (s *Service) recoverActive(ctx context.Context) error {
 			s.logger.Warn("parse org config for recovery; skipping", "subdomain", org.Subdomain, "error", err)
 			continue
 		}
-		oidcCreds := OIDCClientCredentials{
-			Issuer:       parsedCfg.OIDC.Issuer,
-			ClientID:     parsedCfg.OIDC.ClientID,
-			ClientSecret: parsedCfg.OIDC.ClientSecret,
-		}
 
-		if _, err := s.startHeadscale(ctx, org.Subdomain, int(org.Port), oidcCreds, s.derpCfg); err != nil {
+		if _, err := s.startHeadscale(ctx, org.Subdomain, int(org.Port), parsedCfg, s.derpCfg); err != nil {
 			s.logger.Error("recover active org headscale instance", "subdomain", org.Subdomain, "error", err)
 		}
 	}
@@ -294,16 +364,20 @@ func (s *Service) recoverActive(ctx context.Context) error {
 //
 // Instances start one at a time: this returns only once Serve has loaded
 // its DERP map, or has failed.
-func (s *Service) startHeadscale(ctx context.Context, subdomain string, port int, oidcCreds OIDCClientCredentials, derpCfg config.DerpConfig) (_ int, err error) {
+func (s *Service) startHeadscale(ctx context.Context, subdomain string, port int, fileCfg *HeadscaleFileConfig, derpCfg config.DerpConfig) (_ int, err error) {
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
+	return s.startLocked(ctx, subdomain, port, fileCfg, derpCfg)
+}
 
+// startLocked is startHeadscale for callers already holding startMu.
+func (s *Service) startLocked(ctx context.Context, subdomain string, port int, fileCfg *HeadscaleFileConfig, derpCfg config.DerpConfig) (_ int, err error) {
 	if port == 0 {
 		port = s.nextPort
 	}
 	s.nextPort = max(s.nextPort, port+1)
 
-	app, err := s.createFn(ctx, s.dataDir, subdomain, s.baseDomain, port, oidcCreds, derpCfg)
+	app, err := s.createFn(ctx, s.dataDir, subdomain, s.baseDomain, port, fileCfg, derpCfg)
 	if err != nil {
 		return 0, fmt.Errorf("create headscale instance for %q: %w", subdomain, err)
 	}
@@ -317,16 +391,55 @@ func (s *Service) startHeadscale(ctx context.Context, subdomain string, port int
 			s.logger.Warn("seed default ACL policy", "subdomain", subdomain, "error", err)
 		}
 	}
-	s.instances.Store(subdomain, app)
 
-	exited := make(chan struct{})
-	// TODO: tie to a per-org context so orgs can be stopped and restarted.
+	serveCtx, cancel := context.WithCancel(context.Background())
+	inst := &instance{app: app, cancel: cancel, exited: make(chan struct{})}
+	s.instances.Store(subdomain, inst)
 	s.grp.Go(func() error {
-		defer close(exited)
-		return app.Serve(context.Background())
+		defer close(inst.exited)
+		return app.Serve(serveCtx)
 	})
-	waitForDERPMap(ctx, app, exited)
+	waitForDERPMap(ctx, app, inst.exited)
 	return port, nil
+}
+
+// restartHeadscale stops subdomain's running headscale instance (if any) and
+// starts a new one from the organization's latest stored config, on the same
+// port. It starts an instance that isn't running yet.
+func (s *Service) restartHeadscale(ctx context.Context, subdomain string) (err error) {
+	defer derrors.Wrap(&err, "s.restartHeadscale(%q)", subdomain)
+
+	s.startMu.Lock()
+	defer s.startMu.Unlock()
+
+	org, err := s.queries.GetOrganizationBySubdomain(ctx, subdomain)
+	if err != nil {
+		return err
+	}
+	cfgRow, err := s.queries.GetOrgConfig(ctx, sqlcgen.GetOrgConfigParams{
+		OrganizationID: org.ID,
+		Path:           ConfigYAMLPath,
+	})
+	if err != nil {
+		return err
+	}
+	fileCfg, err := ParseHeadscaleFileConfig(cfgRow.Content)
+	if err != nil {
+		return err
+	}
+
+	if inst, ok := s.instances.Load(subdomain); ok {
+		inst.cancel()
+		select {
+		case <-inst.exited:
+		case <-ctx.Done():
+			return fmt.Errorf("waiting for headscale to stop: %w", ctx.Err())
+		}
+		s.instances.Delete(subdomain)
+	}
+	s.closeConns(subdomain)
+	_, err = s.startLocked(ctx, subdomain, int(org.Port), fileCfg, s.derpCfg)
+	return err
 }
 
 // waitForDERPMap blocks until app's Serve has loaded the DERP map, Serve

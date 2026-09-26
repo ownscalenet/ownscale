@@ -82,7 +82,7 @@ type OIDCProviderConfig struct {
 	IDTokenLifetime     string `env:"OWNSCALE_AUTH_OIDC_PROVIDER_ID_TOKEN_LIFETIME"`
 }
 
-// DerpConfig points every organization's headscale container at a
+// DerpConfig points every organization's headscale instance at a
 // self-hosted DERP relay (see deploy/derper) instead of Tailscale's public
 // one. Entirely optional: when Hostname is unset, headscale falls back to
 // Tailscale's default public DERP map, unchanged from before this config

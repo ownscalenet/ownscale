@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"net"
 	"net/http"
 	"time"
 
@@ -107,10 +108,10 @@ func (h *Handlers) ServeFunnelIfMatched(w http.ResponseWriter, r *http.Request) 
 	return true
 }
 
-// LookupPort returns the TCP port for subdomain's in-process headscale
-// instance. Used by server.NewSubdomainProxy to route subdomain traffic.
-func (h *Handlers) LookupPort(subdomain string) (int, bool) {
-	return h.orgs.LookupPort(subdomain)
+// DialOrg connects to subdomain's in-process headscale instance. Used by
+// server.NewSubdomainProxy to route subdomain traffic.
+func (h *Handlers) DialOrg(ctx context.Context, subdomain string) (net.Conn, error) {
+	return h.orgs.DialOrg(ctx, subdomain)
 }
 
 // Start restarts existing orgs' headscale instances. It is non-blocking.

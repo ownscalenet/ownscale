@@ -8,6 +8,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"reflect"
 	"strings"
 	"syscall"
 	"testing"
@@ -16,6 +17,8 @@ import (
 	"github.com/ownscalenet/ownscale/derrors"
 	"github.com/ownscalenet/ownscale/e2e/connectivity/tscl"
 	"tailscale.com/ipn/ipnstate"
+	"tailscale.com/tailcfg"
+	"tailscale.com/types/dnstype"
 )
 
 type testNode struct {
@@ -23,6 +26,13 @@ type testNode struct {
 	closeErr  error
 	probeErr  error
 	statusErr error
+	dns       tailcfg.DNSConfig
+	dnsErr    error
+}
+
+func (n *testNode) DNS(context.Context) (_ tailcfg.DNSConfig, err error) {
+	defer derrors.Wrap(&err, "n.DNS()")
+	return n.dns, n.dnsErr
 }
 
 func (n *testNode) Status(context.Context) (_ *ipnstate.Status, err error) {
@@ -119,6 +129,40 @@ func TestNodeLifecycle(t *testing.T) {
 	}
 	if _, err := d.dispatch(t.Context(), "create", json.RawMessage(create)); err == nil || classify(err).Code != "duplicate_handle" {
 		t.Fatalf("reused handle = %v", err)
+	}
+}
+
+func TestDNS(t *testing.T) {
+	d := newDispatcher()
+	d.nodes["n"] = &ownedNode{client: &testNode{dns: tailcfg.DNSConfig{
+		Proxied:           true,
+		Domains:           []string{"org.ownscale", "internal.example.com"},
+		FallbackResolvers: []*dnstype.Resolver{{Addr: "1.1.1.1"}},
+		ExtraRecords:      []tailcfg.DNSRecord{{Name: "host.example.com", Type: "A", Value: "10.0.0.1"}},
+	}}}
+	d.nodes["failing"] = &ownedNode{client: &testNode{dnsErr: context.DeadlineExceeded}}
+	d.nodes["gone"] = &ownedNode{client: &testNode{}, closed: true}
+
+	got, err := d.dispatch(t.Context(), "dns", json.RawMessage(`{"timeout":"5000ms","node":"n"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := dnsResult{
+		Node: "n", MagicDNS: true, Domains: []string{"org.ownscale", "internal.example.com"},
+		Resolvers: []string{}, FallbackResolvers: []string{"1.1.1.1"},
+		ExtraRecords: []dnsRecordResult{{Name: "host.example.com", Type: "A", Value: "10.0.0.1"}},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("dns = %+v, want %+v", got, want)
+	}
+
+	for _, tt := range []struct{ node, code string }{
+		{"failing", "timeout"}, {"gone", "closed_node"}, {"absent", "unknown_handle"},
+	} {
+		_, err := d.dispatch(t.Context(), "dns", json.RawMessage(`{"timeout":"5000ms","node":"`+tt.node+`"}`))
+		if err == nil || classify(err).Code != tt.code {
+			t.Errorf("dns(%s) error = %v, want %s", tt.node, err, tt.code)
+		}
 	}
 }
 

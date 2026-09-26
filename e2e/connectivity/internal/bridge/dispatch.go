@@ -18,10 +18,12 @@ import (
 	"github.com/ownscalenet/ownscale/e2e/connectivity/tscl"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/net/tsaddr"
+	"tailscale.com/tailcfg"
 )
 
 type node interface {
 	Status(context.Context) (*ipnstate.Status, error)
+	DNS(context.Context) (tailcfg.DNSConfig, error)
 	ServeHTTP(uint16) (*tscl.HTTPService, error)
 	ProbeHTTP(context.Context, string, string) (tscl.ProbeResult, error)
 	Close() error
@@ -69,6 +71,22 @@ type nodeResult struct {
 	Hostname     string   `json:"hostname"`
 	Addresses    []string `json:"addresses"`
 	BackendState string   `json:"backendState"`
+}
+
+type dnsRecordResult struct {
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	Value string `json:"value"`
+}
+
+// dnsResult is the DNS configuration a node received from its control server.
+type dnsResult struct {
+	Node              string            `json:"node"`
+	MagicDNS          bool              `json:"magicDns"`
+	Domains           []string          `json:"domains"`
+	Resolvers         []string          `json:"resolvers"`
+	FallbackResolvers []string          `json:"fallbackResolvers"`
+	ExtraRecords      []dnsRecordResult `json:"extraRecords"`
 }
 
 type serviceResult struct {
@@ -158,7 +176,7 @@ func (d *dispatcher) dispatch(parent context.Context, op string, params json.Raw
 			return nil, err
 		}
 		return result, nil
-	case "status", "close":
+	case "status", "close", "dns":
 		var args struct {
 			Timeout timeout `json:"timeout"`
 			Node    string  `json:"node"`
@@ -174,6 +192,9 @@ func (d *dispatcher) dispatch(parent context.Context, op string, params json.Raw
 		}
 		if op == "status" {
 			return d.status(ctx, args.Node)
+		}
+		if op == "dns" {
+			return d.dns(ctx, args.Node)
 		}
 		n.closed = true
 		if err := n.client.Close(); err != nil {
@@ -298,6 +319,27 @@ func (d *dispatcher) status(ctx context.Context, handle string) (nodeResult, err
 	result := nodeResult{Node: handle, Hostname: n.hostname, Addresses: []string{}, BackendState: status.BackendState}
 	for _, ip := range status.TailscaleIPs {
 		result.Addresses = append(result.Addresses, ip.String())
+	}
+	return result, nil
+}
+
+func (d *dispatcher) dns(ctx context.Context, handle string) (dnsResult, error) {
+	cfg, err := d.nodes[handle].client.DNS(ctx)
+	if err != nil {
+		return dnsResult{}, err
+	}
+	result := dnsResult{
+		Node: handle, MagicDNS: cfg.Proxied, Domains: append([]string{}, cfg.Domains...),
+		Resolvers: []string{}, FallbackResolvers: []string{}, ExtraRecords: []dnsRecordResult{},
+	}
+	for _, r := range cfg.Resolvers {
+		result.Resolvers = append(result.Resolvers, r.Addr)
+	}
+	for _, r := range cfg.FallbackResolvers {
+		result.FallbackResolvers = append(result.FallbackResolvers, r.Addr)
+	}
+	for _, r := range cfg.ExtraRecords {
+		result.ExtraRecords = append(result.ExtraRecords, dnsRecordResult{Name: r.Name, Type: r.Type, Value: r.Value})
 	}
 	return result, nil
 }

@@ -75,7 +75,7 @@ func run() error {
 		return auth.RequireAuthAPI(queries.Queries, next)
 	}
 	consoleMux := server.NewMux(h, requireAuthAPI, logger, webui.Handler(cfg.Development), provider)
-	handler := server.NewSubdomainProxy(consoleMux, cfg.BaseDomain, h.LookupPort)
+	handler := server.NewSubdomainProxy(consoleMux, cfg.BaseDomain, h.DialOrg)
 
 	srv := &http.Server{Addr: cfg.Addr, Handler: handler}
 

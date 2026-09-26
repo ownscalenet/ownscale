@@ -1,36 +1,47 @@
 package server
 
 import (
-	"fmt"
+	"context"
+	"errors"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"strings"
+
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 // SubdomainProxy wraps an http.Handler. Requests whose Host header matches
-// a non-console subdomain of baseDomain are reverse-proxied to the port
-// returned by lookupPort. All other requests fall through to next (the
-// console mux: SPA, /api/*, OIDC provider).
+// a non-console subdomain of baseDomain are reverse-proxied to that
+// organization's headscale, reached through dial. All other requests fall
+// through to next (the console mux: SPA, /api/*, OIDC provider).
 type SubdomainProxy struct {
 	next       http.Handler
 	baseDomain string
-	lookupPort func(subdomain string) (int, bool)
+	dial       func(ctx context.Context, subdomain string) (net.Conn, error)
+	transport  *http.Transport
 }
 
-// NewSubdomainProxy builds a SubdomainProxy. lookupPort maps subdomains
-// to the TCP port of their in-process headscale instance; a missing entry
-// returns 503.
-func NewSubdomainProxy(next http.Handler, baseDomain string, lookupPort func(subdomain string) (int, bool)) http.Handler {
+type subdomainKey struct{}
+
+// NewSubdomainProxy builds a SubdomainProxy. dial connects to a subdomain's
+// in-process headscale instance; an organization that isn't running
+// (orgs.ErrNotRunning) gets a 503.
+func NewSubdomainProxy(next http.Handler, baseDomain string, dial func(ctx context.Context, subdomain string) (net.Conn, error)) http.Handler {
 	if baseDomain == "" {
 		// No base domain configured (e.g. tests): pass everything through.
 		return next
 	}
-	return &SubdomainProxy{
-		next:       next,
-		baseDomain: baseDomain,
-		lookupPort: lookupPort,
+	p := &SubdomainProxy{next: next, baseDomain: baseDomain, dial: dial}
+	// The address is ignored: the org comes from the request context.
+	p.transport = &http.Transport{
+		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
+			subdomain, _ := ctx.Value(subdomainKey{}).(string)
+			return p.dial(ctx, subdomain)
+		},
 	}
+	return p
 }
 
 func (s *SubdomainProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -40,15 +51,16 @@ func (s *SubdomainProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	port, ok := s.lookupPort(subdomain)
-	if !ok {
-		http.Error(w, "organization not available", http.StatusServiceUnavailable)
-		return
+	proxy := httputil.NewSingleHostReverseProxy(&url.URL{Scheme: "http", Host: subdomain})
+	proxy.Transport = s.transport
+	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
+		if errors.Is(err, orgs.ErrNotRunning) {
+			http.Error(w, "organization not available", http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusBadGateway)
 	}
-
-	target, _ := url.Parse(fmt.Sprintf("http://127.0.0.1:%d", port))
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	proxy.ServeHTTP(w, r)
+	proxy.ServeHTTP(w, r.WithContext(context.WithValue(r.Context(), subdomainKey{}, subdomain)))
 }
 
 // extractSubdomain returns the subdomain portion of host if host is of

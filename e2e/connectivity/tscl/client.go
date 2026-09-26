@@ -17,8 +17,10 @@ import (
 	"time"
 
 	"github.com/ownscalenet/ownscale/derrors"
+	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/net/tsaddr"
+	"tailscale.com/tailcfg"
 	"tailscale.com/tsnet"
 )
 
@@ -153,6 +155,37 @@ func (c *Client) Status(ctx context.Context) (_ *ipnstate.Status, err error) {
 		return nil, err
 	}
 	return lc.Status(ctx)
+}
+
+// DNS returns the DNS configuration the control server currently sends to
+// this machine (from its netmap).
+func (c *Client) DNS(ctx context.Context) (_ tailcfg.DNSConfig, err error) {
+	defer derrors.Wrap(&err, "c.DNS()")
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.closed {
+		return tailcfg.DNSConfig{}, net.ErrClosed
+	}
+	ctx, cancel := c.operationContext(ctx)
+	defer cancel()
+	lc, err := c.server.LocalClient()
+	if err != nil {
+		return tailcfg.DNSConfig{}, err
+	}
+	watcher, err := lc.WatchIPNBus(ctx, ipn.NotifyInitialNetMap)
+	if err != nil {
+		return tailcfg.DNSConfig{}, err
+	}
+	defer watcher.Close()
+	for {
+		n, err := watcher.Next()
+		if err != nil {
+			return tailcfg.DNSConfig{}, err
+		}
+		if n.NetMap != nil {
+			return n.NetMap.DNS, nil
+		}
+	}
 }
 
 // DialContext opens TCP to a tailnet IP:port (not a DNS name). The caller must

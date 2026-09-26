@@ -9,8 +9,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ownscalenet/headscale/hscontrol"
-	"github.com/ownscalenet/headscale/hscontrol/types/change"
 	"github.com/rs/xid"
 	"github.com/tailscale/hujson"
 
@@ -25,10 +23,11 @@ const applyHeadscaleConfigTimeout = 45 * time.Second
 
 // OrgService holds methods for operating on a single organization.
 type OrgService struct {
-	queries      *db.TxQueries
-	orgID        string
-	subdomain    string
-	getHeadscale func() (*hscontrol.Headscale, bool)
+	queries   *db.TxQueries
+	orgID     string
+	subdomain string
+	// restart restarts the org's headscale so it picks up its stored config.
+	restart func(ctx context.Context) error
 }
 
 func (o *OrgService) getHeadscaleConfig(ctx context.Context) (_ *HeadscaleFileConfig, err error) {
@@ -49,8 +48,9 @@ func (o *OrgService) getHeadscaleConfig(ctx context.Context) (_ *HeadscaleFileCo
 }
 
 // applyHeadscaleConfig persists cfg to the orgconfigs row, marks the
-// org update_pending, and restarts its headscale instance so the new
-// config takes effect. extraWrites runs within the same short transaction
+// org update_pending, restarts its headscale instance so the new config
+// takes effect, then marks the org active again. If the restart fails the
+// org stays update_pending, and startup recovery retries it. extraWrites runs within the same short transaction
 // as the config row write.
 //
 // This function is NOT a single big transaction because headscale
@@ -70,11 +70,8 @@ func (o *OrgService) applyHeadscaleConfig(ctx context.Context, cfg *HeadscaleFil
 		return err
 	}
 
-	if o.getHeadscale != nil {
-		if app, ok := o.getHeadscale(); ok {
-			app.GetState().DebugConfig().TailcfgDNSConfig = buildTailcfgDNS(ownscaleDNSToTypes(cfg.DNS))
-			app.Change(change.DNSConfig())
-		}
+	if err := o.restart(ctx); err != nil {
+		return fmt.Errorf("restart headscale (organization stays %s): %w", StatusUpdatePending, err)
 	}
 
 	if _, err := o.queries.UpdateOrganizationStatus(ctx, sqlcgen.UpdateOrganizationStatusParams{

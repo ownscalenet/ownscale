@@ -6,8 +6,11 @@ import (
 	"errors"
 	"io"
 	"log/slog"
+	"net"
+	"os"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/ownscalenet/headscale/hscontrol"
 	"github.com/ownscalenet/ownscale/config"
@@ -26,7 +29,7 @@ func newTestService(t *testing.T) *Service {
 
 // noopCreateFn is a createFn that immediately returns nil (no headscale
 // instance started).
-func noopCreateFn(_ context.Context, _, _, _ string, _ int, _ OIDCClientCredentials, _ config.DerpConfig) (*hscontrol.Headscale, error) {
+func noopCreateFn(_ context.Context, _, _, _ string, _ int, _ *HeadscaleFileConfig, _ config.DerpConfig) (*hscontrol.Headscale, error) {
 	return nil, nil
 }
 
@@ -59,7 +62,7 @@ func TestCreateRejectsInvalidSubdomain(t *testing.T) {
 
 func TestCreateSurfacesHeadscaleFailure(t *testing.T) {
 	svc := newTestService(t)
-	svc.createFn = func(_ context.Context, _, _, _ string, _ int, _ OIDCClientCredentials, _ config.DerpConfig) (*hscontrol.Headscale, error) {
+	svc.createFn = func(_ context.Context, _, _, _ string, _ int, _ *HeadscaleFileConfig, _ config.DerpConfig) (*hscontrol.Headscale, error) {
 		return nil, errors.New("headscale failed (injected)")
 	}
 
@@ -159,5 +162,59 @@ func TestCreateSeedsOrgConfig(t *testing.T) {
 	}
 	if cfgRow.Content == "" {
 		t.Error("orgconfigs row is empty after Create")
+	}
+}
+
+// TestRestartClosesOrgConnections verifies that restarting an org closes the
+// connections handed out by DialOrg (and only that org's), so devices
+// reconnect to the new instance instead of staying on the stopped one.
+func TestRestartClosesOrgConnections(t *testing.T) {
+	svc := newTestService(t)
+	for _, sub := range []string{"acme", "other"} {
+		if _, err := svc.Create(t.Context(), sub); err != nil {
+			t.Fatalf("Create(%q): %v", sub, err)
+		}
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			t.Cleanup(func() { c.Close() })
+		}
+	}()
+	port := ln.Addr().(*net.TCPAddr).Port
+	svc.ports.Store("acme", port)
+	svc.ports.Store("other", port)
+
+	acme, err := svc.DialOrg(t.Context(), "acme")
+	if err != nil {
+		t.Fatalf("DialOrg(acme): %v", err)
+	}
+	other, err := svc.DialOrg(t.Context(), "other")
+	if err != nil {
+		t.Fatalf("DialOrg(other): %v", err)
+	}
+	if _, err := svc.DialOrg(t.Context(), "missing"); !errors.Is(err, ErrNotRunning) {
+		t.Errorf("DialOrg(missing) error = %v, want ErrNotRunning", err)
+	}
+
+	if err := svc.restartHeadscale(t.Context(), "acme"); err != nil {
+		t.Fatalf("restartHeadscale: %v", err)
+	}
+
+	_ = acme.SetReadDeadline(time.Now().Add(time.Second))
+	if _, err := acme.Read(make([]byte, 1)); !errors.Is(err, net.ErrClosed) {
+		t.Errorf("acme connection after restart: Read error = %v, want net.ErrClosed", err)
+	}
+	_ = other.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	if _, err := other.Read(make([]byte, 1)); !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Errorf("other connection: Read error = %v, want a timeout (still open)", err)
 	}
 }

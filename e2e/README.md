@@ -71,6 +71,13 @@ Other useful commands (from `e2e/frontend/`):
   credential in `tests/.auth/passkey-credential.json` (gitignored) so
   `passkey.spec.ts` can sign back in as that identity without registering
   another brand-new user/org.
+- `settings-apply.spec.ts` checks that saved settings take effect inside the
+  organization's headscale (which restarts on every save). DNS changes are
+  read back from a real enrolled device's netmap (via `tscl-bridge`'s `dns`
+  op), and the login allowlist is checked by starting a registration login at
+  `https://aaaa.<base-domain>/register/<random auth id>`: headscale answers
+  401 when the signed-in user is excluded and 410 when admitted. Like
+  `registerRealMachine`, it needs `aaaa.<base-domain>` to resolve.
 - This suite is local-only for now (like `make test-integration`) and
   isn't wired into GitHub Actions CI.
 

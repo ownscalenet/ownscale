@@ -6,8 +6,12 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"slices"
+	"strings"
 	"testing"
 	"time"
+
+	"github.com/ownscalenet/headscale/hscontrol"
 
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
@@ -230,27 +234,117 @@ func TestSetDNSSettingsRollsBackOnInvalidConfig(t *testing.T) {
 	}
 }
 
-// TestSetDNSSettingsUpdatesRunningHeadscaleConfig verifies that after
-// SetDNSSettings the running headscale instance's TailcfgDNSConfig is
-// updated to reflect the new nameserver without a process restart.
-func TestSetDNSSettingsUpdatesRunningHeadscaleConfig(t *testing.T) {
-	// Use the real createFn (createHeadscale) -- not the noop -- so a real
-	// headscale instance is started and its runtime state can be inspected.
-	queries := newTestQueries(t)
-	svc := NewService(queries, "example.com", "https://auth.example.com", config.DerpConfig{}, discardLogger(), t.TempDir())
+// TestSettingsRestartHeadscale verifies that saving settings recreates the
+// org's headscale from the stored config and leaves the org active.
+func TestSettingsRestartHeadscale(t *testing.T) {
+	tests := []struct {
+		name  string
+		apply func(t *testing.T, o *OrgService)
+		check func(t *testing.T, cfg *HeadscaleFileConfig)
+	}{
+		{
+			name: "dns",
+			apply: func(t *testing.T, o *OrgService) {
+				err := o.SetDNSSettings(t.Context(), DNSConfig{
+					BaseDomain:  "acme.ownscale",
+					MagicDNS:    true,
+					Nameservers: Nameservers{Global: []string{"1.2.3.4"}},
+				})
+				if err != nil {
+					t.Fatalf("SetDNSSettings: %v", err)
+				}
+			},
+			check: func(t *testing.T, cfg *HeadscaleFileConfig) {
+				if got := cfg.DNS.Nameservers.Global; !slices.Equal(got, []string{"1.2.3.4"}) {
+					t.Errorf("nameservers = %v, want [1.2.3.4]", got)
+				}
+			},
+		},
+		{
+			name: "auth restrictions",
+			apply: func(t *testing.T, o *OrgService) {
+				if err := o.SetAuthRestrictions(t.Context(), `{"domains":["example.com"]}`); err != nil {
+					t.Fatalf("SetAuthRestrictions: %v", err)
+				}
+			},
+			check: func(t *testing.T, cfg *HeadscaleFileConfig) {
+				if got := cfg.OIDC.AllowedDomains; !slices.Equal(got, []string{"example.com"}) {
+					t.Errorf("allowed domains = %v, want [example.com]", got)
+				}
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := newTestService(t)
+			org, err := svc.Create(t.Context(), "acme")
+			if err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			var got []*HeadscaleFileConfig
+			svc.createFn = func(_ context.Context, _, _, _ string, _ int, cfg *HeadscaleFileConfig, _ config.DerpConfig) (*hscontrol.Headscale, error) {
+				got = append(got, cfg)
+				return nil, nil
+			}
+
+			tt.apply(t, svc.ForOrg(org))
+
+			if len(got) != 1 {
+				t.Fatalf("createFn called %d times, want 1", len(got))
+			}
+			tt.check(t, got[0])
+			updated, err := svc.queries.GetOrganization(t.Context(), org.ID)
+			if err != nil {
+				t.Fatalf("GetOrganization: %v", err)
+			}
+			if updated.Status != StatusActive {
+				t.Errorf("status = %q, want %q", updated.Status, StatusActive)
+			}
+		})
+	}
+}
+
+// TestSettingsRestartFailureLeavesUpdatePending verifies a failed restart is
+// reported and the org stays update_pending, so startup recovery retries it.
+func TestSettingsRestartFailureLeavesUpdatePending(t *testing.T) {
+	svc := newTestService(t)
+	org, err := svc.Create(t.Context(), "acme")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	svc.createFn = func(context.Context, string, string, string, int, *HeadscaleFileConfig, config.DerpConfig) (*hscontrol.Headscale, error) {
+		return nil, errors.New("headscale failed (injected)")
+	}
+
+	if err := svc.ForOrg(org).SetAuthRestrictions(t.Context(), `{"domains":["example.com"]}`); err == nil {
+		t.Fatal("SetAuthRestrictions: want error when restart fails, got nil")
+	}
+	updated, err := svc.queries.GetOrganization(t.Context(), org.ID)
+	if err != nil {
+		t.Fatalf("GetOrganization: %v", err)
+	}
+	if updated.Status != StatusUpdatePending {
+		t.Errorf("status = %q, want %q", updated.Status, StatusUpdatePending)
+	}
+}
+
+// TestSettingsApplyToRunningHeadscale uses real headscale instances to
+// verify saved settings reach the restarted server, which keeps its port.
+func TestSettingsApplyToRunningHeadscale(t *testing.T) {
+	svc := NewService(newTestQueries(t), "example.com", "https://auth.example.com", config.DerpConfig{}, discardLogger(), t.TempDir())
 
 	org, err := svc.Create(t.Context(), "acme")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	port, ok := svc.LookupPort("acme")
-	if !ok {
-		t.Fatal("LookupPort: no port registered for acme")
-	}
-	app, ok := svc.instances.Load("acme")
-	if !ok {
-		t.Fatal("instances.Load: headscale instance not found after Create")
-	}
+	t.Cleanup(func() {
+		if inst, ok := svc.instances.Load("acme"); ok {
+			inst.cancel()
+			<-inst.exited
+		}
+	})
+	port, _ := svc.LookupPort("acme")
+	first, _ := svc.instances.Load("acme")
 
 	waitCtx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
@@ -258,29 +352,45 @@ func TestSetDNSSettingsUpdatesRunningHeadscaleConfig(t *testing.T) {
 		t.Fatalf("headscale did not become ready on port %d: %v", port, err)
 	}
 
-	if err := svc.ForOrg(org).SetDNSSettings(t.Context(), DNSConfig{
+	o := svc.ForOrg(org)
+	if err := o.SetDNSSettings(t.Context(), DNSConfig{
 		BaseDomain:  "acme.ownscale",
 		MagicDNS:    true,
 		Nameservers: Nameservers{Global: []string{"1.2.3.4"}},
 	}); err != nil {
 		t.Fatalf("SetDNSSettings: %v", err)
 	}
+	if err := o.SetAuthRestrictions(t.Context(), `{"domains":["example.com"]}`); err != nil {
+		t.Fatalf("SetAuthRestrictions: %v", err)
+	}
 
-	// Assert: the running headscale instance's DNS config was updated.
-	tailcfgDNS := app.GetState().DebugConfig().TailcfgDNSConfig
-	if tailcfgDNS == nil {
-		t.Fatal("TailcfgDNSConfig is nil")
+	second, _ := svc.instances.Load("acme")
+	if second == first {
+		t.Fatal("headscale instance was not replaced")
 	}
+	<-first.exited
+	if p, _ := svc.LookupPort("acme"); p != port {
+		t.Errorf("port after restart = %d, want %d", p, port)
+	}
+	if err := waitHeadscaleReady(waitCtx, port); err != nil {
+		t.Fatalf("restarted headscale not ready on port %d: %v", port, err)
+	}
+
+	hs := second.app.GetState().DebugConfig()
 	// Nameservers map to FallbackResolvers when OverrideLocalDNS is false.
-	var found bool
-	for _, r := range tailcfgDNS.FallbackResolvers {
-		if r != nil && r.Addr == "1.2.3.4" {
-			found = true
-			break
-		}
+	if dns := hs.TailcfgDNSConfig; dns == nil || len(dns.FallbackResolvers) != 1 || dns.FallbackResolvers[0].Addr != "1.2.3.4" {
+		t.Errorf("TailcfgDNSConfig = %+v, want resolver 1.2.3.4", dns)
 	}
-	if !found {
-		t.Errorf("resolver 1.2.3.4 not found in running headscale TailcfgDNSConfig.FallbackResolvers after SetDNSSettings; got %v", tailcfgDNS.FallbackResolvers)
+	if !slices.Equal(hs.OIDC.AllowedDomains, []string{"example.com"}) {
+		t.Errorf("OIDC allowed domains = %v, want [example.com]", hs.OIDC.AllowedDomains)
+	}
+	// Only ownscale's own proxy needs to reach an org's headscale.
+	if !strings.HasPrefix(hs.Addr, "127.0.0.1:") {
+		t.Errorf("headscale listen address = %q, want loopback only", hs.Addr)
+	}
+	// Without scopes the OIDC provider rejects headscale's login requests.
+	if !slices.Contains(hs.OIDC.Scope, "openid") {
+		t.Errorf("OIDC scope = %v, want it to include openid", hs.OIDC.Scope)
 	}
 }
 

@@ -52,12 +52,13 @@ const defaultACLPolicy = `{
 
 // createHeadscale creates an *hscontrol.Headscale instance for subdomain.
 // port must already be allocated and persisted to the DB before calling
-// this. The org data directory (dataDir/subdomain) is created if absent.
+// this. DNS and OIDC settings come from fileCfg, ownscale's stored config.
+// The org data directory (dataDir/subdomain) is created if absent.
 func createHeadscale(
 	_ context.Context,
 	dataDir, subdomain, baseDomain string,
 	port int,
-	oidcCreds OIDCClientCredentials,
+	fileCfg *HeadscaleFileConfig,
 	derpCfg config.DerpConfig,
 ) (_ *hscontrol.Headscale, err error) {
 	defer derrors.Wrap(&err, "createHeadscale(%q)", subdomain)
@@ -92,9 +93,10 @@ func createHeadscale(
 		derp.Paths = []string{derpPath(dataDir, subdomain)}
 	}
 
+	dns := ownscaleDNSToTypes(fileCfg.DNS)
 	cfg := &types.Config{
 		ServerURL:           fmt.Sprintf("https://%s.%s", subdomain, baseDomain),
-		Addr:                fmt.Sprintf("0.0.0.0:%d", port),
+		Addr:                fmt.Sprintf("127.0.0.1:%d", port),
 		NoisePrivateKeyPath: noisePath(dataDir, subdomain),
 		PrefixV4:            &pv4,
 		PrefixV6:            &pv6,
@@ -107,22 +109,14 @@ func createHeadscale(
 				WriteAheadLog: true,
 			},
 		},
-		Log:      types.LogConfig{Format: "json", Level: zerolog.InfoLevel},
-		Taildrop: types.TaildropConfig{Enabled: true},
-		DNSConfig: types.DNSConfig{
-			MagicDNS:    true,
-			BaseDomain:  subdomain + ".ownscale",
-			Nameservers: types.Nameservers{Global: []string{"1.1.1.1"}},
-		},
+		Log:       types.LogConfig{Format: "json", Level: zerolog.InfoLevel},
+		Taildrop:  types.TaildropConfig{Enabled: true},
+		DNSConfig: dns,
 		// TailcfgDNSConfig is the pre-computed tailcfg representation sent
 		// to nodes. NewHeadscale does not compute it from DNSConfig — the
 		// Viper config loader does. We replicate the conversion here so
 		// nodes receive a DNS config (nameservers, MagicDNS) from startup.
-		TailcfgDNSConfig: buildTailcfgDNS(types.DNSConfig{
-			MagicDNS:    true,
-			BaseDomain:  subdomain + ".ownscale",
-			Nameservers: types.Nameservers{Global: []string{"1.1.1.1"}},
-		}),
+		TailcfgDNSConfig:     buildTailcfgDNS(dns),
 		UnixSocket:           socketPath(dataDir, subdomain),
 		UnixSocketPermission: 0770,
 		Policy:               types.PolicyConfig{Mode: types.PolicyMode("database")},
@@ -136,9 +130,13 @@ func createHeadscale(
 			}},
 		},
 		OIDC: types.OIDCConfig{
-			Issuer:       oidcCreds.Issuer,
-			ClientID:     oidcCreds.ClientID,
-			ClientSecret: oidcCreds.ClientSecret,
+			Issuer:         fileCfg.OIDC.Issuer,
+			ClientID:       fileCfg.OIDC.ClientID,
+			ClientSecret:   fileCfg.OIDC.ClientSecret,
+			Scope:          fileCfg.OIDC.Scope,
+			AllowedDomains: fileCfg.OIDC.AllowedDomains,
+			AllowedGroups:  fileCfg.OIDC.AllowedGroups,
+			AllowedUsers:   fileCfg.OIDC.AllowedUsers,
 			PKCE: types.PKCEConfig{
 				Enabled: true,
 				Method:  "S256",
