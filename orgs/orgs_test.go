@@ -248,6 +248,35 @@ func TestRestartClosesOrgConnections(t *testing.T) {
 	}
 }
 
+// TestStartRetriesTakenPort verifies that when another process holds an
+// org's port, its headscale starts on a new port instead of failing.
+func TestStartRetriesTakenPort(t *testing.T) {
+	svc := newRealService(t)
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	taken := ln.Addr().(*net.TCPAddr).Port
+	svc.orgs.Store("acme", &orgRuntime{port: taken})
+
+	if err := svc.startHeadscale(t.Context(), "acme", newHeadscaleConfig("acme", OIDCConfig{Issuer: "https://auth.example.com"})); err != nil {
+		t.Fatalf("startHeadscale: %v", err)
+	}
+	inst, ok := svc.running("acme")
+	if !ok {
+		t.Fatal("acme not running after startHeadscale")
+	}
+	t.Cleanup(func() { inst.cancel(); <-inst.exited })
+
+	if port, _ := svc.LookupPort("acme"); port == taken {
+		t.Errorf("port = %d, want a port other than the taken one", port)
+	}
+	if _, err := inst.client.ListUsers(t.Context()); err != nil {
+		t.Errorf("ListUsers: %v", err)
+	}
+}
+
 func TestCreateHeadscaleDERP(t *testing.T) {
 	custom := config.DerpConfig{
 		Hostname: "derp.example.com", IPv4: "203.0.113.5", STUNPort: 3478,

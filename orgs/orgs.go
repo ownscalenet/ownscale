@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net"
+	"net/http"
 	"slices"
 	"strconv"
 	"sync"
@@ -22,6 +23,8 @@ import (
 	"github.com/ownscalenet/headscale/hscontrol/util"
 	"github.com/rs/xid"
 	"golang.org/x/crypto/bcrypt"
+	"tailscale.com/tailcfg"
+	"tailscale.com/types/key"
 
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/db"
@@ -34,12 +37,9 @@ import (
 const (
 	maxSubdomainAttempts = 5
 
-	// Instance ports are allocated from firstPort up, below the ephemeral
-	// port ranges (Linux: 32768+, IANA: 49152+): an ephemeral port that is
-	// free when allocated can be taken by an outgoing connection's source
-	// port before headscale listens on it.
-	firstPort = 10_000
-	lastPort  = 32_767
+	// maxBindAttempts bounds how often a start retries on a fresh port
+	// when another process took the port before headscale listened on it.
+	maxBindAttempts = 3
 )
 
 // fixedSubdomains are handed out in order to the first organizations
@@ -59,12 +59,11 @@ type Service struct {
 	orgs utils.Map[string, *orgRuntime]
 
 	// startMu serializes headscale startup (headscale's DERP map shuffling
-	// shares one non-thread-safe rand.Rand across instances) and guards
-	// nextPort. This is not enough to prevent races, there's still a race
-	// because the derp worker (usually at 3h interval) calls GetDERPMap,
-	// which again touches the global rand.Rand.
-	startMu  sync.Mutex
-	nextPort int
+	// shares one non-thread-safe rand.Rand across instances). This is not
+	// enough to prevent races, there's still a race because the derp worker
+	// (usually at 3h interval) calls GetDERPMap, which again touches the
+	// global rand.Rand.
+	startMu sync.Mutex
 
 	// createFn defaults to createHeadscale; override in tests to skip
 	// real headscale startup.
@@ -106,8 +105,9 @@ type instance struct {
 	app    *hscontrol.Headscale
 	client *hscl.Client
 	cancel context.CancelFunc
-	// exited is closed once app.Serve has returned.
+	// exited is closed once app.Serve has returned err.
 	exited chan struct{}
+	err    error
 }
 
 // NewService builds a Service that manages organizations under baseDomain.
@@ -119,7 +119,6 @@ func NewService(queries *db.TxQueries, baseDomain, issuer string, derpCfg config
 		derpCfg:    derpCfg,
 		logger:     logger,
 		dataDir:    dataDir,
-		nextPort:   firstPort,
 		createFn:   createHeadscale,
 	}
 }
@@ -383,14 +382,12 @@ func (s *Service) Start(ctx context.Context) (err error) {
 }
 
 // startHeadscale creates and launches an hscontrol.Headscale instance for
-// subdomain, registering it in s.orgs. It listens on a free
-// loopback port, reused across restarts of the instance within this
-// process. If headscale's DB has no policy yet the default ACL policy is
-// written before Serve starts, so GetPolicy never returns "acl policy not
-// found".
+// subdomain, registering it in s.orgs. It listens on a loopback port
+// picked by the kernel, reused across restarts of the instance within this
+// process; if another process took that port, it retries on a new one.
 //
-// Instances start one at a time: this returns only once Serve has loaded
-// its DERP map, or has failed.
+// Instances start one at a time: this returns once the instance serves,
+// or with the reason it doesn't.
 func (s *Service) startHeadscale(ctx context.Context, subdomain string, hsCfg *HeadscaleConfig) error {
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
@@ -399,27 +396,52 @@ func (s *Service) startHeadscale(ctx context.Context, subdomain string, hsCfg *H
 
 // startLocked is startHeadscale for callers already holding startMu.
 func (s *Service) startLocked(ctx context.Context, subdomain string, hsCfg *HeadscaleConfig) error {
-	rt, ok := s.orgs.Load(subdomain)
+	rt, known := s.orgs.Load(subdomain)
 	port := 0
-	if ok {
+	if known {
 		port = rt.port
-	} else {
-		var err error
-		if port, err = s.allocatePort(); err != nil {
+	}
+	for attempt := 1; ; attempt++ {
+		if port == 0 {
+			var err error
+			if port, err = freeLoopbackPort(); err != nil {
+				return err
+			}
+		}
+		inst, err := s.launch(ctx, subdomain, port, hsCfg)
+		if _, ok := errors.AsType[*types.ListenerBindError](err); ok && attempt < maxBindAttempts {
+			s.logger.Warn("headscale port taken, retrying on another", "subdomain", subdomain, "port", port, "error", err)
+			port = 0
+			continue
+		}
+		if err != nil {
 			return err
 		}
+		// A changed port gets a new runtime, as readers use rt.port unlocked.
+		if !known || rt.port != port {
+			rt = &orgRuntime{port: port}
+			s.orgs.Store(subdomain, rt)
+		}
+		if inst != nil {
+			rt.inst.Store(inst)
+		}
+		return nil
 	}
+}
 
+// launch creates subdomain's headscale on port and serves it. If
+// headscale's DB has no policy yet the default ACL policy is written before
+// Serve starts, so GetPolicy never returns "acl policy not found". It
+// returns once the instance serves on port; otherwise it stops the instance
+// and returns why, e.g. a *types.ListenerBindError when port is taken. A
+// nil instance means createFn built none (tests).
+func (s *Service) launch(ctx context.Context, subdomain string, port int, hsCfg *HeadscaleConfig) (*instance, error) {
 	app, err := s.createFn(s.dataDir, subdomain, s.baseDomain, port, hsCfg, s.derpCfg)
 	if err != nil {
-		return fmt.Errorf("create headscale instance for %q: %w", subdomain, err)
-	}
-	if !ok {
-		rt = &orgRuntime{port: port}
-		s.orgs.Store(subdomain, rt)
+		return nil, fmt.Errorf("create headscale instance for %q: %w", subdomain, err)
 	}
 	if app == nil {
-		return nil
+		return nil, nil
 	}
 
 	if _, err := app.GetState().GetPolicy(); err != nil {
@@ -435,30 +457,73 @@ func (s *Service) startLocked(ctx context.Context, subdomain string, hsCfg *Head
 		cancel: cancel,
 		exited: make(chan struct{}),
 	}
-	rt.inst.Store(inst)
 	go func() {
 		defer close(inst.exited)
-		if err := app.Serve(serveCtx); err != nil && !errors.Is(err, context.Canceled) {
-			s.logger.Error("headscale stopped", "subdomain", subdomain, "error", err)
+		inst.err = app.Serve(serveCtx)
+		if inst.err != nil && !errors.Is(inst.err, context.Canceled) {
+			s.logger.Error("headscale stopped", "subdomain", subdomain, "error", inst.err)
 		}
 	}()
-	waitForDERPMap(ctx, app, inst.exited)
-	return nil
+	if err := waitServing(ctx, inst, port); err != nil {
+		inst.cancel()
+		<-inst.exited
+		return nil, err
+	}
+	return inst, nil
 }
 
-// allocatePort returns the next port from s.nextPort that is free on
-// 127.0.0.1. Callers hold startMu.
-func (s *Service) allocatePort() (int, error) {
-	for port := s.nextPort; port <= lastPort; port++ {
-		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
-		if err != nil {
-			continue
-		}
-		ln.Close()
-		s.nextPort = port + 1
-		return port, nil
+// waitServing blocks until inst serves on port. It checks that headscale's
+// /key answers with inst's own Noise key, as the port may be held by
+// another process. It fails if inst's Serve exits or ctx is done first.
+func waitServing(ctx context.Context, inst *instance, port int) error {
+	url := fmt.Sprintf("http://127.0.0.1:%d/key?v=%d", port, tailcfg.CurrentCapabilityVersion)
+	want := inst.app.NoisePublicKey()
+	client := &http.Client{
+		Timeout:   time.Second,
+		Transport: &http.Transport{DisableKeepAlives: true},
 	}
-	return 0, errors.New("no free port left for headscale")
+	t := time.NewTicker(20 * time.Millisecond)
+	defer t.Stop()
+	for {
+		if servesKey(ctx, client, url, want) {
+			return nil
+		}
+		select {
+		case <-t.C:
+		case <-inst.exited:
+			if inst.err == nil {
+				return errors.New("headscale exited")
+			}
+			return fmt.Errorf("headscale exited: %w", inst.err)
+		case <-ctx.Done():
+			return fmt.Errorf("waiting for headscale to serve: %w", ctx.Err())
+		}
+	}
+}
+
+// servesKey reports whether url answers with Noise public key want.
+func servesKey(ctx context.Context, client *http.Client, url string, want key.MachinePublic) bool {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return false
+	}
+	resp, err := client.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	var body tailcfg.OverTLSPublicKeyResponse
+	return json.NewDecoder(resp.Body).Decode(&body) == nil && body.PublicKey == want
+}
+
+// freeLoopbackPort returns a TCP port the kernel reports free on 127.0.0.1.
+func freeLoopbackPort() (int, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer ln.Close()
+	return ln.Addr().(*net.TCPAddr).Port, nil
 }
 
 // restartHeadscale stops subdomain's running headscale instance (if any) and
@@ -501,22 +566,6 @@ func (s *Service) restartHeadscale(ctx context.Context, subdomain string) (err e
 		rt.closeConns()
 	}
 	return s.startLocked(ctx, subdomain, hsCfg)
-}
-
-// waitForDERPMap blocks until app's Serve has loaded the DERP map, Serve
-// has exited, or ctx is done.
-func waitForDERPMap(ctx context.Context, app *hscontrol.Headscale, exited <-chan struct{}) {
-	t := time.NewTicker(10 * time.Millisecond)
-	defer t.Stop()
-	for !app.GetState().DERPMap().Valid() {
-		select {
-		case <-t.C:
-		case <-exited:
-			return
-		case <-ctx.Done():
-			return
-		}
-	}
 }
 
 // randomAlphaNum generates a random alphanumeric string of n characters

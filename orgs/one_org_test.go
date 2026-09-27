@@ -1,15 +1,11 @@
 package orgs
 
 import (
-	"context"
 	"errors"
-	"fmt"
-	"net/http"
 	"reflect"
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/ownscalenet/headscale/hscontrol"
 
@@ -206,12 +202,6 @@ func TestSettingsApplyToRunningHeadscale(t *testing.T) {
 	port, _ := svc.LookupPort("acme")
 	first, _ := svc.running("acme")
 
-	waitCtx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
-	defer cancel()
-	if err := waitHeadscaleReady(waitCtx, port, first.exited); err != nil {
-		t.Fatalf("headscale did not become ready on port %d: %v", port, err)
-	}
-
 	o := svc.ForOrg(org)
 	if err := o.SetDNSSettings(t.Context(), DNSConfig{
 		BaseDomain:  "acme.ownscale",
@@ -232,9 +222,6 @@ func TestSettingsApplyToRunningHeadscale(t *testing.T) {
 	<-first.exited
 	if p, _ := svc.LookupPort("acme"); p != port {
 		t.Errorf("port after restart = %d, want %d", p, port)
-	}
-	if err := waitHeadscaleReady(waitCtx, port, second.exited); err != nil {
-		t.Fatalf("restarted headscale not ready on port %d: %v", port, err)
 	}
 	client, err := svc.Client("acme")
 	if err != nil {
@@ -259,28 +246,5 @@ func TestSettingsApplyToRunningHeadscale(t *testing.T) {
 	// Without scopes the OIDC provider rejects headscale's login requests.
 	if !slices.Contains(hs.OIDC.Scope, "openid") {
 		t.Errorf("OIDC scope = %v, want it to include openid", hs.OIDC.Scope)
-	}
-}
-
-// waitHeadscaleReady polls /health until it returns 200, the instance
-// exits, or ctx expires.
-func waitHeadscaleReady(ctx context.Context, port int, exited <-chan struct{}) error {
-	url := fmt.Sprintf("http://127.0.0.1:%d/health", port)
-	client := &http.Client{Timeout: 500 * time.Millisecond}
-	for {
-		resp, err := client.Get(url)
-		if err == nil {
-			resp.Body.Close()
-			if resp.StatusCode == http.StatusOK {
-				return nil
-			}
-		}
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		case <-exited:
-			return errors.New("headscale exited")
-		case <-time.After(200 * time.Millisecond):
-		}
 	}
 }
