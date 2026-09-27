@@ -188,7 +188,7 @@ func TestStartRecoversOrganizations(t *testing.T) {
 	if err := svc.Start(t.Context()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	if _, ok := svc.ports.Load("acme"); !ok {
+	if _, ok := svc.LookupPort("acme"); !ok {
 		t.Error("port not registered for recovered org \"acme\"")
 	}
 }
@@ -218,8 +218,9 @@ func TestRestartClosesOrgConnections(t *testing.T) {
 		}
 	}()
 	port := ln.Addr().(*net.TCPAddr).Port
-	svc.ports.Store("acme", port)
-	svc.ports.Store("other", port)
+	// Both orgs "run" on the fake listener.
+	svc.orgs.Store("acme", &orgRuntime{port: port})
+	svc.orgs.Store("other", &orgRuntime{port: port})
 
 	acme, err := svc.DialOrg(t.Context(), "acme")
 	if err != nil {
@@ -292,7 +293,7 @@ func TestSetOIDCIdentity(t *testing.T) {
 	if _, err := svc.Create(t.Context(), "acme"); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	inst, _ := svc.instances.Load("acme")
+	inst, _ := svc.running("acme")
 	t.Cleanup(func() { inst.cancel(); <-inst.exited })
 	state := inst.app.GetState()
 

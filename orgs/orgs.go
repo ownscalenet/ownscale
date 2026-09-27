@@ -10,11 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"maps"
 	"net"
 	"slices"
 	"strconv"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/ownscalenet/headscale/hscontrol"
@@ -56,8 +56,7 @@ type Service struct {
 	logger     *slog.Logger
 	dataDir    string
 
-	instances utils.Map[string, *instance]
-	ports     utils.Map[string, int]
+	orgs utils.Map[string, *orgRuntime]
 
 	// startMu serializes headscale startup (headscale's DERP map shuffling
 	// shares one non-thread-safe rand.Rand across instances) and guards
@@ -67,16 +66,39 @@ type Service struct {
 	startMu  sync.Mutex
 	nextPort int
 
-	// conns tracks the connections DialOrg handed out, per organization, so
-	// a restart can close them: headscale hijacks its device connections,
-	// so stopping the server leaves them attached to the stopped instance
-	// instead of letting the devices reconnect to the new one.
-	connsMu sync.Mutex
-	conns   map[string]map[net.Conn]struct{}
-
 	// createFn defaults to createHeadscale; override in tests to skip
 	// real headscale startup.
 	createFn func(dataDir, subdomain, baseDomain string, port int, hsCfg *HeadscaleConfig, derpCfg config.DerpConfig) (*hscontrol.Headscale, error)
+}
+
+// orgRuntime is an organization's in-memory headscale state. It exists
+// once the organization's headscale was first created in this process.
+type orgRuntime struct {
+	// port is headscale's loopback port, reused across restarts.
+	port int
+	// inst is nil while headscale is restarting.
+	inst atomic.Pointer[instance]
+
+	// conns tracks the connections DialOrg handed out, so a restart can
+	// close them: headscale hijacks its device connections, so stopping the
+	// server leaves them attached to the stopped instance instead of
+	// letting the devices reconnect to the new one.
+	conns utils.Map[net.Conn, struct{}]
+}
+
+// track registers conn for closing on restart, until it's closed.
+func (rt *orgRuntime) track(conn net.Conn) net.Conn {
+	tc := &trackedConn{Conn: conn}
+	tc.untrack = func() { rt.conns.Delete(tc) }
+	rt.conns.Store(tc, struct{}{})
+	return tc
+}
+
+// closeConns closes every tracked connection.
+func (rt *orgRuntime) closeConns() {
+	for c := range rt.conns.Range {
+		c.Close()
+	}
 }
 
 // instance is a running headscale server and the means to stop it.
@@ -98,7 +120,6 @@ func NewService(queries *db.TxQueries, baseDomain, issuer string, derpCfg config
 		logger:     logger,
 		dataDir:    dataDir,
 		nextPort:   firstPort,
-		conns:      make(map[string]map[net.Conn]struct{}),
 		createFn:   createHeadscale,
 	}
 }
@@ -116,9 +137,19 @@ func (s *Service) ForOrg(org sqlcgen.Organization) *OrgService {
 	}
 }
 
+// running returns subdomain's running headscale instance.
+func (s *Service) running(subdomain string) (*instance, bool) {
+	rt, ok := s.orgs.Load(subdomain)
+	if !ok {
+		return nil, false
+	}
+	inst := rt.inst.Load()
+	return inst, inst != nil
+}
+
 // Client returns a client for subdomain's running headscale instance.
 func (s *Service) Client(subdomain string) (*headscaleclient.Client, error) {
-	inst, ok := s.instances.Load(subdomain)
+	inst, ok := s.running(subdomain)
 	if !ok {
 		return nil, ErrNotRunning
 	}
@@ -132,40 +163,18 @@ var ErrNotRunning = errors.New("organization not running")
 // DialOrg connects to subdomain's headscale instance. The connection is
 // closed when the instance is restarted.
 func (s *Service) DialOrg(ctx context.Context, subdomain string) (net.Conn, error) {
-	port, ok := s.ports.Load(subdomain)
+	rt, ok := s.orgs.Load(subdomain)
 	if !ok {
 		return nil, ErrNotRunning
 	}
-	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", fmt.Sprintf("127.0.0.1:%d", port))
+	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", fmt.Sprintf("127.0.0.1:%d", rt.port))
 	if err != nil {
 		return nil, err
 	}
-	tc := &trackedConn{Conn: conn}
-	tc.untrack = func() {
-		s.connsMu.Lock()
-		defer s.connsMu.Unlock()
-		delete(s.conns[subdomain], tc)
-	}
-	s.connsMu.Lock()
-	defer s.connsMu.Unlock()
-	if s.conns[subdomain] == nil {
-		s.conns[subdomain] = make(map[net.Conn]struct{})
-	}
-	s.conns[subdomain][tc] = struct{}{}
-	return tc, nil
+	return rt.track(conn), nil
 }
 
-// closeConns closes every connection DialOrg handed out for subdomain.
-func (s *Service) closeConns(subdomain string) {
-	s.connsMu.Lock()
-	conns := slices.Collect(maps.Keys(s.conns[subdomain]))
-	s.connsMu.Unlock()
-	for _, c := range conns {
-		c.Close()
-	}
-}
-
-// trackedConn removes itself from its Service's tracking when closed.
+// trackedConn removes itself from its orgRuntime's tracking when closed.
 type trackedConn struct {
 	net.Conn
 	untrack func()
@@ -186,7 +195,7 @@ func (c *trackedConn) Close() error {
 func (s *Service) SetOIDCIdentity(ctx context.Context, subdomain, headscaleUserID, subject string) (err error) {
 	defer derrors.Wrap(&err, "s.SetOIDCIdentity(%q, %q)", subdomain, headscaleUserID)
 
-	inst, ok := s.instances.Load(subdomain)
+	inst, ok := s.running(subdomain)
 	if !ok {
 		return ErrNotRunning
 	}
@@ -222,7 +231,11 @@ func (s *Service) setOIDCIdentity(app *hscontrol.Headscale, headscaleUserID, sub
 // LookupPort returns the TCP port assigned to subdomain's headscale
 // instance, or false if none is running.
 func (s *Service) LookupPort(subdomain string) (int, bool) {
-	return s.ports.Load(subdomain)
+	rt, ok := s.orgs.Load(subdomain)
+	if !ok {
+		return 0, false
+	}
+	return rt.port, true
 }
 
 // NextSubdomain returns an unused subdomain for a new organization: the
@@ -370,7 +383,7 @@ func (s *Service) Start(ctx context.Context) (err error) {
 }
 
 // startHeadscale creates and launches an hscontrol.Headscale instance for
-// subdomain, registering it in the in-memory maps. It listens on a free
+// subdomain, registering it in s.orgs. It listens on a free
 // loopback port, reused across restarts of the instance within this
 // process. If headscale's DB has no policy yet the default ACL policy is
 // written before Serve starts, so GetPolicy never returns "acl policy not
@@ -386,8 +399,11 @@ func (s *Service) startHeadscale(ctx context.Context, subdomain string, hsCfg *H
 
 // startLocked is startHeadscale for callers already holding startMu.
 func (s *Service) startLocked(ctx context.Context, subdomain string, hsCfg *HeadscaleConfig) error {
-	port, ok := s.ports.Load(subdomain)
-	if !ok {
+	rt, ok := s.orgs.Load(subdomain)
+	port := 0
+	if ok {
+		port = rt.port
+	} else {
 		var err error
 		if port, err = s.allocatePort(); err != nil {
 			return err
@@ -398,7 +414,10 @@ func (s *Service) startLocked(ctx context.Context, subdomain string, hsCfg *Head
 	if err != nil {
 		return fmt.Errorf("create headscale instance for %q: %w", subdomain, err)
 	}
-	s.ports.Store(subdomain, port)
+	if !ok {
+		rt = &orgRuntime{port: port}
+		s.orgs.Store(subdomain, rt)
+	}
 	if app == nil {
 		return nil
 	}
@@ -416,7 +435,7 @@ func (s *Service) startLocked(ctx context.Context, subdomain string, hsCfg *Head
 		cancel: cancel,
 		exited: make(chan struct{}),
 	}
-	s.instances.Store(subdomain, inst)
+	rt.inst.Store(inst)
 	go func() {
 		defer close(inst.exited)
 		if err := app.Serve(serveCtx); err != nil && !errors.Is(err, context.Canceled) {
@@ -467,16 +486,20 @@ func (s *Service) restartHeadscale(ctx context.Context, subdomain string) (err e
 		return err
 	}
 
-	if inst, ok := s.instances.Load(subdomain); ok {
-		inst.cancel()
-		select {
-		case <-inst.exited:
-		case <-ctx.Done():
-			return fmt.Errorf("waiting for headscale to stop: %w", ctx.Err())
+	if rt, ok := s.orgs.Load(subdomain); ok {
+		// Cleared only once stopped, so a timed-out stop is retried by the
+		// next restart instead of leaving it running unreferenced.
+		if inst := rt.inst.Load(); inst != nil {
+			inst.cancel()
+			select {
+			case <-inst.exited:
+			case <-ctx.Done():
+				return fmt.Errorf("waiting for headscale to stop: %w", ctx.Err())
+			}
+			rt.inst.Store(nil)
 		}
-		s.instances.Delete(subdomain)
+		rt.closeConns()
 	}
-	s.closeConns(subdomain)
 	return s.startLocked(ctx, subdomain, hsCfg)
 }
 

@@ -198,13 +198,13 @@ func TestSettingsApplyToRunningHeadscale(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	t.Cleanup(func() {
-		if inst, ok := svc.instances.Load("acme"); ok {
+		if inst, ok := svc.running("acme"); ok {
 			inst.cancel()
 			<-inst.exited
 		}
 	})
 	port, _ := svc.LookupPort("acme")
-	first, _ := svc.instances.Load("acme")
+	first, _ := svc.running("acme")
 
 	waitCtx, cancel := context.WithTimeout(t.Context(), 60*time.Second)
 	defer cancel()
@@ -225,7 +225,7 @@ func TestSettingsApplyToRunningHeadscale(t *testing.T) {
 	}
 	assertStatus(t, o, StatusActive)
 
-	second, _ := svc.instances.Load("acme")
+	second, _ := svc.running("acme")
 	if second == first {
 		t.Fatal("headscale instance was not replaced")
 	}
