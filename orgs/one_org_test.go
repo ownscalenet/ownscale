@@ -240,7 +240,7 @@ func TestSettingsRestartHeadscale(t *testing.T) {
 	tests := []struct {
 		name  string
 		apply func(t *testing.T, o *OrgService)
-		check func(t *testing.T, cfg *HeadscaleFileConfig)
+		check func(t *testing.T, cfg *HeadscaleConfig)
 	}{
 		{
 			name: "dns",
@@ -254,7 +254,7 @@ func TestSettingsRestartHeadscale(t *testing.T) {
 					t.Fatalf("SetDNSSettings: %v", err)
 				}
 			},
-			check: func(t *testing.T, cfg *HeadscaleFileConfig) {
+			check: func(t *testing.T, cfg *HeadscaleConfig) {
 				if got := cfg.DNS.Nameservers.Global; !slices.Equal(got, []string{"1.2.3.4"}) {
 					t.Errorf("nameservers = %v, want [1.2.3.4]", got)
 				}
@@ -267,7 +267,7 @@ func TestSettingsRestartHeadscale(t *testing.T) {
 					t.Fatalf("SetAuthRestrictions: %v", err)
 				}
 			},
-			check: func(t *testing.T, cfg *HeadscaleFileConfig) {
+			check: func(t *testing.T, cfg *HeadscaleConfig) {
 				if got := cfg.OIDC.AllowedDomains; !slices.Equal(got, []string{"example.com"}) {
 					t.Errorf("allowed domains = %v, want [example.com]", got)
 				}
@@ -281,8 +281,8 @@ func TestSettingsRestartHeadscale(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Create: %v", err)
 			}
-			var got []*HeadscaleFileConfig
-			svc.createFn = func(_ context.Context, _, _, _ string, _ int, cfg *HeadscaleFileConfig, _ config.DerpConfig) (*hscontrol.Headscale, error) {
+			var got []*HeadscaleConfig
+			svc.createFn = func(_, _, _ string, _ int, cfg *HeadscaleConfig, _ config.DerpConfig) (*hscontrol.Headscale, error) {
 				got = append(got, cfg)
 				return nil, nil
 			}
@@ -312,7 +312,7 @@ func TestSettingsRestartFailureLeavesUpdatePending(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	svc.createFn = func(context.Context, string, string, string, int, *HeadscaleFileConfig, config.DerpConfig) (*hscontrol.Headscale, error) {
+	svc.createFn = func(string, string, string, int, *HeadscaleConfig, config.DerpConfig) (*hscontrol.Headscale, error) {
 		return nil, errors.New("headscale failed (injected)")
 	}
 

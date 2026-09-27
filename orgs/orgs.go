@@ -73,7 +73,7 @@ type Service struct {
 
 	// createFn defaults to createHeadscale; override in tests to skip
 	// real headscale startup.
-	createFn func(ctx context.Context, dataDir, subdomain, baseDomain string, port int, fileCfg *HeadscaleFileConfig, derpCfg config.DerpConfig) (*hscontrol.Headscale, error)
+	createFn func(dataDir, subdomain, baseDomain string, port int, hsCfg *HeadscaleConfig, derpCfg config.DerpConfig) (*hscontrol.Headscale, error)
 }
 
 // instance is a running headscale server and the means to stop it.
@@ -307,12 +307,12 @@ func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organ
 	if err != nil {
 		return sqlcgen.Organization{}, err
 	}
-	fileCfg := newFileConfig(subdomain, OIDCConfig{Issuer: s.issuer, ClientID: clientID, ClientSecret: clientSecret})
-	hsConfig, err := fileCfg.Marshal()
+	hsCfg := newHeadscaleConfig(subdomain, OIDCConfig{Issuer: s.issuer, ClientID: clientID, ClientSecret: clientSecret})
+	hsConfig, err := hsCfg.Marshal()
 	if err != nil {
 		return sqlcgen.Organization{}, err
 	}
-	port, err := s.startHeadscale(ctx, subdomain, 0, fileCfg, s.derpCfg)
+	port, err := s.startHeadscale(ctx, subdomain, 0, hsCfg)
 	if err != nil {
 		return sqlcgen.Organization{}, err
 	}
@@ -348,7 +348,7 @@ func (s *Service) insertProvisioned(ctx context.Context, subdomain, status strin
 	if _, err := txQueries.CreateOrgConfig(ctx, sqlcgen.CreateOrgConfigParams{
 		ID:             xid.New().String(),
 		OrganizationID: org.ID,
-		Path:           ConfigYAMLPath,
+		Path:           HeadscaleConfigKey,
 		Content:        hsConfig,
 	}); err != nil {
 		return sqlcgen.Organization{}, err
@@ -372,19 +372,19 @@ func (s *Service) recoverActive(ctx context.Context) error {
 		}
 		cfgRow, err := s.queries.GetOrgConfig(ctx, sqlcgen.GetOrgConfigParams{
 			OrganizationID: org.ID,
-			Path:           ConfigYAMLPath,
+			Path:           HeadscaleConfigKey,
 		})
 		if err != nil {
 			s.logger.Warn("load org config for recovery; skipping", "subdomain", org.Subdomain, "error", err)
 			continue
 		}
-		parsedCfg, err := ParseHeadscaleFileConfig(cfgRow.Content)
+		parsedCfg, err := parseHeadscaleConfig(cfgRow.Content)
 		if err != nil {
 			s.logger.Warn("parse org config for recovery; skipping", "subdomain", org.Subdomain, "error", err)
 			continue
 		}
 
-		if _, err := s.startHeadscale(ctx, org.Subdomain, int(org.Port), parsedCfg, s.derpCfg); err != nil {
+		if _, err := s.startHeadscale(ctx, org.Subdomain, int(org.Port), parsedCfg); err != nil {
 			s.logger.Error("recover active org headscale instance", "subdomain", org.Subdomain, "error", err)
 		}
 	}
@@ -400,20 +400,20 @@ func (s *Service) recoverActive(ctx context.Context) error {
 //
 // Instances start one at a time: this returns only once Serve has loaded
 // its DERP map, or has failed.
-func (s *Service) startHeadscale(ctx context.Context, subdomain string, port int, fileCfg *HeadscaleFileConfig, derpCfg config.DerpConfig) (_ int, err error) {
+func (s *Service) startHeadscale(ctx context.Context, subdomain string, port int, hsCfg *HeadscaleConfig) (_ int, err error) {
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
-	return s.startLocked(ctx, subdomain, port, fileCfg, derpCfg)
+	return s.startLocked(ctx, subdomain, port, hsCfg)
 }
 
 // startLocked is startHeadscale for callers already holding startMu.
-func (s *Service) startLocked(ctx context.Context, subdomain string, port int, fileCfg *HeadscaleFileConfig, derpCfg config.DerpConfig) (_ int, err error) {
+func (s *Service) startLocked(ctx context.Context, subdomain string, port int, hsCfg *HeadscaleConfig) (_ int, err error) {
 	if port == 0 {
 		port = s.nextPort
 	}
 	s.nextPort = max(s.nextPort, port+1)
 
-	app, err := s.createFn(ctx, s.dataDir, subdomain, s.baseDomain, port, fileCfg, derpCfg)
+	app, err := s.createFn(s.dataDir, subdomain, s.baseDomain, port, hsCfg, s.derpCfg)
 	if err != nil {
 		return 0, fmt.Errorf("create headscale instance for %q: %w", subdomain, err)
 	}
@@ -454,12 +454,12 @@ func (s *Service) restartHeadscale(ctx context.Context, subdomain string) (err e
 	}
 	cfgRow, err := s.queries.GetOrgConfig(ctx, sqlcgen.GetOrgConfigParams{
 		OrganizationID: org.ID,
-		Path:           ConfigYAMLPath,
+		Path:           HeadscaleConfigKey,
 	})
 	if err != nil {
 		return err
 	}
-	fileCfg, err := ParseHeadscaleFileConfig(cfgRow.Content)
+	hsCfg, err := parseHeadscaleConfig(cfgRow.Content)
 	if err != nil {
 		return err
 	}
@@ -474,7 +474,7 @@ func (s *Service) restartHeadscale(ctx context.Context, subdomain string) (err e
 		s.instances.Delete(subdomain)
 	}
 	s.closeConns(subdomain)
-	_, err = s.startLocked(ctx, subdomain, int(org.Port), fileCfg, s.derpCfg)
+	_, err = s.startLocked(ctx, subdomain, int(org.Port), hsCfg)
 	return err
 }
 

@@ -30,17 +30,17 @@ type OrgService struct {
 	restart func(ctx context.Context) error
 }
 
-func (o *OrgService) getHeadscaleConfig(ctx context.Context) (_ *HeadscaleFileConfig, err error) {
+func (o *OrgService) getHeadscaleConfig(ctx context.Context) (_ *HeadscaleConfig, err error) {
 	defer derrors.Wrap(&err, "o.getHeadscaleConfig(%q)", o.orgID)
 
 	row, err := o.queries.GetOrgConfig(ctx, sqlcgen.GetOrgConfigParams{
 		OrganizationID: o.orgID,
-		Path:           ConfigYAMLPath,
+		Path:           HeadscaleConfigKey,
 	})
 	if err != nil {
 		return nil, err
 	}
-	cfg, err := ParseHeadscaleFileConfig(row.Content)
+	cfg, err := parseHeadscaleConfig(row.Content)
 	if err != nil {
 		return nil, err
 	}
@@ -50,19 +50,19 @@ func (o *OrgService) getHeadscaleConfig(ctx context.Context) (_ *HeadscaleFileCo
 // applyHeadscaleConfig persists cfg to the orgconfigs row, marks the
 // org update_pending, restarts its headscale instance so the new config
 // takes effect, then marks the org active again. If the restart fails the
-// org stays update_pending, and startup recovery retries it. extraWrites runs within the same short transaction
-// as the config row write.
+// org stays update_pending, and startup recovery retries it. extraWrites
+// runs within the same short transaction as the config row write.
 //
 // This function is NOT a single big transaction because headscale
 // restarting takes several seconds and that would block all other DB ops.
-func (o *OrgService) applyHeadscaleConfig(ctx context.Context, cfg *HeadscaleFileConfig, extraWrites func(ctx context.Context, txQueries *sqlcgen.Queries) error) (err error) {
+func (o *OrgService) applyHeadscaleConfig(ctx context.Context, cfg *HeadscaleConfig, extraWrites func(ctx context.Context, txQueries *sqlcgen.Queries) error) (err error) {
 	defer derrors.Wrap(&err, "o.applyHeadscaleConfig(%q, %q)", o.orgID, o.subdomain)
 
-	updated, err := cfg.Marshal()
-	if err != nil {
+	if err := validateDNSSettings(cfg.DNS); err != nil {
 		return err
 	}
-	if err := validateConfigYAML(updated); err != nil {
+	updated, err := cfg.Marshal()
+	if err != nil {
 		return err
 	}
 
@@ -83,18 +83,8 @@ func (o *OrgService) applyHeadscaleConfig(ctx context.Context, cfg *HeadscaleFil
 	return nil
 }
 
-// validateConfigYAML parses content and validates the DNS block.
-// Replaces the previous `headscale configtest` exec approach.
-func validateConfigYAML(content string) error {
-	cfg, err := ParseHeadscaleFileConfig(content)
-	if err != nil {
-		return err
-	}
-	return validateDNSSettings(cfg.DNS)
-}
-
 // persistConfigAndMarkUpdatePending runs extraWrites (if non-nil),
-// upserts o's config.yaml orgconfigs row to updated, and sets its status
+// upserts o's HeadscaleConfigKey orgconfigs row to updated, and sets its status
 // to StatusUpdatePending.
 func (o *OrgService) persistConfigAndMarkUpdatePending(
 	ctx context.Context,
@@ -118,7 +108,7 @@ func (o *OrgService) persistConfigAndMarkUpdatePending(
 	if _, err := txQueries.UpsertOrgConfig(ctx, sqlcgen.UpsertOrgConfigParams{
 		ID:             xid.New().String(),
 		OrganizationID: o.orgID,
-		Path:           ConfigYAMLPath,
+		Path:           HeadscaleConfigKey,
 		Content:        updated,
 	}); err != nil {
 		return fmt.Errorf("save config: %w", err)
@@ -173,7 +163,7 @@ func (o *OrgService) GetAuthRestrictions(ctx context.Context) (_ string, err err
 
 // SetAuthRestrictions validates content as HuJSON, persists it as o's
 // OIDC login allowlist (orgconfigs), then patches the equivalent
-// domains/groups/users into o's config.yaml and restarts headscale.
+// domains/groups/users into o's HeadscaleConfig and restarts headscale.
 func (o *OrgService) SetAuthRestrictions(ctx context.Context, content string) (err error) {
 	defer derrors.Wrap(&err, "o.SetAuthRestrictions(%q)", o.orgID)
 
@@ -209,7 +199,7 @@ func (o *OrgService) SetAuthRestrictions(ctx context.Context, content string) (e
 	})
 }
 
-// GetDNSSettings returns o's live DNS settings from its config.yaml row.
+// GetDNSSettings returns o's stored DNS settings.
 func (o *OrgService) GetDNSSettings(ctx context.Context) (_ DNSConfig, err error) {
 	defer derrors.Wrap(&err, "o.GetDNSSettings(%q)", o.orgID)
 
@@ -220,7 +210,7 @@ func (o *OrgService) GetDNSSettings(ctx context.Context) (_ DNSConfig, err error
 	return normalizeDNSConfig(cfg.DNS), nil
 }
 
-// SetDNSSettings validates dns, persists it into o's config.yaml row,
+// SetDNSSettings validates dns, persists it into o's HeadscaleConfig,
 // and restarts headscale so it's applied.
 func (o *OrgService) SetDNSSettings(ctx context.Context, dns DNSConfig) (err error) {
 	defer derrors.Wrap(&err, "o.SetDNSSettings(%q)", o.orgID)
@@ -241,8 +231,8 @@ func (o *OrgService) SetDNSSettings(ctx context.Context, dns DNSConfig) (err err
 	return o.applyHeadscaleConfig(applyCtx, cfg, nil)
 }
 
-// validateDNSSettings runs structural checks that headscale's configtest
-// doesn't catch: empty base domain, empty record names/values, duplicates.
+// validateDNSSettings rejects an empty base domain, empty record
+// names/values, and duplicate records.
 func validateDNSSettings(dns DNSConfig) error {
 	if strings.TrimSpace(dns.BaseDomain) == "" {
 		return NewInvalidConfigError("tailnet name must not be empty")

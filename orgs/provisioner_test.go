@@ -1,7 +1,6 @@
 package orgs
 
 import (
-	"context"
 	"database/sql"
 	"errors"
 	"io"
@@ -29,7 +28,7 @@ func newTestService(t *testing.T) *Service {
 
 // noopCreateFn is a createFn that immediately returns nil (no headscale
 // instance started).
-func noopCreateFn(_ context.Context, _, _, _ string, _ int, _ *HeadscaleFileConfig, _ config.DerpConfig) (*hscontrol.Headscale, error) {
+func noopCreateFn(_, _, _ string, _ int, _ *HeadscaleConfig, _ config.DerpConfig) (*hscontrol.Headscale, error) {
 	return nil, nil
 }
 
@@ -62,7 +61,7 @@ func TestCreateRejectsInvalidSubdomain(t *testing.T) {
 
 func TestCreateSurfacesHeadscaleFailure(t *testing.T) {
 	svc := newTestService(t)
-	svc.createFn = func(_ context.Context, _, _, _ string, _ int, _ *HeadscaleFileConfig, _ config.DerpConfig) (*hscontrol.Headscale, error) {
+	svc.createFn = func(_, _, _ string, _ int, _ *HeadscaleConfig, _ config.DerpConfig) (*hscontrol.Headscale, error) {
 		return nil, errors.New("headscale failed (injected)")
 	}
 
@@ -143,8 +142,8 @@ func TestStartRecoveryWithNoOrgsIsNoop(t *testing.T) {
 	}
 }
 
-// TestCreateSeedsOrgConfig verifies that Create writes the headscale
-// config YAML (with issuer) to orgconfigs.
+// TestCreateSeedsOrgConfig verifies that Create stores the organization's
+// HeadscaleConfig in orgconfigs.
 func TestCreateSeedsOrgConfig(t *testing.T) {
 	svc := newTestService(t)
 
@@ -155,7 +154,7 @@ func TestCreateSeedsOrgConfig(t *testing.T) {
 
 	cfgRow, err := svc.queries.GetOrgConfig(t.Context(), sqlcgen.GetOrgConfigParams{
 		OrganizationID: org.ID,
-		Path:           ConfigYAMLPath,
+		Path:           HeadscaleConfigKey,
 	})
 	if err != nil {
 		t.Fatalf("GetOrgConfig: %v", err)

@@ -10,15 +10,15 @@ import (
 )
 
 const (
+	// ConsoleSubdomain is the subdomain serving the ownscale console.
 	ConsoleSubdomain = "console"
 
-	// ConfigYAMLPath is the orgconfigs key under which the headscale
-	// config.yaml snapshot is stored. The YAML content is ownscale's
-	// source of truth for DNS and OIDC settings; headscale itself uses the
-	// in-process types.Config.
-	ConfigYAMLPath = "/etc/headscale/config.yaml"
+	// HeadscaleConfigKey is the orgconfigs key under which an organization's
+	// HeadscaleConfig is stored as YAML.
+	HeadscaleConfigKey = "headscale.yaml"
 )
 
+// ConsoleDomain returns the console's domain under baseDomain.
 func ConsoleDomain(baseDomain string) string {
 	return ConsoleSubdomain + "." + baseDomain
 }
@@ -26,67 +26,62 @@ func ConsoleDomain(baseDomain string) string {
 // InvalidConfigError is returned when a headscale config fails validation.
 type InvalidConfigError struct{ msg string }
 
+// NewInvalidConfigError returns an InvalidConfigError with msg.
 func NewInvalidConfigError(msg string) *InvalidConfigError {
 	return &InvalidConfigError{msg: msg}
 }
 
 func (e *InvalidConfigError) Error() string { return e.msg }
 
-// HeadscaleFileConfig holds the subset of headscale's config.yaml that
-// ownscale reads and writes. The Rest field captures all other keys so
-// round-tripping via Marshal does not drop them.
-type HeadscaleFileConfig struct {
+// HeadscaleConfig holds an organization's user-editable headscale settings.
+// It is ownscale's source of truth for them; createHeadscale builds
+// headscale's types.Config from it.
+type HeadscaleConfig struct {
 	DNS  DNSConfig  `yaml:"dns"`
 	OIDC OIDCConfig `yaml:"oidc"`
-
-	Rest map[string]any `json:"-" yaml:",inline"`
 }
 
+// DNSRecord is an extra DNS record served to an organization's nodes.
 type DNSRecord struct {
 	Name  string `json:"name" yaml:"name"`
 	Type  string `json:"type" yaml:"type"`
 	Value string `json:"value" yaml:"value"`
 }
 
+// DNSConfig is an organization's tailnet DNS settings.
 type DNSConfig struct {
-	MagicDNS      bool           `json:"magicDns" yaml:"magic_dns"`
-	BaseDomain    string         `json:"baseDomain" yaml:"base_domain"`
-	Nameservers   Nameservers    `json:"nameservers" yaml:"nameservers"`
-	SearchDomains []string       `json:"searchDomains" yaml:"search_domains,omitempty"`
-	ExtraRecords  []DNSRecord    `json:"extraRecords" yaml:"extra_records,omitempty"`
-	Rest          map[string]any `json:"-" yaml:",inline"`
+	MagicDNS      bool        `json:"magicDns" yaml:"magic_dns"`
+	BaseDomain    string      `json:"baseDomain" yaml:"base_domain"`
+	Nameservers   Nameservers `json:"nameservers" yaml:"nameservers"`
+	SearchDomains []string    `json:"searchDomains" yaml:"search_domains,omitempty"`
+	ExtraRecords  []DNSRecord `json:"extraRecords" yaml:"extra_records,omitempty"`
 }
 
+// Nameservers lists the DNS resolvers pushed to an organization's nodes.
 type Nameservers struct {
-	Global []string       `json:"global" yaml:"global"`
-	Rest   map[string]any `json:"-" yaml:",inline"`
+	Global []string `json:"global" yaml:"global"`
 }
 
-// OIDCConfig mirrors headscale's oidc config block.
+// OIDCConfig is an organization's headscale OIDC client and login allowlist.
 type OIDCConfig struct {
-	Issuer       string   `yaml:"issuer"`
-	ClientID     string   `yaml:"client_id"`
-	ClientSecret string   `yaml:"client_secret"`
-	Scope        []string `yaml:"scope,omitempty"`
-	PKCE         struct {
-		Enabled bool   `yaml:"enabled"`
-		Method  string `yaml:"method,omitempty"`
-	} `yaml:"pkce"`
-	AllowedDomains []string       `yaml:"allowed_domains,omitempty"`
-	AllowedGroups  []string       `yaml:"allowed_groups,omitempty"`
-	AllowedUsers   []string       `yaml:"allowed_users,omitempty"`
-	Rest           map[string]any `json:"-" yaml:",inline"`
+	Issuer         string   `yaml:"issuer"`
+	ClientID       string   `yaml:"client_id"`
+	ClientSecret   string   `yaml:"client_secret"`
+	AllowedDomains []string `yaml:"allowed_domains,omitempty"`
+	AllowedGroups  []string `yaml:"allowed_groups,omitempty"`
+	AllowedUsers   []string `yaml:"allowed_users,omitempty"`
 }
 
-func ParseHeadscaleFileConfig(content string) (*HeadscaleFileConfig, error) {
-	var cfg HeadscaleFileConfig
+func parseHeadscaleConfig(content string) (*HeadscaleConfig, error) {
+	var cfg HeadscaleConfig
 	if err := yaml.Unmarshal([]byte(content), &cfg); err != nil {
 		return nil, fmt.Errorf("parse config: %w", err)
 	}
 	return &cfg, nil
 }
 
-func (cfg *HeadscaleFileConfig) Marshal() (string, error) {
+// Marshal renders cfg as YAML for storage.
+func (cfg *HeadscaleConfig) Marshal() (string, error) {
 	updated, err := yaml.Marshal(cfg)
 	if err != nil {
 		return "", fmt.Errorf("marshal config: %w", err)
@@ -105,6 +100,7 @@ var reservedSubdomains = map[string]bool{
 	"www":     true,
 }
 
+// ValidateSubdomain reports whether s can be used as an organization's subdomain.
 func ValidateSubdomain(s string) (err error) {
 	defer derrors.Wrap(&err, "orgs.ValidateSubdomain(%q)", s)
 
@@ -117,15 +113,10 @@ func ValidateSubdomain(s string) (err error) {
 	return nil
 }
 
-// newFileConfig returns the initial stored config for an organization:
-// MagicDNS on its own tailnet domain, and the OIDC client credentials. This
-// snapshot is ownscale's source of truth for DNS and OIDC settings; headscale
-// itself is configured from it in createHeadscale.
-func newFileConfig(subdomain string, oidc OIDCConfig) *HeadscaleFileConfig {
-	oidc.Scope = []string{"openid", "profile", "email", "offline_access"}
-	oidc.PKCE.Enabled = true
-	oidc.PKCE.Method = "S256"
-	return &HeadscaleFileConfig{
+// newHeadscaleConfig returns the initial config for an organization:
+// MagicDNS on its own tailnet domain, and the OIDC client credentials.
+func newHeadscaleConfig(subdomain string, oidc OIDCConfig) *HeadscaleConfig {
+	return &HeadscaleConfig{
 		DNS: DNSConfig{
 			MagicDNS:    true,
 			BaseDomain:  subdomain + ".ownscale",
@@ -133,11 +124,4 @@ func newFileConfig(subdomain string, oidc OIDCConfig) *HeadscaleFileConfig {
 		},
 		OIDC: oidc,
 	}
-}
-
-// BuildHeadscaleConfig renders the initial stored config YAML for an
-// organization (see newFileConfig).
-func BuildHeadscaleConfig(subdomain string, oidc OIDCConfig) (_ string, err error) {
-	defer derrors.Wrap(&err, "BuildHeadscaleConfig(%q)", subdomain)
-	return newFileConfig(subdomain, oidc).Marshal()
 }

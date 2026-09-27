@@ -1,7 +1,6 @@
 package orgs
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -49,13 +48,12 @@ const defaultACLPolicy = `{
 
 // createHeadscale creates an *hscontrol.Headscale instance for subdomain.
 // port must already be allocated and persisted to the DB before calling
-// this. DNS and OIDC settings come from fileCfg, ownscale's stored config.
+// this. DNS and OIDC settings come from hsCfg, ownscale's stored config.
 // The org data directory (dataDir/subdomain) is created if absent.
 func createHeadscale(
-	_ context.Context,
 	dataDir, subdomain, baseDomain string,
 	port int,
-	fileCfg *HeadscaleFileConfig,
+	hsCfg *HeadscaleConfig,
 	derpCfg config.DerpConfig,
 ) (_ *hscontrol.Headscale, err error) {
 	defer derrors.Wrap(&err, "createHeadscale(%q)", subdomain)
@@ -84,7 +82,7 @@ func createHeadscale(
 		derp.DERPMap = &tailcfg.DERPMap{Regions: map[tailcfg.DERPRegionID]*tailcfg.DERPRegion{region.RegionID: region}}
 	}
 
-	dns := ownscaleDNSToTypes(fileCfg.DNS)
+	dns := ownscaleDNSToTypes(hsCfg.DNS)
 	cfg := &types.Config{
 		ServerURL:           fmt.Sprintf("https://%s.%s", subdomain, baseDomain),
 		Addr:                fmt.Sprintf("127.0.0.1:%d", port),
@@ -121,13 +119,13 @@ func createHeadscale(
 			}},
 		},
 		OIDC: types.OIDCConfig{
-			Issuer:         fileCfg.OIDC.Issuer,
-			ClientID:       fileCfg.OIDC.ClientID,
-			ClientSecret:   fileCfg.OIDC.ClientSecret,
-			Scope:          fileCfg.OIDC.Scope,
-			AllowedDomains: fileCfg.OIDC.AllowedDomains,
-			AllowedGroups:  fileCfg.OIDC.AllowedGroups,
-			AllowedUsers:   fileCfg.OIDC.AllowedUsers,
+			Issuer:         hsCfg.OIDC.Issuer,
+			ClientID:       hsCfg.OIDC.ClientID,
+			ClientSecret:   hsCfg.OIDC.ClientSecret,
+			Scope:          []string{"openid", "profile", "email", "offline_access"},
+			AllowedDomains: hsCfg.OIDC.AllowedDomains,
+			AllowedGroups:  hsCfg.OIDC.AllowedGroups,
+			AllowedUsers:   hsCfg.OIDC.AllowedUsers,
 			PKCE: types.PKCEConfig{
 				Enabled: true,
 				Method:  "S256",

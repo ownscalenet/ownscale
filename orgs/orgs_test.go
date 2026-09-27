@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net"
-	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -29,7 +28,7 @@ func newTestQueries(t *testing.T) *dbpkg.TxQueries {
 }
 
 // TestServiceCreateCreatesOIDCClient verifies that Create inserts an OIDC
-// client row and writes the headscale config YAML (with the correct issuer
+// client row and stores the organization's HeadscaleConfig (with the correct issuer
 // and a bcrypt-hashed client secret) into the orgconfigs table.
 func TestServiceCreateCreatesOIDCClient(t *testing.T) {
 	svc := newTestService(t)
@@ -60,19 +59,19 @@ func TestServiceCreateCreatesOIDCClient(t *testing.T) {
 		t.Fatalf("redirect uris = %v, want %v", redirectURIs, wantRedirects)
 	}
 
-	// orgconfigs must have a config.yaml row with the correct issuer and a
+	// orgconfigs must have a HeadscaleConfig row with the correct issuer and a
 	// client_secret whose plaintext matches the stored bcrypt hash.
 	cfgRow, err := queries.GetOrgConfig(t.Context(), sqlcgen.GetOrgConfigParams{
 		OrganizationID: org.ID,
-		Path:           ConfigYAMLPath,
+		Path:           HeadscaleConfigKey,
 	})
 	if err != nil {
 		t.Fatalf("GetOrgConfig: %v", err)
 	}
 
-	stored, err := ParseHeadscaleFileConfig(cfgRow.Content)
+	stored, err := parseHeadscaleConfig(cfgRow.Content)
 	if err != nil {
-		t.Fatalf("ParseHeadscaleFileConfig: %v", err)
+		t.Fatalf("parseHeadscaleConfig: %v", err)
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(clientRow.ClientSecretHash), []byte(stored.OIDC.ClientSecret)); err != nil {
 		t.Fatalf("stored client secret hash does not match rendered config secret: %v", err)
@@ -109,27 +108,6 @@ func TestServiceCreateDoesNotLeavePartialStateOnSubdomainConflict(t *testing.T) 
 	}
 }
 
-func TestStoredConfigRoundTrip(t *testing.T) {
-	built, err := BuildHeadscaleConfig("acme", OIDCConfig{Issuer: "https://auth.example.com", ClientID: "os_acme_x", ClientSecret: "secret"})
-	if err != nil {
-		t.Fatalf("BuildHeadscaleConfig: %v", err)
-	}
-
-	cfg, err := ParseHeadscaleFileConfig(built)
-	if err != nil {
-		t.Fatalf("ParseHeadscaleFileConfig: %v", err)
-	}
-	if cfg.DNS.BaseDomain != "acme.ownscale" || !cfg.DNS.MagicDNS || !slices.Equal(cfg.DNS.Nameservers.Global, []string{"1.1.1.1"}) {
-		t.Errorf("DNS = %+v", cfg.DNS)
-	}
-	if cfg.OIDC.Issuer != "https://auth.example.com" || cfg.OIDC.ClientID != "os_acme_x" || cfg.OIDC.ClientSecret != "secret" {
-		t.Errorf("OIDC = %+v", cfg.OIDC)
-	}
-	if !slices.Contains(cfg.OIDC.Scope, "openid") {
-		t.Errorf("OIDC scope = %v, want openid", cfg.OIDC.Scope)
-	}
-}
-
 func TestCreateHeadscaleDERP(t *testing.T) {
 	custom := config.DerpConfig{
 		Hostname: "derp.example.com", IPv4: "203.0.113.5", STUNPort: 3478,
@@ -145,8 +123,8 @@ func TestCreateHeadscaleDERP(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fileCfg := newFileConfig("acme", OIDCConfig{Issuer: "https://auth.example.com"})
-			app, err := createHeadscale(t.Context(), t.TempDir(), "acme", "example.com", 0, fileCfg, tt.derp)
+			hsCfg := newHeadscaleConfig("acme", OIDCConfig{Issuer: "https://auth.example.com"})
+			app, err := createHeadscale(t.TempDir(), "acme", "example.com", 0, hsCfg, tt.derp)
 			if err != nil {
 				t.Fatalf("createHeadscale: %v", err)
 			}

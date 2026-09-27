@@ -99,14 +99,22 @@ func insertOrg(t *testing.T, queries *dbpkg.TxQueries, subdomain string) sqlcgen
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
-	hsConfig, err := orgs.BuildHeadscaleConfig(subdomain, orgs.OIDCConfig{Issuer: "https://auth.example.com"})
+	hsCfg := &orgs.HeadscaleConfig{
+		DNS: orgs.DNSConfig{
+			MagicDNS:    true,
+			BaseDomain:  subdomain + ".ownscale",
+			Nameservers: orgs.Nameservers{Global: []string{"1.1.1.1"}},
+		},
+		OIDC: orgs.OIDCConfig{Issuer: "https://auth.example.com"},
+	}
+	hsConfig, err := hsCfg.Marshal()
 	if err != nil {
-		t.Fatalf("BuildHeadscaleConfig: %v", err)
+		t.Fatalf("Marshal: %v", err)
 	}
 	if _, err := queries.CreateOrgConfig(t.Context(), sqlcgen.CreateOrgConfigParams{
 		ID:             xid.New().String(),
 		OrganizationID: org.ID,
-		Path:           orgs.ConfigYAMLPath,
+		Path:           orgs.HeadscaleConfigKey,
 		Content:        hsConfig,
 	}); err != nil {
 		t.Fatalf("CreateOrgConfig: %v", err)
