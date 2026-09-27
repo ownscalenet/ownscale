@@ -6,13 +6,13 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 	"time"
 
 	"github.com/peterbourgon/ff/v4"
 
 	"github.com/ownscalenet/ownscale/derrors"
 	"github.com/ownscalenet/ownscale/headscaleclient"
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 const devboxKeyTTL = 10 * time.Minute
@@ -36,8 +36,7 @@ func newDevboxKeyCommand(parent *ff.FlagSet) *ff.Command {
 			}
 			// The socket is served by the running ownscale process, so this
 			// only works where cfg.DataDir is shared with it.
-			sock := filepath.Join(cfg.DataDir, args[0], "headscale.sock")
-			return devboxKey(ctx, os.Stdout, headscaleclient.NewUnix(sock))
+			return devboxKey(ctx, os.Stdout, headscaleclient.NewUnix(orgs.SocketPath(cfg.DataDir, args[0])))
 		},
 	}
 }

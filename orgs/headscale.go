@@ -26,7 +26,10 @@ func noisePath(dataDir, subdomain string) string {
 func sqlitePath(dataDir, subdomain string) string {
 	return filepath.Join(dataDir, subdomain, "db.sqlite")
 }
-func socketPath(dataDir, subdomain string) string {
+
+// SocketPath returns the unix socket subdomain's headscale instance serves
+// its API on, without authentication.
+func SocketPath(dataDir, subdomain string) string {
 	return filepath.Join(dataDir, subdomain, "headscale.sock")
 }
 
@@ -106,7 +109,7 @@ func createHeadscale(
 		// Viper config loader does. We replicate the conversion here so
 		// nodes receive a DNS config (nameservers, MagicDNS) from startup.
 		TailcfgDNSConfig:     buildTailcfgDNS(dns),
-		UnixSocket:           socketPath(dataDir, subdomain),
+		UnixSocket:           SocketPath(dataDir, subdomain),
 		UnixSocketPermission: 0770,
 		Policy:               types.PolicyConfig{Mode: types.PolicyMode("database")},
 		Node: types.NodeConfig{

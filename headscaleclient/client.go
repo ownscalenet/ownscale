@@ -83,39 +83,10 @@ type CreatePreAuthKeyParams struct {
 	ACLTags    []string
 }
 
-// Client talks to a single organization's headscale container's
-// management API (see New and Registry, which mints and caches one Client
-// per organization).
+// Client talks to a single organization's headscale management API over
+// the instance's unix socket (see orgs.Service.Client).
 type Client struct {
 	api *hsclient.Headscale
-}
-
-// authRoundTripper injects a static bearer token into every request. This
-// is needed because headscale's published OpenAPI spec doesn't declare a
-// security scheme (so the generated client takes no AuthInfo parameter),
-// even though every management endpoint requires
-// "Authorization: Bearer <api key>" in practice.
-type authRoundTripper struct {
-	apiKey string
-	next   http.RoundTripper
-}
-
-func (rt authRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
-	req = req.Clone(req.Context())
-	req.Header.Set("Authorization", "Bearer "+rt.apiKey)
-	return rt.next.RoundTrip(req)
-}
-
-// New returns a Client for the headscale API at host, authenticating with
-// apiKey.
-func New(host, apiKey string) *Client {
-	transport := httptransport.New(host, "/", []string{"http"})
-	next := transport.Transport
-	if next == nil {
-		next = http.DefaultTransport
-	}
-	transport.Transport = authRoundTripper{apiKey: apiKey, next: next}
-	return newClient(transport)
 }
 
 // NewUnix returns a Client that talks to headscale over its local unix
@@ -128,10 +99,6 @@ func NewUnix(socketPath string) *Client {
 			return d.DialContext(ctx, "unix", socketPath)
 		},
 	}
-	return newClient(transport)
-}
-
-func newClient(transport *httptransport.Runtime) *Client {
 	transport.Consumers["application/problem+json"] = runtime.ConsumerFunc(consumeProblem)
 	return &Client{api: hsclient.New(transport, strfmt.Default)}
 }

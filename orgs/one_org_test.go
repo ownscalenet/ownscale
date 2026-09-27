@@ -375,6 +375,13 @@ func TestSettingsApplyToRunningHeadscale(t *testing.T) {
 	if err := waitHeadscaleReady(waitCtx, port); err != nil {
 		t.Fatalf("restarted headscale not ready on port %d: %v", port, err)
 	}
+	client, err := svc.Client("acme")
+	if err != nil {
+		t.Fatalf("Client: %v", err)
+	}
+	if _, err := client.ListUsers(t.Context()); err != nil {
+		t.Errorf("ListUsers over the restarted instance's socket: %v", err)
+	}
 
 	hs := second.app.GetState().DebugConfig()
 	// Nameservers map to FallbackResolvers when OverrideLocalDNS is false.

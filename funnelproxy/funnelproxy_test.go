@@ -9,13 +9,13 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"strings"
 	"sync"
 	"testing"
 	"time"
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/headscaleclient"
+	"github.com/ownscalenet/ownscale/headscaleclient/hstest"
 	"tailscale.com/tsnet"
 )
 
@@ -89,14 +89,14 @@ type fakeHeadscaleClients struct {
 	err    error
 }
 
-func (f *fakeHeadscaleClients) Client(_ context.Context, _ string) (*headscaleclient.Client, error) {
+func (f *fakeHeadscaleClients) Client(string) (*headscaleclient.Client, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
 	return f.client, nil
 }
 
-// newFakeNodeServer builds an httptest.Server implementing headscale's
+// newFakeNodeServer builds a fake implementing headscale's
 // GET /api/v1/node endpoint, returning nodes.
 func newFakeNodeServer(t *testing.T, nodesJSON string) *headscaleclient.Client {
 	t.Helper()
@@ -105,10 +105,7 @@ func newFakeNodeServer(t *testing.T, nodesJSON string) *headscaleclient.Client {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, nodesJSON)
 	})
-	server := httptest.NewServer(mux)
-	t.Cleanup(server.Close)
-	host := strings.TrimPrefix(server.URL, "http://")
-	return headscaleclient.New(host, "test-api-key")
+	return headscaleclient.NewUnix(hstest.Socket(t, mux))
 }
 
 func TestServeHTTPRouteNotFound(t *testing.T) {
@@ -139,7 +136,7 @@ func TestServeHTTPHeadscaleClientError(t *testing.T) {
 	queries := &fakeQueries{routes: map[string]sqlcgen.FunnelRoute{
 		"acme/web": {ID: "1", Label: "web", TargetNodeID: "1", TargetPort: 8080},
 	}}
-	pool := NewPool(queries, &fakeHeadscaleClients{err: errors.New("mint failed")}, t.TempDir(), discardLogger(), defaultPortLookup())
+	pool := NewPool(queries, &fakeHeadscaleClients{err: errors.New("not running")}, t.TempDir(), discardLogger(), defaultPortLookup())
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -194,7 +191,7 @@ func TestTargetNodeIP(t *testing.T) {
 	}
 }
 
-// newFakeUserPreAuthKeyServer builds an httptest.Server implementing
+// newFakeUserPreAuthKeyServer builds a fake implementing
 // headscale's GET/POST /api/v1/user and POST /api/v1/preauthkey endpoints,
 // recording every /api/v1/preauthkey request body for assertions.
 func newFakeUserPreAuthKeyServer(t *testing.T, existingUsers string) (*headscaleclient.Client, *[]string) {
@@ -215,10 +212,7 @@ func newFakeUserPreAuthKeyServer(t *testing.T, existingUsers string) (*headscale
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"preAuthKey":{"id":"1","key":"fake-key","reusable":true,"ephemeral":false}}`)
 	})
-	server := httptest.NewServer(mux)
-	t.Cleanup(server.Close)
-	host := strings.TrimPrefix(server.URL, "http://")
-	return headscaleclient.New(host, "test-api-key"), &preAuthKeyBodies
+	return headscaleclient.NewUnix(hstest.Socket(t, mux)), &preAuthKeyBodies
 }
 
 // TestGetOrCreateServerConcurrentDedup guards against the race where a

@@ -2,27 +2,23 @@ package headscaleclient
 
 import (
 	"bytes"
-	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"net"
 	"net/http"
-	"net/http/httptest"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/ownscalenet/ownscale/headscaleclient/hstest"
 )
 
-// newTestServer builds an httptest.Server implementing the handful of
-// headscale management endpoints headscaleclient.Client uses, recording
-// requests for assertions and requiring the given bearer token on every
-// call (mirroring headscale's real behavior). Request bodies are drained
-// and replaced with a fresh reader before recording, so tests can decode
-// them after the handler (and the server) is done with the request.
-func newTestServer(t *testing.T, wantToken string) (*httptest.Server, *[]*http.Request) {
+// newTestClient builds a Client for a fake implementing the handful of
+// headscale management endpoints Client uses, recording requests for
+// assertions. Request bodies are drained and replaced with a fresh reader
+// before recording, so tests can decode them after the handler is done
+// with the request.
+func newTestClient(t *testing.T) (*Client, *[]*http.Request) {
 	t.Helper()
 	var requests []*http.Request
 	record := func(r *http.Request) {
@@ -153,29 +149,11 @@ func newTestServer(t *testing.T, wantToken string) (*httptest.Server, *[]*http.R
 		fmt.Fprint(w, `{}`)
 	})
 
-	authed := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if got := r.Header.Get("Authorization"); got != "Bearer "+wantToken {
-			http.Error(w, "unauthorized", http.StatusUnauthorized)
-			return
-		}
-		mux.ServeHTTP(w, r)
-	})
-
-	srv := httptest.NewServer(authed)
-	return srv, &requests
-}
-
-func newTestClient(t *testing.T) (*Client, *httptest.Server, *[]*http.Request) {
-	t.Helper()
-	srv, reqs := newTestServer(t, "test-key")
-	host := strings.TrimPrefix(srv.URL, "http://")
-	c := New(host, "test-key")
-	return c, srv, reqs
+	return NewUnix(hstest.Socket(t, mux)), &requests
 }
 
 func TestClientListNodes(t *testing.T) {
-	c, srv, _ := newTestClient(t)
-	defer srv.Close()
+	c, _ := newTestClient(t)
 
 	nodes, err := c.ListNodes(t.Context())
 	if err != nil {
@@ -206,8 +184,7 @@ func TestClientListNodes(t *testing.T) {
 }
 
 func TestClientListUsers(t *testing.T) {
-	c, srv, _ := newTestClient(t)
-	defer srv.Close()
+	c, _ := newTestClient(t)
 
 	users, err := c.ListUsers(t.Context())
 	if err != nil {
@@ -219,8 +196,7 @@ func TestClientListUsers(t *testing.T) {
 }
 
 func TestClientRenameNode(t *testing.T) {
-	c, srv, reqs := newTestClient(t)
-	defer srv.Close()
+	c, reqs := newTestClient(t)
 
 	if err := c.RenameNode(t.Context(), "1", "new-name"); err != nil {
 		t.Fatalf("RenameNode: %v", err)
@@ -232,8 +208,7 @@ func TestClientRenameNode(t *testing.T) {
 }
 
 func TestClientCreateUser(t *testing.T) {
-	c, srv, reqs := newTestClient(t)
-	defer srv.Close()
+	c, reqs := newTestClient(t)
 
 	user, err := c.CreateUser(t.Context(), CreateUserParams{
 		Name:        "created-user",
@@ -262,8 +237,7 @@ func TestClientCreateUser(t *testing.T) {
 }
 
 func TestClientRenameUser(t *testing.T) {
-	c, srv, reqs := newTestClient(t)
-	defer srv.Close()
+	c, reqs := newTestClient(t)
 
 	if err := c.RenameUser(t.Context(), "1", "new-name"); err != nil {
 		t.Fatalf("RenameUser: %v", err)
@@ -275,8 +249,7 @@ func TestClientRenameUser(t *testing.T) {
 }
 
 func TestClientDeleteUser(t *testing.T) {
-	c, srv, reqs := newTestClient(t)
-	defer srv.Close()
+	c, reqs := newTestClient(t)
 
 	if err := c.DeleteUser(t.Context(), "1"); err != nil {
 		t.Fatalf("DeleteUser: %v", err)
@@ -288,8 +261,7 @@ func TestClientDeleteUser(t *testing.T) {
 }
 
 func TestClientSetTags(t *testing.T) {
-	c, srv, reqs := newTestClient(t)
-	defer srv.Close()
+	c, reqs := newTestClient(t)
 
 	if err := c.SetTags(t.Context(), "1", []string{"tag:a", "tag:b"}); err != nil {
 		t.Fatalf("SetTags: %v", err)
@@ -307,8 +279,7 @@ func TestClientSetTags(t *testing.T) {
 }
 
 func TestClientSetApprovedRoutes(t *testing.T) {
-	c, srv, reqs := newTestClient(t)
-	defer srv.Close()
+	c, reqs := newTestClient(t)
 
 	if err := c.SetApprovedRoutes(t.Context(), "1", []string{"10.0.0.0/24"}); err != nil {
 		t.Fatalf("SetApprovedRoutes: %v", err)
@@ -320,8 +291,7 @@ func TestClientSetApprovedRoutes(t *testing.T) {
 }
 
 func TestClientExpireNode(t *testing.T) {
-	c, srv, _ := newTestClient(t)
-	defer srv.Close()
+	c, _ := newTestClient(t)
 
 	if err := c.ExpireNode(t.Context(), "1"); err != nil {
 		t.Fatalf("ExpireNode: %v", err)
@@ -329,8 +299,7 @@ func TestClientExpireNode(t *testing.T) {
 }
 
 func TestClientDeleteNode(t *testing.T) {
-	c, srv, reqs := newTestClient(t)
-	defer srv.Close()
+	c, reqs := newTestClient(t)
 
 	if err := c.DeleteNode(t.Context(), "1"); err != nil {
 		t.Fatalf("DeleteNode: %v", err)
@@ -342,8 +311,7 @@ func TestClientDeleteNode(t *testing.T) {
 }
 
 func TestClientListPreAuthKeys(t *testing.T) {
-	c, srv, _ := newTestClient(t)
-	defer srv.Close()
+	c, _ := newTestClient(t)
 
 	keys, err := c.ListPreAuthKeys(t.Context())
 	if err != nil {
@@ -365,8 +333,7 @@ func TestClientListPreAuthKeys(t *testing.T) {
 }
 
 func TestClientCreatePreAuthKey(t *testing.T) {
-	c, srv, reqs := newTestClient(t)
-	defer srv.Close()
+	c, reqs := newTestClient(t)
 
 	key, err := c.CreatePreAuthKey(t.Context(), CreatePreAuthKeyParams{
 		UserID:     "1",
@@ -398,8 +365,7 @@ func TestClientCreatePreAuthKey(t *testing.T) {
 }
 
 func TestClientExpirePreAuthKey(t *testing.T) {
-	c, srv, reqs := newTestClient(t)
-	defer srv.Close()
+	c, reqs := newTestClient(t)
 
 	if err := c.ExpirePreAuthKey(t.Context(), "1"); err != nil {
 		t.Fatalf("ExpirePreAuthKey: %v", err)
@@ -420,8 +386,7 @@ func TestClientExpirePreAuthKey(t *testing.T) {
 }
 
 func TestClientDeletePreAuthKey(t *testing.T) {
-	c, srv, reqs := newTestClient(t)
-	defer srv.Close()
+	c, reqs := newTestClient(t)
 
 	if err := c.DeletePreAuthKey(t.Context(), "1"); err != nil {
 		t.Fatalf("DeletePreAuthKey: %v", err)
@@ -435,115 +400,18 @@ func TestClientDeletePreAuthKey(t *testing.T) {
 	}
 }
 
-func TestClientAuthFailureSurfacesAsError(t *testing.T) {
-	srv, _ := newTestServer(t, "correct-key")
-	defer srv.Close()
-
-	c := New(strings.TrimPrefix(srv.URL, "http://"), "wrong-key")
-	_, err := c.ListNodes(t.Context())
-	if err == nil {
-		t.Fatal("expected an error for a bad API key, got nil")
-	}
-}
-
-// fakeMinter is a ClientMinter test double recording which subdomains it
-// was asked to build clients for.
-type fakeMinter struct {
-	minted map[string]int
-	key    string
-	err    error
-}
-
-func (m *fakeMinter) MintClient(_ context.Context, subdomain string) (*Client, error) {
-	if m.minted == nil {
-		m.minted = make(map[string]int)
-	}
-	m.minted[subdomain]++
-	if m.err != nil {
-		return nil, m.err
-	}
-	return New("hs-"+subdomain+":8080", m.key), nil
-}
-
-func TestRegistryMintsOnceAndCaches(t *testing.T) {
-	minter := &fakeMinter{key: "minted-key"}
-	r := NewRegistry(minter)
-
-	c1, err := r.Client(t.Context(), "acme")
-	if err != nil {
-		t.Fatalf("Client: %v", err)
-	}
-	c2, err := r.Client(t.Context(), "acme")
-	if err != nil {
-		t.Fatalf("Client (second call): %v", err)
-	}
-	if c1 != c2 {
-		t.Error("expected the same cached *Client on the second call")
-	}
-	if minter.minted["acme"] != 1 {
-		t.Errorf("expected exactly 1 mint for acme, got %d", minter.minted["acme"])
-	}
-}
-
-func TestRegistryPropagatesMintError(t *testing.T) {
-	wantErr := errors.New("container not running")
-	r := NewRegistry(&fakeMinter{err: wantErr})
-
-	_, err := r.Client(t.Context(), "acme")
-	if err == nil || !errors.Is(err, wantErr) {
-		t.Fatalf("Client err = %v, want wrapping of %v", err, wantErr)
-	}
-}
-
-func TestRegistryDifferentSubdomainsGetDifferentClients(t *testing.T) {
-	minter := &fakeMinter{key: "minted-key"}
-	r := NewRegistry(minter)
-
-	c1, err := r.Client(t.Context(), "acme")
-	if err != nil {
-		t.Fatalf("Client(acme): %v", err)
-	}
-	c2, err := r.Client(t.Context(), "widgets")
-	if err != nil {
-		t.Fatalf("Client(widgets): %v", err)
-	}
-	if c1 == c2 {
-		t.Error("expected distinct clients for distinct subdomains")
-	}
-	if minter.minted["acme"] != 1 || minter.minted["widgets"] != 1 {
-		t.Errorf("unexpected mint counts: %v", minter.minted)
-	}
-}
-
 func TestProblemJSONErrorsCarryTheReason(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	c := NewUnix(hstest.Socket(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/problem+json")
 		w.WriteHeader(http.StatusBadRequest)
 		fmt.Fprint(w, `{"title":"Bad Request","status":400,"detail":"setting policy","errors":[{"message":"multiple users found"}]}`)
-	}))
-	t.Cleanup(srv.Close)
+	})))
 
-	sock := filepath.Join(t.TempDir(), "hs.sock")
-	ln, err := net.Listen("unix", sock)
-	if err != nil {
-		t.Fatal(err)
+	err := c.SetPolicy(t.Context(), "{}")
+	if err == nil {
+		t.Fatal("SetPolicy: want error, got nil")
 	}
-	unixSrv := &http.Server{Handler: srv.Config.Handler}
-	go unixSrv.Serve(ln)
-	t.Cleanup(func() { unixSrv.Close() })
-
-	for name, c := range map[string]*Client{
-		"New":     New(strings.TrimPrefix(srv.URL, "http://"), "key"),
-		"NewUnix": NewUnix(sock),
-	} {
-		t.Run(name, func(t *testing.T) {
-			err := c.SetPolicy(t.Context(), "{}")
-			if err == nil {
-				t.Fatal("SetPolicy: want error, got nil")
-			}
-			if !strings.Contains(err.Error(), "setting policy: multiple users found") {
-				t.Errorf("error = %q, want it to contain the problem detail and message", err)
-			}
-		})
+	if !strings.Contains(err.Error(), "setting policy: multiple users found") {
+		t.Errorf("error = %q, want it to contain the problem detail and message", err)
 	}
 }

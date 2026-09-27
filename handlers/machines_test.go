@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"bytes"
-	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -21,30 +20,30 @@ import (
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/funnelproxy"
 	"github.com/ownscalenet/ownscale/headscaleclient"
+	"github.com/ownscalenet/ownscale/headscaleclient/hstest"
 	"github.com/ownscalenet/ownscale/orgs"
 )
 
-// fakeClientMinter is a headscaleclient.ClientMinter test double that
-// always returns a *headscaleclient.Client pointed at an httptest.Server,
-// instead of a real in-process headscale instance.
-type fakeClientMinter struct {
+// fakeHeadscaleClients stands in for orgs.Service's running headscale
+// instances, returning a client for a fake headscale API.
+type fakeHeadscaleClients struct {
 	client *headscaleclient.Client
 	err    error
 }
 
-func (f *fakeClientMinter) MintClient(_ context.Context, _ string) (*headscaleclient.Client, error) {
+func (f fakeHeadscaleClients) Client(string) (*headscaleclient.Client, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
 	return f.client, nil
 }
 
-// newFakeHeadscaleServer builds an httptest.Server implementing enough of
+// newFakeHeadscaleServer builds a fake implementing enough of
 // headscale's management API to exercise the /api/machines handlers, and
 // a *headscaleclient.Client pointed at it. The returned *string is the
 // in-memory ACL policy GetPolicy/SetPolicy serve/mutate, starting out with
 // no "tagOwners" section (matching a freshly provisioned org).
-func newFakeHeadscaleServer(t *testing.T) (*httptest.Server, *headscaleclient.Client, *[]*http.Request, *string, *[]string) {
+func newFakeHeadscaleServer(t *testing.T) (*headscaleclient.Client, *[]*http.Request, *string, *[]string) {
 	t.Helper()
 	var requests []*http.Request
 	policy := `{"acls":[{"action":"accept","src":["*"],"dst":["*:*"]}]}`
@@ -165,15 +164,12 @@ func newFakeHeadscaleServer(t *testing.T) (*httptest.Server, *headscaleclient.Cl
 		fmt.Fprintf(w, `{"node":{"id":"4","name":"new-machine","givenName":"new-machine","user":{"id":"1","name":%q}}}`, r.URL.Query().Get("user"))
 	})
 
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-	host := strings.TrimPrefix(srv.URL, "http://")
-	client := headscaleclient.New(host, "test-key")
-	return srv, client, &requests, &policy, &lastTags
+	client := headscaleclient.NewUnix(hstest.Socket(t, mux))
+	return client, &requests, &policy, &lastTags
 }
 
 // activeOrgUser inserts a user with an "active" organization, wiring up
-// h.hs to a Registry backed by an httptest.Server fake headscale (used by
+// h.hs to a fake headscale (used by
 // handlers that still call resolveHeadscaleClient directly, e.g.
 // Session/ListMembers's best-effort linking). Returns the (refreshed,
 // org-attached) user, a client for the middleware-based handlers to
@@ -212,8 +208,8 @@ func activeOrgUserWithPolicy(t *testing.T, h *Handlers, queries *dbpkg.TxQueries
 		t.Fatalf("GetUserByID: %v", err)
 	}
 
-	_, client, requests, policy, lastTags := newFakeHeadscaleServer(t)
-	h.hs = headscaleclient.NewRegistry(&fakeClientMinter{client: client})
+	client, requests, policy, lastTags := newFakeHeadscaleServer(t)
+	h.hs = fakeHeadscaleClients{client: client}
 
 	return user, client, requests, policy, lastTags
 }
@@ -602,10 +598,8 @@ func TestDeleteMachineCascadesFunnelRoutesForInternalMachine(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{}`)
 	})
-	srv := httptest.NewServer(mux)
-	t.Cleanup(srv.Close)
-	client := headscaleclient.New(strings.TrimPrefix(srv.URL, "http://"), "test-key")
-	h.hs = headscaleclient.NewRegistry(&fakeClientMinter{client: client})
+	client := headscaleclient.NewUnix(hstest.Socket(t, mux))
+	h.hs = fakeHeadscaleClients{client: client}
 
 	for _, label := range []string{"web", "admin"} {
 		if _, err := queries.CreateFunnelRoute(t.Context(), sqlcgen.CreateFunnelRouteParams{

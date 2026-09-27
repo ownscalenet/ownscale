@@ -14,7 +14,6 @@ import (
 	"github.com/ownscalenet/ownscale/config"
 	dbpkg "github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/headscaleclient"
 	"github.com/ownscalenet/ownscale/orgs"
 )
 
@@ -29,9 +28,8 @@ func newMembersTestHandlers(t *testing.T, roles ...string) (*Handlers, *dbpkg.Tx
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
-	// Simulate headscale being unreachable; tests needing real linking
-	// override h.hs with a Registry wrapping a fakeClientMinter below.
-	h.hs = headscaleclient.NewRegistry(&fakeClientMinter{err: errors.New("headscale unreachable")})
+	// No headscale instance runs here; tests needing real linking set
+	// h.hs to a fakeHeadscaleClients.
 
 	orgID := xid.New().String()
 	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{ID: orgID, Subdomain: "acme", Status: orgs.StatusActive, Port: testPort()})
@@ -175,8 +173,8 @@ func TestListMembersAutoLinksByEmail(t *testing.T) {
 		t.Fatalf("UpdateUserProfile: %v", err)
 	}
 
-	_, client, _, _, _ := newFakeHeadscaleServer(t)
-	h.hs = headscaleclient.NewRegistry(&fakeClientMinter{client: client})
+	client, _, _, _ := newFakeHeadscaleServer(t)
+	h.hs = fakeHeadscaleClients{client: client}
 
 	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/members", nil), owner)
 	rec := httptest.NewRecorder()
@@ -222,8 +220,8 @@ func TestListMembersDoesNotRelinkAlreadyLinkedMember(t *testing.T) {
 		t.Fatalf("LinkUserHeadscaleUser: %v", err)
 	}
 
-	_, client, _, _, _ := newFakeHeadscaleServer(t)
-	h.hs = headscaleclient.NewRegistry(&fakeClientMinter{client: client})
+	client, _, _, _ := newFakeHeadscaleServer(t)
+	h.hs = fakeHeadscaleClients{client: client}
 
 	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/members", nil), owner)
 	rec := httptest.NewRecorder()
@@ -272,8 +270,8 @@ func TestListMembersDifferentProvidersSameEmailGetDistinctHeadscaleUsers(t *test
 		}
 	}
 
-	_, client, _, _, _ := newFakeHeadscaleServer(t)
-	h.hs = headscaleclient.NewRegistry(&fakeClientMinter{client: client})
+	client, _, _, _ := newFakeHeadscaleServer(t)
+	h.hs = fakeHeadscaleClients{client: client}
 
 	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/members", nil), owner)
 	rec := httptest.NewRecorder()

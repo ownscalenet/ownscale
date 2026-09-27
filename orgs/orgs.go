@@ -79,6 +79,7 @@ type Service struct {
 // instance is a running headscale server and the means to stop it.
 type instance struct {
 	app    *hscontrol.Headscale
+	client *headscaleclient.Client
 	cancel context.CancelFunc
 	// exited is closed once app.Serve has returned.
 	exited chan struct{}
@@ -125,27 +126,17 @@ func (s *Service) ForOrg(org sqlcgen.Organization) *OrgService {
 	}
 }
 
-// MintClient implements headscaleclient.ClientMinter: it creates a fresh
-// API key via the headscale instance's in-process state and returns a
-// Client pointed at http://127.0.0.1:{port}.
-func (s *Service) MintClient(ctx context.Context, subdomain string) (_ *headscaleclient.Client, err error) {
-	defer derrors.Wrap(&err, "s.MintClient(%q)", subdomain)
+// Client returns a client for subdomain's running headscale instance.
+func (s *Service) Client(subdomain string) (*headscaleclient.Client, error) {
 	inst, ok := s.instances.Load(subdomain)
 	if !ok {
-		return nil, fmt.Errorf("no headscale instance running for %q", subdomain)
+		return nil, ErrNotRunning
 	}
-	port, _ := s.ports.Load(subdomain)
-
-	expiry := time.Now().Add(10 * 365 * 24 * time.Hour)
-	key, _, err := inst.app.GetState().CreateAPIKey(&expiry)
-	if err != nil {
-		return nil, fmt.Errorf("create headscale API key: %w", err)
-	}
-	return headscaleclient.New(fmt.Sprintf("127.0.0.1:%d", port), key), nil
+	return inst.client, nil
 }
 
-// ErrNotRunning is returned by DialOrg for an organization without a
-// running headscale instance.
+// ErrNotRunning is returned for an organization without a running
+// headscale instance.
 var ErrNotRunning = errors.New("organization not running")
 
 // DialOrg connects to subdomain's headscale instance. The connection is
@@ -429,7 +420,12 @@ func (s *Service) startLocked(ctx context.Context, subdomain string, port int, h
 	}
 
 	serveCtx, cancel := context.WithCancel(context.Background())
-	inst := &instance{app: app, cancel: cancel, exited: make(chan struct{})}
+	inst := &instance{
+		app:    app,
+		client: headscaleclient.NewUnix(SocketPath(s.dataDir, subdomain)),
+		cancel: cancel,
+		exited: make(chan struct{}),
+	}
 	s.instances.Store(subdomain, inst)
 	s.grp.Go(func() error {
 		defer close(inst.exited)

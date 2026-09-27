@@ -19,8 +19,8 @@ import (
 
 // resolveHeadscaleClient returns the calling user's organization's
 // headscaleclient.Client, along with the resolved org. notConfigured is
-// true (nil client, nil error) when the org isn't active yet, or
-// minting/reaching its headscale API key failed.
+// true (nil client, nil error) when the org isn't active or its headscale
+// isn't running.
 func (h *Handlers) resolveHeadscaleClient(r *http.Request) (_ *headscaleclient.Client, org sqlcgen.Organization, notConfigured bool, err error) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
@@ -35,9 +35,9 @@ func (h *Handlers) resolveHeadscaleClient(r *http.Request) (_ *headscaleclient.C
 		return nil, org, true, nil
 	}
 
-	client, err := h.hs.Client(r.Context(), org.Subdomain)
+	client, err := h.hs.Client(org.Subdomain)
 	if err != nil {
-		h.logger.With("org", org.Subdomain).Warn("mint/reach headscale API client", "error", err)
+		h.logger.With("org", org.Subdomain).Warn("get headscale client", "error", err)
 		return nil, org, true, nil
 	}
 	return client, org, false, nil

@@ -10,9 +10,10 @@ import (
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/headscaleclient"
+	"github.com/ownscalenet/ownscale/headscaleclient/hstest"
 )
 
-// newFakePolicyServer builds an httptest.Server implementing headscale's
+// newFakePolicyServer builds a fake implementing headscale's
 // policy endpoint (GET/PUT /api/v1/policy) backed by an in-memory policy
 // string, and a *headscaleclient.Client pointed at it.
 func newFakePolicyServer(t *testing.T, initial string) (*headscaleclient.Client, *string) {
@@ -39,11 +40,7 @@ func newFakePolicyServer(t *testing.T, initial string) (*headscaleclient.Client,
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
 	})
-	server := httptest.NewServer(mux)
-	t.Cleanup(server.Close)
-	host := strings.TrimPrefix(server.URL, "http://")
-
-	return headscaleclient.New(host, "test-api-key"), &policy
+	return headscaleclient.NewUnix(hstest.Socket(t, mux)), &policy
 }
 
 // newAccessControlTestHandlers builds Handlers with organization

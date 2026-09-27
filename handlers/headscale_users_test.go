@@ -65,7 +65,7 @@ func TestUniqueHeadscaleName(t *testing.T) {
 func newHeadscaleUsersTestHandlers(t *testing.T) (*Handlers, *dbpkg.TxQueries, *headscaleclient.Client) {
 	t.Helper()
 	h, queries := newMachinesTestHandlers(t)
-	_, client, _, _, _ := newFakeHeadscaleServer(t)
+	client, _, _, _ := newFakeHeadscaleServer(t)
 	return h, queries, client
 }
 

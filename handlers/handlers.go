@@ -21,10 +21,16 @@ import (
 	"github.com/ownscalenet/ownscale/orgs"
 )
 
+// headscaleClients returns an organization's headscale client. Implemented
+// by *orgs.Service.
+type headscaleClients interface {
+	Client(subdomain string) (*headscaleclient.Client, error)
+}
+
 type Handlers struct {
 	queries         *db.TxQueries
 	orgs            *orgs.Service
-	hs              *headscaleclient.Registry
+	hs              headscaleClients
 	baseDomain      string
 	oidc            *oidcprovider.Storage
 	logger          *slog.Logger
@@ -52,7 +58,6 @@ func New(
 		issuer = oidc.Issuer()
 	}
 	orgSvc := orgs.NewService(queries, baseDomain, issuer, derpCfg, logger, dataDir)
-	hs := headscaleclient.NewRegistry(orgSvc)
 
 	// The console is served on console.baseDomain (per-org subdomains are
 	// only used for headscale/tailnet traffic, not this admin UI), so one
@@ -77,8 +82,8 @@ func New(
 		oidc:            oidc,
 		logger:          logger,
 		orgs:            orgSvc,
-		hs:              hs,
-		funnel:          funnelproxy.NewPool(queries, hs, dataDir, logger, orgSvc),
+		hs:              orgSvc,
+		funnel:          funnelproxy.NewPool(queries, orgSvc, dataDir, logger, orgSvc),
 		webauthn:        wa,
 		passkeySessions: newPasskeyCeremonyStore(),
 	}, nil

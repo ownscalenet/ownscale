@@ -1,21 +1,20 @@
 package handlers
 
 import (
-	"errors"
 	"net/http"
 	"net/http/httptest"
 	"testing"
 
-	"github.com/ownscalenet/ownscale/headscaleclient"
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 // TestRequireHeadscaleClientShortCircuits covers RequireHeadscaleClient's
-// guard: a mint-key failure short-circuits with 409+notConfigured without
-// calling next.
+// guard: an org whose headscale isn't running short-circuits with
+// 409+notConfigured without calling next.
 func TestRequireHeadscaleClientShortCircuits(t *testing.T) {
 	h, queries := newMachinesTestHandlers(t)
 	user, _, _ := activeOrgUser(t, h, queries)
-	h.hs = headscaleclient.NewRegistry(&fakeClientMinter{err: errors.New("mint failed")})
+	h.hs = fakeHeadscaleClients{err: orgs.ErrNotRunning}
 
 	nextCalled := false
 	next := func(http.ResponseWriter, *http.Request) { nextCalled = true }
