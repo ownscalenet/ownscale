@@ -112,6 +112,19 @@ func (p *Pool) Close() {
 	p.servers = make(map[string]*tsnet.Server)
 }
 
+// Evict drops subdomain's cached tsnet.Server, so the next request builds a
+// new one. Needed after the org's headscale restarts: the cached client's
+// control connection stays attached to the stopped instance.
+func (p *Pool) Evict(subdomain string) {
+	p.mu.Lock()
+	srv := p.servers[subdomain]
+	delete(p.servers, subdomain)
+	p.mu.Unlock()
+	if srv != nil {
+		go func() { _ = srv.Close() }() // can be slow; don't block the caller
+	}
+}
+
 // tsnetLogf adapts a tsnet.Server's Logf to the app's structured logger.
 func tsnetLogf(logger *slog.Logger, subdomain string) func(format string, args ...any) {
 	return func(format string, args ...any) {

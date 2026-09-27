@@ -39,7 +39,10 @@ func (h *Handlers) UpdateDNSSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.orgs.ForOrg(org).SetDNSSettings(r.Context(), req); err != nil {
+	err := h.orgs.ForOrg(org).SetDNSSettings(r.Context(), req)
+	// Because headscale got restarted, funnel machine keeps connections to the old one.
+	h.funnel.Evict(org.Subdomain)
+	if err != nil {
 		if invalid, ok := errors.AsType[*orgs.InvalidConfigError](err); ok {
 			h.writeError(w, http.StatusBadRequest, invalid.Error())
 			return

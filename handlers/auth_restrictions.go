@@ -52,7 +52,10 @@ func (h *Handlers) UpdateAuthRestrictions(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if err := h.orgs.ForOrg(org).SetAuthRestrictions(r.Context(), req.Content); err != nil {
+	err := h.orgs.ForOrg(org).SetAuthRestrictions(r.Context(), req.Content)
+	// Because headscale got restarted, funnel machine keeps connections to the old one.
+	h.funnel.Evict(org.Subdomain)
+	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}

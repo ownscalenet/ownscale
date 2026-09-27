@@ -16,6 +16,7 @@ import (
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/headscaleclient"
+	"tailscale.com/tsnet"
 )
 
 // fakePortLookup satisfies PortLookup for tests; returns a fixed port for
@@ -280,5 +281,34 @@ func TestGetOrCreateServerUpTimeout(t *testing.T) {
 	}
 	if elapsed > 5*time.Second {
 		t.Errorf("getOrCreateServer took %s to return, want well under upTimeout=%s plus overhead (it should not hang indefinitely)", elapsed, pool.upTimeout)
+	}
+}
+
+func TestEvict(t *testing.T) {
+	// A never-answering control server: the tsnet.Servers only need to be
+	// started so Evict can close them.
+	control := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
+	t.Cleanup(control.Close)
+	newServer := func() *tsnet.Server {
+		srv := &tsnet.Server{Dir: t.TempDir(), ControlURL: control.URL, AuthKey: "tskey-test", Hostname: "evict-test"}
+		if err := srv.Start(); err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+		t.Cleanup(func() { _ = srv.Close() })
+		return srv
+	}
+
+	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{}, t.TempDir(), discardLogger(), defaultPortLookup())
+	pool.servers["aaaa"] = newServer()
+	pool.servers["bbbb"] = newServer()
+
+	pool.Evict("aaaa")
+	pool.Evict("unknown")
+
+	if _, ok := pool.servers["aaaa"]; ok {
+		t.Error("aaaa still cached after Evict")
+	}
+	if _, ok := pool.servers["bbbb"]; !ok {
+		t.Error("bbbb was evicted, want it left alone")
 	}
 }
