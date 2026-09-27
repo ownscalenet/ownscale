@@ -22,8 +22,8 @@
 	# Caddy generates itself on first use -- see docker-compose.yml's
 	# "local-ca-init" service and localca, which idempotently
 	# generate this exact cert/key pair ahead of time, in every
-	# environment. That lets every other container (ownscale itself,
-	# headscale) trust a single, always-already-existing file
+	# environment. That lets ownscale (and the headscale instances
+	# inside it) trust a single, always-already-existing file
 	# via a plain static mount.
 	pki {
 		ca local {

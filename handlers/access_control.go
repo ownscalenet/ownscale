@@ -25,10 +25,9 @@ func (h *Handlers) GetAccessControlPolicy(w http.ResponseWriter, r *http.Request
 		h.serverError(w, r, err)
 		return
 	}
-	// Each organization is seeded with a default
-	// policy via headscale's own API at provisioning time, so an empty
-	// response here just means headscale genuinely has no policy -- return
-	// it as-is, with no special-casing.
+	// orgs.Service seeds a default policy when it starts an organization's
+	// headscale, so an empty response here just means headscale genuinely
+	// has no policy -- return it as-is, with no special-casing.
 	h.writeJSON(w, http.StatusOK, map[string]any{
 		"content":   content,
 		"canManage": isManager(caller.Role),

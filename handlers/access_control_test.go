@@ -74,8 +74,8 @@ func newAccessControlTestHandlers(t *testing.T, roles ...string) (*Handlers, sql
 func TestGetAccessControlPolicyReturnsEmptyStringAsIs(t *testing.T) {
 	h, _, users := newAccessControlTestHandlers(t, RoleMember)
 	member := users[0]
-	// orgs.Service seeds every organization with a default
-	// policy via headscale's API at provisioning time; this test simulates
+	// orgs.Service seeds a default policy when it starts an organization's
+	// headscale; this test simulates
 	// the (otherwise-unexpected) case where headscale genuinely reports no
 	// policy configured, and asserts the handler passes it through as-is
 	// with no fallback/special-casing.

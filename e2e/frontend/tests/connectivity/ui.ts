@@ -48,8 +48,8 @@ export function validateSession(session: Session, identity: Identity): boolean {
   if (session.organization.Domain !== `${identity.org}.${baseDomain}`) {
     throw new Error(`${identity.name} must belong to ${identity.org}.${baseDomain}; unexpected registration assignment. Do not reassign or delete existing users.`)
   }
-  if (session.organization.Status === 'failed') throw new Error(`${identity.org}: organization provisioning explicitly failed`)
-  if (!['pending', 'active'].includes(session.organization.Status)) throw new Error(`${identity.org}: unknown provisioning state`)
+  // update_pending: the org's headscale is restarting to apply saved settings.
+  if (!['active', 'update_pending'].includes(session.organization.Status)) throw new Error(`${identity.org}: unknown organization status`)
   return session.organization.Status === 'active'
 }
 

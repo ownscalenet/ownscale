@@ -6,10 +6,10 @@ weight: 2
 # Installation
 
 ownscale ships as a Docker Compose stack: an `ownscale` container (the
-console + API + per-organization Headscale management), a `caddy`
-container (TLS termination and reverse proxying for the console, this
-documentation site, and every organization's subdomain), and one
-Headscale container per organization it provisions.
+console, the API, and one Headscale instance per organization, all in a
+single process) and a `caddy` container (TLS termination and reverse
+proxying for the console, this documentation site, and every
+organization's subdomain).
 
 ## Prerequisites
 

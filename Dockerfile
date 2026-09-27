@@ -23,6 +23,6 @@ COPY --from=litestream/litestream:0.5.16 /usr/local/bin/litestream /usr/local/bi
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
-EXPOSE 80
+EXPOSE 8080
 
 ENTRYPOINT ["/app/entrypoint.sh"]

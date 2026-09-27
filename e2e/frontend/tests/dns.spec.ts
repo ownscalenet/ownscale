@@ -6,7 +6,7 @@ test('adding and removing a nameserver, DNS record, and search domain, and toggl
   page,
 }) => {
   // This test issues 8 back-to-back saves, each of which restarts aaaa's
-  // headscale container and can need retries (see support/retry.ts) --
+  // headscale and can need retries (see support/retry.ts) --
   // comfortably longer than Playwright's 30s default is needed.
   test.setTimeout(240_000)
   await page.goto('/dns')

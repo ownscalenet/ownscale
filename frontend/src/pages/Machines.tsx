@@ -142,9 +142,8 @@ export default function Machines() {
       {notConfigured ? (
         <div className="alert alert-warning">
           <span>
-            Headscale isn&rsquo;t reachable for this organization yet. This can happen while the
-            organization is still provisioning, or if its headscale container isn&rsquo;t running
-            &mdash; try again in a moment, or check the organization&rsquo;s status.
+            Headscale isn&rsquo;t reachable for this organization right now. This happens briefly
+            while it restarts to apply saved settings &mdash; try again in a moment.
           </span>
         </div>
       ) : (

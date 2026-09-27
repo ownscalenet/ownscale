@@ -19,8 +19,7 @@ import (
 // already migrated dbtest template (see db/dbtest), avoiding a full goose
 // run per test. Using a real database (rather than faking sqlcgen.Queries)
 // means these tests exercise real SQL behavior (uniqueness constraints,
-// transaction rollback, etc.), matching the direction to fake only the
-// Docker dependency.
+// transaction rollback, etc.).
 func newTestDB(t *testing.T) (*sql.DB, *dbpkg.TxQueries) {
 	t.Helper()
 	return dbtest.New(t)

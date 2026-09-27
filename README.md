@@ -65,7 +65,7 @@ and OIDC provider — is bound to the `console` subdomain; the documentation
 site lives at the bare `https://<base_domain>`). ownscale federates the initial
 login to a configurable upstream OIDC provider (`OWNSCALE_AUTH_UPSTREAM_OIDC_*`) — any standard OIDC issuer works: Google, Okta, Dex, etc. —
 then acts as its own OIDC provider so each organization's Headscale
-container trusts it as a relying party: one upstream login covers the
+instance trusts it as a relying party: one upstream login covers the
 Ownscale console and every organization's tailnet. See
 `site/content/docs/getting-started.md` for details.
 
@@ -81,29 +81,27 @@ code never references Dex specifically, only generic OIDC discovery.
 
 ## Headscale organizations (per-subdomain)
 
-Provision one headscale container per subdomain of `base_domain` using the
-Docker SDK.
+Every organization gets its own headscale instance, running inside the
+`ownscale` process and reachable at `<subdomain>.<base_domain>` (see
+DECISIONS.md). Its database and keys live under
+`${OWNSCALE_DATA_DIR}/<subdomain>/`.
 
 Prerequisites:
 
 - a wildcard DNS record `*.example.com` pointing at this server (for local
   dev, use `ownscale.test` instead -- see below -- which needs `/etc/hosts`
   entries per subdomain, since it has no real wildcard DNS)
-- Docker running locally (the standard `DOCKER_HOST` env vars are honored)
 - the `caddy` compose service running for HTTPS (see below)
 
 `OWNSCALE_BASE_DOMAIN` must not be `"localhost"`: every OS and container resolves
-that exact name from a built-in loopback entry (`/etc/hosts`'s
-`127.0.0.1 localhost`) before ever consulting DNS, which silently defeats
-the Docker-network-alias routing organization containers rely on to reach
-Caddy (`ownscale`/`osa` reject `OWNSCALE_BASE_DOMAIN=localhost` outright).
+`localhost` names from a built-in loopback entry before ever consulting DNS,
+which silently defeats the `os-net` network aliases the `ownscale` container
+relies on to reach Caddy for `console.` and `dex.` (`ownscale`/`osa` reject
+`OWNSCALE_BASE_DOMAIN=localhost` outright).
 
 For local dev, use a private, [RFC 2606](https://www.rfc-editor.org/rfc/rfc2606)-reserved
-TLD like **`ownscale.test`** (the default in `.env.example`):
-since ownscale's own upstream OIDC login no longer has to be a real,
-publicly-trusted IdP (see "Single sign-on" above), there's nothing left
-requiring a real public domain like the previously-used `lvh.me`. Unlike
-`lvh.me`, though, `ownscale.test` has no real wildcard DNS, so every
+TLD like **`ownscale.test`** (the default in `.env.example`). It has no
+real wildcard DNS, so every
 subdomain you actually use locally needs an `/etc/hosts` entry pointing at
 `127.0.0.1`: `ownscale.test`, `console.ownscale.test`, `dex.ownscale.test`,
 and one per organization created (e.g. `acme.ownscale.test`). A
@@ -118,15 +116,6 @@ issues everything -- including the on-demand per-organization certs, and
 Dex's own certificate -- from its own internal, self-signed CA instead of
 ACME. Leave it unset in production, where `base_domain` is a real,
 reachable public domain and Caddy should get publicly-trusted certificates.
-
-Setting `CADDY_LOCAL_CERTS` also changes how organization creation behaves:
-ownscale then copies Caddy's local CA into every new headscale container and
-requires that copy to succeed, failing organization creation immediately if
-it doesn't, rather than silently starting a container that would later fail
-OIDC login with a confusing TLS trust error. When unset (production), that
-copy step is skipped entirely. It similarly changes how ownscale itself
-trusts its own configured `auth.upstream_oidc.issuer` (e.g. the bundled Dex
-instance): see `auth.RegisterUpstreamOIDC`.
 
 ### Wildcard TLS certificate (production, via Azure DNS-01)
 

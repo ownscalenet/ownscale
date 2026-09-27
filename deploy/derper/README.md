@@ -14,7 +14,7 @@ HTTP to a custom binary protocol that most proxies (including Caddy, used
 for every other ownscale-managed service) break. `derper` therefore needs to
 own ports 80/443 (for its own Let's Encrypt cert) and UDP 3478 (STUN)
 directly, rather than sitting behind the same Caddy container that fronts
-`ownscale`, `dex`, and every organization's headscale containers.
+`ownscale` (including every organization's headscale) and `dex`.
 
 The simplest way to satisfy that without any port juggling on the main
 ownscale host is to run `derper` on its own separate server, with its own
@@ -37,7 +37,6 @@ public DNS name.
 ## Wiring it into ownscale
 
 Once running, set the `OWNSCALE_DERP_*` env vars (see
-`.env.example`) to this server's hostname/region info. On next
-organization provisioning (or reconciliation), every org's headscale
-container will be configured with a custom DERP map pointing at this relay
-instead of Tailscale's public one.
+`.env.example`) to this server's hostname/region info and restart
+`ownscale`. Every org's headscale instance then gets a custom DERP region
+pointing at this relay, alongside Tailscale's public DERP map.

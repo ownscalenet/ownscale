@@ -35,8 +35,8 @@ func newTestQueries(t *testing.T) *dbpkg.TxQueries {
 const testBaseDomain = "example.com"
 
 // newTestHandlers builds a *Handlers backed by a real, freshly-migrated SQLite
-// database, so organization provisioning always works and every user is
-// guaranteed a real, active organization.
+// database. No headscale instance runs, so orgs.Service reports every
+// organization as not running.
 func newTestHandlers(t *testing.T) (*Handlers, *dbpkg.TxQueries) {
 	t.Helper()
 	return newTestHandlersWithBaseDomain(t, "")

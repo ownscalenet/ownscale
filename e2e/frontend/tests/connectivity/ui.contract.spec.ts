@@ -26,8 +26,7 @@ for (const example of [
   { name: 'wrong email', change: (s: ReturnType<typeof session>) => { s.user.Email = 'unexpected@example.test' }, error: 'unexpected signed-in user' },
   { name: 'unprivileged role', change: (s: ReturnType<typeof session>) => { s.user.Role = 'member' }, error: 'owner/admin permission required' },
   { name: 'missing org', change: (s: ReturnType<typeof session>) => { s.organization = null }, error: 'no assigned organization' },
-  { name: 'failed provisioning', change: (s: ReturnType<typeof session>) => { s.organization!.Status = 'failed' }, error: 'explicitly failed' },
-  { name: 'unknown status', change: (s: ReturnType<typeof session>) => { s.organization!.Status = 'unknown' }, error: 'unknown provisioning state' },
+  { name: 'unknown status', change: (s: ReturnType<typeof session>) => { s.organization!.Status = 'unknown' }, error: 'unknown organization status' },
 ]) {
   test(`readiness rejects ${example.name} immediately`, () => {
     const value = session(identities[0])
@@ -36,9 +35,9 @@ for (const example of [
   })
 }
 
-test('pending provisioning waits, and manager readiness is accepted', () => {
+test('a restarting organization waits, and manager readiness is accepted', () => {
   const value = session(identities[0])
-  value.organization!.Status = 'pending'
+  value.organization!.Status = 'update_pending'
   expect(validateSession(value, identities[0])).toBe(false)
   value.organization!.Status = 'active'
   value.user.Role = 'admin'

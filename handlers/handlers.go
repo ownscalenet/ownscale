@@ -98,7 +98,7 @@ func (h *Handlers) Close() {
 // ServeFunnelIfMatched serves r via the funnel proxy and returns true if
 // r.Host is shaped like a funnel hostname ("<label>-<subdomain>.{base}",
 // see etc/caddy/Caddyfile's "*.{$BASE_DOMAIN}" site block that routes
-// these to the ownscale container and funnelproxy.ParseHost); otherwise
+// these to ownscale, and funnelproxy.ParseHost); otherwise
 // it does nothing and returns false, so the caller (server.NewMux) can
 // fall through to the normal API/SPA mux.
 func (h *Handlers) ServeFunnelIfMatched(w http.ResponseWriter, r *http.Request) bool {

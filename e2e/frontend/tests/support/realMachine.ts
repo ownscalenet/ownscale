@@ -55,7 +55,7 @@ export async function registerRealMachine(page: Page, orgSubdomain = 'aaaa'): Pr
 
   const hostname = `mlc${randomBytes(4).toString('hex')}`
   // dns.spec.ts/auth-restrictions.spec.ts run concurrently against the
-  // same aaaa org and restart its headscale container repeatedly, which
+  // same aaaa org and restart its headscale repeatedly, which
   // can collaterally abort this navigation with net::ERR_NETWORK_CHANGED
   // (see support/retry.ts) -- retry the navigation itself rather than
   // failing the whole machine registration over an unrelated test's

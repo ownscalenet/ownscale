@@ -171,8 +171,6 @@ archive: docker-image caddy-image
 		--exclude='data' \
 		--exclude='node_modules' \
 		--exclude='bin' \
-		--exclude='/organizations' \
-		--exclude='/etc/headscale' \
 		--exclude='/etc/caddy/wildcard' \
 		--exclude='/etc/caddy/admin' \
 		./ az:ownscale/

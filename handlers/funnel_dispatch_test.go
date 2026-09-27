@@ -34,7 +34,7 @@ func TestServeFunnelIfMatched(t *testing.T) {
 
 func TestServeFunnelIfMatchedNoBaseDomainConfigured(t *testing.T) {
 	h, _ := newTestHandlers(t)
-	// baseDomain left empty, as when running without provisioning configured.
+	// baseDomain left empty, as in tests without a base domain.
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Host = "web-acme.example.com"
