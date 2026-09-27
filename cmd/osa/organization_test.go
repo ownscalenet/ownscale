@@ -1,50 +1,16 @@
 package main
 
 import (
-	"database/sql"
-	"io"
-	"log/slog"
 	"strings"
 	"testing"
 
-	"github.com/rs/xid"
-
-	dbpkg "github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/dbtest"
-	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/orgs"
 )
 
-// newTestDB returns a pool and queries backed by a copy of the shared,
-// already migrated dbtest template (see db/dbtest), avoiding a full goose
-// run per test. Using a real database (rather than faking sqlcgen.Queries)
-// means these tests exercise real SQL behavior (uniqueness constraints,
-// transaction rollback, etc.).
-func newTestDB(t *testing.T) (*sql.DB, *dbpkg.TxQueries) {
-	t.Helper()
-	return dbtest.New(t)
-}
-
-func discardLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
-}
-
-func insertOrg(t *testing.T, queries *dbpkg.TxQueries, subdomain string) sqlcgen.Organization {
-	t.Helper()
-	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
-		ID:        xid.New().String(),
-		Subdomain: subdomain,
-		Status:    orgs.StatusActive,
-	})
-	if err != nil {
-		t.Fatalf("insertOrg(%q): %v", subdomain, err)
-	}
-	return org
-}
-
 func TestListOrganizations(t *testing.T) {
 	t.Run("empty", func(t *testing.T) {
-		_, queries := newTestDB(t)
+		_, queries := dbtest.New(t)
 		var out strings.Builder
 		if err := listOrganizations(t.Context(), &out, queries); err != nil {
 			t.Fatalf("listOrganizations: %v", err)
@@ -55,9 +21,9 @@ func TestListOrganizations(t *testing.T) {
 	})
 
 	t.Run("lists organizations", func(t *testing.T) {
-		_, queries := newTestDB(t)
-		insertOrg(t, queries, "acme")
-		insertOrg(t, queries, "beta")
+		_, queries := dbtest.New(t)
+		dbtest.CreateOrg(t, queries.Queries, "acme")
+		dbtest.CreateOrg(t, queries.Queries, "beta")
 
 		var out strings.Builder
 		if err := listOrganizations(t.Context(), &out, queries); err != nil {

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"io"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -19,19 +18,6 @@ import (
 	"github.com/rs/xid"
 )
 
-func discardLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
-}
-
-// newTestQueries returns queries backed by a copy of the shared, already
-// migrated dbtest template (see db/dbtest), avoiding a full goose run per
-// test.
-func newTestQueries(t *testing.T) *dbpkg.TxQueries {
-	t.Helper()
-	_, queries := dbtest.New(t)
-	return queries
-}
-
 const testBaseDomain = "example.com"
 
 // newTestHandlers builds a *Handlers backed by a real, freshly-migrated SQLite
@@ -47,9 +33,9 @@ func newTestHandlers(t *testing.T) (*Handlers, *dbpkg.TxQueries) {
 // production configures it.
 func newTestHandlersWithBaseDomain(t *testing.T, baseDomain string) (*Handlers, *dbpkg.TxQueries) {
 	t.Helper()
-	queries := newTestQueries(t)
+	_, queries := dbtest.New(t)
 
-	h, err := New(queries, baseDomain, t.TempDir(), nil, discardLogger(), config.DerpConfig{})
+	h, err := New(queries, baseDomain, t.TempDir(), nil, slog.New(slog.DiscardHandler), config.DerpConfig{})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
@@ -78,19 +64,11 @@ func withHeadscaleClientOrg(req *http.Request, client *headscaleclient.Client, o
 	return req.WithContext(ctx)
 }
 
-// insertOrg inserts an active organization row and its headscale config
-// directly, as orgs.Service.Create would, but without starting a headscale
-// instance for it.
+// insertOrg inserts an active organization and its headscale config, as
+// orgs.Service.Create would, but without starting a headscale instance.
 func insertOrg(t *testing.T, queries *dbpkg.TxQueries, subdomain string) sqlcgen.Organization {
 	t.Helper()
-	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
-		ID:        xid.New().String(),
-		Subdomain: subdomain,
-		Status:    orgs.StatusActive,
-	})
-	if err != nil {
-		t.Fatalf("CreateOrganization: %v", err)
-	}
+	org := dbtest.CreateOrg(t, queries.Queries, subdomain)
 	hsCfg := &orgs.HeadscaleConfig{
 		DNS: orgs.DNSConfig{
 			MagicDNS:    true,
@@ -114,25 +92,24 @@ func insertOrg(t *testing.T, queries *dbpkg.TxQueries, subdomain string) sqlcgen
 	return org
 }
 
-// insertUser inserts a user row, together with a freshly created organization
-// it owns (every user always belongs to one), and returns the user.
+// insertUser inserts an owner of a freshly created organization of its own.
 func insertUser(t *testing.T, queries *dbpkg.TxQueries) sqlcgen.User {
 	t.Helper()
-	org := insertOrg(t, queries, "acme-"+xid.New().String())
-	id := xid.New().String()
-	user, err := queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
-		ID:             id,
-		OrganizationID: org.ID,
-		Role:           RoleOwner,
-		Provider:       "oidc",
-		ProviderUserID: id,
-		Email:          id + "@example.com",
-		Name:           "Test User",
-	})
-	if err != nil {
-		t.Fatalf("insertUser: %v", err)
+	org := insertOrg(t, queries, "org"+xid.New().String())
+	return dbtest.CreateUser(t, queries.Queries, org.ID, RoleOwner)
+}
+
+// newOrgTestHandlers builds Handlers, inserts organization "acme" (see
+// insertOrg), and inserts one of its users per role in roles, in order.
+func newOrgTestHandlers(t *testing.T, roles ...string) (*Handlers, sqlcgen.Organization, []sqlcgen.User) {
+	t.Helper()
+	h, queries := newTestHandlers(t)
+	org := insertOrg(t, queries, "acme")
+	users := make([]sqlcgen.User, 0, len(roles))
+	for _, role := range roles {
+		users = append(users, dbtest.CreateUser(t, queries.Queries, org.ID, role))
 	}
-	return user
+	return h, org, users
 }
 
 func setupSessions() {

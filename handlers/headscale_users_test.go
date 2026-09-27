@@ -64,7 +64,7 @@ func TestUniqueHeadscaleName(t *testing.T) {
 // carrying headscale users "1"/alice@example.com and "2"/bob@example.com.
 func newHeadscaleUsersTestHandlers(t *testing.T) (*Handlers, *dbpkg.TxQueries, *headscaleclient.Client) {
 	t.Helper()
-	h, queries := newMachinesTestHandlers(t)
+	h, queries := newTestHandlers(t)
 	client, _, _, _ := newFakeHeadscaleServer(t)
 	return h, queries, client
 }

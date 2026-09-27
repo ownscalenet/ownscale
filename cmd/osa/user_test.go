@@ -9,6 +9,7 @@ import (
 
 	"github.com/rs/xid"
 
+	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
 
@@ -35,7 +36,7 @@ func insertUser(t *testing.T, queries *sqlcgen.Queries, ctx context.Context, ema
 
 func TestListUsers(t *testing.T) {
 	t.Run("no users", func(t *testing.T) {
-		_, queries := newTestDB(t)
+		_, queries := dbtest.New(t)
 		var out strings.Builder
 		if err := listUsers(t.Context(), &out, queries); err != nil {
 			t.Fatalf("listUsers: %v", err)
@@ -46,9 +47,9 @@ func TestListUsers(t *testing.T) {
 	})
 
 	t.Run("mix of users", func(t *testing.T) {
-		_, queries := newTestDB(t)
+		_, queries := dbtest.New(t)
 
-		org := insertOrg(t, queries, "acme")
+		org := dbtest.CreateOrg(t, queries.Queries, "acme")
 
 		orgUser := insertUser(t, queries.Queries, t.Context(), "owner@acme.test", org, "owner")
 		if err := queries.LinkUserHeadscaleUser(t.Context(), sqlcgen.LinkUserHeadscaleUserParams{
@@ -63,7 +64,7 @@ func TestListUsers(t *testing.T) {
 
 		// A second user in a different organization, with no headscale
 		// link and no login yet.
-		otherOrg := insertOrg(t, queries, "beta")
+		otherOrg := dbtest.CreateOrg(t, queries.Queries, "beta")
 		otherUser := insertUser(t, queries.Queries, t.Context(), "member@beta.test", otherOrg, "member")
 
 		var out strings.Builder
@@ -101,7 +102,7 @@ func TestListUsers(t *testing.T) {
 
 func TestDeleteUser(t *testing.T) {
 	t.Run("not found", func(t *testing.T) {
-		_, queries := newTestDB(t)
+		_, queries := dbtest.New(t)
 		var out strings.Builder
 		err := deleteUser(t.Context(), &out, queries, "nonexistent-id")
 		if err == nil {
@@ -113,8 +114,8 @@ func TestDeleteUser(t *testing.T) {
 	})
 
 	t.Run("deletes existing user", func(t *testing.T) {
-		_, queries := newTestDB(t)
-		org := insertOrg(t, queries, "acme")
+		_, queries := dbtest.New(t)
+		org := dbtest.CreateOrg(t, queries.Queries, "acme")
 		user := insertUser(t, queries.Queries, t.Context(), "delete-me@example.test", org, "owner")
 
 		var out strings.Builder

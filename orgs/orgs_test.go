@@ -1,98 +1,125 @@
 package orgs
 
 import (
+	"database/sql"
 	"encoding/json"
 	"errors"
+	"log/slog"
+	"net"
+	"os"
+	"slices"
 	"strconv"
-	"strings"
 	"testing"
+	"time"
 
 	"github.com/ownscalenet/headscale/hscontrol"
 	"github.com/ownscalenet/headscale/hscontrol/types"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/ownscalenet/ownscale/config"
-	dbpkg "github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
 
-// newTestQueries returns queries backed by a copy of the shared, already
-// migrated dbtest template (see db/dbtest), avoiding a full goose run per
-// test.
-func newTestQueries(t *testing.T) *dbpkg.TxQueries {
+// newRealService builds a Service backed by a fresh database that starts
+// real headscale instances.
+func newRealService(t *testing.T) *Service {
 	t.Helper()
 	_, queries := dbtest.New(t)
-	return queries
+	return NewService(queries, "example.com", "https://auth.example.com", config.DerpConfig{}, slog.New(slog.DiscardHandler), t.TempDir())
 }
 
-// TestServiceCreateCreatesOIDCClient verifies that Create inserts an OIDC
-// client row and stores the organization's HeadscaleConfig (with the correct issuer
-// and a bcrypt-hashed client secret) into the orgconfigs table.
-func TestServiceCreateCreatesOIDCClient(t *testing.T) {
+// newTestService is newRealService, but never starts headscale.
+func newTestService(t *testing.T) *Service {
+	t.Helper()
+	svc := newRealService(t)
+	svc.createFn = noopCreateFn
+	return svc
+}
+
+func noopCreateFn(string, string, string, int, *HeadscaleConfig, config.DerpConfig) (*hscontrol.Headscale, error) {
+	return nil, nil
+}
+
+// TestCreate verifies that Create stores an active organization with its
+// OIDC client and a HeadscaleConfig holding the client's credentials.
+func TestCreate(t *testing.T) {
 	svc := newTestService(t)
-	queries := svc.queries
 
 	org, err := svc.Create(t.Context(), "acme")
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
+	if org.Status != StatusActive || org.Subdomain != "acme" {
+		t.Errorf("org = %+v, want active acme", org)
+	}
 
-	// OIDC client row must exist.
-	clientRow, err := queries.GetOIDCClientByOrganizationID(t.Context(), org.ID)
+	client, err := svc.queries.GetOIDCClientByOrganizationID(t.Context(), org.ID)
 	if err != nil {
 		t.Fatalf("GetOIDCClientByOrganizationID: %v", err)
 	}
-	if !strings.HasPrefix(clientRow.ClientID, "os_acme_") {
-		t.Fatalf("client id = %q, want os_acme_*", clientRow.ClientID)
-	}
 	var redirectURIs []string
-	if err := json.Unmarshal([]byte(clientRow.RedirectUris), &redirectURIs); err != nil {
+	if err := json.Unmarshal([]byte(client.RedirectUris), &redirectURIs); err != nil {
 		t.Fatalf("Unmarshal redirect uris: %v", err)
 	}
 	wantRedirects := []string{
 		"https://acme.example.com/oidc/callback",
 		"https://acme.example.com/admin/oidc/callback",
 	}
-	if strings.Join(redirectURIs, ",") != strings.Join(wantRedirects, ",") {
-		t.Fatalf("redirect uris = %v, want %v", redirectURIs, wantRedirects)
+	if !slices.Equal(redirectURIs, wantRedirects) {
+		t.Errorf("redirect uris = %v, want %v", redirectURIs, wantRedirects)
 	}
 
-	// orgconfigs must have a HeadscaleConfig row with the correct issuer and a
-	// client_secret whose plaintext matches the stored bcrypt hash.
-	cfgRow, err := queries.GetOrgConfig(t.Context(), sqlcgen.GetOrgConfigParams{
+	row, err := svc.queries.GetOrgConfig(t.Context(), sqlcgen.GetOrgConfigParams{
 		OrganizationID: org.ID,
 		Path:           HeadscaleConfigKey,
 	})
 	if err != nil {
 		t.Fatalf("GetOrgConfig: %v", err)
 	}
-
-	stored, err := parseHeadscaleConfig(cfgRow.Content)
+	stored, err := parseHeadscaleConfig(row.Content)
 	if err != nil {
 		t.Fatalf("parseHeadscaleConfig: %v", err)
 	}
-	if err := bcrypt.CompareHashAndPassword([]byte(clientRow.ClientSecretHash), []byte(stored.OIDC.ClientSecret)); err != nil {
-		t.Fatalf("stored client secret hash does not match rendered config secret: %v", err)
+	if stored.OIDC.Issuer != "https://auth.example.com" || stored.OIDC.ClientID != client.ClientID {
+		t.Errorf("stored OIDC = %+v, want issuer https://auth.example.com and client id %q", stored.OIDC, client.ClientID)
 	}
-	if stored.OIDC.Issuer != "https://auth.example.com" || stored.OIDC.ClientID != clientRow.ClientID {
-		t.Fatalf("stored OIDC = %+v, want issuer https://auth.example.com and client id %q", stored.OIDC, clientRow.ClientID)
+	if err := bcrypt.CompareHashAndPassword([]byte(client.ClientSecretHash), []byte(stored.OIDC.ClientSecret)); err != nil {
+		t.Errorf("stored client secret doesn't match the client's hash: %v", err)
 	}
 }
 
-// TestServiceCreateDoesNotLeavePartialStateOnSubdomainConflict verifies
-// that Create returns an error and leaves exactly one org row when a
-// second Create is attempted with the same subdomain.
-func TestServiceCreateDoesNotLeavePartialStateOnSubdomainConflict(t *testing.T) {
+func TestCreateRejectsInvalidSubdomain(t *testing.T) {
 	svc := newTestService(t)
-	queries := svc.queries
+
+	if _, err := svc.Create(t.Context(), "INVALID!"); err == nil {
+		t.Fatal("Create with invalid subdomain: want error, got nil")
+	}
+}
+
+func TestCreateSurfacesHeadscaleFailure(t *testing.T) {
+	svc := newTestService(t)
+	svc.createFn = func(string, string, string, int, *HeadscaleConfig, config.DerpConfig) (*hscontrol.Headscale, error) {
+		return nil, errors.New("headscale failed (injected)")
+	}
+
+	if _, err := svc.Create(t.Context(), "acme"); err == nil {
+		t.Fatal("Create: want error when createFn fails, got nil")
+	}
+	if _, err := svc.queries.GetOrganizationBySubdomain(t.Context(), "acme"); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("organization row after failed Create: err = %v, want sql.ErrNoRows", err)
+	}
+}
+
+// TestCreateRejectsDuplicateSubdomain verifies a duplicate Create fails
+// without disturbing the existing organization or its headscale.
+func TestCreateRejectsDuplicateSubdomain(t *testing.T) {
+	svc := newTestService(t)
 
 	first, err := svc.Create(t.Context(), "acme")
 	if err != nil {
 		t.Fatalf("first Create: %v", err)
 	}
-	// A duplicate must be rejected before a second headscale for "acme"
-	// replaces the running one.
 	svc.createFn = func(string, string, string, int, *HeadscaleConfig, config.DerpConfig) (*hscontrol.Headscale, error) {
 		t.Error("headscale started for a duplicate organization")
 		return nil, nil
@@ -100,12 +127,123 @@ func TestServiceCreateDoesNotLeavePartialStateOnSubdomainConflict(t *testing.T) 
 	if _, err := svc.Create(t.Context(), "acme"); err == nil {
 		t.Fatal("second Create with duplicate subdomain: want error, got nil")
 	}
-	org, err := queries.GetOrganizationBySubdomain(t.Context(), "acme")
+	org, err := svc.queries.GetOrganizationBySubdomain(t.Context(), "acme")
 	if err != nil {
 		t.Fatalf("GetOrganizationBySubdomain: %v", err)
 	}
 	if org.ID != first.ID {
 		t.Errorf("organization ID = %q, want the first one %q", org.ID, first.ID)
+	}
+}
+
+func TestNextSubdomain(t *testing.T) {
+	tests := []struct {
+		name  string
+		taken []string
+		want  string // "" means a random subdomain
+	}{
+		{"empty database", nil, "aaaa"},
+		{"skips taken fixed subdomains", []string{"aaaa", "bbbb"}, "cccc"},
+		{"falls back to random", fixedSubdomains, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := newTestService(t)
+			for _, sub := range tt.taken {
+				if _, err := svc.Create(t.Context(), sub); err != nil {
+					t.Fatalf("Create(%q): %v", sub, err)
+				}
+			}
+			got, err := svc.NextSubdomain(t.Context())
+			if err != nil {
+				t.Fatalf("NextSubdomain: %v", err)
+			}
+			if tt.want != "" && got != tt.want {
+				t.Errorf("NextSubdomain = %q, want %q", got, tt.want)
+			}
+			if tt.want == "" {
+				if slices.Contains(fixedSubdomains, got) {
+					t.Errorf("NextSubdomain = %q, want a random subdomain", got)
+				}
+				if err := ValidateSubdomain(got); err != nil {
+					t.Errorf("random subdomain %q is invalid: %v", got, err)
+				}
+			}
+		})
+	}
+}
+
+// TestStartRecoversOrganizations checks that Start restarts the headscale
+// instance of an organization left over from a previous process.
+func TestStartRecoversOrganizations(t *testing.T) {
+	seed := newTestService(t)
+	if _, err := seed.Create(t.Context(), "acme"); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// A second Service on the same database simulates a process restart.
+	svc := NewService(seed.queries, "example.com", "https://auth.example.com", config.DerpConfig{}, slog.New(slog.DiscardHandler), t.TempDir())
+	svc.createFn = noopCreateFn
+
+	if err := svc.Start(t.Context()); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if _, ok := svc.ports.Load("acme"); !ok {
+		t.Error("port not registered for recovered org \"acme\"")
+	}
+}
+
+// TestRestartClosesOrgConnections verifies that restarting an org closes the
+// connections handed out by DialOrg (and only that org's), so devices
+// reconnect to the new instance instead of staying on the stopped one.
+func TestRestartClosesOrgConnections(t *testing.T) {
+	svc := newTestService(t)
+	for _, sub := range []string{"acme", "other"} {
+		if _, err := svc.Create(t.Context(), sub); err != nil {
+			t.Fatalf("Create(%q): %v", sub, err)
+		}
+	}
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { ln.Close() })
+	go func() {
+		for {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			t.Cleanup(func() { c.Close() })
+		}
+	}()
+	port := ln.Addr().(*net.TCPAddr).Port
+	svc.ports.Store("acme", port)
+	svc.ports.Store("other", port)
+
+	acme, err := svc.DialOrg(t.Context(), "acme")
+	if err != nil {
+		t.Fatalf("DialOrg(acme): %v", err)
+	}
+	other, err := svc.DialOrg(t.Context(), "other")
+	if err != nil {
+		t.Fatalf("DialOrg(other): %v", err)
+	}
+	if _, err := svc.DialOrg(t.Context(), "missing"); !errors.Is(err, ErrNotRunning) {
+		t.Errorf("DialOrg(missing) error = %v, want ErrNotRunning", err)
+	}
+
+	if err := svc.restartHeadscale(t.Context(), "acme"); err != nil {
+		t.Fatalf("restartHeadscale: %v", err)
+	}
+
+	_ = acme.SetReadDeadline(time.Now().Add(time.Second))
+	if _, err := acme.Read(make([]byte, 1)); !errors.Is(err, net.ErrClosed) {
+		t.Errorf("acme connection after restart: Read error = %v, want net.ErrClosed", err)
+	}
+	_ = other.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	if _, err := other.Read(make([]byte, 1)); !errors.Is(err, os.ErrDeadlineExceeded) {
+		t.Errorf("other connection: Read error = %v, want a timeout (still open)", err)
 	}
 }
 
@@ -147,12 +285,6 @@ func TestCreateHeadscaleDERP(t *testing.T) {
 			}
 		})
 	}
-}
-
-// newRealService builds a Service that starts real headscale instances.
-func newRealService(t *testing.T) *Service {
-	t.Helper()
-	return NewService(newTestQueries(t), "example.com", "https://auth.example.com", config.DerpConfig{}, discardLogger(), t.TempDir())
 }
 
 func TestSetOIDCIdentity(t *testing.T) {

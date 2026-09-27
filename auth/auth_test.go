@@ -8,51 +8,10 @@ import (
 	"github.com/gorilla/sessions"
 	"github.com/markbates/goth"
 	"github.com/markbates/goth/gothic"
-	"github.com/rs/xid"
 
 	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/orgs"
 )
-
-// newTestQueries returns queries backed by a copy of the shared, already
-// migrated dbtest template (see db/dbtest), avoiding a full goose run per
-// test, so these tests exercise the middleware against a real
-// *sqlcgen.Queries backed by real SQL rather than a hand-rolled fake.
-func newTestQueries(t *testing.T) *sqlcgen.Queries {
-	t.Helper()
-	_, queries := dbtest.New(t)
-	return queries.Queries
-}
-
-// insertUser inserts a fresh organization and a user row owning it, and
-// returns the user.
-func insertUser(t *testing.T, queries *sqlcgen.Queries) sqlcgen.User {
-	t.Helper()
-	id := xid.New().String()
-	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
-		ID:        xid.New().String(),
-		Subdomain: id,
-		Status:    orgs.StatusActive,
-	})
-	if err != nil {
-		t.Fatalf("insertUser: CreateOrganization: %v", err)
-	}
-	user, err := queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
-		ID:             id,
-		Provider:       "oidc",
-		ProviderUserID: id,
-		Email:          id + "@example.com",
-		Name:           "Test User",
-		AvatarUrl:      "",
-		OrganizationID: org.ID,
-		Role:           "owner",
-	})
-	if err != nil {
-		t.Fatalf("insertUser: %v", err)
-	}
-	return user
-}
 
 // setupSessions calls Setup once for the test binary so gothic.Store is
 // initialized; safe to call multiple times.
@@ -79,7 +38,8 @@ func TestWithUserContext(t *testing.T) {
 
 func TestRequireAuthAPINoSession(t *testing.T) {
 	setupSessions()
-	queries := newTestQueries(t)
+	_, db := dbtest.New(t)
+	queries := db.Queries
 
 	called := false
 	h := RequireAuthAPI(queries, func(w http.ResponseWriter, r *http.Request) {
@@ -103,8 +63,9 @@ func TestRequireAuthAPINoSession(t *testing.T) {
 
 func TestRequireAuthAPIValidSession(t *testing.T) {
 	setupSessions()
-	queries := newTestQueries(t)
-	user := insertUser(t, queries)
+	_, db := dbtest.New(t)
+	queries := db.Queries
+	user := dbtest.CreateUser(t, queries, dbtest.CreateOrg(t, queries, "acme").ID, "owner")
 
 	// Mint a session cookie via StoreUserSession, then present it on a
 	// subsequent request, mirroring how a real browser round-trip works.
@@ -141,7 +102,8 @@ func TestRequireAuthAPIValidSession(t *testing.T) {
 
 func TestRequireAuthAPISessionForDeletedUser(t *testing.T) {
 	setupSessions()
-	queries := newTestQueries(t)
+	_, db := dbtest.New(t)
+	queries := db.Queries
 
 	storeRec := httptest.NewRecorder()
 	storeReq := httptest.NewRequest(http.MethodGet, "/", nil)
@@ -171,8 +133,9 @@ func TestRequireAuthAPISessionForDeletedUser(t *testing.T) {
 
 func TestClearUserSessionInvalidatesSession(t *testing.T) {
 	setupSessions()
-	queries := newTestQueries(t)
-	user := insertUser(t, queries)
+	_, db := dbtest.New(t)
+	queries := db.Queries
+	user := dbtest.CreateUser(t, queries, dbtest.CreateOrg(t, queries, "acme").ID, "owner")
 
 	storeRec := httptest.NewRecorder()
 	storeReq := httptest.NewRequest(http.MethodGet, "/", nil)

@@ -6,7 +6,6 @@ package dbtest
 import (
 	"context"
 	"database/sql"
-	"io"
 	"io/fs"
 	"log/slog"
 	"os"
@@ -15,8 +14,10 @@ import (
 	"testing"
 
 	"github.com/pressly/goose/v3"
+	"github.com/rs/xid"
 
 	dbpkg "github.com/ownscalenet/ownscale/db"
+	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
 
 var (
@@ -91,6 +92,41 @@ func New(t *testing.T) (*sql.DB, *dbpkg.TxQueries) {
 	}
 	t.Cleanup(func() { pool.Close() })
 
-	logger := slog.New(slog.NewTextHandler(io.Discard, nil))
-	return pool, dbpkg.New(pool, logger)
+	return pool, dbpkg.New(pool, slog.New(slog.DiscardHandler))
+}
+
+// CreateOrg inserts an active organization row for subdomain, without an
+// OIDC client, stored config, or running headscale.
+func CreateOrg(t testing.TB, q *sqlcgen.Queries, subdomain string) sqlcgen.Organization {
+	t.Helper()
+	org, err := q.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
+		ID:        xid.New().String(),
+		Subdomain: subdomain,
+		// orgs.StatusActive; orgs can't be imported here as its tests use dbtest.
+		Status: "active",
+	})
+	if err != nil {
+		t.Fatalf("CreateOrg(%q): %v", subdomain, err)
+	}
+	return org
+}
+
+// CreateUser inserts a user with role in organization orgID. Its ID,
+// provider user ID and email are derived from a fresh xid.
+func CreateUser(t testing.TB, q *sqlcgen.Queries, orgID, role string) sqlcgen.User {
+	t.Helper()
+	id := xid.New().String()
+	user, err := q.CreateUser(t.Context(), sqlcgen.CreateUserParams{
+		ID:             id,
+		Provider:       "oidc",
+		ProviderUserID: id,
+		Email:          id + "@example.com",
+		Name:           "Test User",
+		OrganizationID: orgID,
+		Role:           role,
+	})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+	return user
 }

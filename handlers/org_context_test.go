@@ -12,7 +12,7 @@ import (
 // guard: an org whose headscale isn't running short-circuits with
 // 409+notConfigured without calling next.
 func TestRequireHeadscaleClientShortCircuits(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
+	h, queries := newTestHandlers(t)
 	user, _, _ := activeOrgUser(t, h, queries)
 	h.hs = fakeHeadscaleClients{err: orgs.ErrNotRunning}
 
@@ -32,7 +32,7 @@ func TestRequireHeadscaleClientShortCircuits(t *testing.T) {
 }
 
 func TestRequireHeadscaleClientCallsNextWithClient(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
+	h, queries := newTestHandlers(t)
 	user, _, _ := activeOrgUser(t, h, queries)
 
 	var gotClient bool

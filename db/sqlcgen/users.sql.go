@@ -252,21 +252,6 @@ func (q *Queries) ListUsersWithOrganization(ctx context.Context) ([]ListUsersWit
 	return items, nil
 }
 
-const setUserOrganizationAndRole = `-- name: SetUserOrganizationAndRole :exec
-UPDATE users SET organization_id = ?, role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-`
-
-type SetUserOrganizationAndRoleParams struct {
-	OrganizationID string
-	Role           string
-	ID             string
-}
-
-func (q *Queries) SetUserOrganizationAndRole(ctx context.Context, arg SetUserOrganizationAndRoleParams) error {
-	_, err := q.db.ExecContext(ctx, setUserOrganizationAndRole, arg.OrganizationID, arg.Role, arg.ID)
-	return err
-}
-
 const touchUserLastLogin = `-- name: TouchUserLastLogin :exec
 UPDATE users SET last_login_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP WHERE id = ?
 `

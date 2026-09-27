@@ -11,7 +11,7 @@ import (
 )
 
 func TestListAuthKeysReturnsKeysAndUsers(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
+	h, queries := newTestHandlers(t)
 	user, client, _ := activeOrgUser(t, h, queries)
 
 	req := withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodGet, "/api/auth-keys", nil), user), client)
@@ -49,7 +49,7 @@ func TestCreateAuthKeyValidation(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			h, queries := newMachinesTestHandlers(t)
+			h, queries := newTestHandlers(t)
 			user, client, _ := activeOrgUser(t, h, queries)
 
 			req := withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/auth-keys", strings.NewReader(tc.body)), user), client)
@@ -64,7 +64,7 @@ func TestCreateAuthKeyValidation(t *testing.T) {
 }
 
 func TestCreateAuthKeySuccess(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
+	h, queries := newTestHandlers(t)
 	user, client, requests := activeOrgUser(t, h, queries)
 
 	body := strings.NewReader(`{"userId":"1","reusable":true,"expiryDays":90,"aclTags":["tag:server"]}`)
@@ -91,7 +91,7 @@ func TestCreateAuthKeySuccess(t *testing.T) {
 }
 
 func TestCreateAuthKeyTagOnly(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
+	h, queries := newTestHandlers(t)
 	user, client, _ := activeOrgUser(t, h, queries)
 
 	body := strings.NewReader(`{"aclTags":["tag:server"],"expiryDays":90}`)
@@ -105,7 +105,7 @@ func TestCreateAuthKeyTagOnly(t *testing.T) {
 }
 
 func TestExpireAuthKey(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
+	h, queries := newTestHandlers(t)
 	user, client, requests := activeOrgUser(t, h, queries)
 
 	req := withPathValue(withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/auth-keys/1/expire", nil), user), client), "id", "1")

@@ -31,7 +31,16 @@ import (
 	"github.com/ownscalenet/ownscale/utils"
 )
 
-const maxSubdomainAttempts = 5
+const (
+	maxSubdomainAttempts = 5
+
+	// Instance ports are allocated from firstPort up, below the ephemeral
+	// port ranges (Linux: 32768+, IANA: 49152+): an ephemeral port that is
+	// free when allocated can be taken by an outgoing connection's source
+	// port before headscale listens on it.
+	firstPort = 10_000
+	lastPort  = 32_767
+)
 
 // fixedSubdomains are handed out in order to the first organizations
 // created, so development identities land on predictable subdomains.
@@ -51,11 +60,12 @@ type Service struct {
 	ports     utils.Map[string, int]
 
 	// startMu serializes headscale startup (headscale's DERP map shuffling
-	// shares one non-thread-safe rand.Rand across instances). This is not
-	// enough to prevent races, there's still a race because the derp worker
-	// (usually at 3h interval) calls GetDERPMap, which again touches the
-	// global rand.Rand.
-	startMu sync.Mutex
+	// shares one non-thread-safe rand.Rand across instances) and guards
+	// nextPort. This is not enough to prevent races, there's still a race
+	// because the derp worker (usually at 3h interval) calls GetDERPMap,
+	// which again touches the global rand.Rand.
+	startMu  sync.Mutex
+	nextPort int
 
 	// conns tracks the connections DialOrg handed out, per organization, so
 	// a restart can close them: headscale hijacks its device connections,
@@ -87,6 +97,7 @@ func NewService(queries *db.TxQueries, baseDomain, issuer string, derpCfg config
 		derpCfg:    derpCfg,
 		logger:     logger,
 		dataDir:    dataDir,
+		nextPort:   firstPort,
 		conns:      make(map[string]map[net.Conn]struct{}),
 		createFn:   createHeadscale,
 	}
@@ -378,7 +389,7 @@ func (s *Service) startLocked(ctx context.Context, subdomain string, hsCfg *Head
 	port, ok := s.ports.Load(subdomain)
 	if !ok {
 		var err error
-		if port, err = freeLoopbackPort(); err != nil {
+		if port, err = s.allocatePort(); err != nil {
 			return err
 		}
 	}
@@ -416,14 +427,19 @@ func (s *Service) startLocked(ctx context.Context, subdomain string, hsCfg *Head
 	return nil
 }
 
-// freeLoopbackPort returns a TCP port that is currently free on 127.0.0.1.
-func freeLoopbackPort() (int, error) {
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		return 0, err
+// allocatePort returns the next port from s.nextPort that is free on
+// 127.0.0.1. Callers hold startMu.
+func (s *Service) allocatePort() (int, error) {
+	for port := s.nextPort; port <= lastPort; port++ {
+		ln, err := net.Listen("tcp", fmt.Sprintf("127.0.0.1:%d", port))
+		if err != nil {
+			continue
+		}
+		ln.Close()
+		s.nextPort = port + 1
+		return port, nil
 	}
-	defer ln.Close()
-	return ln.Addr().(*net.TCPAddr).Port, nil
+	return 0, errors.New("no free port left for headscale")
 }
 
 // restartHeadscale stops subdomain's running headscale instance (if any) and

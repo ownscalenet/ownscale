@@ -9,58 +9,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/rs/xid"
-
-	"github.com/ownscalenet/ownscale/config"
-	dbpkg "github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/orgs"
 )
 
-// newMembersTestHandlers builds Handlers (no organization provisioning
-// configured, mirroring newMachinesTestHandlers) and an active organization,
-// inserting one user per role in roles (in order). It returns the handlers,
-// queries, and the created users.
-func newMembersTestHandlers(t *testing.T, roles ...string) (*Handlers, *dbpkg.TxQueries, []sqlcgen.User) {
-	t.Helper()
-	queries := newTestQueries(t)
-	h, err := New(queries, "", "", nil, discardLogger(), config.DerpConfig{})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	// No headscale instance runs here; tests needing real linking set
-	// h.hs to a fakeHeadscaleClients.
-
-	orgID := xid.New().String()
-	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{ID: orgID, Subdomain: "acme", Status: orgs.StatusActive})
-	if err != nil {
-		t.Fatalf("CreateOrganization: %v", err)
-	}
-	if _, err := queries.UpdateOrganizationStatus(t.Context(), sqlcgen.UpdateOrganizationStatusParams{ID: org.ID, Status: orgs.StatusActive}); err != nil {
-		t.Fatalf("UpdateOrganizationStatus: %v", err)
-	}
-
-	users := make([]sqlcgen.User, 0, len(roles))
-	for _, role := range roles {
-		u := insertUser(t, queries)
-		if err := queries.SetUserOrganizationAndRole(t.Context(), sqlcgen.SetUserOrganizationAndRoleParams{
-			OrganizationID: org.ID,
-			Role:           role,
-			ID:             u.ID,
-		}); err != nil {
-			t.Fatalf("SetUserOrganizationAndRole: %v", err)
-		}
-		u, err = queries.GetUserByID(t.Context(), u.ID)
-		if err != nil {
-			t.Fatalf("GetUserByID: %v", err)
-		}
-		users = append(users, u)
-	}
-	return h, queries, users
-}
-
 func TestListMembers(t *testing.T) {
-	h, _, users := newMembersTestHandlers(t, RoleOwner, RoleMember)
+	h, _, users := newOrgTestHandlers(t, RoleOwner, RoleMember)
 	owner, plainMember := users[0], users[1]
 
 	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/members", nil), owner)
@@ -99,7 +52,7 @@ func TestListMembers(t *testing.T) {
 }
 
 func TestUpdateMemberRoleRequiresManager(t *testing.T) {
-	h, _, users := newMembersTestHandlers(t, RoleMember, RoleMember)
+	h, _, users := newOrgTestHandlers(t, RoleMember, RoleMember)
 	caller, target := users[0], users[1]
 
 	body := strings.NewReader(`{"role":"admin"}`)
@@ -113,7 +66,7 @@ func TestUpdateMemberRoleRequiresManager(t *testing.T) {
 }
 
 func TestUpdateMemberRoleByOwner(t *testing.T) {
-	h, queries, users := newMembersTestHandlers(t, RoleOwner, RoleMember)
+	h, _, users := newOrgTestHandlers(t, RoleOwner, RoleMember)
 	owner, target := users[0], users[1]
 
 	body := strings.NewReader(`{"role":"admin"}`)
@@ -124,7 +77,7 @@ func TestUpdateMemberRoleByOwner(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
 	}
-	got, err := queries.GetUserByID(t.Context(), target.ID)
+	got, err := h.queries.GetUserByID(t.Context(), target.ID)
 	if err != nil {
 		t.Fatalf("GetUserByID: %v", err)
 	}
@@ -134,7 +87,7 @@ func TestUpdateMemberRoleByOwner(t *testing.T) {
 }
 
 func TestUpdateMemberRoleRejectsOwnerTransitions(t *testing.T) {
-	h, _, users := newMembersTestHandlers(t, RoleOwner, RoleMember)
+	h, _, users := newOrgTestHandlers(t, RoleOwner, RoleMember)
 	owner, target := users[0], users[1]
 
 	// Can't grant owner via this endpoint.
@@ -157,13 +110,13 @@ func TestUpdateMemberRoleRejectsOwnerTransitions(t *testing.T) {
 }
 
 func TestListMembersAutoLinksByEmail(t *testing.T) {
-	h, queries, users := newMembersTestHandlers(t, RoleOwner, RoleMember)
+	h, _, users := newOrgTestHandlers(t, RoleOwner, RoleMember)
 	owner, target := users[0], users[1]
 
 	// Give the member the email the fake headscale server's "alice" user
 	// carries (see newFakeHeadscaleServer in machines_test.go), so
 	// ListMembers' auto-link-by-email logic finds a match.
-	if err := queries.UpdateUserProfile(t.Context(), sqlcgen.UpdateUserProfileParams{
+	if err := h.queries.UpdateUserProfile(t.Context(), sqlcgen.UpdateUserProfileParams{
 		Email:         "alice@example.com",
 		Name:          target.Name,
 		AvatarUrl:     target.AvatarUrl,
@@ -183,7 +136,7 @@ func TestListMembersAutoLinksByEmail(t *testing.T) {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
 	}
 
-	got, err := queries.GetUserByID(t.Context(), target.ID)
+	got, err := h.queries.GetUserByID(t.Context(), target.ID)
 	if err != nil {
 		t.Fatalf("GetUserByID: %v", err)
 	}
@@ -199,10 +152,10 @@ func TestListMembersAutoLinksByEmail(t *testing.T) {
 }
 
 func TestListMembersDoesNotRelinkAlreadyLinkedMember(t *testing.T) {
-	h, queries, users := newMembersTestHandlers(t, RoleOwner, RoleMember)
+	h, _, users := newOrgTestHandlers(t, RoleOwner, RoleMember)
 	owner, target := users[0], users[1]
 
-	if err := queries.UpdateUserProfile(t.Context(), sqlcgen.UpdateUserProfileParams{
+	if err := h.queries.UpdateUserProfile(t.Context(), sqlcgen.UpdateUserProfileParams{
 		Email:         "alice@example.com",
 		Name:          target.Name,
 		AvatarUrl:     target.AvatarUrl,
@@ -213,7 +166,7 @@ func TestListMembersDoesNotRelinkAlreadyLinkedMember(t *testing.T) {
 	}
 	// Pre-link to a different headscale user than the one email-matching
 	// would pick ("1"/alice) -- ListMembers must leave this alone.
-	if err := queries.LinkUserHeadscaleUser(t.Context(), sqlcgen.LinkUserHeadscaleUserParams{
+	if err := h.queries.LinkUserHeadscaleUser(t.Context(), sqlcgen.LinkUserHeadscaleUserParams{
 		HeadscaleUserID: sql.NullString{String: "2", Valid: true},
 		ID:              target.ID,
 	}); err != nil {
@@ -230,7 +183,7 @@ func TestListMembersDoesNotRelinkAlreadyLinkedMember(t *testing.T) {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
 	}
 
-	got, err := queries.GetUserByID(t.Context(), target.ID)
+	got, err := h.queries.GetUserByID(t.Context(), target.ID)
 	if err != nil {
 		t.Fatalf("GetUserByID: %v", err)
 	}
@@ -240,7 +193,7 @@ func TestListMembersDoesNotRelinkAlreadyLinkedMember(t *testing.T) {
 }
 
 func TestListMembersDifferentProvidersSameEmailGetDistinctHeadscaleUsers(t *testing.T) {
-	h, queries, users := newMembersTestHandlers(t, RoleOwner, RoleMember, RoleMember)
+	h, _, users := newOrgTestHandlers(t, RoleOwner, RoleMember, RoleMember)
 	owner, google, microsoft := users[0], users[1], users[2]
 
 	// Pre-link the owner to an unrelated headscale user so it's excluded
@@ -248,7 +201,7 @@ func TestListMembersDifferentProvidersSameEmailGetDistinctHeadscaleUsers(t *test
 	// always returns the same fixed new-user id, so leaving the owner
 	// unlinked would make it consume that id and mask the collision this
 	// test is about.
-	if err := queries.LinkUserHeadscaleUser(t.Context(), sqlcgen.LinkUserHeadscaleUserParams{
+	if err := h.queries.LinkUserHeadscaleUser(t.Context(), sqlcgen.LinkUserHeadscaleUserParams{
 		HeadscaleUserID: sql.NullString{String: "9", Valid: true},
 		ID:              owner.ID,
 	}); err != nil {
@@ -262,7 +215,7 @@ func TestListMembersDifferentProvidersSameEmailGetDistinctHeadscaleUsers(t *test
 		user     sqlcgen.User
 		provider string
 	}{{google, "google"}, {microsoft, "microsoft"}} {
-		if err := queries.UpdateUserProfile(t.Context(), sqlcgen.UpdateUserProfileParams{
+		if err := h.queries.UpdateUserProfile(t.Context(), sqlcgen.UpdateUserProfileParams{
 			Email: "alice@example.com", Name: u.user.Name, AvatarUrl: u.user.AvatarUrl,
 			EmailVerified: u.user.EmailVerified, ID: u.user.ID,
 		}); err != nil {
@@ -280,11 +233,11 @@ func TestListMembersDifferentProvidersSameEmailGetDistinctHeadscaleUsers(t *test
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
 	}
 
-	gotGoogle, err := queries.GetUserByID(t.Context(), google.ID)
+	gotGoogle, err := h.queries.GetUserByID(t.Context(), google.ID)
 	if err != nil {
 		t.Fatalf("GetUserByID(google): %v", err)
 	}
-	gotMicrosoft, err := queries.GetUserByID(t.Context(), microsoft.ID)
+	gotMicrosoft, err := h.queries.GetUserByID(t.Context(), microsoft.ID)
 	if err != nil {
 		t.Fatalf("GetUserByID(microsoft): %v", err)
 	}
@@ -298,7 +251,7 @@ func TestListMembersDifferentProvidersSameEmailGetDistinctHeadscaleUsers(t *test
 }
 
 func TestRemoveMember(t *testing.T) {
-	h, queries, users := newMembersTestHandlers(t, RoleOwner, RoleMember)
+	h, _, users := newOrgTestHandlers(t, RoleOwner, RoleMember)
 	owner, target := users[0], users[1]
 
 	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/members/x", nil), owner), "id", target.ID)
@@ -307,13 +260,13 @@ func TestRemoveMember(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
 	}
-	if _, err := queries.GetUserByID(t.Context(), target.ID); !errors.Is(err, sql.ErrNoRows) {
+	if _, err := h.queries.GetUserByID(t.Context(), target.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("GetUserByID after remove: err = %v, want sql.ErrNoRows (account should be deleted)", err)
 	}
 }
 
 func TestRemoveMemberRefusesOwner(t *testing.T) {
-	h, _, users := newMembersTestHandlers(t, RoleOwner, RoleAdmin)
+	h, _, users := newOrgTestHandlers(t, RoleOwner, RoleAdmin)
 	owner, admin := users[0], users[1]
 
 	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/members/x", nil), admin), "id", owner.ID)
@@ -325,7 +278,7 @@ func TestRemoveMemberRefusesOwner(t *testing.T) {
 }
 
 func TestTransferOwnership(t *testing.T) {
-	h, queries, users := newMembersTestHandlers(t, RoleOwner, RoleAdmin)
+	h, _, users := newOrgTestHandlers(t, RoleOwner, RoleAdmin)
 	owner, admin := users[0], users[1]
 
 	body := strings.NewReader(`{"memberId":"` + admin.ID + `"}`)
@@ -336,14 +289,14 @@ func TestTransferOwnership(t *testing.T) {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
 	}
 
-	newOwner, err := queries.GetUserByID(t.Context(), admin.ID)
+	newOwner, err := h.queries.GetUserByID(t.Context(), admin.ID)
 	if err != nil {
 		t.Fatalf("GetUserByID: %v", err)
 	}
 	if newOwner.Role != RoleOwner {
 		t.Errorf("new owner role = %q, want owner", newOwner.Role)
 	}
-	oldOwner, err := queries.GetUserByID(t.Context(), owner.ID)
+	oldOwner, err := h.queries.GetUserByID(t.Context(), owner.ID)
 	if err != nil {
 		t.Fatalf("GetUserByID: %v", err)
 	}
@@ -353,7 +306,7 @@ func TestTransferOwnership(t *testing.T) {
 }
 
 func TestTransferOwnershipRequiresOwner(t *testing.T) {
-	h, _, users := newMembersTestHandlers(t, RoleAdmin, RoleMember)
+	h, _, users := newOrgTestHandlers(t, RoleAdmin, RoleMember)
 	admin, target := users[0], users[1]
 
 	body := strings.NewReader(`{"memberId":"` + target.ID + `"}`)

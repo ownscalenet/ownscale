@@ -13,16 +13,8 @@ import (
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
 
-// newFunnelTestHandlers builds Handlers with a real, active, DB-backed
-// organization (via newAccessControlTestHandlers), and one user per role
-// in roles.
-func newFunnelTestHandlers(t *testing.T, roles ...string) (*Handlers, sqlcgen.Organization, []sqlcgen.User) {
-	t.Helper()
-	return newAccessControlTestHandlers(t, roles...)
-}
-
 func TestCreateFunnelRouteRequiresManager(t *testing.T) {
-	h, org, users := newFunnelTestHandlers(t, RoleMember)
+	h, org, users := newOrgTestHandlers(t, RoleMember)
 	member := users[0]
 	client, _, _, _ := newFakeHeadscaleServer(t)
 
@@ -37,7 +29,7 @@ func TestCreateFunnelRouteRequiresManager(t *testing.T) {
 }
 
 func TestCreateFunnelRouteValidation(t *testing.T) {
-	h, org, users := newFunnelTestHandlers(t, RoleOwner)
+	h, org, users := newOrgTestHandlers(t, RoleOwner)
 	owner := users[0]
 	client, _, _, _ := newFakeHeadscaleServer(t)
 
@@ -65,7 +57,7 @@ func TestCreateFunnelRouteValidation(t *testing.T) {
 }
 
 func TestCreateFunnelRouteRejectsDuplicateLabel(t *testing.T) {
-	h, org, users := newFunnelTestHandlers(t, RoleOwner)
+	h, org, users := newOrgTestHandlers(t, RoleOwner)
 	owner := users[0]
 	client, _, _, _ := newFakeHeadscaleServer(t)
 
@@ -90,7 +82,7 @@ func TestCreateFunnelRouteRejectsDuplicateLabel(t *testing.T) {
 }
 
 func TestListFunnelRoutesFlagsMissingTargetNode(t *testing.T) {
-	h, org, users := newFunnelTestHandlers(t, RoleOwner)
+	h, org, users := newOrgTestHandlers(t, RoleOwner)
 	owner := users[0]
 	client, _, _, _ := newFakeHeadscaleServer(t)
 
@@ -131,7 +123,7 @@ func TestListFunnelRoutesFlagsMissingTargetNode(t *testing.T) {
 }
 
 func TestDeleteFunnelRouteRequiresManagerAndScopesToOrg(t *testing.T) {
-	h, org, users := newFunnelTestHandlers(t, RoleOwner, RoleMember)
+	h, org, users := newOrgTestHandlers(t, RoleOwner, RoleMember)
 	owner, member := users[0], users[1]
 
 	route, err := h.queries.CreateFunnelRoute(t.Context(), sqlcgen.CreateFunnelRouteParams{
@@ -156,19 +148,7 @@ func TestDeleteFunnelRouteRequiresManagerAndScopesToOrg(t *testing.T) {
 	}
 
 	// Deleting an id from a different org 404s (scoped lookup).
-	otherOrg := insertOrg(t, h.queries, "other")
 	otherOwner := insertUser(t, h.queries)
-	if err := h.queries.SetUserOrganizationAndRole(t.Context(), sqlcgen.SetUserOrganizationAndRoleParams{
-		OrganizationID: otherOrg.ID,
-		Role:           RoleOwner,
-		ID:             otherOwner.ID,
-	}); err != nil {
-		t.Fatalf("SetUserOrganizationAndRole: %v", err)
-	}
-	otherOwner, err = h.queries.GetUserByID(t.Context(), otherOwner.ID)
-	if err != nil {
-		t.Fatalf("GetUserByID: %v", err)
-	}
 	wrongOrgReq := withTestUser(httptest.NewRequest(http.MethodDelete, "/api/funnel/"+route.ID, nil), otherOwner)
 	wrongOrgReq.SetPathValue("id", route.ID)
 	wrongOrgRec := httptest.NewRecorder()

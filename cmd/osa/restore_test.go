@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+
+	"github.com/ownscalenet/ownscale/db/dbtest"
 )
 
 // recordingRunner is a fake restoreRunner that records every call it
@@ -105,9 +107,9 @@ func TestRestoreIfMissing_RunnerError(t *testing.T) {
 }
 
 func TestRestoreOrganizations(t *testing.T) {
-	_, queries := newTestDB(t)
-	insertOrg(t, queries, "acme")
-	insertOrg(t, queries, "globex")
+	_, queries := dbtest.New(t)
+	dbtest.CreateOrg(t, queries.Queries, "acme")
+	dbtest.CreateOrg(t, queries.Queries, "globex")
 
 	dataDir := t.TempDir()
 	// globex already has both files locally; acme has neither.
@@ -154,7 +156,7 @@ func TestRestoreOrganizations(t *testing.T) {
 }
 
 func TestRestoreOrganizations_NoOrganizations(t *testing.T) {
-	_, queries := newTestDB(t)
+	_, queries := dbtest.New(t)
 	runner := &recordingRunner{}
 	dataDir := t.TempDir()
 

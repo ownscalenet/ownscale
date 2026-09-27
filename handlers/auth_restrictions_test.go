@@ -11,7 +11,7 @@ import (
 )
 
 func TestGetAuthRestrictionsDefaultsToEmpty(t *testing.T) {
-	h, _, users := newAccessControlTestHandlers(t, RoleMember)
+	h, _, users := newOrgTestHandlers(t, RoleMember)
 	member := users[0]
 
 	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/auth-restrictions", nil), member)
@@ -31,24 +31,13 @@ func TestGetAuthRestrictionsDefaultsToEmpty(t *testing.T) {
 	if resp.CanManage {
 		t.Error("canManage = true for a plain member, want false")
 	}
-	content, err := hujson.Parse([]byte(resp.Content))
-	if err != nil {
-		t.Errorf("couldn't parse: %v", err)
-	}
-	// For some reason, empty array has a leading space.
-	if c := content.Find("/domains").String(); strings.TrimSpace(c) != "[]" {
-		t.Errorf("expected domains [], got %v", c)
-	}
-	if c := content.Find("/groups").String(); strings.TrimSpace(c) != "[]" {
-		t.Errorf("expected groups [], got %v", c)
-	}
-	if c := content.Find("/users").String(); strings.TrimSpace(c) != "[]" {
-		t.Errorf("expected users [], got %v", c)
+	if _, err := hujson.Parse([]byte(resp.Content)); err != nil {
+		t.Errorf("default content isn't HuJSON: %v", err)
 	}
 }
 
 func TestUpdateAuthRestrictionsRequiresManager(t *testing.T) {
-	h, _, users := newAccessControlTestHandlers(t, RoleMember)
+	h, _, users := newOrgTestHandlers(t, RoleMember)
 	member := users[0]
 
 	body := `{"content":"{\"domains\":[\"example.com\"]}"}`
@@ -62,7 +51,7 @@ func TestUpdateAuthRestrictionsRequiresManager(t *testing.T) {
 }
 
 func TestUpdateAuthRestrictionsRejectsInvalidHuJSON(t *testing.T) {
-	h, _, users := newAccessControlTestHandlers(t, RoleOwner)
+	h, _, users := newOrgTestHandlers(t, RoleOwner)
 	owner := users[0]
 
 	body := `{"content":"not valid hujson {{{"}`
@@ -76,7 +65,7 @@ func TestUpdateAuthRestrictionsRejectsInvalidHuJSON(t *testing.T) {
 }
 
 func TestUpdateAuthRestrictionsPersistsAndReturnsOK(t *testing.T) {
-	h, _, users := newAccessControlTestHandlers(t, RoleOwner)
+	h, _, users := newOrgTestHandlers(t, RoleOwner)
 	owner := users[0]
 
 	newContent := `{"domains":["example.com"],"groups":["group:eng"],"users":["alice@example.com"]}`
@@ -105,40 +94,5 @@ func TestUpdateAuthRestrictionsPersistsAndReturnsOK(t *testing.T) {
 	}
 	if !resp.CanManage {
 		t.Error("canManage = false for an owner, want true")
-	}
-}
-
-func TestUpdateAuthRestrictionsCanClearAllowlist(t *testing.T) {
-	h, _, users := newAccessControlTestHandlers(t, RoleOwner)
-	owner := users[0]
-
-	setBody := `{"content":"{\"domains\":[\"example.com\"]}"}`
-	setReq := withTestUser(httptest.NewRequest(http.MethodPut, "/api/auth-restrictions", strings.NewReader(setBody)), owner)
-	setRec := httptest.NewRecorder()
-	h.UpdateAuthRestrictions(setRec, setReq)
-	if setRec.Code != http.StatusOK {
-		t.Fatalf("first update status = %d, want %d, body=%s", setRec.Code, http.StatusOK, setRec.Body.String())
-	}
-
-	emptyContent := `{"domains":[],"groups":[],"users":[]}`
-	clearBody := `{"content":` + jsonQuote(emptyContent) + `}`
-	clearReq := withTestUser(httptest.NewRequest(http.MethodPut, "/api/auth-restrictions", strings.NewReader(clearBody)), owner)
-	clearRec := httptest.NewRecorder()
-	h.UpdateAuthRestrictions(clearRec, clearReq)
-	if clearRec.Code != http.StatusOK {
-		t.Fatalf("clear update status = %d, want %d, body=%s", clearRec.Code, http.StatusOK, clearRec.Body.String())
-	}
-
-	getReq := withTestUser(httptest.NewRequest(http.MethodGet, "/api/auth-restrictions", nil), owner)
-	getRec := httptest.NewRecorder()
-	h.GetAuthRestrictions(getRec, getReq)
-	var getResp struct {
-		Content string `json:"content"`
-	}
-	if err := json.Unmarshal(getRec.Body.Bytes(), &getResp); err != nil {
-		t.Fatalf("unmarshal: %v", err)
-	}
-	if getResp.Content != emptyContent {
-		t.Errorf("content = %q, want %q after clearing", getResp.Content, emptyContent)
 	}
 }

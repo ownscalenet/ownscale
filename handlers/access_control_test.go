@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/headscaleclient"
 	"github.com/ownscalenet/ownscale/headscaleclient/hstest"
 )
@@ -43,36 +42,8 @@ func newFakePolicyServer(t *testing.T, initial string) (*headscaleclient.Client,
 	return headscaleclient.NewUnix(hstest.Socket(t, mux)), &policy
 }
 
-// newAccessControlTestHandlers builds Handlers with organization
-// provisioning configured, inserts an active organization, and inserts one user per role in
-// roles (in order).
-func newAccessControlTestHandlers(t *testing.T, roles ...string) (*Handlers, sqlcgen.Organization, []sqlcgen.User) {
-	t.Helper()
-	h, queries := newTestHandlers(t)
-
-	org := insertOrg(t, queries, "acme")
-
-	users := make([]sqlcgen.User, 0, len(roles))
-	for _, role := range roles {
-		u := insertUser(t, queries)
-		if err := queries.SetUserOrganizationAndRole(t.Context(), sqlcgen.SetUserOrganizationAndRoleParams{
-			OrganizationID: org.ID,
-			Role:           role,
-			ID:             u.ID,
-		}); err != nil {
-			t.Fatalf("SetUserOrganizationAndRole: %v", err)
-		}
-		u, err := queries.GetUserByID(t.Context(), u.ID)
-		if err != nil {
-			t.Fatalf("GetUserByID: %v", err)
-		}
-		users = append(users, u)
-	}
-	return h, org, users
-}
-
 func TestGetAccessControlPolicyReturnsEmptyStringAsIs(t *testing.T) {
-	h, _, users := newAccessControlTestHandlers(t, RoleMember)
+	h, _, users := newOrgTestHandlers(t, RoleMember)
 	member := users[0]
 	// orgs.Service seeds a default policy when it starts an organization's
 	// headscale; this test simulates
@@ -104,7 +75,7 @@ func TestGetAccessControlPolicyReturnsEmptyStringAsIs(t *testing.T) {
 }
 
 func TestUpdateAccessControlPolicyRequiresManager(t *testing.T) {
-	h, _, users := newAccessControlTestHandlers(t, RoleMember)
+	h, _, users := newOrgTestHandlers(t, RoleMember)
 	member := users[0]
 	client, _ := newFakePolicyServer(t, "")
 
@@ -119,7 +90,7 @@ func TestUpdateAccessControlPolicyRequiresManager(t *testing.T) {
 }
 
 func TestUpdateAccessControlPolicyRejectsInvalidHuJSON(t *testing.T) {
-	h, _, users := newAccessControlTestHandlers(t, RoleOwner)
+	h, _, users := newOrgTestHandlers(t, RoleOwner)
 	owner := users[0]
 	client, _ := newFakePolicyServer(t, "")
 
@@ -134,7 +105,7 @@ func TestUpdateAccessControlPolicyRejectsInvalidHuJSON(t *testing.T) {
 }
 
 func TestUpdateAccessControlPolicyPersistsAndReturnsOK(t *testing.T) {
-	h, _, users := newAccessControlTestHandlers(t, RoleOwner)
+	h, _, users := newOrgTestHandlers(t, RoleOwner)
 	owner := users[0]
 	client, stored := newFakePolicyServer(t, "")
 

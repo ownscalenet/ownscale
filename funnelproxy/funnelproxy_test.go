@@ -27,14 +27,6 @@ func (f *fakePortLookup) LookupPort(_ string) (int, bool) { return f.port, f.por
 
 func defaultPortLookup() *fakePortLookup { return &fakePortLookup{port: 19999} }
 
-func discardLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(nopWriter{}, nil))
-}
-
-type nopWriter struct{}
-
-func (nopWriter) Write(p []byte) (int, error) { return len(p), nil }
-
 func TestParseHost(t *testing.T) {
 	const base = "example.com"
 	tests := []struct {
@@ -109,7 +101,7 @@ func newFakeNodeServer(t *testing.T, nodesJSON string) *headscaleclient.Client {
 }
 
 func TestServeHTTPRouteNotFound(t *testing.T) {
-	pool := NewPool(&fakeQueries{routes: map[string]sqlcgen.FunnelRoute{}}, &fakeHeadscaleClients{}, t.TempDir(), discardLogger(), defaultPortLookup())
+	pool := NewPool(&fakeQueries{routes: map[string]sqlcgen.FunnelRoute{}}, &fakeHeadscaleClients{}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup())
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -121,7 +113,7 @@ func TestServeHTTPRouteNotFound(t *testing.T) {
 }
 
 func TestServeHTTPQueriesError(t *testing.T) {
-	pool := NewPool(&fakeQueries{err: errors.New("boom")}, &fakeHeadscaleClients{}, t.TempDir(), discardLogger(), defaultPortLookup())
+	pool := NewPool(&fakeQueries{err: errors.New("boom")}, &fakeHeadscaleClients{}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup())
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -136,7 +128,7 @@ func TestServeHTTPHeadscaleClientError(t *testing.T) {
 	queries := &fakeQueries{routes: map[string]sqlcgen.FunnelRoute{
 		"acme/web": {ID: "1", Label: "web", TargetNodeID: "1", TargetPort: 8080},
 	}}
-	pool := NewPool(queries, &fakeHeadscaleClients{err: errors.New("not running")}, t.TempDir(), discardLogger(), defaultPortLookup())
+	pool := NewPool(queries, &fakeHeadscaleClients{err: errors.New("not running")}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup())
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -152,7 +144,7 @@ func TestServeHTTPTargetNodeMissing(t *testing.T) {
 		"acme/web": {ID: "1", Label: "web", TargetNodeID: "does-not-exist", TargetPort: 8080},
 	}}
 	client := newFakeNodeServer(t, `{"nodes":[{"id":"1","name":"node1","ipAddresses":["100.64.0.1"]}]}`)
-	pool := NewPool(queries, &fakeHeadscaleClients{client: client}, t.TempDir(), discardLogger(), defaultPortLookup())
+	pool := NewPool(queries, &fakeHeadscaleClients{client: client}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup())
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -221,7 +213,7 @@ func newFakeUserPreAuthKeyServer(t *testing.T, existingUsers string) (*headscale
 // same on-disk state directory.
 func TestGetOrCreateServerConcurrentDedup(t *testing.T) {
 	client, preAuthKeyBodies := newFakeUserPreAuthKeyServer(t, `{"users":[]}`)
-	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{client: client}, t.TempDir(), discardLogger(), defaultPortLookup())
+	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{client: client}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup())
 	pool.upTimeout = 2 * time.Second
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -259,7 +251,7 @@ func TestGetOrCreateServerUpTimeout(t *testing.T) {
 	t.Cleanup(blockServer.Close)
 
 	client, _ := newFakeUserPreAuthKeyServer(t, `{"users":[]}`)
-	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{client: client}, t.TempDir(), discardLogger(), defaultPortLookup())
+	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{client: client}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup())
 	pool.upTimeout = 200 * time.Millisecond
 	pool.controlURL = func(string) (string, error) { return blockServer.URL, nil }
 
@@ -292,7 +284,7 @@ func TestEvict(t *testing.T) {
 		return srv
 	}
 
-	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{}, t.TempDir(), discardLogger(), defaultPortLookup())
+	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup())
 	pool.servers["aaaa"] = newServer()
 	pool.servers["bbbb"] = newServer()
 

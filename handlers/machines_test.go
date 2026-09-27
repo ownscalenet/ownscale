@@ -15,13 +15,11 @@ import (
 	"github.com/rs/xid"
 	"github.com/tailscale/hujson"
 
-	"github.com/ownscalenet/ownscale/config"
 	dbpkg "github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/funnelproxy"
 	"github.com/ownscalenet/ownscale/headscaleclient"
 	"github.com/ownscalenet/ownscale/headscaleclient/hstest"
-	"github.com/ownscalenet/ownscale/orgs"
 )
 
 // fakeHeadscaleClients stands in for orgs.Service's running headscale
@@ -168,12 +166,11 @@ func newFakeHeadscaleServer(t *testing.T) (*headscaleclient.Client, *[]*http.Req
 	return client, &requests, &policy, &lastTags
 }
 
-// activeOrgUser inserts a user with an "active" organization, wiring up
-// h.hs to a fake headscale (used by
-// handlers that still call resolveHeadscaleClient directly, e.g.
-// Session/ListMembers's best-effort linking). Returns the (refreshed,
-// org-attached) user, a client for the middleware-based handlers to
-// attach via withHeadscaleClient, and the recorded requests slice.
+// activeOrgUser inserts the owner of a new active organization and points
+// h.hs at a fake headscale (used by handlers that call
+// resolveHeadscaleClient directly, e.g. Session/ListMembers's best-effort
+// linking). Returns the user, a client for the middleware-based handlers
+// to attach via withHeadscaleClient, and the recorded requests slice.
 func activeOrgUser(t *testing.T, h *Handlers, queries *dbpkg.TxQueries) (sqlcgen.User, *headscaleclient.Client, *[]*http.Request) {
 	t.Helper()
 	user, client, requests, _, _ := activeOrgUserWithPolicy(t, h, queries)
@@ -188,44 +185,14 @@ func activeOrgUserWithPolicy(t *testing.T, h *Handlers, queries *dbpkg.TxQueries
 	t.Helper()
 	user := insertUser(t, queries)
 
-	orgID := xid.New().String()
-	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{ID: orgID, Subdomain: "acme", Status: orgs.StatusActive})
-	if err != nil {
-		t.Fatalf("CreateOrganization: %v", err)
-	}
-	if _, err := queries.UpdateOrganizationStatus(t.Context(), sqlcgen.UpdateOrganizationStatusParams{ID: org.ID, Status: orgs.StatusActive}); err != nil {
-		t.Fatalf("UpdateOrganizationStatus: %v", err)
-	}
-	if err := queries.SetUserOrganizationAndRole(t.Context(), sqlcgen.SetUserOrganizationAndRoleParams{
-		OrganizationID: org.ID,
-		Role:           user.Role,
-		ID:             user.ID,
-	}); err != nil {
-		t.Fatalf("SetUserOrganizationAndRole: %v", err)
-	}
-	user, err = queries.GetUserByID(t.Context(), user.ID)
-	if err != nil {
-		t.Fatalf("GetUserByID: %v", err)
-	}
-
 	client, requests, policy, lastTags := newFakeHeadscaleServer(t)
 	h.hs = fakeHeadscaleClients{client: client}
 
 	return user, client, requests, policy, lastTags
 }
 
-func newMachinesTestHandlers(t *testing.T) (*Handlers, *dbpkg.TxQueries) {
-	t.Helper()
-	queries := newTestQueries(t)
-	h, err := New(queries, "", "", nil, discardLogger(), config.DerpConfig{})
-	if err != nil {
-		t.Fatalf("New: %v", err)
-	}
-	return h, queries
-}
-
 func TestListMachinesReturnsNodesAndUsers(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
+	h, queries := newTestHandlers(t)
 	user, client, _ := activeOrgUser(t, h, queries)
 
 	req := withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodGet, "/api/machines", nil), user), client)
@@ -258,7 +225,7 @@ func TestListMachinesReturnsNodesAndUsers(t *testing.T) {
 }
 
 func TestListMachinesFiltersByQUserStatus(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
+	h, queries := newTestHandlers(t)
 	user, client, _ := activeOrgUser(t, h, queries)
 
 	cases := []struct {
@@ -303,7 +270,7 @@ func withPathValue(req *http.Request, key, value string) *http.Request {
 }
 
 func TestRenameMachine(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
+	h, queries := newTestHandlers(t)
 	user, client, requests := activeOrgUser(t, h, queries)
 
 	body := strings.NewReader(`{"name":"new-name"}`)
@@ -321,7 +288,7 @@ func TestRenameMachine(t *testing.T) {
 }
 
 func TestRenameMachineRejectsEmptyName(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
+	h, queries := newTestHandlers(t)
 	user, client, _ := activeOrgUser(t, h, queries)
 
 	body := strings.NewReader(`{"name":""}`)
@@ -352,7 +319,7 @@ func TestSetMachineTagsNormalization(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h, queries := newMachinesTestHandlers(t)
+			h, queries := newTestHandlers(t)
 			user, client, requests, _, lastTags := activeOrgUserWithPolicy(t, h, queries)
 
 			payload, err := json.Marshal(map[string][]string{"tags": tt.input})
@@ -388,7 +355,7 @@ func TestSetMachineTagsNormalization(t *testing.T) {
 // seeded default policy never declares any tag -- so the handler must add
 // missing tags to tagOwners itself before calling SetTags.
 func TestSetMachineTagsProvisionsTagOwners(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
+	h, queries := newTestHandlers(t)
 	user, client, _, policy, _ := activeOrgUserWithPolicy(t, h, queries)
 
 	if strings.Contains(*policy, "tagOwners") {
@@ -420,7 +387,7 @@ func TestSetMachineTagsProvisionsTagOwners(t *testing.T) {
 // where every requested tag is already declared: ensureTagOwners must not
 // call SetPolicy needlessly.
 func TestSetMachineTagsSkipsPolicyUpdateWhenTagAlreadyOwned(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
+	h, queries := newTestHandlers(t)
 	user, client, requests, policy, _ := activeOrgUserWithPolicy(t, h, queries)
 	*policy = `{"acls":[{"action":"accept","src":["*"],"dst":["*:*"]}],"tagOwners":{"tag:server":["alice"]}}`
 
@@ -445,7 +412,7 @@ func TestSetMachineTagsSkipsPolicyUpdateWhenTagAlreadyOwned(t *testing.T) {
 // It must now only patch in the new tagOwners entry, leaving the rest of
 // the HuJSON document byte-for-byte untouched.
 func TestSetMachineTagsPreservesPolicyCommentsAndFormatting(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
+	h, queries := newTestHandlers(t)
 	user, client, _, policy, _ := activeOrgUserWithPolicy(t, h, queries)
 	original := "{\n" +
 		"  // keep this comment\n" +
@@ -485,7 +452,7 @@ func TestSetMachineTagsPreservesPolicyCommentsAndFormatting(t *testing.T) {
 }
 
 func TestSetMachineRoutes(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
+	h, queries := newTestHandlers(t)
 	user, client, requests := activeOrgUser(t, h, queries)
 
 	body := strings.NewReader(`{"routes":["10.0.0.0/24"]}`)
@@ -503,7 +470,7 @@ func TestSetMachineRoutes(t *testing.T) {
 }
 
 func TestExpireMachine(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
+	h, queries := newTestHandlers(t)
 	user, client, requests := activeOrgUser(t, h, queries)
 
 	req := withPathValue(withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/expire", nil), user), client), "id", "1")
@@ -520,7 +487,7 @@ func TestExpireMachine(t *testing.T) {
 }
 
 func TestDeleteMachine(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
+	h, queries := newTestHandlers(t)
 	user, client, requests := activeOrgUser(t, h, queries)
 
 	route, err := queries.CreateFunnelRoute(t.Context(), sqlcgen.CreateFunnelRouteParams{
@@ -559,28 +526,8 @@ func TestDeleteMachine(t *testing.T) {
 }
 
 func TestDeleteMachineCascadesFunnelRoutesForInternalMachine(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
-	user := insertUser(t, queries)
-
-	orgID := xid.New().String()
-	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{ID: orgID, Subdomain: "acme", Status: orgs.StatusActive})
-	if err != nil {
-		t.Fatalf("CreateOrganization: %v", err)
-	}
-	if _, err := queries.UpdateOrganizationStatus(t.Context(), sqlcgen.UpdateOrganizationStatusParams{ID: org.ID, Status: orgs.StatusActive}); err != nil {
-		t.Fatalf("UpdateOrganizationStatus: %v", err)
-	}
-	if err := queries.SetUserOrganizationAndRole(t.Context(), sqlcgen.SetUserOrganizationAndRoleParams{
-		OrganizationID: org.ID,
-		Role:           user.Role,
-		ID:             user.ID,
-	}); err != nil {
-		t.Fatalf("SetUserOrganizationAndRole: %v", err)
-	}
-	user, err = queries.GetUserByID(t.Context(), user.ID)
-	if err != nil {
-		t.Fatalf("GetUserByID: %v", err)
-	}
+	h, org, users := newOrgTestHandlers(t, RoleOwner)
+	queries, user := h.queries, users[0]
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/node", func(w http.ResponseWriter, r *http.Request) {
@@ -683,7 +630,7 @@ func TestRegisterMachine(t *testing.T) {
 
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			h, queries := newMachinesTestHandlers(t)
+			h, queries := newTestHandlers(t)
 			user, client, requests := activeOrgUser(t, h, queries)
 
 			req := withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/register", strings.NewReader(tc.body)), user), client)

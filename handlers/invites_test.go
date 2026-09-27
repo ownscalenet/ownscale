@@ -14,7 +14,7 @@ import (
 )
 
 func TestCreateInviteRequiresManager(t *testing.T) {
-	h, _, users := newMembersTestHandlers(t, RoleMember)
+	h, _, users := newOrgTestHandlers(t, RoleMember)
 	member := users[0]
 
 	body := strings.NewReader(`{"role":"member"}`)
@@ -28,7 +28,7 @@ func TestCreateInviteRequiresManager(t *testing.T) {
 }
 
 func TestCreateAndListInvites(t *testing.T) {
-	h, _, users := newMembersTestHandlers(t, RoleOwner)
+	h, _, users := newOrgTestHandlers(t, RoleOwner)
 	owner := users[0]
 
 	body := strings.NewReader(`{"email":"new@example.com","role":"admin"}`)
@@ -63,7 +63,7 @@ func TestCreateAndListInvites(t *testing.T) {
 }
 
 func TestCreateInviteRejectsOwnerRole(t *testing.T) {
-	h, _, users := newMembersTestHandlers(t, RoleOwner)
+	h, _, users := newOrgTestHandlers(t, RoleOwner)
 	owner := users[0]
 
 	body := strings.NewReader(`{"role":"owner"}`)
@@ -77,10 +77,10 @@ func TestCreateInviteRejectsOwnerRole(t *testing.T) {
 }
 
 func TestGetInvitePreview(t *testing.T) {
-	h, queries, users := newMembersTestHandlers(t, RoleOwner)
+	h, _, users := newOrgTestHandlers(t, RoleOwner)
 	owner := users[0]
 
-	inv, err := queries.CreateInvite(t.Context(), sqlcgen.CreateInviteParams{
+	inv, err := h.queries.CreateInvite(t.Context(), sqlcgen.CreateInviteParams{
 		ID:             xid.New().String(),
 		OrganizationID: owner.OrganizationID,
 		Role:           RoleMember,
@@ -111,10 +111,10 @@ func TestGetInvitePreview(t *testing.T) {
 }
 
 func TestGetInvitePreviewExpired(t *testing.T) {
-	h, queries, users := newMembersTestHandlers(t, RoleOwner)
+	h, _, users := newOrgTestHandlers(t, RoleOwner)
 	owner := users[0]
 
-	inv, err := queries.CreateInvite(t.Context(), sqlcgen.CreateInviteParams{
+	inv, err := h.queries.CreateInvite(t.Context(), sqlcgen.CreateInviteParams{
 		ID:             xid.New().String(),
 		OrganizationID: owner.OrganizationID,
 		Role:           RoleMember,
@@ -142,10 +142,10 @@ func TestGetInvitePreviewExpired(t *testing.T) {
 }
 
 func TestDeleteInvite(t *testing.T) {
-	h, queries, users := newMembersTestHandlers(t, RoleOwner)
+	h, _, users := newOrgTestHandlers(t, RoleOwner)
 	owner := users[0]
 
-	inv, err := queries.CreateInvite(t.Context(), sqlcgen.CreateInviteParams{
+	inv, err := h.queries.CreateInvite(t.Context(), sqlcgen.CreateInviteParams{
 		ID:             xid.New().String(),
 		OrganizationID: owner.OrganizationID,
 		Role:           RoleMember,
@@ -164,7 +164,7 @@ func TestDeleteInvite(t *testing.T) {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
 	}
 
-	if _, err := queries.GetInvite(t.Context(), inv.ID); err == nil {
+	if _, err := h.queries.GetInvite(t.Context(), inv.ID); err == nil {
 		t.Error("expected invite to be deleted")
 	}
 }

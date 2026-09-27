@@ -15,18 +15,8 @@ import (
 
 	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/orgs"
 	"github.com/zitadel/oidc/v3/pkg/oidc"
 )
-
-// newTestQueries returns queries backed by a copy of the shared, already
-// migrated dbtest template (see db/dbtest), avoiding a full goose run per
-// test.
-func newTestQueries(t *testing.T) *sqlcgen.Queries {
-	t.Helper()
-	_, queries := dbtest.New(t)
-	return queries.Queries
-}
 
 func testStorage(t *testing.T) (*Storage, *sqlcgen.Queries) {
 	t.Helper()
@@ -34,7 +24,8 @@ func testStorage(t *testing.T) (*Storage, *sqlcgen.Queries) {
 	if err != nil {
 		t.Fatalf("rsa.GenerateKey: %v", err)
 	}
-	queries := newTestQueries(t)
+	_, db := dbtest.New(t)
+	queries := db.Queries
 	storage := newStorage(queries, newSigningKey(key), "https://auth.example.com", 5*time.Minute, time.Hour)
 	storage.SetLoginURL(func(id string) string { return "/login?next=" + id })
 	return storage, queries
@@ -87,19 +78,6 @@ func insertTestClient(t *testing.T, queries *sqlcgen.Queries, orgID string) (sql
 	return client, secret
 }
 
-func insertTestOrg(t *testing.T, queries *sqlcgen.Queries) sqlcgen.Organization {
-	t.Helper()
-	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
-		ID:        xid.New().String(),
-		Subdomain: "acme",
-		Status:    orgs.StatusActive,
-	})
-	if err != nil {
-		t.Fatalf("CreateOrganization: %v", err)
-	}
-	return org
-}
-
 func TestLoadOrGenerateSigningKey(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "oidc", "signing-key.pem")
 	first, err := LoadOrGenerateSigningKey(path)
@@ -137,7 +115,7 @@ func (r testIDTokenRequest) GetSubject() string     { return r.subject }
 
 func TestClientAdapterAndSecretCheck(t *testing.T) {
 	storage, queries := testStorage(t)
-	org := insertTestOrg(t, queries)
+	org := dbtest.CreateOrg(t, queries, "acme")
 	clientRow, secret := insertTestClient(t, queries, org.ID)
 
 	adapter, err := storage.GetClientByClientID(t.Context(), clientRow.ClientID)
@@ -160,7 +138,7 @@ func TestClientAdapterAndSecretCheck(t *testing.T) {
 
 func TestUserClaimsAdapter(t *testing.T) {
 	storage, queries := testStorage(t)
-	org := insertTestOrg(t, queries)
+	org := dbtest.CreateOrg(t, queries, "acme")
 	clientRow, _ := insertTestClient(t, queries, org.ID)
 	user := insertTestUser(t, queries, org.ID)
 

@@ -6,6 +6,8 @@ import (
 	"errors"
 	"strings"
 	"testing"
+
+	"github.com/ownscalenet/ownscale/db/dbtest"
 )
 
 // fakeVerifier fakes both statusChecker and replicaHasBackup for a single
@@ -106,9 +108,9 @@ func TestVerifyHealthy_StatusCheckError(t *testing.T) {
 }
 
 func TestVerifyOrganizationsHealthy(t *testing.T) {
-	_, queries := newTestDB(t)
-	insertOrg(t, queries, "acme")
-	insertOrg(t, queries, "globex")
+	_, queries := dbtest.New(t)
+	dbtest.CreateOrg(t, queries.Queries, "acme")
+	dbtest.CreateOrg(t, queries.Queries, "globex")
 
 	dataDir := t.TempDir()
 	acmeHSLocal := dataDir + "/headscale/acme/db.sqlite"
@@ -137,8 +139,8 @@ func TestVerifyOrganizationsHealthy(t *testing.T) {
 }
 
 func TestVerifyOrganizationsHealthy_AllHealthy(t *testing.T) {
-	_, queries := newTestDB(t)
-	insertOrg(t, queries, "acme")
+	_, queries := dbtest.New(t)
+	dbtest.CreateOrg(t, queries.Queries, "acme")
 
 	dataDir := t.TempDir()
 	f := &fakeVerifier{

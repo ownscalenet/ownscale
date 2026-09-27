@@ -11,7 +11,7 @@ import (
 )
 
 func TestSessionEnsuresHeadscaleUserForActiveOrg(t *testing.T) {
-	h, queries := newMachinesTestHandlers(t)
+	h, queries := newTestHandlers(t)
 	user, _, _ := activeOrgUser(t, h, queries)
 
 	if err := queries.UpdateUserProfile(t.Context(), sqlcgen.UpdateUserProfileParams{

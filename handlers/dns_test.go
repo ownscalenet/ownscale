@@ -11,7 +11,7 @@ import (
 )
 
 func TestGetDNSSettingsReflectsProvisionedDefaults(t *testing.T) {
-	h, _, users := newAccessControlTestHandlers(t, RoleMember)
+	h, _, users := newOrgTestHandlers(t, RoleMember)
 	member := users[0]
 
 	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/dns", nil), member)
@@ -40,7 +40,7 @@ func TestGetDNSSettingsReflectsProvisionedDefaults(t *testing.T) {
 }
 
 func TestUpdateDNSSettingsRequiresManager(t *testing.T) {
-	h, _, users := newAccessControlTestHandlers(t, RoleMember)
+	h, _, users := newOrgTestHandlers(t, RoleMember)
 	member := users[0]
 
 	body := `{"baseDomain":"acme.ownscale","magicDns":true}`
@@ -54,7 +54,7 @@ func TestUpdateDNSSettingsRequiresManager(t *testing.T) {
 }
 
 func TestUpdateDNSSettingsRejectsInvalidInput(t *testing.T) {
-	h, _, users := newAccessControlTestHandlers(t, RoleOwner)
+	h, _, users := newOrgTestHandlers(t, RoleOwner)
 	owner := users[0]
 
 	body := `{"baseDomain":"acme.ownscale","nameservers":["not-an-ip"]}`
@@ -68,7 +68,7 @@ func TestUpdateDNSSettingsRejectsInvalidInput(t *testing.T) {
 }
 
 func TestUpdateDNSSettingsPersistsAndReturnsOK(t *testing.T) {
-	h, _, users := newAccessControlTestHandlers(t, RoleOwner)
+	h, _, users := newOrgTestHandlers(t, RoleOwner)
 	owner := users[0]
 
 	body := `{"baseDomain":"acme.ownscale","magicDns":true,"nameservers":{"global":["1.1.1.1","8.8.8.8"]},` +

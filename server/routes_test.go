@@ -9,42 +9,24 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/rs/xid"
-
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/config"
-	dbpkg "github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/handlers"
-	"github.com/ownscalenet/ownscale/orgs"
 )
-
-func discardLogger() *slog.Logger {
-	return slog.New(slog.NewTextHandler(io.Discard, nil))
-}
-
-// newTestQueries returns queries backed by a copy of the shared, already
-// migrated dbtest template (see db/dbtest), avoiding a full goose run per
-// test.
-func newTestQueries(t *testing.T) *dbpkg.TxQueries {
-	t.Helper()
-
-	_, queries := dbtest.New(t)
-	return queries
-}
 
 func newTestMux(t *testing.T) http.Handler {
 	t.Helper()
-	queries := newTestQueries(t)
-	h, err := handlers.New(queries, "", "", nil, discardLogger(), config.DerpConfig{})
+	_, queries := dbtest.New(t)
+	h, err := handlers.New(queries, "", "", nil, slog.New(slog.DiscardHandler), config.DerpConfig{})
 	if err != nil {
 		t.Fatalf("handlers.New: %v", err)
 	}
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
 		return auth.RequireAuthAPI(queries.Queries, next)
 	}
-	return NewMux(h, requireAuthAPI, discardLogger(), http.NotFoundHandler(), nil)
+	return NewMux(h, requireAuthAPI, slog.New(slog.DiscardHandler), http.NotFoundHandler(), nil)
 }
 
 func TestNewMuxProtectedRoutesRequireAuth(t *testing.T) {
@@ -67,8 +49,8 @@ func TestNewMuxProtectedRoutesRequireAuth(t *testing.T) {
 }
 
 func TestNewMuxUnmatchedPathFallsBackToStatic(t *testing.T) {
-	queries := newTestQueries(t)
-	h, err := handlers.New(queries, "", "", nil, discardLogger(), config.DerpConfig{})
+	_, queries := dbtest.New(t)
+	h, err := handlers.New(queries, "", "", nil, slog.New(slog.DiscardHandler), config.DerpConfig{})
 	if err != nil {
 		t.Fatalf("handlers.New: %v", err)
 	}
@@ -81,7 +63,7 @@ func TestNewMuxUnmatchedPathFallsBackToStatic(t *testing.T) {
 		staticCalled = true
 		w.WriteHeader(http.StatusTeapot)
 	})
-	mux := NewMux(h, requireAuthAPI, discardLogger(), static, nil)
+	mux := NewMux(h, requireAuthAPI, slog.New(slog.DiscardHandler), static, nil)
 
 	req := httptest.NewRequest(http.MethodGet, "/some/spa/route", nil)
 	rec := httptest.NewRecorder()
@@ -96,38 +78,19 @@ func TestNewMuxUnmatchedPathFallsBackToStatic(t *testing.T) {
 }
 
 func TestNewMuxAuthenticatedSession(t *testing.T) {
-	queries := newTestQueries(t)
-	h, err := handlers.New(queries, "", "", nil, discardLogger(), config.DerpConfig{})
+	_, queries := dbtest.New(t)
+	h, err := handlers.New(queries, "", "", nil, slog.New(slog.DiscardHandler), config.DerpConfig{})
 	if err != nil {
 		t.Fatalf("handlers.New: %v", err)
 	}
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
 		return auth.RequireAuthAPI(queries.Queries, next)
 	}
-	mux := NewMux(h, requireAuthAPI, discardLogger(), http.NotFoundHandler(), nil)
+	mux := NewMux(h, requireAuthAPI, slog.New(slog.DiscardHandler), http.NotFoundHandler(), nil)
 
 	auth.Setup("test-session-secret-at-least-32-bytes-long")
-	id := xid.New().String()
-	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
-		ID:        xid.New().String(),
-		Subdomain: id,
-		Status:    orgs.StatusActive,
-	})
-	if err != nil {
-		t.Fatalf("CreateOrganization: %v", err)
-	}
-	user, err := queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
-		ID:             id,
-		Provider:       "oidc",
-		ProviderUserID: id,
-		Email:          id + "@example.com",
-		Name:           "Test User",
-		OrganizationID: org.ID,
-		Role:           "owner",
-	})
-	if err != nil {
-		t.Fatalf("CreateUser: %v", err)
-	}
+	org := dbtest.CreateOrg(t, queries.Queries, "acme")
+	user := dbtest.CreateUser(t, queries.Queries, org.ID, handlers.RoleOwner)
 	storeRec := httptest.NewRecorder()
 	if err := auth.StoreUserSession(storeRec, httptest.NewRequest(http.MethodGet, "/", nil), user.ID); err != nil {
 		t.Fatalf("StoreUserSession: %v", err)
@@ -151,8 +114,8 @@ func TestNewMuxAuthenticatedSession(t *testing.T) {
 // exercise in CI) by seeding a user and minting its session cookie directly
 // via auth.StoreUserSession.
 func TestNewMuxOverHTTP(t *testing.T) {
-	logger := discardLogger()
-	queries := newTestQueries(t)
+	logger := slog.New(slog.DiscardHandler)
+	_, queries := dbtest.New(t)
 
 	const baseDomain = "srvit.test"
 
@@ -169,32 +132,11 @@ func TestNewMuxOverHTTP(t *testing.T) {
 	ts := httptest.NewServer(mux)
 	t.Cleanup(ts.Close)
 
-	// Create an org directly in the DB (no in-process headscale started, as
-	// it isn't needed for these HTTP-layer tests).
-	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
-		ID:        xid.New().String(),
-		Subdomain: "srvittest",
-		Status:    orgs.StatusActive,
-	})
-	if err != nil {
-		t.Fatalf("CreateOrganization: %v", err)
-	}
-
-	// Seed a user and mint its session cookie directly, bypassing the
-	// real OAuth redirect flow.
-	id := xid.New().String()
-	user, err := queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
-		ID:             id,
-		OrganizationID: org.ID,
-		Role:           handlers.RoleOwner,
-		Provider:       "oidc",
-		ProviderUserID: id,
-		Email:          id + "@example.com",
-		Name:           "Integration Test User",
-	})
-	if err != nil {
-		t.Fatalf("CreateUser: %v", err)
-	}
+	// Seed an org (no headscale started; these are HTTP-layer tests) and a
+	// user, and mint its session cookie directly, bypassing the real OAuth
+	// redirect flow.
+	org := dbtest.CreateOrg(t, queries.Queries, "srvittest")
+	user := dbtest.CreateUser(t, queries.Queries, org.ID, handlers.RoleOwner)
 	storeRec := httptest.NewRecorder()
 	if err := auth.StoreUserSession(storeRec, httptest.NewRequest(http.MethodGet, "/", nil), user.ID); err != nil {
 		t.Fatalf("StoreUserSession: %v", err)
