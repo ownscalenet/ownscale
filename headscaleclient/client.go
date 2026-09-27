@@ -9,10 +9,15 @@ package headscaleclient
 
 import (
 	"context"
+	"encoding/json"
+	"fmt"
+	"io"
 	"net"
 	"net/http"
+	"strings"
 	"time"
 
+	"github.com/go-openapi/runtime"
 	httptransport "github.com/go-openapi/runtime/client"
 	"github.com/go-openapi/strfmt"
 
@@ -110,7 +115,7 @@ func New(host, apiKey string) *Client {
 		next = http.DefaultTransport
 	}
 	transport.Transport = authRoundTripper{apiKey: apiKey, next: next}
-	return &Client{api: hsclient.New(transport, strfmt.Default)}
+	return newClient(transport)
 }
 
 // NewUnix returns a Client that talks to headscale over its local unix
@@ -123,7 +128,38 @@ func NewUnix(socketPath string) *Client {
 			return d.DialContext(ctx, "unix", socketPath)
 		},
 	}
+	return newClient(transport)
+}
+
+func newClient(transport *httptransport.Runtime) *Client {
+	transport.Consumers["application/problem+json"] = runtime.ConsumerFunc(consumeProblem)
 	return &Client{api: hsclient.New(transport, strfmt.Default)}
+}
+
+// consumeProblem decodes headscale's application/problem+json error bodies
+// into the generated client's error payload, so the reason reaches callers.
+func consumeProblem(r io.Reader, v any) error {
+	var p struct {
+		Status int32  `json:"status"`
+		Detail string `json:"detail"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	if err := json.NewDecoder(r).Decode(&p); err != nil {
+		return err
+	}
+	status, ok := v.(*models.RPCStatus)
+	if !ok {
+		return fmt.Errorf("unexpected problem+json target %T", v)
+	}
+	msgs := []string{p.Detail}
+	for _, e := range p.Errors {
+		msgs = append(msgs, e.Message)
+	}
+	status.Code = p.Status
+	status.Message = strings.Join(msgs, ": ")
+	return nil
 }
 
 // ListNodes returns every node (machine) registered on this organization's

@@ -7,8 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -510,5 +512,38 @@ func TestRegistryDifferentSubdomainsGetDifferentClients(t *testing.T) {
 	}
 	if minter.minted["acme"] != 1 || minter.minted["widgets"] != 1 {
 		t.Errorf("unexpected mint counts: %v", minter.minted)
+	}
+}
+
+func TestProblemJSONErrorsCarryTheReason(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusBadRequest)
+		fmt.Fprint(w, `{"title":"Bad Request","status":400,"detail":"setting policy","errors":[{"message":"multiple users found"}]}`)
+	}))
+	t.Cleanup(srv.Close)
+
+	sock := filepath.Join(t.TempDir(), "hs.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	unixSrv := &http.Server{Handler: srv.Config.Handler}
+	go unixSrv.Serve(ln)
+	t.Cleanup(func() { unixSrv.Close() })
+
+	for name, c := range map[string]*Client{
+		"New":     New(strings.TrimPrefix(srv.URL, "http://"), "key"),
+		"NewUnix": NewUnix(sock),
+	} {
+		t.Run(name, func(t *testing.T) {
+			err := c.SetPolicy(t.Context(), "{}")
+			if err == nil {
+				t.Fatal("SetPolicy: want error, got nil")
+			}
+			if !strings.Contains(err.Error(), "setting policy: multiple users found") {
+				t.Errorf("error = %q, want it to contain the problem detail and message", err)
+			}
+		})
 	}
 }
