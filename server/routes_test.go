@@ -7,7 +7,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"sync/atomic"
 	"testing"
 
 	"github.com/rs/xid"
@@ -20,12 +19,6 @@ import (
 	"github.com/ownscalenet/ownscale/handlers"
 	"github.com/ownscalenet/ownscale/orgs"
 )
-
-// port is required and unique so use atomic to prevent race conditions
-// in concurrent tests.
-var nextTestPort atomic.Int64
-
-func testPort() int64 { return 10_000 + nextTestPort.Add(1) - 1 }
 
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -119,7 +112,6 @@ func TestNewMuxAuthenticatedSession(t *testing.T) {
 		ID:        xid.New().String(),
 		Subdomain: id,
 		Status:    orgs.StatusActive,
-		Port:      testPort(),
 	})
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
@@ -183,7 +175,6 @@ func TestNewMuxOverHTTP(t *testing.T) {
 		ID:        xid.New().String(),
 		Subdomain: "srvittest",
 		Status:    orgs.StatusActive,
-		Port:      testPort(),
 	})
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)

@@ -127,7 +127,9 @@ func (o *OrgService) persistConfigAndMarkUpdatePending(
 	return nil
 }
 
-const AuthRestrictionsConfigKey = "oidc_restrictions"
+// authRestrictionsConfigKey is the orgconfigs key under which the HuJSON
+// OIDC login allowlist is stored as the user wrote it.
+const authRestrictionsConfigKey = "oidc_restrictions"
 
 const defaultAuthRestrictions = `{
 	// Start a line with // to leave a comment.
@@ -150,7 +152,7 @@ func (o *OrgService) GetAuthRestrictions(ctx context.Context) (_ string, err err
 
 	cfg, err := o.queries.GetOrgConfig(ctx, sqlcgen.GetOrgConfigParams{
 		OrganizationID: o.orgID,
-		Path:           AuthRestrictionsConfigKey,
+		Path:           authRestrictionsConfigKey,
 	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -192,7 +194,7 @@ func (o *OrgService) SetAuthRestrictions(ctx context.Context, content string) (e
 		_, err := txQueries.UpsertOrgConfig(ctx, sqlcgen.UpsertOrgConfigParams{
 			ID:             xid.New().String(),
 			OrganizationID: o.orgID,
-			Path:           AuthRestrictionsConfigKey,
+			Path:           authRestrictionsConfigKey,
 			Content:        content,
 		})
 		return err

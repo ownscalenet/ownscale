@@ -49,10 +49,10 @@ const defaultACLPolicy = `{
 }
 `
 
-// createHeadscale creates an *hscontrol.Headscale instance for subdomain.
-// port must already be allocated and persisted to the DB before calling
-// this. DNS and OIDC settings come from hsCfg, ownscale's stored config.
-// The org data directory (dataDir/subdomain) is created if absent.
+// createHeadscale creates an *hscontrol.Headscale instance for subdomain,
+// listening on 127.0.0.1:port. DNS and OIDC settings come from hsCfg,
+// ownscale's stored config. The org data directory (dataDir/subdomain) is
+// created if absent.
 func createHeadscale(
 	dataDir, subdomain, baseDomain string,
 	port int,

@@ -22,7 +22,6 @@ import (
 	"github.com/ownscalenet/headscale/hscontrol/util"
 	"github.com/rs/xid"
 	"golang.org/x/crypto/bcrypt"
-	"golang.org/x/sync/errgroup"
 
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/db"
@@ -32,10 +31,7 @@ import (
 	"github.com/ownscalenet/ownscale/utils"
 )
 
-const (
-	maxSubdomainAttempts = 5
-	initialPort          = 10_000
-)
+const maxSubdomainAttempts = 5
 
 // fixedSubdomains are handed out in order to the first organizations
 // created, so development identities land on predictable subdomains.
@@ -53,16 +49,13 @@ type Service struct {
 
 	instances utils.Map[string, *instance]
 	ports     utils.Map[string, int]
-	grp       *errgroup.Group
 
 	// startMu serializes headscale startup (headscale's DERP map shuffling
-	// shares one non-thread-safe rand.Rand across instances) and guards
-	// nextPort, which is only ever handed out as part of a startup.
-	// This is not enough no prevent races, there's still a race because the
-	// derp worker (usually at 3h interval) calls GetDERPMap, which again
-	// touches the global rand.Rand.
-	startMu  sync.Mutex
-	nextPort int
+	// shares one non-thread-safe rand.Rand across instances). This is not
+	// enough to prevent races, there's still a race because the derp worker
+	// (usually at 3h interval) calls GetDERPMap, which again touches the
+	// global rand.Rand.
+	startMu sync.Mutex
 
 	// conns tracks the connections DialOrg handed out, per organization, so
 	// a restart can close them: headscale hijacks its device connections,
@@ -87,13 +80,6 @@ type instance struct {
 
 // NewService builds a Service that manages organizations under baseDomain.
 func NewService(queries *db.TxQueries, baseDomain, issuer string, derpCfg config.DerpConfig, logger *slog.Logger, dataDir string) *Service {
-	grp := &errgroup.Group{}
-	// Keep the errgroup alive even when no org goroutines are running yet.
-	grp.Go(func() error {
-		time.Sleep(999999 * time.Hour)
-		return nil
-	})
-
 	return &Service{
 		queries:    queries,
 		baseDomain: baseDomain,
@@ -101,16 +87,9 @@ func NewService(queries *db.TxQueries, baseDomain, issuer string, derpCfg config
 		derpCfg:    derpCfg,
 		logger:     logger,
 		dataDir:    dataDir,
-		nextPort:   initialPort,
-		grp:        grp,
 		conns:      make(map[string]map[net.Conn]struct{}),
 		createFn:   createHeadscale,
 	}
-}
-
-// BaseDomain returns the domain organizations are provisioned under.
-func (s *Service) BaseDomain() string {
-	return s.baseDomain
 }
 
 // ForOrg instantiates an OrgService for the given organization.
@@ -235,15 +214,6 @@ func (s *Service) LookupPort(subdomain string) (int, bool) {
 	return s.ports.Load(subdomain)
 }
 
-// Start restarts the headscale instances of existing organizations. It
-// returns once startup recovery is complete.
-func (s *Service) Start(ctx context.Context) error {
-	if err := s.recoverActive(ctx); err != nil && ctx.Err() == nil {
-		return err
-	}
-	return nil
-}
-
 // NextSubdomain returns an unused subdomain for a new organization: the
 // first free one of fixedSubdomains, else a random one.
 func (s *Service) NextSubdomain(ctx context.Context) (_ string, err error) {
@@ -303,15 +273,23 @@ func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organ
 	if err != nil {
 		return sqlcgen.Organization{}, err
 	}
-	port, err := s.startHeadscale(ctx, subdomain, 0, hsCfg)
+
+	// Insert first: the unique subdomain constraint must reject a duplicate
+	// before its headscale would replace the running one.
+	org, err := s.insertProvisioned(ctx, subdomain, clientID, string(clientSecretHash), string(redirectURIsJSON), hsConfig)
 	if err != nil {
 		return sqlcgen.Organization{}, err
 	}
-
-	return s.insertProvisioned(ctx, subdomain, StatusActive, port, clientID, string(clientSecretHash), string(redirectURIsJSON), hsConfig)
+	if err := s.startHeadscale(ctx, subdomain, hsCfg); err != nil {
+		if delErr := s.queries.DeleteOrganization(context.WithoutCancel(ctx), org.ID); delErr != nil {
+			err = errors.Join(err, fmt.Errorf("delete organization: %w", delErr))
+		}
+		return sqlcgen.Organization{}, err
+	}
+	return org, nil
 }
 
-func (s *Service) insertProvisioned(ctx context.Context, subdomain, status string, port int, clientID, clientSecretHash, redirectURIsJSON, hsConfig string) (_ sqlcgen.Organization, err error) {
+func (s *Service) insertProvisioned(ctx context.Context, subdomain, clientID, clientSecretHash, redirectURIsJSON, hsConfig string) (_ sqlcgen.Organization, err error) {
 	txQueries, commit, rollback, err := s.queries.StartTx(ctx)
 	if err != nil {
 		return sqlcgen.Organization{}, err
@@ -321,8 +299,7 @@ func (s *Service) insertProvisioned(ctx context.Context, subdomain, status strin
 	org, err := txQueries.CreateOrganization(ctx, sqlcgen.CreateOrganizationParams{
 		ID:        xid.New().String(),
 		Subdomain: subdomain,
-		Status:    status,
-		Port:      int64(port),
+		Status:    StatusActive,
 	})
 	if err != nil {
 		return sqlcgen.Organization{}, fmt.Errorf("create organization record (already exists?): %w", err)
@@ -350,17 +327,16 @@ func (s *Service) insertProvisioned(ctx context.Context, subdomain, status strin
 	return org, nil
 }
 
-// recoverActive starts headscale instances for all active
-// organizations that were running before this process restart.
-func (s *Service) recoverActive(ctx context.Context) error {
+// Start starts the headscale instances of existing organizations. It
+// returns once all of them have started or failed to.
+func (s *Service) Start(ctx context.Context) (err error) {
+	defer derrors.Wrap(&err, "s.Start()")
+
 	orgs, err := s.queries.ListOrganizations(ctx)
 	if err != nil {
 		return err
 	}
 	for _, org := range orgs {
-		if org.Status != StatusActive && org.Status != StatusUpdatePending {
-			continue
-		}
 		cfgRow, err := s.queries.GetOrgConfig(ctx, sqlcgen.GetOrgConfigParams{
 			OrganizationID: org.ID,
 			Path:           HeadscaleConfigKey,
@@ -375,7 +351,7 @@ func (s *Service) recoverActive(ctx context.Context) error {
 			continue
 		}
 
-		if _, err := s.startHeadscale(ctx, org.Subdomain, int(org.Port), parsedCfg); err != nil {
+		if err := s.startHeadscale(ctx, org.Subdomain, parsedCfg); err != nil {
 			s.logger.Error("recover active org headscale instance", "subdomain", org.Subdomain, "error", err)
 		}
 	}
@@ -383,34 +359,37 @@ func (s *Service) recoverActive(ctx context.Context) error {
 }
 
 // startHeadscale creates and launches an hscontrol.Headscale instance for
-// subdomain, registering it in the in-memory maps, and returns the port it
-// listens on. A port of 0 allocates the next free one; otherwise port is an
-// already-persisted port that must not be handed out again. If headscale's
-// DB has no policy yet the default ACL policy is written before Serve
-// starts, so GetPolicy never returns "acl policy not found".
+// subdomain, registering it in the in-memory maps. It listens on a free
+// loopback port, reused across restarts of the instance within this
+// process. If headscale's DB has no policy yet the default ACL policy is
+// written before Serve starts, so GetPolicy never returns "acl policy not
+// found".
 //
 // Instances start one at a time: this returns only once Serve has loaded
 // its DERP map, or has failed.
-func (s *Service) startHeadscale(ctx context.Context, subdomain string, port int, hsCfg *HeadscaleConfig) (_ int, err error) {
+func (s *Service) startHeadscale(ctx context.Context, subdomain string, hsCfg *HeadscaleConfig) error {
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
-	return s.startLocked(ctx, subdomain, port, hsCfg)
+	return s.startLocked(ctx, subdomain, hsCfg)
 }
 
 // startLocked is startHeadscale for callers already holding startMu.
-func (s *Service) startLocked(ctx context.Context, subdomain string, port int, hsCfg *HeadscaleConfig) (_ int, err error) {
-	if port == 0 {
-		port = s.nextPort
+func (s *Service) startLocked(ctx context.Context, subdomain string, hsCfg *HeadscaleConfig) error {
+	port, ok := s.ports.Load(subdomain)
+	if !ok {
+		var err error
+		if port, err = freeLoopbackPort(); err != nil {
+			return err
+		}
 	}
-	s.nextPort = max(s.nextPort, port+1)
 
 	app, err := s.createFn(s.dataDir, subdomain, s.baseDomain, port, hsCfg, s.derpCfg)
 	if err != nil {
-		return 0, fmt.Errorf("create headscale instance for %q: %w", subdomain, err)
+		return fmt.Errorf("create headscale instance for %q: %w", subdomain, err)
 	}
 	s.ports.Store(subdomain, port)
 	if app == nil {
-		return port, nil
+		return nil
 	}
 
 	if _, err := app.GetState().GetPolicy(); err != nil {
@@ -427,12 +406,24 @@ func (s *Service) startLocked(ctx context.Context, subdomain string, port int, h
 		exited: make(chan struct{}),
 	}
 	s.instances.Store(subdomain, inst)
-	s.grp.Go(func() error {
+	go func() {
 		defer close(inst.exited)
-		return app.Serve(serveCtx)
-	})
+		if err := app.Serve(serveCtx); err != nil && !errors.Is(err, context.Canceled) {
+			s.logger.Error("headscale stopped", "subdomain", subdomain, "error", err)
+		}
+	}()
 	waitForDERPMap(ctx, app, inst.exited)
-	return port, nil
+	return nil
+}
+
+// freeLoopbackPort returns a TCP port that is currently free on 127.0.0.1.
+func freeLoopbackPort() (int, error) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		return 0, err
+	}
+	defer ln.Close()
+	return ln.Addr().(*net.TCPAddr).Port, nil
 }
 
 // restartHeadscale stops subdomain's running headscale instance (if any) and
@@ -470,8 +461,7 @@ func (s *Service) restartHeadscale(ctx context.Context, subdomain string) (err e
 		s.instances.Delete(subdomain)
 	}
 	s.closeConns(subdomain)
-	_, err = s.startLocked(ctx, subdomain, int(org.Port), hsCfg)
-	return err
+	return s.startLocked(ctx, subdomain, hsCfg)
 }
 
 // waitForDERPMap blocks until app's Serve has loaded the DERP map, Serve
@@ -510,8 +500,6 @@ func randomAlphaNum(n int) (_ string, err error) {
 // Organization lifecycle statuses. These must stay in sync with the CHECK
 // constraint added to that column in migrations.
 const (
-	// StatusInactive does not yet have a use.
-	StatusInactive = "inactive"
 	// StatusActive is set on a provisioned organization.
 	StatusActive = "active"
 	// StatusUpdatePending is set while an organization's headscale config is applied.

@@ -1,14 +1,13 @@
 package orgs
 
 import (
-	"database/sql"
 	"encoding/json"
 	"errors"
-	"net"
 	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/ownscalenet/headscale/hscontrol"
 	"github.com/ownscalenet/headscale/hscontrol/types"
 	"golang.org/x/crypto/bcrypt"
 
@@ -88,23 +87,25 @@ func TestServiceCreateDoesNotLeavePartialStateOnSubdomainConflict(t *testing.T) 
 	svc := newTestService(t)
 	queries := svc.queries
 
-	if _, err := svc.Create(t.Context(), "acme"); err != nil {
+	first, err := svc.Create(t.Context(), "acme")
+	if err != nil {
 		t.Fatalf("first Create: %v", err)
 	}
-	// Second Create with same subdomain must fail.
+	// A duplicate must be rejected before a second headscale for "acme"
+	// replaces the running one.
+	svc.createFn = func(string, string, string, int, *HeadscaleConfig, config.DerpConfig) (*hscontrol.Headscale, error) {
+		t.Error("headscale started for a duplicate organization")
+		return nil, nil
+	}
 	if _, err := svc.Create(t.Context(), "acme"); err == nil {
 		t.Fatal("second Create with duplicate subdomain: want error, got nil")
 	}
-	// Exactly one org row should exist.
 	org, err := queries.GetOrganizationBySubdomain(t.Context(), "acme")
-	if errors.Is(err, sql.ErrNoRows) {
-		t.Fatal("GetOrganizationBySubdomain: want exactly one row, got none")
-	}
 	if err != nil {
 		t.Fatalf("GetOrganizationBySubdomain: %v", err)
 	}
-	if org.Subdomain != "acme" {
-		t.Errorf("org.Subdomain = %q, want %q", org.Subdomain, "acme")
+	if org.ID != first.ID {
+		t.Errorf("organization ID = %q, want the first one %q", org.ID, first.ID)
 	}
 }
 
@@ -148,20 +149,10 @@ func TestCreateHeadscaleDERP(t *testing.T) {
 	}
 }
 
-// newRealService builds a Service that starts real headscale instances, on a
-// free port so parallel test binaries don't collide on the default range.
+// newRealService builds a Service that starts real headscale instances.
 func newRealService(t *testing.T) *Service {
 	t.Helper()
-	ln, err := net.Listen("tcp", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	port := ln.Addr().(*net.TCPAddr).Port
-	ln.Close()
-
-	svc := NewService(newTestQueries(t), "example.com", "https://auth.example.com", config.DerpConfig{}, discardLogger(), t.TempDir())
-	svc.nextPort = port
-	return svc
+	return NewService(newTestQueries(t), "example.com", "https://auth.example.com", config.DerpConfig{}, discardLogger(), t.TempDir())
 }
 
 func TestSetOIDCIdentity(t *testing.T) {

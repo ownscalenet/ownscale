@@ -27,16 +27,8 @@ export interface Organization {
   ID: string
   Domain: string
   CreatedAt: string
-  // 'pending' and 'failed' are internal to the provisioner's org pool
-  // (orgs/provisioner.go) and can never be observed here: a logged-in
-  // user is only ever assigned an org once it's already 'active'.
+  // 'update_pending' while a settings save restarts the org's headscale.
   Status: 'active' | 'update_pending'
-}
-
-// isOrgOperational reports whether an organization is fully provisioned and
-// usable, even if it's momentarily mid a settings-save restart.
-export function isOrgOperational(status: Organization['Status'] | undefined): boolean {
-  return status === 'active' || status === 'update_pending'
 }
 
 export interface HeadscaleUser {

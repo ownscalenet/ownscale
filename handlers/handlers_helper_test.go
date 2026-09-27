@@ -6,7 +6,6 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
-	"sync/atomic"
 	"testing"
 
 	"github.com/ownscalenet/ownscale/auth"
@@ -19,12 +18,6 @@ import (
 
 	"github.com/rs/xid"
 )
-
-// port is required and unique so use atomic to prevent race conditions
-// in concurrent tests.
-var nextTestPort atomic.Int64
-
-func testPort() int64 { return 20_000 + nextTestPort.Add(1) - 1 }
 
 func discardLogger() *slog.Logger {
 	return slog.New(slog.NewTextHandler(io.Discard, nil))
@@ -94,7 +87,6 @@ func insertOrg(t *testing.T, queries *dbpkg.TxQueries, subdomain string) sqlcgen
 		ID:        xid.New().String(),
 		Subdomain: subdomain,
 		Status:    orgs.StatusActive,
-		Port:      testPort(),
 	})
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)

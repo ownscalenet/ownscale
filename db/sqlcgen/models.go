@@ -44,7 +44,6 @@ type OidcClient struct {
 type Organization struct {
 	ID        string
 	Subdomain string
-	Port      int64
 	CreatedAt time.Time
 	UpdatedAt time.Time
 	Status    string

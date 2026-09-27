@@ -331,7 +331,7 @@ func TestSettingsRestartFailureLeavesUpdatePending(t *testing.T) {
 // TestSettingsApplyToRunningHeadscale uses real headscale instances to
 // verify saved settings reach the restarted server, which keeps its port.
 func TestSettingsApplyToRunningHeadscale(t *testing.T) {
-	svc := NewService(newTestQueries(t), "example.com", "https://auth.example.com", config.DerpConfig{}, discardLogger(), t.TempDir())
+	svc := newRealService(t)
 
 	org, err := svc.Create(t.Context(), "acme")
 	if err != nil {

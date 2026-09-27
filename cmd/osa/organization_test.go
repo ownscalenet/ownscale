@@ -5,7 +5,6 @@ import (
 	"io"
 	"log/slog"
 	"strings"
-	"sync/atomic"
 	"testing"
 
 	"github.com/rs/xid"
@@ -15,12 +14,6 @@ import (
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/orgs"
 )
-
-// port is required and unique so use atomic to prevent race conditions
-// in concurrent tests.
-var nextTestPort atomic.Int64
-
-func testPort() int64 { return 10_000 + nextTestPort.Add(1) - 1 }
 
 // newTestDB returns a pool and queries backed by a copy of the shared,
 // already migrated dbtest template (see db/dbtest), avoiding a full goose
@@ -43,7 +36,6 @@ func insertOrg(t *testing.T, queries *dbpkg.TxQueries, subdomain string) sqlcgen
 		ID:        xid.New().String(),
 		Subdomain: subdomain,
 		Status:    orgs.StatusActive,
-		Port:      testPort(),
 	})
 	if err != nil {
 		t.Fatalf("insertOrg(%q): %v", subdomain, err)

@@ -65,7 +65,7 @@ func (s *SubdomainProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // extractSubdomain returns the subdomain portion of host if host is of
 // the form "<subdomain>.<baseDomain>" (with an optional port suffix) and
-// the subdomain is not "console". Returns ("", false) otherwise.
+// the subdomain is not orgs.ConsoleSubdomain. Returns ("", false) otherwise.
 func (s *SubdomainProxy) extractSubdomain(host string) (string, bool) {
 	// Strip port if present.
 	if i := strings.LastIndex(host, ":"); i >= 0 {
@@ -79,7 +79,7 @@ func (s *SubdomainProxy) extractSubdomain(host string) (string, bool) {
 	if sub == "" || strings.Contains(sub, ".") || strings.Contains(sub, "-") {
 		return "", false
 	}
-	if sub == "console" {
+	if sub == orgs.ConsoleSubdomain {
 		return "", false
 	}
 	return sub, true

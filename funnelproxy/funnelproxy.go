@@ -62,9 +62,9 @@ type Pool struct {
 	// than one tsnet.Server against the same on-disk state directory.
 	sf        singleflight.Group
 	upTimeout time.Duration
-	// controlURL builds the tsnet ControlURL for a subdomain; defaults
-	// to headscale's real container address via NewPool
-	controlURL func(ctx context.Context, subdomain string) (string, error)
+	// controlURL builds the tsnet ControlURL for a subdomain: the org's
+	// in-process headscale on loopback. Overridden in tests.
+	controlURL func(subdomain string) (string, error)
 }
 
 // PortLookup returns the TCP port for subdomain's headscale instance, or
@@ -90,7 +90,7 @@ func NewPool(queries Queries, hs HeadscaleClients, dataDir string, logger *slog.
 		logger:    logger,
 		servers:   make(map[string]*tsnet.Server),
 		upTimeout: funnelUpTimeout,
-		controlURL: func(_ context.Context, subdomain string) (string, error) {
+		controlURL: func(subdomain string) (string, error) {
 			port, ok := portLookup.LookupPort(subdomain)
 			if !ok {
 				return "", fmt.Errorf("no headscale instance running for %q", subdomain)
@@ -298,7 +298,7 @@ func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *
 			return nil, fmt.Errorf("mint pre-auth key: %w", err)
 		}
 
-		controlURL, err := p.controlURL(ctx, subdomain)
+		controlURL, err := p.controlURL(subdomain)
 		if err != nil {
 			return nil, fmt.Errorf("resolve control URL: %w", err)
 		}

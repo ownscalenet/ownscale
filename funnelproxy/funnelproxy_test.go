@@ -261,7 +261,7 @@ func TestGetOrCreateServerUpTimeout(t *testing.T) {
 	client, _ := newFakeUserPreAuthKeyServer(t, `{"users":[]}`)
 	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{client: client}, t.TempDir(), discardLogger(), defaultPortLookup())
 	pool.upTimeout = 200 * time.Millisecond
-	pool.controlURL = func(_ context.Context, _ string) (string, error) { return blockServer.URL, nil }
+	pool.controlURL = func(string) (string, error) { return blockServer.URL, nil }
 
 	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancel()

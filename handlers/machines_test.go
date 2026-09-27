@@ -189,7 +189,7 @@ func activeOrgUserWithPolicy(t *testing.T, h *Handlers, queries *dbpkg.TxQueries
 	user := insertUser(t, queries)
 
 	orgID := xid.New().String()
-	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{ID: orgID, Subdomain: "acme", Status: orgs.StatusActive, Port: testPort()})
+	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{ID: orgID, Subdomain: "acme", Status: orgs.StatusActive})
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
@@ -563,7 +563,7 @@ func TestDeleteMachineCascadesFunnelRoutesForInternalMachine(t *testing.T) {
 	user := insertUser(t, queries)
 
 	orgID := xid.New().String()
-	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{ID: orgID, Subdomain: "acme", Status: orgs.StatusActive, Port: testPort()})
+	org, err := queries.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{ID: orgID, Subdomain: "acme", Status: orgs.StatusActive})
 	if err != nil {
 		t.Fatalf("CreateOrganization: %v", err)
 	}
