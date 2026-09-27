@@ -7,7 +7,7 @@ import (
 	"strings"
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/headscaleclient"
+	"github.com/ownscalenet/ownscale/hscl"
 )
 
 // claimedHeadscaleUserIDs returns the set of headscale user IDs already
@@ -54,7 +54,7 @@ func shortID(id string) string {
 // which headscale identity -- headscale has no field of its own to record
 // our auth provider), then "<candidate>-<provider>-<8 chars of userID>"
 // as a last resort.
-func uniqueHeadscaleName(candidate, provider, userID string, existing []headscaleclient.User) string {
+func uniqueHeadscaleName(candidate, provider, userID string, existing []hscl.User) string {
 	taken := make(map[string]bool, len(existing))
 	for _, u := range existing {
 		taken[u.Name] = true
@@ -76,7 +76,7 @@ func uniqueHeadscaleName(candidate, provider, userID string, existing []headscal
 func (h *Handlers) ensureHeadscaleUser(
 	ctx context.Context,
 	subdomain string,
-	client *headscaleclient.Client,
+	client *hscl.Client,
 	user sqlcgen.User,
 	claimed map[string]bool) (_ string, err error) {
 	if user.HeadscaleUserID.Valid {
@@ -112,7 +112,7 @@ func (h *Handlers) ensureHeadscaleUser(
 	}
 	name := uniqueHeadscaleName(candidate, user.Provider, user.ID, hsUsers)
 
-	created, err := client.CreateUser(ctx, headscaleclient.CreateUserParams{
+	created, err := client.CreateUser(ctx, hscl.CreateUserParams{
 		Name:        name,
 		Email:       user.Email,
 		DisplayName: user.Name,

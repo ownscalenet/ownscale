@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/headscaleclient"
+	"github.com/ownscalenet/ownscale/hscl"
 )
 
 type orgContextKey int
@@ -19,13 +19,13 @@ const (
 // headscaleContext is the (client, org) pair attached to the request
 // context by RequireHeadscaleClient.
 type headscaleContext struct {
-	client *headscaleclient.Client
+	client *hscl.Client
 	org    sqlcgen.Organization
 }
 
 // headscaleClientFromContext returns the client and org attached by
 // RequireHeadscaleClient.
-func headscaleClientFromContext(r *http.Request) (client *headscaleclient.Client, org sqlcgen.Organization, ok bool) {
+func headscaleClientFromContext(r *http.Request) (client *hscl.Client, org sqlcgen.Organization, ok bool) {
 	c, ok := r.Context().Value(headscaleClientContextKey).(headscaleContext)
 	return c.client, c.org, ok
 }

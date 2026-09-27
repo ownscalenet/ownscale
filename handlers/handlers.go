@@ -17,14 +17,14 @@ import (
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/derrors"
 	"github.com/ownscalenet/ownscale/funnelproxy"
-	"github.com/ownscalenet/ownscale/headscaleclient"
+	"github.com/ownscalenet/ownscale/hscl"
 	"github.com/ownscalenet/ownscale/orgs"
 )
 
 // headscaleClients returns an organization's headscale client. Implemented
 // by *orgs.Service.
 type headscaleClients interface {
-	Client(subdomain string) (*headscaleclient.Client, error)
+	Client(subdomain string) (*hscl.Client, error)
 }
 
 type Handlers struct {

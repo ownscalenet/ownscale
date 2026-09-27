@@ -18,18 +18,18 @@ import (
 	dbpkg "github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/funnelproxy"
-	"github.com/ownscalenet/ownscale/headscaleclient"
-	"github.com/ownscalenet/ownscale/headscaleclient/hstest"
+	"github.com/ownscalenet/ownscale/hscl"
+	"github.com/ownscalenet/ownscale/hscl/hstest"
 )
 
 // fakeHeadscaleClients stands in for orgs.Service's running headscale
 // instances, returning a client for a fake headscale API.
 type fakeHeadscaleClients struct {
-	client *headscaleclient.Client
+	client *hscl.Client
 	err    error
 }
 
-func (f fakeHeadscaleClients) Client(string) (*headscaleclient.Client, error) {
+func (f fakeHeadscaleClients) Client(string) (*hscl.Client, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -38,10 +38,10 @@ func (f fakeHeadscaleClients) Client(string) (*headscaleclient.Client, error) {
 
 // newFakeHeadscaleServer builds a fake implementing enough of
 // headscale's management API to exercise the /api/machines handlers, and
-// a *headscaleclient.Client pointed at it. The returned *string is the
+// a *hscl.Client pointed at it. The returned *string is the
 // in-memory ACL policy GetPolicy/SetPolicy serve/mutate, starting out with
 // no "tagOwners" section (matching a freshly provisioned org).
-func newFakeHeadscaleServer(t *testing.T) (*headscaleclient.Client, *[]*http.Request, *string, *[]string) {
+func newFakeHeadscaleServer(t *testing.T) (*hscl.Client, *[]*http.Request, *string, *[]string) {
 	t.Helper()
 	var requests []*http.Request
 	policy := `{"acls":[{"action":"accept","src":["*"],"dst":["*:*"]}]}`
@@ -162,7 +162,7 @@ func newFakeHeadscaleServer(t *testing.T) (*headscaleclient.Client, *[]*http.Req
 		fmt.Fprintf(w, `{"node":{"id":"4","name":"new-machine","givenName":"new-machine","user":{"id":"1","name":%q}}}`, r.URL.Query().Get("user"))
 	})
 
-	client := headscaleclient.NewUnix(hstest.Socket(t, mux))
+	client := hscl.NewUnix(hstest.Socket(t, mux))
 	return client, &requests, &policy, &lastTags
 }
 
@@ -171,7 +171,7 @@ func newFakeHeadscaleServer(t *testing.T) (*headscaleclient.Client, *[]*http.Req
 // resolveHeadscaleClient directly, e.g. Session/ListMembers's best-effort
 // linking). Returns the user, a client for the middleware-based handlers
 // to attach via withHeadscaleClient, and the recorded requests slice.
-func activeOrgUser(t *testing.T, h *Handlers, queries *dbpkg.TxQueries) (sqlcgen.User, *headscaleclient.Client, *[]*http.Request) {
+func activeOrgUser(t *testing.T, h *Handlers, queries *dbpkg.TxQueries) (sqlcgen.User, *hscl.Client, *[]*http.Request) {
 	t.Helper()
 	user, client, requests, _, _ := activeOrgUserWithPolicy(t, h, queries)
 	return user, client, requests
@@ -181,7 +181,7 @@ func activeOrgUser(t *testing.T, h *Handlers, queries *dbpkg.TxQueries) (sqlcgen
 // server's in-memory ACL policy and to the tags from the most recent
 // .../tags request, for tests exercising SetMachineTags's normalization
 // and tagOwners auto-provisioning.
-func activeOrgUserWithPolicy(t *testing.T, h *Handlers, queries *dbpkg.TxQueries) (sqlcgen.User, *headscaleclient.Client, *[]*http.Request, *string, *[]string) {
+func activeOrgUserWithPolicy(t *testing.T, h *Handlers, queries *dbpkg.TxQueries) (sqlcgen.User, *hscl.Client, *[]*http.Request, *string, *[]string) {
 	t.Helper()
 	user := insertUser(t, queries)
 
@@ -203,9 +203,9 @@ func TestListMachinesReturnsNodesAndUsers(t *testing.T) {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
 	var body struct {
-		Machines []machineResponse      `json:"machines"`
-		Users    []headscaleclient.User `json:"users"`
-		Total    int                    `json:"total"`
+		Machines []machineResponse `json:"machines"`
+		Users    []hscl.User       `json:"users"`
+		Total    int               `json:"total"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -247,7 +247,7 @@ func TestListMachinesFiltersByQUserStatus(t *testing.T) {
 			h.ListMachines(rec, req)
 
 			var body struct {
-				Machines []headscaleclient.Node `json:"machines"`
+				Machines []hscl.Node `json:"machines"`
 			}
 			if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 				t.Fatalf("decode: %v", err)
@@ -545,7 +545,7 @@ func TestDeleteMachineCascadesFunnelRoutesForInternalMachine(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{}`)
 	})
-	client := headscaleclient.NewUnix(hstest.Socket(t, mux))
+	client := hscl.NewUnix(hstest.Socket(t, mux))
 	h.hs = fakeHeadscaleClients{client: client}
 
 	for _, label := range []string{"web", "admin"} {

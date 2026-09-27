@@ -14,8 +14,8 @@ import (
 	"time"
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/headscaleclient"
-	"github.com/ownscalenet/ownscale/headscaleclient/hstest"
+	"github.com/ownscalenet/ownscale/hscl"
+	"github.com/ownscalenet/ownscale/hscl/hstest"
 	"tailscale.com/tsnet"
 )
 
@@ -77,11 +77,11 @@ func (f *fakeQueries) GetFunnelRouteBySubdomainAndLabel(_ context.Context, arg s
 
 // fakeHeadscaleClients is a funnelproxy.HeadscaleClients test double.
 type fakeHeadscaleClients struct {
-	client *headscaleclient.Client
+	client *hscl.Client
 	err    error
 }
 
-func (f *fakeHeadscaleClients) Client(string) (*headscaleclient.Client, error) {
+func (f *fakeHeadscaleClients) Client(string) (*hscl.Client, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -90,14 +90,14 @@ func (f *fakeHeadscaleClients) Client(string) (*headscaleclient.Client, error) {
 
 // newFakeNodeServer builds a fake implementing headscale's
 // GET /api/v1/node endpoint, returning nodes.
-func newFakeNodeServer(t *testing.T, nodesJSON string) *headscaleclient.Client {
+func newFakeNodeServer(t *testing.T, nodesJSON string) *hscl.Client {
 	t.Helper()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/node", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, nodesJSON)
 	})
-	return headscaleclient.NewUnix(hstest.Socket(t, mux))
+	return hscl.NewUnix(hstest.Socket(t, mux))
 }
 
 func TestServeHTTPRouteNotFound(t *testing.T) {
@@ -186,7 +186,7 @@ func TestTargetNodeIP(t *testing.T) {
 // newFakeUserPreAuthKeyServer builds a fake implementing
 // headscale's GET/POST /api/v1/user and POST /api/v1/preauthkey endpoints,
 // recording every /api/v1/preauthkey request body for assertions.
-func newFakeUserPreAuthKeyServer(t *testing.T, existingUsers string) (*headscaleclient.Client, *[]string) {
+func newFakeUserPreAuthKeyServer(t *testing.T, existingUsers string) (*hscl.Client, *[]string) {
 	t.Helper()
 	var preAuthKeyBodies []string
 	mux := http.NewServeMux()
@@ -204,7 +204,7 @@ func newFakeUserPreAuthKeyServer(t *testing.T, existingUsers string) (*headscale
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"preAuthKey":{"id":"1","key":"fake-key","reusable":true,"ephemeral":false}}`)
 	})
-	return headscaleclient.NewUnix(hstest.Socket(t, mux)), &preAuthKeyBodies
+	return hscl.NewUnix(hstest.Socket(t, mux)), &preAuthKeyBodies
 }
 
 // TestGetOrCreateServerConcurrentDedup guards against the race where a

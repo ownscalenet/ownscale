@@ -27,7 +27,7 @@ import (
 	"github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/derrors"
-	"github.com/ownscalenet/ownscale/headscaleclient"
+	"github.com/ownscalenet/ownscale/hscl"
 	"github.com/ownscalenet/ownscale/utils"
 )
 
@@ -104,7 +104,7 @@ func (rt *orgRuntime) closeConns() {
 // instance is a running headscale server and the means to stop it.
 type instance struct {
 	app    *hscontrol.Headscale
-	client *headscaleclient.Client
+	client *hscl.Client
 	cancel context.CancelFunc
 	// exited is closed once app.Serve has returned.
 	exited chan struct{}
@@ -148,7 +148,7 @@ func (s *Service) running(subdomain string) (*instance, bool) {
 }
 
 // Client returns a client for subdomain's running headscale instance.
-func (s *Service) Client(subdomain string) (*headscaleclient.Client, error) {
+func (s *Service) Client(subdomain string) (*hscl.Client, error) {
 	inst, ok := s.running(subdomain)
 	if !ok {
 		return nil, ErrNotRunning
@@ -431,7 +431,7 @@ func (s *Service) startLocked(ctx context.Context, subdomain string, hsCfg *Head
 	serveCtx, cancel := context.WithCancel(context.Background())
 	inst := &instance{
 		app:    app,
-		client: headscaleclient.NewUnix(SocketPath(s.dataDir, subdomain)),
+		client: hscl.NewUnix(SocketPath(s.dataDir, subdomain)),
 		cancel: cancel,
 		exited: make(chan struct{}),
 	}

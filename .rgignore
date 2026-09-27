@@ -16,7 +16,7 @@ node_modules/
 
 # Generated Go client code (regenerate via sqlc/codegen, don't hand-edit
 # or grep through for editing purposes).
-headscaleclient/hscodegen/
+hscl/hscodegen/
 
 webui/dist/*
 webui/dist/assets/*

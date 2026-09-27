@@ -6,7 +6,7 @@ import (
 
 	dbpkg "github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/headscaleclient"
+	"github.com/ownscalenet/ownscale/hscl"
 )
 
 func TestEmailLocalPart(t *testing.T) {
@@ -46,7 +46,7 @@ func TestClaimedHeadscaleUserIDs(t *testing.T) {
 }
 
 func TestUniqueHeadscaleName(t *testing.T) {
-	existing := []headscaleclient.User{{ID: "1", Name: "alice"}, {ID: "2", Name: "alice-google"}}
+	existing := []hscl.User{{ID: "1", Name: "alice"}, {ID: "2", Name: "alice-google"}}
 
 	if got := uniqueHeadscaleName("bob", "google", "user-id", existing); got != "bob" {
 		t.Errorf("no collision: got %q, want %q", got, "bob")
@@ -62,7 +62,7 @@ func TestUniqueHeadscaleName(t *testing.T) {
 // newHeadscaleUsersTestHandlers builds Handlers, a queries handle, and a
 // fake headscale server (see newFakeHeadscaleServer in machines_test.go)
 // carrying headscale users "1"/alice@example.com and "2"/bob@example.com.
-func newHeadscaleUsersTestHandlers(t *testing.T) (*Handlers, *dbpkg.TxQueries, *headscaleclient.Client) {
+func newHeadscaleUsersTestHandlers(t *testing.T) (*Handlers, *dbpkg.TxQueries, *hscl.Client) {
 	t.Helper()
 	h, queries := newTestHandlers(t)
 	client, _, _, _ := newFakeHeadscaleServer(t)

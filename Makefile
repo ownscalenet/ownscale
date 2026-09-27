@@ -111,14 +111,14 @@ e2e-remote-connectivity:
 	E2E_BASE_URL=https://console.$(REMOTE_BASE_DOMAIN) E2E_BASE_DOMAIN=$(REMOTE_BASE_DOMAIN) E2E_CA_FILE= \
 		TMPDIR="$(CURDIR)/bin/connectivity-work" npm --prefix e2e/frontend run test:connectivity
 
-# Regenerate the headscale API client in headscaleclient/hscodegen
+# Regenerate the headscale API client in hscl/hscodegen
 # from the vendored OpenAPI spec (headscale.swagger.json). The generated
 # code is committed to the repo (same convention as db/sqlcgen),
 # so re-run this and commit the result whenever the spec is bumped to a
 # new headscale version.
 generate-headscale-client:
-	rm -rf headscaleclient/hscodegen/client headscaleclient/hscodegen/models
-	cd headscaleclient/hscodegen && go run github.com/go-swagger/go-swagger/cmd/swagger@latest generate client -f headscale.swagger.json -A headscale --skip-validation
+	rm -rf hscl/hscodegen/client hscl/hscodegen/models
+	cd hscl/hscodegen && go run github.com/go-swagger/go-swagger/cmd/swagger@latest generate client -f headscale.swagger.json -A headscale --skip-validation
 
 # Usage: make migration up | make migration status
 migration:

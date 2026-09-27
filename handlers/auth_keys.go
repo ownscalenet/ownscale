@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/ownscalenet/ownscale/headscaleclient"
+	"github.com/ownscalenet/ownscale/hscl"
 )
 
 // ListAuthKeys handles GET /api/auth-keys. It returns every
@@ -59,7 +59,7 @@ func (h *Handlers) CreateAuthKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	key, err := client.CreatePreAuthKey(r.Context(), headscaleclient.CreatePreAuthKeyParams{
+	key, err := client.CreatePreAuthKey(r.Context(), hscl.CreatePreAuthKeyParams{
 		UserID:     req.UserID,
 		Reusable:   req.Reusable,
 		Ephemeral:  req.Ephemeral,

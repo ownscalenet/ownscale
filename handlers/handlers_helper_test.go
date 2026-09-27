@@ -12,7 +12,7 @@ import (
 	dbpkg "github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/headscaleclient"
+	"github.com/ownscalenet/ownscale/hscl"
 	"github.com/ownscalenet/ownscale/orgs"
 
 	"github.com/rs/xid"
@@ -52,14 +52,14 @@ func withTestUser(req *http.Request, user sqlcgen.User) *http.Request {
 // RequireHeadscaleClient would for an authenticated request whose
 // organization's headscale is reachable. Handlers that only read the
 // client (not org) from context are fine with org's zero value.
-func withHeadscaleClient(req *http.Request, client *headscaleclient.Client) *http.Request {
+func withHeadscaleClient(req *http.Request, client *hscl.Client) *http.Request {
 	ctx := context.WithValue(req.Context(), headscaleClientContextKey, headscaleContext{client: client})
 	return req.WithContext(ctx)
 }
 
 // withHeadscaleClientOrg is withHeadscaleClient plus org, for handlers
 // (e.g. funnel routes) that also read org from headscaleClientFromContext.
-func withHeadscaleClientOrg(req *http.Request, client *headscaleclient.Client, org sqlcgen.Organization) *http.Request {
+func withHeadscaleClientOrg(req *http.Request, client *hscl.Client, org sqlcgen.Organization) *http.Request {
 	ctx := context.WithValue(req.Context(), headscaleClientContextKey, headscaleContext{client: client, org: org})
 	return req.WithContext(ctx)
 }

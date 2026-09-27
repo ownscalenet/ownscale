@@ -27,7 +27,7 @@ import (
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/derrors"
-	"github.com/ownscalenet/ownscale/headscaleclient"
+	"github.com/ownscalenet/ownscale/hscl"
 )
 
 const FunnelHeadscaleUserName = "ownscale-funnel"
@@ -40,7 +40,7 @@ type Queries interface {
 // HeadscaleClients returns an organization's headscale client. Implemented
 // by *orgs.Service.
 type HeadscaleClients interface {
-	Client(subdomain string) (*headscaleclient.Client, error)
+	Client(subdomain string) (*hscl.Client, error)
 }
 
 // Pool proxies incoming funnel HTTP requests into the target
@@ -235,7 +235,7 @@ func waitForDERP(ctx context.Context, srv *tsnet.Server, timeout time.Duration) 
 	}
 }
 
-func targetNodeIP(ctx context.Context, client *headscaleclient.Client, nodeID string) (string, error) {
+func targetNodeIP(ctx context.Context, client *hscl.Client, nodeID string) (string, error) {
 	nodes, err := client.ListNodes(ctx)
 	if err != nil {
 		return "", err
@@ -262,7 +262,7 @@ func targetNodeIP(ctx context.Context, client *headscaleclient.Client, nodeID st
 const funnelUpTimeout = 45 * time.Second
 
 // EnsureServer starts or reuses the already-cached tsnet.Server for subdomain.
-func (p *Pool) EnsureServer(ctx context.Context, subdomain string, client *headscaleclient.Client) error {
+func (p *Pool) EnsureServer(ctx context.Context, subdomain string, client *hscl.Client) error {
 	_, err := p.getOrCreateServer(ctx, subdomain, client)
 	return err
 }
@@ -270,7 +270,7 @@ func (p *Pool) EnsureServer(ctx context.Context, subdomain string, client *heads
 // getOrCreateServer returns the cached tsnet.Server for subdomain,
 // starting (and registering, via a freshly minted pre-auth key) one on
 // first use.
-func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *headscaleclient.Client) (_ *tsnet.Server, err error) {
+func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *hscl.Client) (_ *tsnet.Server, err error) {
 	defer derrors.Wrap(&err, "p.getOrCreateServer(%q)", subdomain)
 
 	p.mu.Lock()
@@ -347,11 +347,11 @@ func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *
 
 const funnelAuthKeyValidity = 100 * 365 * 24 * time.Hour
 
-func ensureFunnelAuthKey(ctx context.Context, client *headscaleclient.Client) (headscaleclient.PreAuthKey, error) {
+func ensureFunnelAuthKey(ctx context.Context, client *hscl.Client) (hscl.PreAuthKey, error) {
 	// TODO: This listing might be inefficient.
 	users, err := client.ListUsers(ctx)
 	if err != nil {
-		return headscaleclient.PreAuthKey{}, err
+		return hscl.PreAuthKey{}, err
 	}
 	var userID string
 	for _, u := range users {
@@ -361,14 +361,14 @@ func ensureFunnelAuthKey(ctx context.Context, client *headscaleclient.Client) (h
 		}
 	}
 	if userID == "" {
-		created, err := client.CreateUser(ctx, headscaleclient.CreateUserParams{Name: FunnelHeadscaleUserName})
+		created, err := client.CreateUser(ctx, hscl.CreateUserParams{Name: FunnelHeadscaleUserName})
 		if err != nil {
-			return headscaleclient.PreAuthKey{}, err
+			return hscl.PreAuthKey{}, err
 		}
 		userID = created.ID
 	}
 
-	return client.CreatePreAuthKey(ctx, headscaleclient.CreatePreAuthKeyParams{
+	return client.CreatePreAuthKey(ctx, hscl.CreatePreAuthKeyParams{
 		UserID:     userID,
 		Reusable:   true,
 		Ephemeral:  false,

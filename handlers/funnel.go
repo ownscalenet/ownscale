@@ -12,7 +12,7 @@ import (
 
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/headscaleclient"
+	"github.com/ownscalenet/ownscale/hscl"
 )
 
 // funnelLabelRe matches a valid funnel-route label: alphanumeric only, no
@@ -38,7 +38,7 @@ type funnelRouteResponse struct {
 	CreatedAt         string `json:"createdAt"`
 }
 
-func (h *Handlers) toFunnelRouteResponse(route sqlcgen.FunnelRoute, subdomain string, nodesByID map[string]headscaleclient.Node) funnelRouteResponse {
+func (h *Handlers) toFunnelRouteResponse(route sqlcgen.FunnelRoute, subdomain string, nodesByID map[string]hscl.Node) funnelRouteResponse {
 	resp := funnelRouteResponse{
 		ID:           route.ID,
 		Label:        route.Label,
@@ -80,7 +80,7 @@ func (h *Handlers) ListFunnelRoutes(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	nodesByID := make(map[string]headscaleclient.Node, len(nodes))
+	nodesByID := make(map[string]hscl.Node, len(nodes))
 	for _, n := range nodes {
 		nodesByID[n.ID] = n
 	}
@@ -135,7 +135,7 @@ func (h *Handlers) CreateFunnelRoute(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	var targetNode *headscaleclient.Node
+	var targetNode *hscl.Node
 	for i := range nodes {
 		if nodes[i].ID == req.TargetNodeID {
 			targetNode = &nodes[i]
@@ -178,7 +178,7 @@ func (h *Handlers) CreateFunnelRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nodesByID := map[string]headscaleclient.Node{targetNode.ID: *targetNode}
+	nodesByID := map[string]hscl.Node{targetNode.ID: *targetNode}
 	h.writeJSON(w, http.StatusOK, map[string]any{
 		"funnelRoute": h.toFunnelRouteResponse(created, org.Subdomain, nodesByID),
 	})

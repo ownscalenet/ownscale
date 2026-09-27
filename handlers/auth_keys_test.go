@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ownscalenet/ownscale/headscaleclient"
+	"github.com/ownscalenet/ownscale/hscl"
 )
 
 func TestListAuthKeysReturnsKeysAndUsers(t *testing.T) {
@@ -22,8 +22,8 @@ func TestListAuthKeysReturnsKeysAndUsers(t *testing.T) {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
 	var body struct {
-		AuthKeys []headscaleclient.PreAuthKey `json:"authKeys"`
-		Users    []headscaleclient.User       `json:"users"`
+		AuthKeys []hscl.PreAuthKey `json:"authKeys"`
+		Users    []hscl.User       `json:"users"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
@@ -76,7 +76,7 @@ func TestCreateAuthKeySuccess(t *testing.T) {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 	}
 	var resp struct {
-		AuthKey headscaleclient.PreAuthKey `json:"authKey"`
+		AuthKey hscl.PreAuthKey `json:"authKey"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode: %v", err)

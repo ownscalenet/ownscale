@@ -12,16 +12,16 @@ import (
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/funnelproxy"
-	"github.com/ownscalenet/ownscale/headscaleclient"
+	"github.com/ownscalenet/ownscale/hscl"
 	"github.com/ownscalenet/ownscale/orgs"
 	"github.com/tailscale/hujson"
 )
 
 // resolveHeadscaleClient returns the calling user's organization's
-// headscaleclient.Client, along with the resolved org. notConfigured is
+// hscl.Client, along with the resolved org. notConfigured is
 // true (nil client, nil error) when the org isn't active or its headscale
 // isn't running.
-func (h *Handlers) resolveHeadscaleClient(r *http.Request) (_ *headscaleclient.Client, org sqlcgen.Organization, notConfigured bool, err error) {
+func (h *Handlers) resolveHeadscaleClient(r *http.Request) (_ *hscl.Client, org sqlcgen.Organization, notConfigured bool, err error) {
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
 		return nil, sqlcgen.Organization{}, true, nil
@@ -47,7 +47,7 @@ func (h *Handlers) resolveHeadscaleClient(r *http.Request) (_ *headscaleclient.C
 // insensitive substring match against name/givenName/IP addresses), user
 // (exact match against the owning HeadscaleUser's name), and status
 // ("online"/"offline"/"expired") filters.
-func matchesFilters(m headscaleclient.Node, q, userFilter, status string) bool {
+func matchesFilters(m hscl.Node, q, userFilter, status string) bool {
 	if q != "" {
 		q = strings.ToLower(q)
 		matched := strings.Contains(strings.ToLower(m.Name), q) ||
@@ -88,11 +88,11 @@ func matchesFilters(m headscaleclient.Node, q, userFilter, status string) bool {
 }
 
 type machineResponse struct {
-	headscaleclient.Node
+	hscl.Node
 	Internal bool `json:"internal"`
 }
 
-func toMachineResponse(n headscaleclient.Node) machineResponse {
+func toMachineResponse(n hscl.Node) machineResponse {
 	return machineResponse{
 		Node:     n,
 		Internal: isFunnelNode(n),
@@ -100,7 +100,7 @@ func toMachineResponse(n headscaleclient.Node) machineResponse {
 }
 
 // isFunnelNode reports whether n belongs to funnelproxy.FunnelHeadscaleUserName.
-func isFunnelNode(n headscaleclient.Node) bool {
+func isFunnelNode(n hscl.Node) bool {
 	return n.User != nil && n.User.Name == funnelproxy.FunnelHeadscaleUserName
 }
 
@@ -158,7 +158,7 @@ func (h *Handlers) RegisterMachine(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusBadRequest, "user is required")
 		return
 	}
-	key, err := headscaleclient.NormalizeRegistrationKey(req.Key)
+	key, err := hscl.NormalizeRegistrationKey(req.Key)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, err.Error())
 		return
@@ -174,7 +174,7 @@ func (h *Handlers) RegisterMachine(w http.ResponseWriter, r *http.Request) {
 
 // machineIDAndClient extracts the {id} path value and the caller's
 // organization's headscale client (attached by requireHeadscaleClient).
-func (h *Handlers) machineIDAndClient(r *http.Request) (client *headscaleclient.Client, id string) {
+func (h *Handlers) machineIDAndClient(r *http.Request) (client *hscl.Client, id string) {
 	client, _, _ = headscaleClientFromContext(r)
 	return client, r.PathValue("id")
 }
@@ -245,7 +245,7 @@ func normalizeTags(tags []string) []string {
 
 // ensureTagOwners fetches client's ACL policy and adds any of tags not
 // already declared as a "tagOwners" key. It edits the policy's HuJSON AST.
-func ensureTagOwners(ctx context.Context, client *headscaleclient.Client, tags []string) (err error) {
+func ensureTagOwners(ctx context.Context, client *hscl.Client, tags []string) (err error) {
 	content, err := client.GetPolicy(ctx)
 	if err != nil {
 		return err
@@ -404,7 +404,7 @@ func (h *Handlers) DeleteMachine(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-func (h *Handlers) isFunnelMachine(ctx context.Context, client *headscaleclient.Client, nodeID string) (bool, error) {
+func (h *Handlers) isFunnelMachine(ctx context.Context, client *hscl.Client, nodeID string) (bool, error) {
 	nodes, err := client.ListNodes(ctx)
 	if err != nil {
 		return false, err
@@ -418,7 +418,7 @@ func (h *Handlers) isFunnelMachine(ctx context.Context, client *headscaleclient.
 }
 
 // isExpiredRFC3339 reports whether expiry (an RFC3339 timestamp, as
-// produced by headscaleclient) is in the past. Unparseable timestamps are
+// produced by hscl) is in the past. Unparseable timestamps are
 // treated as not expired.
 func isExpiredRFC3339(expiry string) bool {
 	t, err := time.Parse(time.RFC3339, expiry)

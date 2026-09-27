@@ -8,14 +8,14 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ownscalenet/ownscale/headscaleclient"
-	"github.com/ownscalenet/ownscale/headscaleclient/hstest"
+	"github.com/ownscalenet/ownscale/hscl"
+	"github.com/ownscalenet/ownscale/hscl/hstest"
 )
 
 // newFakePolicyServer builds a fake implementing headscale's
 // policy endpoint (GET/PUT /api/v1/policy) backed by an in-memory policy
-// string, and a *headscaleclient.Client pointed at it.
-func newFakePolicyServer(t *testing.T, initial string) (*headscaleclient.Client, *string) {
+// string, and a *hscl.Client pointed at it.
+func newFakePolicyServer(t *testing.T, initial string) (*hscl.Client, *string) {
 	t.Helper()
 	policy := initial
 
@@ -39,7 +39,7 @@ func newFakePolicyServer(t *testing.T, initial string) (*headscaleclient.Client,
 			w.WriteHeader(http.StatusMethodNotAllowed)
 		}
 	})
-	return headscaleclient.NewUnix(hstest.Socket(t, mux)), &policy
+	return hscl.NewUnix(hstest.Socket(t, mux)), &policy
 }
 
 func TestGetAccessControlPolicyReturnsEmptyStringAsIs(t *testing.T) {
