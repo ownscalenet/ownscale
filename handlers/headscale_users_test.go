@@ -75,7 +75,7 @@ func TestEnsureHeadscaleUserAlreadyLinked(t *testing.T) {
 
 	// Passing a nil client confirms the already-linked short circuit
 	// never touches headscale at all.
-	got, err := h.ensureHeadscaleUser(t.Context(), nil, user, nil)
+	got, err := h.ensureHeadscaleUser(t.Context(), "acme", nil, user, nil)
 	if err != nil {
 		t.Fatalf("ensureHeadscaleUser: %v", err)
 	}
@@ -98,7 +98,7 @@ func TestEnsureHeadscaleUserMatchesByEmail(t *testing.T) {
 		t.Fatalf("GetUserByID: %v", err)
 	}
 
-	got, err := h.ensureHeadscaleUser(t.Context(), client, user, map[string]bool{})
+	got, err := h.ensureHeadscaleUser(t.Context(), "acme", client, user, map[string]bool{})
 	if err != nil {
 		t.Fatalf("ensureHeadscaleUser: %v", err)
 	}
@@ -131,7 +131,7 @@ func TestEnsureHeadscaleUserSkipsClaimedAndCreatesInstead(t *testing.T) {
 	// Another org member already claimed headscale user "1" (alice) --
 	// this ownscale identity must not steal it, even though its email
 	// also matches.
-	got, err := h.ensureHeadscaleUser(t.Context(), client, user, map[string]bool{"1": true})
+	got, err := h.ensureHeadscaleUser(t.Context(), "acme", client, user, map[string]bool{"1": true})
 	if err != nil {
 		t.Fatalf("ensureHeadscaleUser: %v", err)
 	}

@@ -66,7 +66,7 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 			if u.HeadscaleUserID.Valid {
 				continue
 			}
-			hsID, err := h.ensureHeadscaleUser(r.Context(), client, u, claimed)
+			hsID, err := h.ensureHeadscaleUser(r.Context(), org.Subdomain, client, u, claimed)
 			if err != nil {
 				// Best-effort: e.g. headscale rejected the create call, or
 				// a unique-constraint conflict racing another request.

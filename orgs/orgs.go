@@ -13,10 +13,13 @@ import (
 	"maps"
 	"net"
 	"slices"
+	"strconv"
 	"sync"
 	"time"
 
 	"github.com/ownscalenet/headscale/hscontrol"
+	"github.com/ownscalenet/headscale/hscontrol/types"
+	"github.com/ownscalenet/headscale/hscontrol/util"
 	"github.com/rs/xid"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/sync/errgroup"
@@ -191,6 +194,48 @@ type trackedConn struct {
 func (c *trackedConn) Close() error {
 	c.once.Do(c.untrack)
 	return c.Conn.Close()
+}
+
+// SetOIDCIdentity gives subdomain's headscale user headscaleUserID the OIDC
+// identity headscale derives from an ownscale login of the user subject.
+// Without it, that person's first OIDC login through headscale creates a
+// second headscale user, as headscale only matches existing users by this
+// identity. Users that already have an identity, and identities already
+// owned by another user, are left alone.
+func (s *Service) SetOIDCIdentity(ctx context.Context, subdomain, headscaleUserID, subject string) (err error) {
+	defer derrors.Wrap(&err, "s.SetOIDCIdentity(%q, %q)", subdomain, headscaleUserID)
+
+	inst, ok := s.instances.Load(subdomain)
+	if !ok {
+		return ErrNotRunning
+	}
+	return s.setOIDCIdentity(inst.app, headscaleUserID, subject)
+}
+
+func (s *Service) setOIDCIdentity(app *hscontrol.Headscale, headscaleUserID, subject string) error {
+	uid, err := strconv.ParseUint(headscaleUserID, 10, 64)
+	if err != nil {
+		return err
+	}
+	state := app.GetState()
+	identifier := (&types.OIDCClaims{Iss: s.issuer, Sub: subject}).Identifier()
+	if owner, err := state.GetUserByOIDCIdentifier(identifier); err == nil && owner != nil {
+		return nil // already set, or owned by another user
+	}
+
+	_, c, err := state.UpdateUser(types.UserID(uid), func(u *types.User) error {
+		if u.ProviderIdentifier.Valid {
+			return nil
+		}
+		u.ProviderIdentifier = sql.NullString{String: identifier, Valid: true}
+		u.Provider = util.RegisterMethodOIDC
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+	app.Change(c)
+	return nil
 }
 
 // LookupPort returns the TCP port assigned to subdomain's headscale

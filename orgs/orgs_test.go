@@ -4,10 +4,13 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"net"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 
+	"github.com/ownscalenet/headscale/hscontrol/types"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/ownscalenet/ownscale/config"
@@ -165,4 +168,80 @@ func TestCreateHeadscaleDERP(t *testing.T) {
 			}
 		})
 	}
+}
+
+// newRealService builds a Service that starts real headscale instances, on a
+// free port so parallel test binaries don't collide on the default range.
+func newRealService(t *testing.T) *Service {
+	t.Helper()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	port := ln.Addr().(*net.TCPAddr).Port
+	ln.Close()
+
+	svc := NewService(newTestQueries(t), "example.com", "https://auth.example.com", config.DerpConfig{}, discardLogger(), t.TempDir())
+	svc.nextPort = port
+	return svc
+}
+
+func TestSetOIDCIdentity(t *testing.T) {
+	svc := newRealService(t)
+	if _, err := svc.Create(t.Context(), "acme"); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	inst, _ := svc.instances.Load("acme")
+	t.Cleanup(func() { inst.cancel(); <-inst.exited })
+	state := inst.app.GetState()
+
+	newUser := func(name string) string {
+		u, _, err := state.CreateUser(types.User{Name: name, Email: name + "@example.com", DisplayName: name})
+		if err != nil {
+			t.Fatalf("CreateUser(%q): %v", name, err)
+		}
+		return strconv.FormatUint(uint64(u.ID), 10)
+	}
+	alice, bob := newUser("alice"), newUser("bob")
+	identifier := (&types.OIDCClaims{Iss: "https://auth.example.com", Sub: "sub-1"}).Identifier()
+
+	if err := svc.SetOIDCIdentity(t.Context(), "acme", alice, "sub-1"); err != nil {
+		t.Fatalf("SetOIDCIdentity: %v", err)
+	}
+	got, err := state.GetUserByOIDCIdentifier(identifier)
+	if err != nil {
+		t.Fatalf("GetUserByOIDCIdentifier: %v", err)
+	}
+	if strconv.FormatUint(uint64(got.ID), 10) != alice || got.Name != "alice" || got.Email != "alice@example.com" || got.Provider != "oidc" {
+		t.Errorf("user = %+v, want alice unchanged apart from the OIDC identity", got)
+	}
+
+	// A user that already has an identity, and an identity owned by
+	// another user, are both left alone.
+	if err := svc.SetOIDCIdentity(t.Context(), "acme", alice, "sub-2"); err != nil {
+		t.Fatalf("SetOIDCIdentity again: %v", err)
+	}
+	if err := svc.SetOIDCIdentity(t.Context(), "acme", bob, "sub-1"); err != nil {
+		t.Fatalf("SetOIDCIdentity taken identity: %v", err)
+	}
+	bobUser, err := state.GetUserByID(types.UserID(mustParseUint(t, bob)))
+	if err != nil {
+		t.Fatalf("GetUserByID: %v", err)
+	}
+	if bobUser.ProviderIdentifier.Valid {
+		t.Errorf("bob got identity %q, want none", bobUser.ProviderIdentifier.String)
+	}
+
+	if err := svc.SetOIDCIdentity(t.Context(), "missing", alice, "sub-1"); !errors.Is(err, ErrNotRunning) {
+		t.Errorf("unknown org error = %v, want ErrNotRunning", err)
+	}
+}
+
+func mustParseUint(t *testing.T, s string) uint {
+	t.Helper()
+	n, err := strconv.ParseUint(s, 10, 64)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return uint(n)
 }

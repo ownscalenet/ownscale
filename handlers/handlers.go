@@ -194,7 +194,7 @@ func (h *Handlers) ensureCallerHeadscaleUser(r *http.Request, user *sqlcgen.User
 		logger.Warn("list organization members for headscale user linking", "error", err)
 		return
 	}
-	if _, err := h.ensureHeadscaleUser(r.Context(), client, *user, claimedHeadscaleUserIDs(members)); err != nil {
+	if _, err := h.ensureHeadscaleUser(r.Context(), org.Subdomain, client, *user, claimedHeadscaleUserIDs(members)); err != nil {
 		logger.Warn("ensure headscale user", "user_id", user.ID, "error", err)
 	}
 }

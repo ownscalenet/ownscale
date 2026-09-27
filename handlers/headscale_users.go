@@ -75,6 +75,7 @@ func uniqueHeadscaleName(candidate, provider, userID string, existing []headscal
 
 func (h *Handlers) ensureHeadscaleUser(
 	ctx context.Context,
+	subdomain string,
 	client *headscaleclient.Client,
 	user sqlcgen.User,
 	claimed map[string]bool) (_ string, err error) {
@@ -99,6 +100,7 @@ func (h *Handlers) ensureHeadscaleUser(
 				}); err != nil {
 					return "", err
 				}
+				h.setOIDCIdentity(ctx, subdomain, hu.ID, user.ID)
 				return hu.ID, nil
 			}
 		}
@@ -126,5 +128,14 @@ func (h *Handlers) ensureHeadscaleUser(
 	}); err != nil {
 		return "", err
 	}
+	h.setOIDCIdentity(ctx, subdomain, created.ID, user.ID)
 	return created.ID, nil
+}
+
+// setOIDCIdentity is orgs.Service.SetOIDCIdentity, best-effort: a failure
+// only risks a duplicate headscale user on the person's first OIDC login.
+func (h *Handlers) setOIDCIdentity(ctx context.Context, subdomain, headscaleUserID, userID string) {
+	if err := h.orgs.SetOIDCIdentity(ctx, subdomain, headscaleUserID, userID); err != nil {
+		h.logger.Warn("set headscale user OIDC identity", "subdomain", subdomain, "user_id", userID, "error", err)
+	}
 }
