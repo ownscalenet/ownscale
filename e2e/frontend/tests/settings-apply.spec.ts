@@ -2,6 +2,7 @@ import { randomBytes } from 'node:crypto'
 import { expect, test, type Page } from '@playwright/test'
 import { baseDomain } from './connectivity/environment'
 import { registerRealMachine, teardownRealMachine } from './support/realMachine'
+import { dnsPageLoaded, snapshotDns } from './support/dnsPage'
 import { retryUntil } from './support/retry'
 
 // Saving settings restarts the organization's headscale from its stored
@@ -14,6 +15,7 @@ const org = 'aaaa'
 test('DNS settings reach a running device', async ({ page }) => {
   test.setTimeout(300_000)
   const machine = await registerRealMachine(page, org)
+  let restore = async () => {}
   try {
     const dns = () => machine.bridge.dns(machine.hostname)
     const converge = { timeout: 90_000, intervals: [2_000] }
@@ -24,12 +26,14 @@ test('DNS settings reach a running device', async ({ page }) => {
     const recordName = `e2e-${suffix}.example.com`
 
     await page.goto('/dns')
-    await expect(page.getByRole('heading', { name: 'DNS', exact: true })).toBeVisible()
+    await dnsPageLoaded(page)
+    restore = await snapshotDns(page)
 
     const nameserverBadge = page.locator('.badge', { hasText: nameserver })
     await retryUntil(
       page,
       async () => {
+        await dnsPageLoaded(page)
         if (await nameserverBadge.isVisible()) return
         await page.getByPlaceholder('1.1.1.1').fill(nameserver)
         await page.getByRole('button', { name: 'Add' }).first().click()
@@ -41,6 +45,7 @@ test('DNS settings reach a running device', async ({ page }) => {
     await retryUntil(
       page,
       async () => {
+        await dnsPageLoaded(page)
         if (await searchDomainBadge.isVisible()) return
         await page.getByPlaceholder('internal.example.com').fill(searchDomain)
         await page.locator('.card', { hasText: 'Search Domains' }).getByRole('button', { name: 'Add' }).click()
@@ -52,6 +57,7 @@ test('DNS settings reach a running device', async ({ page }) => {
     await retryUntil(
       page,
       async () => {
+        await dnsPageLoaded(page)
         if (await recordRow.isVisible()) return
         await page.getByPlaceholder('Name (e.g. server.example.com)').fill(recordName)
         await page.getByPlaceholder('Value (e.g. 10.0.0.1)').fill('10.0.0.42')
@@ -75,26 +81,38 @@ test('DNS settings reach a running device', async ({ page }) => {
     await retryUntil(
       page,
       async () => {
+        await dnsPageLoaded(page)
         if (!(await nameserverBadge.isVisible())) return
         await page.getByRole('button', { name: `Remove ${nameserver}` }).click()
       },
-      async () => expect(nameserverBadge).toBeHidden({ timeout: 8_000 }),
+      async () => {
+        await dnsPageLoaded(page)
+        await expect(nameserverBadge).toBeHidden({ timeout: 8_000 })
+      },
     )
     await retryUntil(
       page,
       async () => {
+        await dnsPageLoaded(page)
         if (!(await searchDomainBadge.isVisible())) return
         await page.getByRole('button', { name: `Remove ${searchDomain}` }).click()
       },
-      async () => expect(searchDomainBadge).toBeHidden({ timeout: 8_000 }),
+      async () => {
+        await dnsPageLoaded(page)
+        await expect(searchDomainBadge).toBeHidden({ timeout: 8_000 })
+      },
     )
     await retryUntil(
       page,
       async () => {
+        await dnsPageLoaded(page)
         if (!(await recordRow.isVisible())) return
         await recordRow.getByRole('button', { name: 'Remove' }).click()
       },
-      async () => expect(recordRow).toBeHidden({ timeout: 8_000 }),
+      async () => {
+        await dnsPageLoaded(page)
+        await expect(recordRow).toBeHidden({ timeout: 8_000 })
+      },
     )
 
     await expect.poll(async () => {
@@ -124,7 +142,11 @@ test('DNS settings reach a running device', async ({ page }) => {
       await flip(wasEnabled)
     }
   } finally {
-    await teardownRealMachine(machine)
+    try {
+      await restore()
+    } finally {
+      await teardownRealMachine(machine)
+    }
   }
 })
 
@@ -163,6 +185,15 @@ test('login restrictions are enforced by headscale', async ({ page }) => {
   const editor = page.locator('textarea')
   const original = await editor.inputValue()
 
+  // Headscale creates a user for an OIDC login it doesn't already know; the
+  // logins below must reuse the person's existing headscale user instead.
+  const headscaleUsers = async () => {
+    const response = await page.request.get('/api/auth-keys')
+    const body = await response.json() as { users: { name: string }[] }
+    return body.users.map(u => u.name).sort()
+  }
+  const usersBefore = await headscaleUsers()
+
   // Baseline: the current allowlist admits this user.
   await expect.poll(() => registerLoginStatus(page), converge).toBe(410)
 
@@ -193,4 +224,6 @@ test('login restrictions are enforced by headscale', async ({ page }) => {
     )
   }
   await expect.poll(() => registerLoginStatus(page), converge).toBe(410)
+
+  expect(await headscaleUsers()).toEqual(usersBefore)
 })
