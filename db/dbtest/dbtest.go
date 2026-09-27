@@ -1,6 +1,7 @@
 // Package dbtest gives tests a fast, already-migrated SQLite database.
-// Goose migrations run once per test binary into a template file; each
-// call to New copies that template instead of re-running every migration.
+// Goose migrations run once per test binary into a template kept in
+// memory; each call to New writes that template to a file instead of
+// re-running every migration.
 package dbtest
 
 import (
@@ -20,66 +21,59 @@ import (
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
 
-var (
-	templateOnce sync.Once
-	templatePath string
-	templateErr  error
-)
+// template returns the bytes of a fully migrated SQLite database, built on
+// first use.
+var template = sync.OnceValues(migrateTemplate)
 
-// buildTemplate migrates a scratch SQLite file once and returns its path.
-func buildTemplate() (string, error) {
-	templateOnce.Do(func() {
-		dir, err := os.MkdirTemp("", "ownscale-dbtest-template")
-		if err != nil {
-			templateErr = err
-			return
-		}
-		path := filepath.Join(dir, "template.sqlite")
-		pool, err := dbpkg.Connect(path)
-		if err != nil {
-			templateErr = err
-			return
-		}
-		defer pool.Close()
+// migrateTemplate migrates a scratch SQLite file and returns its bytes,
+// removing the file so test runs don't leave it behind.
+func migrateTemplate() ([]byte, error) {
+	dir, err := os.MkdirTemp("", "ownscale-dbtest-template")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(dir)
 
-		sub, err := fs.Sub(dbpkg.MigrationsFS, "migrations")
-		if err != nil {
-			templateErr = err
-			return
-		}
-		provider, err := goose.NewProvider(goose.DialectSQLite3, pool, sub)
-		if err != nil {
-			templateErr = err
-			return
-		}
-		if _, err := provider.Up(context.Background()); err != nil {
-			templateErr = err
-			return
-		}
-		// Fold the WAL back into the main file so a plain byte copy of
-		// path below is a complete, self-contained database.
-		if _, err := pool.Exec("PRAGMA wal_checkpoint(TRUNCATE)"); err != nil {
-			templateErr = err
-			return
-		}
-		templatePath = path
-	})
-	return templatePath, templateErr
+	path := filepath.Join(dir, "template.sqlite")
+	if err := migrate(path); err != nil {
+		return nil, err
+	}
+	return os.ReadFile(path)
 }
 
-// New returns a pool and queries backed by a freshly-copied, already
-// migrated SQLite database in t.TempDir(), without re-running goose.
+// migrate applies every migration to the SQLite database at path.
+func migrate(path string) error {
+	pool, err := dbpkg.Connect(path)
+	if err != nil {
+		return err
+	}
+	defer pool.Close()
+
+	sub, err := fs.Sub(dbpkg.MigrationsFS, "migrations")
+	if err != nil {
+		return err
+	}
+	provider, err := goose.NewProvider(goose.DialectSQLite3, pool, sub)
+	if err != nil {
+		return err
+	}
+	if _, err := provider.Up(context.Background()); err != nil {
+		return err
+	}
+	// Fold the WAL back into the main file so its bytes alone are a
+	// complete, self-contained database.
+	_, err = pool.Exec("PRAGMA wal_checkpoint(TRUNCATE)")
+	return err
+}
+
+// New returns a pool and queries backed by a fresh copy of the migrated
+// template in t.TempDir(), without re-running goose.
 func New(t *testing.T) (*sql.DB, *dbpkg.TxQueries) {
 	t.Helper()
 
-	template, err := buildTemplate()
+	data, err := template()
 	if err != nil {
 		t.Fatalf("build migration template: %v", err)
-	}
-
-	data, err := os.ReadFile(template)
-	if err != nil {
-		t.Fatalf("read migration template: %v", err)
 	}
 	dbPath := filepath.Join(t.TempDir(), "test.sqlite")
 	if err := os.WriteFile(dbPath, data, 0o600); err != nil {
