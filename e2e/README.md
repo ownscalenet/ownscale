@@ -81,6 +81,22 @@ Other useful commands (from `e2e/frontend/`):
 - This suite is local-only for now (like `make test-integration`) and
   isn't wired into GitHub Actions CI.
 
+## Tailscale SSH
+
+`make e2e-ssh` (`npm run test:ssh` from `e2e/frontend/`) checks that
+Tailscale SSH works between two real machines only while the org's policy
+has an `ssh` rule. It starts two containers from the `e2e/devbox` image
+(built on first run), joins both to `aaaa` with `osa devbox-key`, runs
+`tailscale up --ssh` on one and `tailscale ssh` from the other, then
+removes the rule and expects SSH to be denied. The containers are removed
+and the original policy restored afterwards.
+
+Besides `make dev-up`, it needs docker with `/dev/net/tun` (the containers
+run `tailscaled` with `NET_ADMIN`), the local dev CA at
+`data/local-ca/root.crt` (or `E2E_CA_FILE`), and the `aaaa.ownscale.test`
+`/etc/hosts` entry. It has its own config (`playwright.ssh.config.ts`) so
+`make e2e-frontend` doesn't need docker.
+
 ## Browser-driven connectivity
 
 Run this separately from the existing frontend suite:

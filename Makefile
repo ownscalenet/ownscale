@@ -4,7 +4,7 @@
 # (go:embed needs real files at Go build time), so run `make frontend`
 # whenever frontend/ changes and commit the updated webui/dist.
 
-.PHONY: build frontend backend osa restore test coverage migration archive docker-image caddy-image purge ci docs load-cert dev-up devbox e2e e2e-frontend e2e-connectivity e2e-remote e2e-remote-frontend e2e-remote-connectivity
+.PHONY: build frontend backend osa restore test coverage migration archive docker-image caddy-image purge ci docs load-cert dev-up devbox e2e e2e-frontend e2e-connectivity e2e-ssh e2e-remote e2e-remote-frontend e2e-remote-connectivity
 
 DOCKER_IMAGE := ownscale:latest
 CADDY_IMAGE := ownscale-caddy:latest
@@ -87,7 +87,7 @@ devbox:
 			exec bash"
 
 # Requires `make dev-up` already running.
-e2e: e2e-frontend e2e-connectivity
+e2e: e2e-frontend e2e-connectivity e2e-ssh
 
 e2e-frontend:
 	npm --prefix e2e/frontend ci
@@ -96,6 +96,10 @@ e2e-frontend:
 e2e-connectivity:
 	mkdir -p bin/connectivity-work
 	TMPDIR="$(CURDIR)/bin/connectivity-work" npm --prefix e2e/frontend run test:connectivity
+
+# Tailscale SSH between two devbox containers; also needs docker with /dev/net/tun.
+e2e-ssh:
+	npm --prefix e2e/frontend run test:ssh
 
 REMOTE_BASE_DOMAIN ?= "beastbb.bond"
 

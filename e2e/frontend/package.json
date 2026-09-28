@@ -10,6 +10,7 @@
     "test:ui": "playwright test --ui",
     "test:connectivity": "playwright test --config playwright.connectivity.config.ts",
     "test:connectivity:contract": "playwright test --config playwright.connectivity-contract.config.ts",
+    "test:ssh": "playwright test --config playwright.ssh.config.ts",
     "report": "playwright show-report"
   },
   "devDependencies": {
