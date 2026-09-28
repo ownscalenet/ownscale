@@ -69,22 +69,20 @@ devbox:
 	@test -f $(CERT) || { echo "$(CERT) not found -- start docker compose (local-ca-init) first"; exit 1; }
 	@docker image inspect $(DEVBOX_IMAGE) >/dev/null 2>&1 || docker build -t $(DEVBOX_IMAGE) e2e/devbox
 	@echo "minting a pre-auth key for $(ORG)..."
-	@authkey=$$(docker compose exec -T ownscale ./osa devbox-key $(ORG)); \
+	@n=1; while docker ps -a --format '{{.Names}}' | grep -qx "devbox$(ORG)$$n"; do n=$$((n+1)); done; \
+	name=devbox$(ORG)$$n; \
+	authkey=$$(docker compose exec -T ownscale ./osa devbox-key $(ORG)); \
 	test -n "$$authkey" || { echo "failed to mint a pre-auth key"; exit 1; }; \
-	echo "connecting to https://$(ORG).$(BASE_DOMAIN) as devbox-$(ORG)..."; \
-	docker run --rm -it \
+	echo "connecting to https://$(ORG).$(BASE_DOMAIN) as $$name..."; \
+	docker run --rm -it --name=$$name --hostname=$$name \
 		--cap-add=NET_ADMIN --cap-add=NET_RAW --device=/dev/net/tun \
 		--add-host=$(ORG).$(BASE_DOMAIN):host-gateway \
 		-v $(abspath $(CERT)):/usr/local/share/ca-certificates/ownscale-local-ca.crt:ro \
 		$(DEVBOX_IMAGE) bash -c "\
 			set -e; \
-			update-ca-certificates >/dev/null; \
-			mkdir -p /var/run/tailscale; \
-			tailscaled --state=/var/lib/tailscale/tailscaled.state --socket=/var/run/tailscale/tailscaled.sock >/var/log/tailscaled.log 2>&1 & \
-			for i in \$$(seq 1 20); do [ -S /var/run/tailscale/tailscaled.sock ] && break; sleep 0.5; done; \
-			tailscale --socket=/var/run/tailscale/tailscaled.sock up --login-server=https://$(ORG).$(BASE_DOMAIN) --authkey=$$authkey --hostname=devbox-$(ORG) --accept-dns=false; \
+			devbox-up https://$(ORG).$(BASE_DOMAIN) $$authkey $$name; \
 			mkdir -p /var/www; \
-			echo '<html><body><h1>devbox-$(ORG)</h1></body></html>' > /var/www/index.html; \
+			echo '<html><body><h1>$$name</h1></body></html>' > /var/www/index.html; \
 			python3 -m http.server 80 --directory /var/www >/var/log/httpserver.log 2>&1 & \
 			exec bash"
 
