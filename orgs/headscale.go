@@ -46,6 +46,16 @@ const defaultACLPolicy = `{
 			"dst":    ["*:*"],
 		},
 	],
+	// Uncomment to let users Tailscale SSH into their own machines. Those
+	// machines must run "tailscale up --ssh".
+	// "ssh": [
+	// 	{
+	// 		"action": "accept",
+	// 		"src":    ["autogroup:member"],
+	// 		"dst":    ["autogroup:self"],
+	// 		"users":  ["autogroup:nonroot", "root"],
+	// 	},
+	// ],
 }
 `
 

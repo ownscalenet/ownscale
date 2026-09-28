@@ -28,8 +28,7 @@ function Cheatsheet() {
           >
             JWCC
           </a>{' '}
-          (JSON with comments and trailing commas allowed).
-          Check the{' '}
+          (JSON with comments and trailing commas allowed). Check the{' '}
           <a
             className="link"
             href="https://headscale.net/stable/ref/policy/"
@@ -38,7 +37,7 @@ function Cheatsheet() {
           >
             full reference
           </a>{' '}
-            for what is achievable using policies
+          for what is achievable using policies
         </p>
 
         <div className="divider my-2">Top-level keys</div>
@@ -71,8 +70,12 @@ function Cheatsheet() {
           <div>
             <dt className="font-semibold">ssh</dt>
             <dd className="text-base-content/70">
-              SSH access rules: <code>action</code>, <code>src</code>, <code>dst</code>,{' '}
-              <code>users</code>.
+              Tailscale SSH rules: <code>action</code> (<code>"accept"</code>), <code>src</code>,{' '}
+              <code>dst</code>, <code>users</code> (<code>"root"</code>,{' '}
+              <code>"autogroup:nonroot"</code>). <code>src</code> and <code>dst</code> can't be{' '}
+              <code>*</code>; use <code>autogroup:self</code> for a user's own machines. Target
+              machines must run <code>tailscale up --ssh</code>, and <code>acls</code> must allow
+              port 22.
             </dd>
           </div>
         </dl>
@@ -88,6 +91,14 @@ function Cheatsheet() {
       "action": "accept",
       "src": ["group:eng"],
       "dst": ["*:*"],
+    },
+  ],
+  "ssh": [
+    {
+      "action": "accept",
+      "src": ["autogroup:member"],
+      "dst": ["autogroup:self"],
+      "users": ["autogroup:nonroot", "root"],
     },
   ],
 }`}
@@ -106,6 +117,13 @@ function Cheatsheet() {
           </li>
           <li>
             <code>user@</code> - a specific user
+          </li>
+          <li>
+            <code>autogroup:member</code> - every user&rsquo;s machines,{' '}
+            <code>autogroup:tagged</code> - tagged machines
+          </li>
+          <li>
+            <code>autogroup:self</code> - the user&rsquo;s own machines (as a destination)
           </li>
           <li>
             <code>host:port</code> or <code>host:*</code> - a destination
