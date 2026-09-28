@@ -7,7 +7,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ownscalenet/headscale/hscontrol"
+	"github.com/juanfont/headscale/hscontrol"
 
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"

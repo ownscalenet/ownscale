@@ -18,9 +18,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/ownscalenet/headscale/hscontrol"
-	"github.com/ownscalenet/headscale/hscontrol/types"
-	"github.com/ownscalenet/headscale/hscontrol/util"
+	"github.com/juanfont/headscale/hscontrol"
+	"github.com/juanfont/headscale/hscontrol/types"
+	"github.com/juanfont/headscale/hscontrol/util"
 	"github.com/rs/xid"
 	"golang.org/x/crypto/bcrypt"
 	"tailscale.com/tailcfg"

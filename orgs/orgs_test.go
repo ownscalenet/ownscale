@@ -12,8 +12,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/ownscalenet/headscale/hscontrol"
-	"github.com/ownscalenet/headscale/hscontrol/types"
+	"github.com/juanfont/headscale/hscontrol"
+	"github.com/juanfont/headscale/hscontrol/types"
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/ownscalenet/ownscale/config"
