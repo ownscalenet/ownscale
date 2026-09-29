@@ -98,8 +98,8 @@ run `tailscaled` with `NET_ADMIN`), the local dev CA at
 
 The same config runs `tests/devbox/split-dns.spec.ts`: one devbox runs dnsmasq
 on its tailnet IP, the DNS page points a split DNS domain at it, and a second
-devbox (with `--accept-dns`) must resolve names under that domain through
-MagicDNS only while the entry exists.
+devbox must resolve names under that domain through MagicDNS only while
+the entry exists.
 
 ## Browser-driven connectivity
 

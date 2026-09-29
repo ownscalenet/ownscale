@@ -57,9 +57,6 @@ test('split DNS sends queries for a domain to its nameserver on the tailnet', as
     await putPolicy(page, allowAll)
     await startDevbox(server, org, `dns-srv-${suffix}`)
     await startDevbox(client, org, `dns-cli-${suffix}`)
-    // devbox-up already passes --accept-dns=false, and tailscale up rejects
-    // a repeated flag.
-    await docker(['exec', client, 'tailscale', 'set', '--accept-dns=true'])
     const serverIP = await docker(['exec', server, 'tailscale', 'ip', '-4'])
     await docker([
       'exec', '-d', server, 'dnsmasq', '--keep-in-foreground', '--no-resolv', '--no-hosts',
