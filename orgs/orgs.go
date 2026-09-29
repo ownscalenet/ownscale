@@ -189,8 +189,10 @@ func (c *trackedConn) Close() error {
 // identity headscale derives from an ownscale login of the user subject.
 // Without it, that person's first OIDC login through headscale creates a
 // second headscale user, as headscale only matches existing users by this
-// identity. Users that already have an identity, and identities already
-// owned by another user, are left alone.
+// identity. An identity the user already has is replaced: it belongs to an
+// ownscale account that no longer owns this headscale user, such as a
+// removed member who was invited back. Identities already owned by another
+// user are left alone.
 func (s *Service) SetOIDCIdentity(ctx context.Context, subdomain, headscaleUserID, subject string) (err error) {
 	defer derrors.Wrap(&err, "s.SetOIDCIdentity(%q, %q)", subdomain, headscaleUserID)
 
@@ -213,9 +215,6 @@ func (s *Service) setOIDCIdentity(app *hscontrol.Headscale, headscaleUserID, sub
 	}
 
 	_, c, err := state.UpdateUser(types.UserID(uid), func(u *types.User) error {
-		if u.ProviderIdentifier.Valid {
-			return nil
-		}
 		u.ProviderIdentifier = sql.NullString{String: identifier, Valid: true}
 		u.Provider = util.RegisterMethodOIDC
 		return nil

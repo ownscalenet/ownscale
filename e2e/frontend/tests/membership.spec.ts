@@ -1,0 +1,85 @@
+import { randomBytes } from 'node:crypto'
+import { expect, test, type Browser, type Page } from '@playwright/test'
+import { baseDomain } from './connectivity/environment'
+import { registerRealMachine, teardownRealMachine } from './support/realMachine'
+
+// admin's organization.
+const org = 'aaaa'
+
+// signIn signs a fresh, logged-out browser context in through Dex as email
+// and returns its page, left wherever the login flow ends.
+async function signIn(browser: Browser, email: string, startURL: string): Promise<Page> {
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] }, ignoreHTTPSErrors: true })
+  const page = await context.newPage()
+  await page.goto(startURL)
+  await page.getByRole('link', { name: 'Sign in with SSO' }).click()
+  await page.locator('#login').fill(email)
+  await page.locator('#password').fill('ownscale')
+  await page.locator('#submit-login').click()
+  return page
+}
+
+// registerURL starts a tailnet login for org with an auth ID nobody is
+// waiting on; see registerLoginStatus in settings-apply.spec.ts.
+function registerURL(): string {
+  return `https://${org}.${baseDomain}/register/hskey-authreq-${randomBytes(12).toString('hex')}`
+}
+
+test("a user of another organization can't sign in to its tailnet", async ({ browser }) => {
+  // user1 owns bbbb (see global.setup.ts). Signing in from the tailnet's
+  // login page is refused by the console...
+  const page = await signIn(browser, 'user1@ownscale.test', registerURL())
+  try {
+    await expect(page.getByText("You aren't a member of this organization")).toBeVisible({ timeout: 15_000 })
+
+    // ...and with a console session already in place, the OIDC provider
+    // sends headscale an access_denied error instead of an identity.
+    const callback = page.waitForRequest(
+      (r) => r.isNavigationRequest() && r.url().startsWith(`https://${org}.${baseDomain}/oidc/callback`),
+      { timeout: 30_000 },
+    )
+    void page.goto(registerURL()).catch(() => {})
+    expect(new URL((await callback).url()).searchParams.get('error')).toBe('access_denied')
+  } finally {
+    await page.context().close()
+  }
+})
+
+test("removing a member removes their machines from the tailnet", async ({ page, browser }) => {
+  test.setTimeout(300_000)
+
+  await page.goto('/users')
+  await page.getByRole('button', { name: 'Invite member' }).click()
+  const dialog = page.locator('dialog.modal[open]')
+  await dialog.getByRole('combobox').selectOption('member')
+  await dialog.getByRole('button', { name: 'Create invite link' }).click()
+  const inviteLink = await dialog.getByRole('textbox').inputValue()
+  await dialog.getByRole('button', { name: 'Done' }).click()
+
+  const member = await signIn(browser, 'user3@ownscale.test', inviteLink)
+  try {
+    await expect(member.getByRole('link', { name: 'Machines' })).toBeVisible({ timeout: 15_000 })
+    // The member registers the machine themselves, with a key for their own user.
+    const machine = await registerRealMachine(member, org)
+    try {
+      const machineNames = async () => {
+        const res = await page.request.get('/api/machines')
+        expect(res.ok()).toBe(true)
+        return ((await res.json()) as { machines: { givenName: string }[] }).machines.map((m) => m.givenName)
+      }
+      expect(await machineNames()).toContain(machine.hostname)
+
+      await page.goto('/users')
+      const memberRow = page.getByRole('row').filter({ hasText: 'user3@ownscale.test' })
+      page.once('dialog', (d) => void d.accept())
+      await memberRow.getByRole('button', { name: 'Remove' }).click()
+      await expect(memberRow).toBeHidden()
+
+      expect(await machineNames()).not.toContain(machine.hostname)
+    } finally {
+      await teardownRealMachine(machine)
+    }
+  } finally {
+    await member.context().close()
+  }
+})

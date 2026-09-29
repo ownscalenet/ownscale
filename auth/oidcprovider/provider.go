@@ -3,6 +3,7 @@ package oidcprovider
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"net/http"
 	"net/url"
 	"slices"
@@ -96,6 +97,11 @@ func (p *authorizingProvider) ValidateAuthRequest(ctx context.Context, authReq *
 		return subject, nil
 	}
 	if sessionUserID, _ := ctx.Value(sessionUserKey{}).(string); sessionUserID != "" {
+		if err := p.storage.checkMember(ctx, authReq.ClientID, sessionUserID); errors.Is(err, ErrNotMember) {
+			return "", oidc.ErrAccessDenied().WithDescription("you aren't a member of this organization")
+		} else if err != nil {
+			return "", oidc.ErrServerError().WithParent(err)
+		}
 		return sessionUserID, nil
 	}
 	return subject, nil

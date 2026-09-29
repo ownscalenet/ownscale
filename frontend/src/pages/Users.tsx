@@ -346,7 +346,11 @@ function MemberRow({
               className="btn btn-xs btn-outline btn-error"
               disabled={busy}
               onClick={() => {
-                if (confirm(`Remove ${m.name} from this organization?`)) {
+                if (
+                  confirm(
+                    `Remove ${m.name} from this organization? Their machines will be removed from the tailnet.`,
+                  )
+                ) {
                   void run(() => removeMember(m.id))
                 }
               }}

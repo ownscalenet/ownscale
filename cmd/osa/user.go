@@ -11,6 +11,8 @@ import (
 	"github.com/peterbourgon/ff/v4"
 
 	"github.com/ownscalenet/ownscale/db"
+	"github.com/ownscalenet/ownscale/hscl"
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 // newUserCommand builds the "user" subcommand group (currently just
@@ -103,20 +105,37 @@ func newUserDeleteCommand(parent *ff.FlagSet) *ff.Command {
 			if err != nil {
 				return err
 			}
-			return deleteUser(ctx, os.Stdout, res.queries, args[0])
+			// The sockets are served by the running ownscale process, so this
+			// only works where cfg.DataDir is shared with it.
+			clientFor := func(subdomain string) *hscl.Client {
+				return hscl.NewUnix(orgs.SocketPath(res.cfg.DataDir, subdomain))
+			}
+			return deleteUser(ctx, os.Stdout, res.queries, clientFor, args[0])
 		},
 	}
 }
 
-// deleteUser looks up userID, deletes the corresponding user record, and
-// writes a confirmation to out. It does not touch the headscale user.
-func deleteUser(ctx context.Context, out io.Writer, queries *db.TxQueries, userID string) error {
+// deleteUser looks up userID, deletes its linked headscale user and that
+// user's machines through clientFor(organization subdomain), then deletes
+// the user record and writes a confirmation to out.
+// TODO: transaction
+func deleteUser(ctx context.Context, out io.Writer, queries *db.TxQueries, clientFor func(subdomain string) *hscl.Client, userID string) error {
 	user, err := queries.GetUserByID(ctx, userID)
 	if errors.Is(err, sql.ErrNoRows) {
 		return fmt.Errorf("no user with id %q", userID)
 	}
 	if err != nil {
 		return fmt.Errorf("get user: %w", err)
+	}
+
+	if user.HeadscaleUserID.Valid {
+		org, err := queries.GetOrganization(ctx, user.OrganizationID)
+		if err != nil {
+			return fmt.Errorf("get organization: %w", err)
+		}
+		if err := clientFor(org.Subdomain).DeleteUserAndNodes(ctx, user.HeadscaleUserID.String); err != nil {
+			return fmt.Errorf("delete headscale user: %w", err)
+		}
 	}
 
 	if err := queries.DeleteUser(ctx, user.ID); err != nil {

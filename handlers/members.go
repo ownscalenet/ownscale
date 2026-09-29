@@ -152,7 +152,9 @@ func (h *Handlers) UpdateMemberRole(w http.ResponseWriter, r *http.Request) {
 // deletes their ownscale account outright (organization_id is NOT NULL, so
 // there's no "member with no org" state to leave them in); a genuinely
 // fresh account (with its own freshly pool-assigned organization, or the
-// invited organization) is created the next time they log in.
+// invited organization) is created the next time they log in. Their
+// headscale user and its machines are deleted too, so they drop off the
+// tailnet.
 func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	caller, org, r, ok := h.callerAndOrg(w, r)
 	if !ok {
@@ -169,6 +171,24 @@ func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	if target.Role == RoleOwner {
 		h.writeError(w, http.StatusBadRequest, "transfer ownership before removing the owner")
 		return
+	}
+	// Headscale goes first: if the account were deleted first, a failure
+	// here would leave their machines on the tailnet with nothing in the
+	// console to retry from.
+	if target.HeadscaleUserID.Valid {
+		client, _, notConfigured, err := h.resolveHeadscaleClient(r)
+		if err != nil {
+			h.serverError(w, r, err)
+			return
+		}
+		if notConfigured {
+			h.writeError(w, http.StatusConflict, "headscale is unavailable right now, try again in a moment")
+			return
+		}
+		if err := client.DeleteUserAndNodes(r.Context(), target.HeadscaleUserID.String); err != nil {
+			h.serverError(w, r, err)
+			return
+		}
 	}
 	if err := h.queries.DeleteUser(r.Context(), target.ID); err != nil {
 		h.serverError(w, r, err)

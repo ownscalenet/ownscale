@@ -110,6 +110,8 @@ export interface MachinesResponse {
   machines: Machine[]
   users: HeadscaleUser[]
   total: number
+  // False for members, who may only manage their own machines.
+  canManage: boolean
 }
 
 export function listMachines(
@@ -323,8 +325,10 @@ export interface PreAuthKey {
 }
 
 export interface AuthKeysResponse {
+  // Members only get their own keys.
   authKeys: PreAuthKey[]
   users: HeadscaleUser[]
+  canManage: boolean
 }
 
 export function listAuthKeys(signal?: AbortSignal) {

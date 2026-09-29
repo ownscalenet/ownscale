@@ -71,19 +71,49 @@ func (s *Storage) SetLoginURL(loginURL func(string) string) {
 	s.loginURL = loginURL
 }
 
+// ErrNotMember is returned when a user tries to sign in to the headscale of
+// an organization they don't belong to.
+var ErrNotMember = errors.New("user is not a member of the client's organization")
+
 // AuthorizeAuthRequest marks a pending auth request as completed for userID.
-func (s *Storage) AuthorizeAuthRequest(id, userID string) (err error) {
+// It returns ErrNotMember if userID doesn't belong to the organization that
+// owns the request's client.
+func (s *Storage) AuthorizeAuthRequest(ctx context.Context, id, userID string) (err error) {
 	defer derrors.Wrap(&err, "s.AuthorizeAuthRequest(%q, %q)", id, userID)
 
 	s.lock.Lock()
-	defer s.lock.Unlock()
 	request, ok := s.authRequests[id]
+	s.lock.Unlock()
 	if !ok {
 		return fmt.Errorf("auth request not found")
 	}
+	if err := s.checkMember(ctx, request.ApplicationID, userID); err != nil {
+		return err
+	}
+
+	s.lock.Lock()
+	defer s.lock.Unlock()
 	request.UserID = userID
 	request.done = true
 	request.authTime = time.Now()
+	return nil
+}
+
+func (s *Storage) checkMember(ctx context.Context, clientID, userID string) error {
+	client, err := s.queries.GetOIDCClientByClientID(ctx, clientID)
+	if err != nil {
+		return err
+	}
+	user, err := s.queries.GetUserByID(ctx, userID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrNotMember
+	}
+	if err != nil {
+		return err
+	}
+	if user.OrganizationID != client.OrganizationID {
+		return ErrNotMember
+	}
 	return nil
 }
 

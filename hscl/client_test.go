@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -413,5 +414,38 @@ func TestProblemJSONErrorsCarryTheReason(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "setting policy: multiple users found") {
 		t.Errorf("error = %q, want it to contain the problem detail and message", err)
+	}
+}
+
+func TestClientDeleteUserAndNodes(t *testing.T) {
+	tests := []struct {
+		name      string
+		id        string
+		wantUsers []string
+		wantNodes []string
+	}{
+		{"user with nodes", "1", []string{"2"}, []string{"20", "30"}},
+		{"already deleted user", "9", []string{"1", "2"}, []string{"10", "11", "20", "30"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			fake := hstest.NewUsers([]string{"1", "2"}, []hstest.Node{
+				{ID: "10", UserID: "1"},
+				{ID: "11", UserID: "1"},
+				{ID: "20", UserID: "2"},
+				{ID: "30"}, // tagged
+			})
+			c := NewUnix(hstest.Socket(t, fake.Handler()))
+
+			if err := c.DeleteUserAndNodes(t.Context(), tt.id); err != nil {
+				t.Fatalf("DeleteUserAndNodes: %v", err)
+			}
+			if got := fake.UserIDs(); !slices.Equal(got, tt.wantUsers) {
+				t.Errorf("users = %v, want %v", got, tt.wantUsers)
+			}
+			if got := fake.NodeIDs(); !slices.Equal(got, tt.wantNodes) {
+				t.Errorf("nodes = %v, want %v", got, tt.wantNodes)
+			}
+		})
 	}
 }

@@ -1,9 +1,11 @@
 package oidcprovider
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -168,5 +170,65 @@ func TestUserClaimsAdapter(t *testing.T) {
 	}
 	if introspection.ClientID != clientRow.ClientID || introspection.Subject != user.ID {
 		t.Fatalf("unexpected introspection response: %+v", introspection)
+	}
+}
+
+// TestMembershipGatesAuthRequests checks, a fresh login (AuthorizeAuthRequest)
+// and an existing console session (ValidateAuthRequest), only succeed for
+// members of the client's organization.
+// This one prevents user from logging in to other orgs by running
+// tailscale up --login-server=other_org.
+func TestMembershipGatesAuthRequests(t *testing.T) {
+	storage, queries := testStorage(t)
+	acme := dbtest.CreateOrg(t, queries, "acme")
+	other := dbtest.CreateOrg(t, queries, "othr")
+	clientRow, _ := insertTestClient(t, queries, acme.ID)
+	member := insertTestUser(t, queries, acme.ID)
+	outsider := insertTestUser(t, queries, other.ID)
+
+	tests := []struct {
+		name       string
+		userID     string
+		wantMember bool
+	}{
+		{"member", member.ID, true},
+		{"user of another organization", outsider.ID, false},
+		{"deleted user", "no-such-user", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			authReq := &oidc.AuthRequest{
+				ClientID:     clientRow.ClientID,
+				RedirectURI:  "https://acme.example.com/oidc/callback",
+				ResponseType: oidc.ResponseTypeCode,
+				Scopes:       []string{oidc.ScopeOpenID},
+			}
+
+			req, err := storage.CreateAuthRequest(t.Context(), authReq, "")
+			if err != nil {
+				t.Fatalf("CreateAuthRequest: %v", err)
+			}
+			err = storage.AuthorizeAuthRequest(t.Context(), req.GetID(), tt.userID)
+			if tt.wantMember && err != nil {
+				t.Errorf("AuthorizeAuthRequest: %v", err)
+			}
+			if !tt.wantMember && !errors.Is(err, ErrNotMember) {
+				t.Errorf("AuthorizeAuthRequest error = %v, want ErrNotMember", err)
+			}
+			if got, _ := storage.AuthRequestByID(t.Context(), req.GetID()); got.Done() != tt.wantMember {
+				t.Errorf("Done() = %v, want %v", got.Done(), tt.wantMember)
+			}
+
+			provider := &authorizingProvider{storage: storage}
+			ctx := context.WithValue(t.Context(), sessionUserKey{}, tt.userID)
+			subject, err := provider.ValidateAuthRequest(ctx, authReq, storage, nil)
+			if tt.wantMember && (err != nil || subject != tt.userID) {
+				t.Errorf("ValidateAuthRequest = %q, %v, want %q", subject, err, tt.userID)
+			}
+			var oidcErr *oidc.Error
+			if !tt.wantMember && (!errors.As(err, &oidcErr) || oidcErr.ErrorType != oidc.AccessDenied) {
+				t.Errorf("ValidateAuthRequest error = %v, want access denied", err)
+			}
+		})
 	}
 }

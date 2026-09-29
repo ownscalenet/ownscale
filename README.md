@@ -66,7 +66,8 @@ site lives at the bare `https://<base_domain>`). ownscale federates the initial
 login to a configurable upstream OIDC provider (`OWNSCALE_AUTH_UPSTREAM_OIDC_*`) — any standard OIDC issuer works: Google, Okta, Dex, etc. —
 then acts as its own OIDC provider so each organization's Headscale
 instance trusts it as a relying party: one upstream login covers the
-Ownscale console and every organization's tailnet. See
+Ownscale console and the tailnet of the organization you're a member of.
+See
 `site/content/docs/getting-started.md` for details.
 
 For local dev, `docker-compose.yml` bundles a

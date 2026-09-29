@@ -59,6 +59,9 @@ export default function Settings() {
 
   const [authKeys, setAuthKeys] = useState<PreAuthKey[]>([])
   const [users, setUsers] = useState<HeadscaleUser[]>([])
+  const [canManage, setCanManage] = useState(false)
+  const { user } = useAuth()
+  const ownUserId = user?.HeadscaleUserID.Valid ? user.HeadscaleUserID.String : ''
   const [notConfigured, setNotConfigured] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const createRef = useRef<HTMLDialogElement>(null)
@@ -68,6 +71,7 @@ export default function Settings() {
       const res = await listAuthKeys(signal)
       setAuthKeys(res.authKeys ?? [])
       setUsers(res.users ?? [])
+      setCanManage(res.canManage)
       setNotConfigured(false)
       setError(null)
     } catch (err) {
@@ -131,7 +135,7 @@ export default function Settings() {
                 onChange={(e) => updateFilter('user', e.target.value)}
               >
                 <option value="">All users</option>
-                <option value={TAG_ONLY}>Tag Only</option>
+                {canManage && <option value={TAG_ONLY}>Tag Only</option>}
                 {users.map((u) => (
                   <option key={u.id} value={u.name}>
                     {u.name}
@@ -197,7 +201,12 @@ export default function Settings() {
         </div>
       )}
 
-      <CreateAuthKeyDialog dialogRef={createRef} users={users} onCreated={load} />
+      <CreateAuthKeyDialog
+        dialogRef={createRef}
+        users={canManage ? users : users.filter((u) => u.id === ownUserId)}
+        canManage={canManage}
+        onCreated={load}
+      />
     </>
   )
 }
@@ -277,13 +286,17 @@ function AuthKeyRow({ authKey: k, onChange }: { authKey: PreAuthKey; onChange: (
   )
 }
 
+// CreateAuthKeyDialog creates a pre-auth key. Without canManage, keys can
+// only be untagged ones for the caller.
 function CreateAuthKeyDialog({
   dialogRef,
   users,
+  canManage,
   onCreated,
 }: {
   dialogRef: React.RefObject<HTMLDialogElement | null>
   users: HeadscaleUser[]
+  canManage: boolean
   onCreated: () => void
 }) {
   const [tagOnly, setTagOnly] = useState(false)
@@ -393,15 +406,17 @@ function CreateAuthKeyDialog({
               </div>
             )}
             <form className="space-y-4" onSubmit={(e) => void handleSubmit(e)}>
-              <label className="fieldset-label cursor-pointer gap-3">
-                <input
-                  type="checkbox"
-                  className="checkbox checkbox-sm"
-                  checked={tagOnly}
-                  onChange={(e) => setTagOnly(e.target.checked)}
-                />
-                <span>Tag only (no owning user)</span>
-              </label>
+              {canManage && (
+                <label className="fieldset-label cursor-pointer gap-3">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-sm"
+                    checked={tagOnly}
+                    onChange={(e) => setTagOnly(e.target.checked)}
+                  />
+                  <span>Tag only (no owning user)</span>
+                </label>
+              )}
 
               {!tagOnly && (
                 <fieldset className="fieldset">
@@ -422,19 +437,21 @@ function CreateAuthKeyDialog({
                 </fieldset>
               )}
 
-              <fieldset className="fieldset">
-                <legend className="fieldset-legend">ACL tags{tagOnly && ' (required)'}</legend>
-                <input
-                  type="text"
-                  className="input input-bordered w-full font-mono"
-                  placeholder="tag:server, tag:prod"
-                  value={tagsInput}
-                  onChange={(e) => setTagsInput(e.target.value)}
-                />
-                <p className="text-sm opacity-60 mt-1">
-                  Comma-separated. The <code>tag:</code> prefix is added automatically.
-                </p>
-              </fieldset>
+              {canManage && (
+                <fieldset className="fieldset">
+                  <legend className="fieldset-legend">ACL tags{tagOnly && ' (required)'}</legend>
+                  <input
+                    type="text"
+                    className="input input-bordered w-full font-mono"
+                    placeholder="tag:server, tag:prod"
+                    value={tagsInput}
+                    onChange={(e) => setTagsInput(e.target.value)}
+                  />
+                  <p className="text-sm opacity-60 mt-1">
+                    Comma-separated. The <code>tag:</code> prefix is added automatically.
+                  </p>
+                </fieldset>
+              )}
 
               <fieldset className="fieldset">
                 <legend className="fieldset-legend">Expires in (days)</legend>

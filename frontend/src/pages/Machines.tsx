@@ -79,6 +79,9 @@ export default function Machines() {
   const [machines, setMachines] = useState<Machine[]>([])
   const [users, setUsers] = useState<HeadscaleUser[]>([])
   const [total, setTotal] = useState(0)
+  const [canManage, setCanManage] = useState(false)
+  const { user } = useAuth()
+  const ownUserId = user?.HeadscaleUserID.Valid ? user.HeadscaleUserID.String : ''
   const [notConfigured, setNotConfigured] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const registerRef = useRef<HTMLDialogElement>(null)
@@ -89,6 +92,7 @@ export default function Machines() {
       setMachines(res.machines ?? [])
       setUsers(res.users ?? [])
       setTotal(res.total)
+      setCanManage(res.canManage)
       setNotConfigured(false)
       setError(null)
     } catch (err) {
@@ -131,7 +135,11 @@ export default function Machines() {
         )}
       </div>
 
-      <RegisterMachineDialog dialogRef={registerRef} users={users} onRegistered={load} />
+      <RegisterMachineDialog
+        dialogRef={registerRef}
+        users={canManage ? users : users.filter((u) => u.id === ownUserId)}
+        onRegistered={load}
+      />
 
       {error && (
         <div className="alert alert-error mb-4">
@@ -218,7 +226,13 @@ export default function Machines() {
                     </thead>
                     <tbody>
                       {machines.map((m) => (
-                        <MachineRow key={m.id} machine={m} onChange={load} />
+                        <MachineRow
+                          key={m.id}
+                          machine={m}
+                          canManage={canManage}
+                          canEdit={canManage || (m.user != null && m.user.id === ownUserId)}
+                          onChange={load}
+                        />
                       ))}
                     </tbody>
                   </table>
@@ -355,7 +369,19 @@ function RegisterMachineDialog({
   )
 }
 
-function MachineRow({ machine: m, onChange }: { machine: Machine; onChange: () => void }) {
+// MachineRow renders one machine. canEdit allows renaming, expiring and
+// removing it; tags and routes need canManage.
+function MachineRow({
+  machine: m,
+  canManage,
+  canEdit,
+  onChange,
+}: {
+  machine: Machine
+  canManage: boolean
+  canEdit: boolean
+  onChange: () => void
+}) {
   const renameRef = useRef<HTMLDialogElement>(null)
   const tagsRef = useRef<HTMLDialogElement>(null)
   const routesRef = useRef<HTMLDialogElement>(null)
@@ -448,7 +474,7 @@ function MachineRow({ machine: m, onChange }: { machine: Machine; onChange: () =
             <li>
               <button
                 type="button"
-                disabled={m.internal}
+                disabled={m.internal || !canEdit}
                 onClick={() => renameRef.current?.showModal()}
               >
                 Edit machine name
@@ -457,7 +483,7 @@ function MachineRow({ machine: m, onChange }: { machine: Machine; onChange: () =
             <li>
               <button
                 type="button"
-                disabled={m.internal}
+                disabled={m.internal || !canManage}
                 onClick={() => tagsRef.current?.showModal()}
               >
                 Edit ACL tags
@@ -466,7 +492,7 @@ function MachineRow({ machine: m, onChange }: { machine: Machine; onChange: () =
             <li>
               <button
                 type="button"
-                disabled={m.internal}
+                disabled={m.internal || !canManage}
                 onClick={() => routesRef.current?.showModal()}
               >
                 Edit route settings
@@ -476,7 +502,7 @@ function MachineRow({ machine: m, onChange }: { machine: Machine; onChange: () =
               <button
                 type="button"
                 className="text-error"
-                disabled={expired || busy || m.internal}
+                disabled={expired || busy || m.internal || !canEdit}
                 onClick={() => {
                   if (confirm(`Expire the session of ${m.givenName}?`)) {
                     void run(() => expireMachine(m.id))
@@ -490,7 +516,7 @@ function MachineRow({ machine: m, onChange }: { machine: Machine; onChange: () =
               <button
                 type="button"
                 className="text-error"
-                disabled={busy}
+                disabled={busy || !canEdit}
                 onClick={() => {
                   if (m.internal) {
                     openRemoveInternalDialog()

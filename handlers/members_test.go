@@ -6,10 +6,13 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"testing"
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/hscl"
+	"github.com/ownscalenet/ownscale/hscl/hstest"
 )
 
 func TestListMembers(t *testing.T) {
@@ -262,6 +265,58 @@ func TestRemoveMember(t *testing.T) {
 	}
 	if _, err := h.queries.GetUserByID(t.Context(), target.ID); !errors.Is(err, sql.ErrNoRows) {
 		t.Errorf("GetUserByID after remove: err = %v, want sql.ErrNoRows (account should be deleted)", err)
+	}
+}
+
+// TestRemoveMemberDeletesHeadscaleUser checks that removing a member linked
+// to a headscale user also removes that user and its machines, and that
+// nothing is removed while headscale is unreachable.
+func TestRemoveMemberDeletesHeadscaleUser(t *testing.T) {
+	tests := []struct {
+		name        string
+		unreachable bool
+		wantStatus  int
+		wantUsers   []string
+		wantNodes   []string
+		wantAccount bool
+	}{
+		{"headscale reachable", false, http.StatusOK, []string{"2"}, []string{"20"}, false},
+		{"headscale unreachable", true, http.StatusConflict, []string{"1", "2"}, []string{"10", "20"}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, _, users := newOrgTestHandlers(t, RoleOwner, RoleMember)
+			owner, target := users[0], users[1]
+			if err := h.queries.LinkUserHeadscaleUser(t.Context(), sqlcgen.LinkUserHeadscaleUserParams{
+				HeadscaleUserID: sql.NullString{String: "1", Valid: true},
+				ID:              target.ID,
+			}); err != nil {
+				t.Fatalf("LinkUserHeadscaleUser: %v", err)
+			}
+			fake := hstest.NewUsers([]string{"1", "2"}, []hstest.Node{{ID: "10", UserID: "1"}, {ID: "20", UserID: "2"}})
+			h.hs = fakeHeadscaleClients{client: hscl.NewUnix(hstest.Socket(t, fake.Handler()))}
+			if tt.unreachable {
+				h.hs = fakeHeadscaleClients{err: errors.New("not running")}
+			}
+
+			req := withPathValue(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/members/x", nil), owner), "id", target.ID)
+			rec := httptest.NewRecorder()
+			h.RemoveMember(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d: %s", rec.Code, tt.wantStatus, rec.Body)
+			}
+			if got := fake.UserIDs(); !slices.Equal(got, tt.wantUsers) {
+				t.Errorf("headscale users = %v, want %v", got, tt.wantUsers)
+			}
+			if got := fake.NodeIDs(); !slices.Equal(got, tt.wantNodes) {
+				t.Errorf("headscale nodes = %v, want %v", got, tt.wantNodes)
+			}
+			_, err := h.queries.GetUserByID(t.Context(), target.ID)
+			if gotAccount := err == nil; gotAccount != tt.wantAccount {
+				t.Errorf("account exists = %v, want %v (err %v)", gotAccount, tt.wantAccount, err)
+			}
+		})
 	}
 }
 

@@ -347,12 +347,20 @@ func TestSetOIDCIdentity(t *testing.T) {
 		t.Errorf("user = %+v, want alice unchanged apart from the OIDC identity", got)
 	}
 
-	// A user that already has an identity, and an identity owned by
-	// another user, are both left alone.
+	// A stale identity is replaced by the new owner's.
 	if err := svc.SetOIDCIdentity(t.Context(), "acme", alice, "sub-2"); err != nil {
 		t.Fatalf("SetOIDCIdentity again: %v", err)
 	}
-	if err := svc.SetOIDCIdentity(t.Context(), "acme", bob, "sub-1"); err != nil {
+	identifier2 := (&types.OIDCClaims{Iss: "https://auth.example.com", Sub: "sub-2"}).Identifier()
+	if got, err := state.GetUserByOIDCIdentifier(identifier2); err != nil || strconv.FormatUint(uint64(got.ID), 10) != alice {
+		t.Errorf("GetUserByOIDCIdentifier(sub-2) = %+v, %v, want alice", got, err)
+	}
+	if _, err := state.GetUserByOIDCIdentifier(identifier); err == nil {
+		t.Error("sub-1 still resolves to a user after alice's identity was replaced")
+	}
+
+	// An identity owned by another user is left alone.
+	if err := svc.SetOIDCIdentity(t.Context(), "acme", bob, "sub-2"); err != nil {
 		t.Fatalf("SetOIDCIdentity taken identity: %v", err)
 	}
 	bobUser, err := state.GetUserByID(types.UserID(mustParseUint(t, bob)))

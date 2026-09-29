@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -11,6 +12,8 @@ import (
 
 	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/hscl"
+	"github.com/ownscalenet/ownscale/hscl/hstest"
 )
 
 // insertUser inserts a user row directly via queries, attached to org with
@@ -104,7 +107,7 @@ func TestDeleteUser(t *testing.T) {
 	t.Run("not found", func(t *testing.T) {
 		_, queries := dbtest.New(t)
 		var out strings.Builder
-		err := deleteUser(t.Context(), &out, queries, "nonexistent-id")
+		err := deleteUser(t.Context(), &out, queries, nil, "nonexistent-id")
 		if err == nil {
 			t.Fatal("deleteUser: expected error for nonexistent id, got nil")
 		}
@@ -119,7 +122,7 @@ func TestDeleteUser(t *testing.T) {
 		user := insertUser(t, queries.Queries, t.Context(), "delete-me@example.test", org, "owner")
 
 		var out strings.Builder
-		if err := deleteUser(t.Context(), &out, queries, user.ID); err != nil {
+		if err := deleteUser(t.Context(), &out, queries, nil, user.ID); err != nil {
 			t.Fatalf("deleteUser: %v", err)
 		}
 		got := out.String()
@@ -127,6 +130,42 @@ func TestDeleteUser(t *testing.T) {
 			t.Errorf("deleteUser output = %q, want it to mention the deleted user's id and email", got)
 		}
 
+		if _, err := queries.GetUserByID(t.Context(), user.ID); !errors.Is(err, sql.ErrNoRows) {
+			t.Errorf("GetUserByID after delete: err = %v, want sql.ErrNoRows", err)
+		}
+	})
+
+	t.Run("deletes linked headscale user and machines", func(t *testing.T) {
+		_, queries := dbtest.New(t)
+		org := dbtest.CreateOrg(t, queries.Queries, "acme")
+		user := insertUser(t, queries.Queries, t.Context(), "linked@example.test", org, "member")
+		if err := queries.LinkUserHeadscaleUser(t.Context(), sqlcgen.LinkUserHeadscaleUserParams{
+			HeadscaleUserID: sql.NullString{String: "1", Valid: true},
+			ID:              user.ID,
+		}); err != nil {
+			t.Fatalf("LinkUserHeadscaleUser: %v", err)
+		}
+		fake := hstest.NewUsers([]string{"1", "2"}, []hstest.Node{{ID: "10", UserID: "1"}, {ID: "20", UserID: "2"}})
+		client := hscl.NewUnix(hstest.Socket(t, fake.Handler()))
+		var gotSubdomain string
+		clientFor := func(subdomain string) *hscl.Client {
+			gotSubdomain = subdomain
+			return client
+		}
+
+		var out strings.Builder
+		if err := deleteUser(t.Context(), &out, queries, clientFor, user.ID); err != nil {
+			t.Fatalf("deleteUser: %v", err)
+		}
+		if gotSubdomain != "acme" {
+			t.Errorf("headscale client for %q, want acme", gotSubdomain)
+		}
+		if got := fake.UserIDs(); !slices.Equal(got, []string{"2"}) {
+			t.Errorf("headscale users = %v, want [2]", got)
+		}
+		if got := fake.NodeIDs(); !slices.Equal(got, []string{"20"}) {
+			t.Errorf("headscale nodes = %v, want [20]", got)
+		}
 		if _, err := queries.GetUserByID(t.Context(), user.ID); !errors.Is(err, sql.ErrNoRows) {
 			t.Errorf("GetUserByID after delete: err = %v, want sql.ErrNoRows", err)
 		}

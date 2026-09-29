@@ -1,10 +1,5 @@
-// Package hscl is a small, ergonomic wrapper around the
-// OpenAPI-generated headscale client in ./hscodegen (regenerated with
-// `make generate-headscale-client`). It exposes exactly the
-// operations the /api/machines handlers need, translating the generated
-// (protobuf-shaped) types into plain structs whose JSON tags match
-// frontend/src/api.ts's Machine/HeadscaleUser shapes, so handlers can
-// encode the results straight through.
+// Package hscl is a wrapper around the OpenAPI-generated headscale client in
+// ./hscodegen (regenerated with `make generate-headscale-client`).
 package hscl
 
 import (
@@ -14,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -209,6 +205,35 @@ func (c *Client) DeleteUser(ctx context.Context, id string) (err error) {
 		WithID(id)
 	_, err = c.api.HeadscaleService.HeadscaleServiceDeleteUser(params)
 	return err
+}
+
+// DeleteUserAndNodes deletes the headscale user identified by id and every
+// node it owns; headscale refuses to delete a user that still owns nodes.
+// A user that's already gone counts as deleted, so a removal that failed
+// partway can be retried.
+func (c *Client) DeleteUserAndNodes(ctx context.Context, id string) (err error) {
+	defer derrors.Wrap(&err, "c.DeleteUserAndNodes(%q)", id)
+
+	users, err := c.ListUsers(ctx)
+	if err != nil {
+		return err
+	}
+	if !slices.ContainsFunc(users, func(u User) bool { return u.ID == id }) {
+		return nil
+	}
+	nodes, err := c.ListNodes(ctx)
+	if err != nil {
+		return err
+	}
+	for _, n := range nodes {
+		if n.User != nil && n.User.ID == id {
+			if err := c.DeleteNode(ctx, n.ID); err != nil {
+				return err
+			}
+		}
+	}
+
+	return c.DeleteUser(ctx, id)
 }
 
 // RegisterNode registers a machine pending interactive authentication,

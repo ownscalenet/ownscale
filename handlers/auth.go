@@ -234,7 +234,10 @@ func (h *Handlers) finishLogin(w http.ResponseWriter, r *http.Request, user sqlc
 		return
 	}
 	if nextID := oidcprovider.AuthRequestIDFromNext(next); nextID != "" && h.oidc != nil {
-		if err := h.oidc.AuthorizeAuthRequest(nextID, user.ID); err != nil {
+		if err := h.oidc.AuthorizeAuthRequest(r.Context(), nextID, user.ID); errors.Is(err, oidcprovider.ErrNotMember) {
+			http.Error(w, "You aren't a member of this organization. Ask its owner for an invite.", http.StatusForbidden)
+			return
+		} else if err != nil {
 			h.serverError(w, r, err)
 			return
 		}

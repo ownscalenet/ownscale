@@ -69,7 +69,7 @@ function Cheatsheet() {
           <li>
             A user may join if they match <em>any</em> domain, group, or user entry.
           </li>
-          <li>All three lists empty means anyone can sign in.</li>
+          <li>All three lists empty means every member of this organization can sign in.</li>
         </ul>
       </div>
     </div>
