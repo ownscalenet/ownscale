@@ -52,7 +52,7 @@ test('Tailscale SSH works between two machines only while the policy allows it',
 
   try {
     await putPolicy(page, withSSH)
-    await startDevbox(server, org, `ssh-srv-${suffix}`, ['--ssh'])
+    await startDevbox(server, org, `ssh-srv-${suffix}`)
     await startDevbox(client, org, `ssh-cli-${suffix}`)
     serverIP = await docker(['exec', server, 'tailscale', 'ip', '-4'])
 
