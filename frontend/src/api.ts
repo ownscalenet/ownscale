@@ -350,6 +350,10 @@ export function expireAuthKey(id: string) {
   return request<{ ok: boolean }>(`/api/auth-keys/${id}/expire`, { method: 'POST' })
 }
 
+export function deleteAuthKey(id: string) {
+  return request<{ ok: boolean }>(`/api/auth-keys/${id}`, { method: 'DELETE' })
+}
+
 export interface FunnelRoute {
   id: string
   label: string

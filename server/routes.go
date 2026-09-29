@@ -34,6 +34,7 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	mux.HandleFunc("GET /api/auth-keys", requireAuthAPI(h.RequireHeadscaleClient(h.ListAuthKeys)))
 	mux.HandleFunc("POST /api/auth-keys", requireAuthAPI(h.RequireHeadscaleClient(h.CreateAuthKey)))
 	mux.HandleFunc("POST /api/auth-keys/{id}/expire", requireAuthAPI(h.RequireHeadscaleClient(h.ExpireAuthKey)))
+	mux.HandleFunc("DELETE /api/auth-keys/{id}", requireAuthAPI(h.RequireHeadscaleClient(h.DeleteAuthKey)))
 
 	mux.HandleFunc("GET /api/members", requireAuthAPI(h.ListMembers))
 	mux.HandleFunc("POST /api/members/transfer-ownership", requireAuthAPI(h.TransferOwnership))

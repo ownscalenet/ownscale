@@ -8,7 +8,7 @@ function uniqueTag(): string {
   return `tag:e2e-${Date.now()}`
 }
 
-test('creating and expiring a tag-only pre-auth key', async ({ page }) => {
+test('creating, expiring and deleting a tag-only pre-auth key', async ({ page }) => {
   const tag = uniqueTag()
   await page.goto('/settings')
   await expect(page.getByRole('heading', { name: 'Pre-Auth Keys' })).toBeVisible()
@@ -30,6 +30,14 @@ test('creating and expiring a tag-only pre-auth key', async ({ page }) => {
   page.once('dialog', (d) => void d.accept())
   await row.getByRole('button', { name: 'Expire Key' }).click()
   await expect(row.getByText('Expired')).toBeVisible()
+
+  page.once('dialog', (d) => void d.accept())
+  await row.getByRole('button', { name: 'Delete' }).click()
+  await expect(row).toBeHidden()
+  // The key must be gone from headscale, not just from the page.
+  const res = await page.request.get('/api/auth-keys')
+  expect(res.ok()).toBe(true)
+  expect(await res.text()).not.toContain(tag)
 })
 
 test('creating and expiring a reusable, ephemeral pre-auth key for a real user', async ({

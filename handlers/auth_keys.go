@@ -85,3 +85,16 @@ func (h *Handlers) ExpireAuthKey(w http.ResponseWriter, r *http.Request) {
 	}
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
+
+// DeleteAuthKey handles DELETE /api/auth-keys/{id}.
+// requireHeadscaleClient guarantees the client is reachable.
+func (h *Handlers) DeleteAuthKey(w http.ResponseWriter, r *http.Request) {
+	client, _, _ := headscaleClientFromContext(r)
+	id := r.PathValue("id")
+
+	if err := client.DeletePreAuthKey(r.Context(), id); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}

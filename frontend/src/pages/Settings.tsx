@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth'
 import {
   createAuthKey,
+  deleteAuthKey,
   expireAuthKey,
   listAuthKeys,
   ApiError,
@@ -217,6 +218,17 @@ function AuthKeyRow({ authKey: k, onChange }: { authKey: PreAuthKey; onChange: (
     }
   }
 
+  const handleDelete = async () => {
+    if (!confirm("Delete this pre-auth key? This can't be undone.")) return
+    setBusy(true)
+    try {
+      await deleteAuthKey(k.id)
+      onChange()
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return (
     <tr>
       <td className="font-mono text-sm whitespace-nowrap">{k.key}</td>
@@ -251,6 +263,14 @@ function AuthKeyRow({ authKey: k, onChange }: { authKey: PreAuthKey; onChange: (
           onClick={() => void handleExpire()}
         >
           Expire Key
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm btn-ghost text-error"
+          disabled={busy}
+          onClick={() => void handleDelete()}
+        >
+          Delete
         </button>
       </td>
     </tr>

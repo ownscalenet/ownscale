@@ -120,3 +120,20 @@ func TestExpireAuthKey(t *testing.T) {
 		t.Errorf("unexpected upstream request path: %s", last.URL.Path)
 	}
 }
+
+func TestDeleteAuthKey(t *testing.T) {
+	h, queries := newTestHandlers(t)
+	user, client, requests := activeOrgUser(t, h, queries)
+
+	req := withPathValue(withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/auth-keys/1", nil), user), client), "id", "1")
+	rec := httptest.NewRecorder()
+	h.DeleteAuthKey(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	}
+	last := (*requests)[len(*requests)-1]
+	if last.Method != http.MethodDelete || !strings.HasSuffix(last.URL.Path, "/preauthkey") || last.URL.Query().Get("id") != "1" {
+		t.Errorf("unexpected upstream request: %s %s", last.Method, last.URL)
+	}
+}
