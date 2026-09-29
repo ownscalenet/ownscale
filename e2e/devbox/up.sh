@@ -22,4 +22,4 @@ for _ in $(seq 1 20); do
 	[ -S /var/run/tailscale/tailscaled.sock ] && break
 	sleep 0.5
 done
-tailscale up --login-server="$login_server" --authkey="$authkey" --hostname="$hostname" --accept-dns=false "$@"
+tailscale up --login-server="$login_server" --authkey="$authkey" --hostname="$hostname" --accept-dns=true --ssh "$@"

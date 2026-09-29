@@ -67,7 +67,7 @@ BASE_DOMAIN := $(if $(BASE_DOMAIN),$(BASE_DOMAIN),ownscale.test)
 devbox:
 	@docker compose ps --status running --services | grep -qx ownscale || { echo "ownscale is not running -- run 'make dev-up' first"; exit 1; }
 	@test -f $(CERT) || { echo "$(CERT) not found -- start docker compose (local-ca-init) first"; exit 1; }
-	@docker image inspect $(DEVBOX_IMAGE) >/dev/null 2>&1 || docker build -t $(DEVBOX_IMAGE) e2e/devbox
+	@docker build -q -t $(DEVBOX_IMAGE) e2e/devbox >/dev/null
 	@echo "minting a pre-auth key for $(ORG)..."
 	@n=1; while docker ps -a --format '{{.Names}}' | grep -qx "devbox$(ORG)$$n"; do n=$$((n+1)); done; \
 	name=devbox$(ORG)$$n; \
@@ -97,7 +97,7 @@ e2e-connectivity:
 	mkdir -p bin/connectivity-work
 	TMPDIR="$(CURDIR)/bin/connectivity-work" npm --prefix e2e/frontend run test:connectivity
 
-# Tailscale SSH between two devbox containers; also needs docker with /dev/net/tun.
+# Tailscale SSH and split DNS between devbox containers; also needs docker with /dev/net/tun.
 e2e-ssh:
 	npm --prefix e2e/frontend run test:ssh
 

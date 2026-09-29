@@ -8,8 +8,8 @@ const baseURL = process.env.E2E_BASE_URL ?? 'https://console.ownscale.test'
 
 export default defineConfig({
   testDir: './tests',
-  // connectivity/ and ssh/ have their own configs.
-  testIgnore: ['**/connectivity/**', '**/ssh/**'],
+  // connectivity/, ssh/ and devbox/ have their own configs.
+  testIgnore: ['**/connectivity/**', '**/ssh/**', '**/devbox/**'],
   globalSetup: './run-guard.ts',
   fullyParallel: false,
   workers: 1,

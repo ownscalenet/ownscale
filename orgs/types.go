@@ -58,8 +58,11 @@ type DNSConfig struct {
 }
 
 // Nameservers lists the DNS resolvers pushed to an organization's nodes.
+// Split maps a domain to the resolvers used for it and its subdomains
+// instead of Global.
 type Nameservers struct {
-	Global []string `json:"global" yaml:"global"`
+	Global []string            `json:"global" yaml:"global"`
+	Split  map[string][]string `json:"split" yaml:"split"`
 }
 
 // OIDCConfig is an organization's headscale OIDC client and login allowlist.

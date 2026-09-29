@@ -282,6 +282,8 @@ export interface DNSRecord {
 
 export interface Nameservers {
   global: string[]
+  // Maps a domain to the nameservers used for it and its subdomains.
+  split: Record<string, string[]>
 }
 
 export interface DNSConfig {

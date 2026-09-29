@@ -191,10 +191,14 @@ export default function DNS() {
               items={dns.nameservers.global}
               placeholder="1.1.1.1"
               disabled={!canManage || saving}
-              onChange={(global) => void save({ ...dns, nameservers: { global } })}
+              onChange={(global) =>
+                void save({ ...dns, nameservers: { ...dns.nameservers, global } })
+              }
             />
           </div>
         </div>
+
+        <SplitDNS dns={dns} canManage={canManage} saving={saving} onSave={save} />
 
         <div className="card bg-base-100 shadow">
           <div className="card-body">
@@ -311,6 +315,120 @@ export default function DNS() {
             </label>
           </div>
         </div>
+      </div>
+    </div>
+  )
+}
+
+function SplitDNS({
+  dns,
+  canManage,
+  saving,
+  onSave,
+}: {
+  dns: DNSConfig
+  canManage: boolean
+  saving: boolean
+  onSave: (next: DNSConfig) => void
+}) {
+  const [domain, setDomain] = useState('')
+  const [nameservers, setNameservers] = useState('')
+  const entries = Object.entries(dns.nameservers.split).sort(([a], [b]) => a.localeCompare(b))
+
+  const setSplit = (split: Record<string, string[]>) =>
+    onSave({ ...dns, nameservers: { ...dns.nameservers, split } })
+
+  const add = () => {
+    const d = domain.trim()
+    const ns = nameservers
+      .split(',')
+      .map((s) => s.trim())
+      .filter(Boolean)
+    if (!d || ns.length === 0) return
+    // Adding an existing domain replaces its nameservers.
+    setSplit({ ...dns.nameservers.split, [d]: ns })
+    setDomain('')
+    setNameservers('')
+  }
+
+  const remove = (target: string) => {
+    const { [target]: _removed, ...rest } = dns.nameservers.split
+    setSplit(rest)
+  }
+
+  return (
+    <div className="card bg-base-100 shadow">
+      <div className="card-body">
+        <h2 className="card-title">Split DNS</h2>
+        <p className="text-sm text-base-content/70">
+          Queries for these domains and their subdomains go to the listed nameservers instead of the
+          global ones.
+        </p>
+        <div className="overflow-x-auto">
+          <table className="table table-sm">
+            <thead>
+              <tr>
+                <th>Domain</th>
+                <th>Nameservers</th>
+                {canManage && <th></th>}
+              </tr>
+            </thead>
+            <tbody>
+              {entries.length === 0 && (
+                <tr>
+                  <td colSpan={3} className="text-sm text-base-content/60">
+                    No split DNS domains configured
+                  </td>
+                </tr>
+              )}
+              {entries.map(([d, ns]) => (
+                <tr key={d}>
+                  <td className="font-mono">{d}</td>
+                  <td className="font-mono">{ns.join(', ')}</td>
+                  {canManage && (
+                    <td>
+                      <button
+                        type="button"
+                        className="btn btn-ghost btn-xs"
+                        disabled={saving}
+                        onClick={() => remove(d)}
+                      >
+                        Remove
+                      </button>
+                    </td>
+                  )}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        {canManage && (
+          <div className="flex flex-wrap gap-2 mt-2">
+            <input
+              type="text"
+              className="input input-bordered input-sm flex-1"
+              placeholder="Domain (e.g. corp.example.com)"
+              value={domain}
+              onChange={(e) => setDomain(e.target.value)}
+            />
+            <input
+              type="text"
+              className="input input-bordered input-sm flex-1"
+              placeholder="Nameservers (e.g. 10.0.0.53, 10.0.0.54)"
+              value={nameservers}
+              onChange={(e) => setNameservers(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault()
+                  add()
+                }
+              }}
+            />
+            <button type="button" className="btn btn-sm" disabled={saving} onClick={add}>
+              Add
+            </button>
+          </div>
+        )}
       </div>
     </div>
   )

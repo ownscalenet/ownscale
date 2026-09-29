@@ -110,13 +110,23 @@ func TestSetDNSSettingsPersistsAndMarksActive(t *testing.T) {
 	_, o := newTestOrgService(t)
 
 	want := DNSConfig{
-		BaseDomain:    "acme.headscale.internal",
-		MagicDNS:      true,
-		Nameservers:   Nameservers{Global: []string{"1.1.1.1", "8.8.8.8"}},
+		BaseDomain: "acme.headscale.internal",
+		MagicDNS:   true,
+		Nameservers: Nameservers{
+			Global: []string{"1.1.1.1", "8.8.8.8"},
+			Split: map[string][]string{
+				"corp.example.com": {"10.0.0.53", "https://dns.example.com/dns-query"},
+			},
+		},
 		SearchDomains: []string{"internal.acme.example.com"},
 		ExtraRecords:  []DNSRecord{{Name: "server.acme.headscale.internal", Type: "A", Value: "10.0.0.1"}},
 	}
-	if err := o.SetDNSSettings(t.Context(), want); err != nil {
+	// Split domains are stored in canonical form.
+	in := want
+	in.Nameservers.Split = map[string][]string{
+		" Corp.Example.COM. ": {"10.0.0.53", "https://dns.example.com/dns-query"},
+	}
+	if err := o.SetDNSSettings(t.Context(), in); err != nil {
 		t.Fatalf("SetDNSSettings: %v", err)
 	}
 
@@ -144,6 +154,21 @@ func TestSetDNSSettingsRejectsInvalidInput(t *testing.T) {
 			{Name: "a.example.com", Type: "A", Value: "1.2.3.4"},
 			{Name: "a.example.com", Type: "A", Value: "5.6.7.8"},
 		}}},
+		{"invalid global nameserver", withNameservers(Nameservers{Global: []string{"not-an-ip"}})},
+		{"global nameserver with port", withNameservers(Nameservers{Global: []string{"1.1.1.1:5353"}})},
+		{"plain http nameserver", withNameservers(Nameservers{Global: []string{"http://dns.example.com/dns-query"}})},
+		{"empty split domain", withSplit(map[string][]string{"": {"10.0.0.53"}})},
+		{"root split domain", withSplit(map[string][]string{".": {"10.0.0.53"}})},
+		{"invalid split domain", withSplit(map[string][]string{"corp..example.com": {"10.0.0.53"}})},
+		{"split domain with bad label", withSplit(map[string][]string{"-corp.example.com": {"10.0.0.53"}})},
+		{"split domain is the tailnet name", withSplit(map[string][]string{"acme.headscale.internal": {"10.0.0.53"}})},
+		{"split domain inside the tailnet name", withSplit(map[string][]string{"db.acme.headscale.internal": {"10.0.0.53"}})},
+		{"split domain without nameservers", withSplit(map[string][]string{"corp.example.com": {}})},
+		{"invalid split nameserver", withSplit(map[string][]string{"corp.example.com": {"corp-dns"}})},
+		{"duplicate split domain", withSplit(map[string][]string{
+			"corp.example.com":  {"10.0.0.53"},
+			"CORP.example.com.": {"10.0.0.54"},
+		})},
 	}
 
 	_, o := newTestOrgService(t)
@@ -167,6 +192,14 @@ func TestSetDNSSettingsRejectsInvalidInput(t *testing.T) {
 			}
 		})
 	}
+}
+
+func withNameservers(ns Nameservers) DNSConfig {
+	return DNSConfig{BaseDomain: "acme.headscale.internal", Nameservers: ns}
+}
+
+func withSplit(split map[string][]string) DNSConfig {
+	return withNameservers(Nameservers{Global: []string{"1.1.1.1"}, Split: split})
 }
 
 // TestSettingsRestartFailureLeavesUpdatePending verifies a failed restart is

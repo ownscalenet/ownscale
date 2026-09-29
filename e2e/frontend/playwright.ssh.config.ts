@@ -1,7 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 import { baseURL } from './tests/connectivity/environment'
 
-// Tailscale SSH between two real tailscaled containers. Needs docker on top of
+// Tailscale SSH and split DNS between real tailscaled containers. Needs docker on top of
 // `make dev-up` (see README.md), so it's kept out of the default config.
 export default defineConfig({
   testDir: './tests',
@@ -23,7 +23,7 @@ export default defineConfig({
     },
     {
       name: 'ssh',
-      testMatch: /ssh\/.*\.spec\.ts/,
+      testMatch: /(ssh|devbox)\/.*\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
         storageState: 'tests/.auth/admin.json',

@@ -17,13 +17,8 @@ export async function docker(args: string[], timeoutMs = 60_000): Promise<string
   return stdout.trim()
 }
 
-// ensureDevboxImage builds the devbox image if it doesn't exist yet.
 export async function ensureDevboxImage(): Promise<void> {
-  try {
-    await docker(['image', 'inspect', devboxImage])
-  } catch {
-    await docker(['build', '-t', devboxImage, resolve(root, 'e2e/devbox')], 10 * 60_000)
-  }
+  await docker(['build', '-t', devboxImage, resolve(root, 'e2e/devbox')], 10 * 60_000)
 }
 
 // startDevbox starts container name and joins it to org's tailnet as
@@ -40,7 +35,7 @@ export async function startDevbox(name: string, org: string, hostname: string, u
     devboxImage, 'sleep', 'infinity',
   ])
   const authKey = await docker(['compose', 'exec', '-T', 'ownscale', './osa', 'devbox-key', org])
-  await docker(['exec', name, 'devbox-up', `https://${org}.${baseDomain}`, authKey, hostname, ...upFlags], 120_000)
+  await docker(['exec', name, 'devbox-up', `https://${org}.${baseDomain}`, authKey, hostname, ...upFlags], 60_000)
 }
 
 // removeDevbox force-removes container name, ignoring a missing container.

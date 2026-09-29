@@ -33,3 +33,17 @@ between the machines.
 
 Each machine you want to SSH into must run `tailscale up --ssh`. Then connect
 with `tailscale ssh user@machine` from another machine in the tailnet.
+
+## How do I resolve internal domains with split DNS?
+
+Split DNS sends queries for a domain, and its subdomains, to specific
+nameservers instead of the global ones. Use it to resolve private names such
+as `corp.example.com` from an internal DNS server.
+
+Add the domain and its nameservers under Split DNS on the DNS page.
+Nameservers can be IP addresses or `https://` DNS-over-HTTPS URLs. A
+nameserver inside your network is usually reached through a machine that
+advertises its subnet route, or is itself a machine in the tailnet.
+
+Machines only use it when they accept DNS settings from the tailnet
+(`tailscale up --accept-dns`, the default).

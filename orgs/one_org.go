@@ -6,11 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/netip"
+	"net/url"
 	"strings"
 	"time"
 
 	"github.com/rs/xid"
 	"github.com/tailscale/hujson"
+	"tailscale.com/util/dnsname"
 
 	"github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
@@ -220,6 +223,11 @@ func (o *OrgService) SetDNSSettings(ctx context.Context, dns DNSConfig) (err err
 	if err := validateDNSSettings(dns); err != nil {
 		return err
 	}
+	split, err := canonicalSplitDNS(dns.Nameservers.Split, dns.BaseDomain)
+	if err != nil {
+		return err
+	}
+	dns.Nameservers.Split = split
 
 	cfg, err := o.getHeadscaleConfig(ctx)
 	if err != nil {
@@ -233,11 +241,27 @@ func (o *OrgService) SetDNSSettings(ctx context.Context, dns DNSConfig) (err err
 	return o.applyHeadscaleConfig(applyCtx, cfg, nil)
 }
 
-// validateDNSSettings rejects an empty base domain, empty record
-// names/values, and duplicate records.
+// validateDNSSettings rejects an empty base domain, invalid nameservers,
+// empty record names/values, and duplicate records.
 func validateDNSSettings(dns DNSConfig) error {
 	if strings.TrimSpace(dns.BaseDomain) == "" {
 		return NewInvalidConfigError("tailnet name must not be empty")
+	}
+
+	for _, ns := range dns.Nameservers.Global {
+		if !validNameserver(ns) {
+			return NewInvalidConfigError(fmt.Sprintf("nameserver %q must be an IP address or an https:// DNS-over-HTTPS URL", ns))
+		}
+	}
+	for domain, nameservers := range dns.Nameservers.Split {
+		if len(nameservers) == 0 {
+			return NewInvalidConfigError(fmt.Sprintf("split DNS domain %q needs at least one nameserver", domain))
+		}
+		for _, ns := range nameservers {
+			if !validNameserver(ns) {
+				return NewInvalidConfigError(fmt.Sprintf("nameserver %q for %q must be an IP address or an https:// DNS-over-HTTPS URL", ns, domain))
+			}
+		}
 	}
 
 	seen := make(map[[2]string]bool, len(dns.ExtraRecords))
@@ -259,11 +283,67 @@ func validateDNSSettings(dns DNSConfig) error {
 	return nil
 }
 
+// validNameserver reports whether ns is a resolver headscale passes on to
+// nodes; it silently drops anything else, so reject it up front instead.
+func validNameserver(ns string) bool {
+	if _, err := netip.ParseAddr(ns); err == nil {
+		return true
+	}
+	u, err := url.Parse(ns)
+	return err == nil && u.Scheme == "https" && u.Host != ""
+}
+
+// canonicalSplitDNS returns split with each domain lowercased and without
+// a trailing dot, so equivalent spellings can't become separate entries.
+// It rejects invalid domains and ones that would shadow MagicDNS names
+// under baseDomain.
+func canonicalSplitDNS(split map[string][]string, baseDomain string) (map[string][]string, error) {
+	base, err := dnsname.ToFQDN(strings.ToLower(strings.TrimSpace(baseDomain)))
+	if err != nil {
+		return nil, NewInvalidConfigError(fmt.Sprintf("invalid tailnet name %q", baseDomain))
+	}
+
+	out := make(map[string][]string, len(split))
+	for domain, nameservers := range split {
+		fqdn, ok := parseDomain(domain)
+		if !ok {
+			return nil, NewInvalidConfigError(fmt.Sprintf("invalid split DNS domain %q", domain))
+		}
+		if base.Contains(fqdn) {
+			return nil, NewInvalidConfigError(fmt.Sprintf("split DNS domain %q is inside the tailnet name %q", domain, baseDomain))
+		}
+		key := fqdn.WithoutTrailingDot()
+		if _, ok := out[key]; ok {
+			return nil, NewInvalidConfigError(fmt.Sprintf("duplicate split DNS domain %q", key))
+		}
+		out[key] = nameservers
+	}
+	return out, nil
+}
+
+// parseDomain lowercases s and reports whether it's a non-root domain made
+// of hostname-style labels.
+func parseDomain(s string) (dnsname.FQDN, bool) {
+	fqdn, err := dnsname.ToFQDN(strings.ToLower(strings.TrimSpace(s)))
+	if err != nil || fqdn.NumLabels() == 0 {
+		return "", false
+	}
+	for label := range strings.SplitSeq(fqdn.WithoutTrailingDot(), ".") {
+		if dnsname.ValidLabel(label) != nil {
+			return "", false
+		}
+	}
+	return fqdn, true
+}
+
 // normalizeDNSConfig fills in empty slices for nil slice fields so the
 // JSON response always has arrays (never null) for the frontend.
 func normalizeDNSConfig(dns DNSConfig) DNSConfig {
 	if dns.Nameservers.Global == nil {
 		dns.Nameservers.Global = []string{}
+	}
+	if dns.Nameservers.Split == nil {
+		dns.Nameservers.Split = map[string][]string{}
 	}
 	if dns.SearchDomains == nil {
 		dns.SearchDomains = []string{}

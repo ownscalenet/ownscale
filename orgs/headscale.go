@@ -167,7 +167,7 @@ func ownscaleDNSToTypes(dns DNSConfig) types.DNSConfig {
 	return types.DNSConfig{
 		MagicDNS:      dns.MagicDNS,
 		BaseDomain:    dns.BaseDomain,
-		Nameservers:   types.Nameservers{Global: dns.Nameservers.Global},
+		Nameservers:   types.Nameservers{Global: dns.Nameservers.Global, Split: dns.Nameservers.Split},
 		SearchDomains: dns.SearchDomains,
 		ExtraRecords:  records,
 	}
@@ -182,16 +182,26 @@ func buildTailcfgDNS(dns types.DNSConfig) *tailcfg.DNSConfig {
 		Proxied:      dns.MagicDNS,
 		ExtraRecords: dns.ExtraRecords,
 	}
-	var resolvers []*dnstype.Resolver
-	for _, ns := range dns.Nameservers.Global {
-		resolvers = append(resolvers, &dnstype.Resolver{Addr: ns})
-	}
 	// headscale uses FallbackResolvers when OverrideLocalDNS is false
 	// (the default); OverrideLocalDNS is not part of ownscale's config.
-	cfg.FallbackResolvers = resolvers
+	cfg.FallbackResolvers = toResolvers(dns.Nameservers.Global)
+	if len(dns.Nameservers.Split) > 0 {
+		cfg.Routes = make(map[string][]*dnstype.Resolver, len(dns.Nameservers.Split))
+		for domain, nameservers := range dns.Nameservers.Split {
+			cfg.Routes[domain] = toResolvers(nameservers)
+		}
+	}
 	if dns.BaseDomain != "" {
 		cfg.Domains = []string{dns.BaseDomain}
 	}
 	cfg.Domains = append(cfg.Domains, dns.SearchDomains...)
 	return cfg
+}
+
+func toResolvers(nameservers []string) []*dnstype.Resolver {
+	var resolvers []*dnstype.Resolver
+	for _, ns := range nameservers {
+		resolvers = append(resolvers, &dnstype.Resolver{Addr: ns})
+	}
+	return resolvers
 }
