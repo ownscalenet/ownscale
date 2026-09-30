@@ -302,7 +302,7 @@ func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organ
 	if err != nil {
 		return sqlcgen.Organization{}, err
 	}
-	if err := s.startHeadscale(ctx, subdomain, hsCfg); err != nil {
+	if err := s.startHeadscale(ctx, org.ID, subdomain, hsCfg); err != nil {
 		if delErr := s.queries.DeleteOrganization(context.WithoutCancel(ctx), org.ID); delErr != nil {
 			err = errors.Join(err, fmt.Errorf("delete organization: %w", delErr))
 		}
@@ -373,7 +373,7 @@ func (s *Service) Start(ctx context.Context) (err error) {
 			continue
 		}
 
-		if err := s.startHeadscale(ctx, org.Subdomain, parsedCfg); err != nil {
+		if err := s.startHeadscale(ctx, org.ID, org.Subdomain, parsedCfg); err != nil {
 			s.logger.Error("recover active org headscale instance", "subdomain", org.Subdomain, "error", err)
 		}
 	}
@@ -387,14 +387,17 @@ func (s *Service) Start(ctx context.Context) (err error) {
 //
 // Instances start one at a time: this returns once the instance serves,
 // or with the reason it doesn't.
-func (s *Service) startHeadscale(ctx context.Context, subdomain string, hsCfg *HeadscaleConfig) error {
+func (s *Service) startHeadscale(ctx context.Context, orgID, subdomain string, hsCfg *HeadscaleConfig) error {
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
-	return s.startLocked(ctx, subdomain, hsCfg)
+	return s.startLocked(ctx, orgID, subdomain, hsCfg)
 }
 
 // startLocked is startHeadscale for callers already holding startMu.
-func (s *Service) startLocked(ctx context.Context, subdomain string, hsCfg *HeadscaleConfig) error {
+func (s *Service) startLocked(ctx context.Context, orgID, subdomain string, hsCfg *HeadscaleConfig) error {
+	if err := s.ensureNoiseKey(ctx, orgID, subdomain); err != nil {
+		return err
+	}
 	rt, known := s.orgs.Load(subdomain)
 	port := 0
 	if known {
@@ -564,7 +567,7 @@ func (s *Service) restartHeadscale(ctx context.Context, subdomain string) (err e
 		}
 		rt.closeConns()
 	}
-	return s.startLocked(ctx, subdomain, hsCfg)
+	return s.startLocked(ctx, org.ID, subdomain, hsCfg)
 }
 
 // randomAlphaNum generates a random alphanumeric string of n characters

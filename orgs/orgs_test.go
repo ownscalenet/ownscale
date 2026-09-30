@@ -259,8 +259,9 @@ func TestStartRetriesTakenPort(t *testing.T) {
 	t.Cleanup(func() { ln.Close() })
 	taken := ln.Addr().(*net.TCPAddr).Port
 	svc.orgs.Store("acme", &orgRuntime{port: taken})
+	org := dbtest.CreateOrg(t, svc.queries.Queries, "acme")
 
-	if err := svc.startHeadscale(t.Context(), "acme", newHeadscaleConfig("acme", OIDCConfig{Issuer: "https://auth.example.com"})); err != nil {
+	if err := svc.startHeadscale(t.Context(), org.ID, "acme", newHeadscaleConfig("acme", OIDCConfig{Issuer: "https://auth.example.com"})); err != nil {
 		t.Fatalf("startHeadscale: %v", err)
 	}
 	inst, ok := svc.running("acme")

@@ -1,6 +1,8 @@
 package orgs
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -8,21 +10,84 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/juanfont/headscale/hscontrol"
 	"github.com/juanfont/headscale/hscontrol/types"
+	"github.com/rs/xid"
 	"github.com/rs/zerolog"
 	"tailscale.com/tailcfg"
 	"tailscale.com/types/dnstype"
+	"tailscale.com/types/key"
 
 	"github.com/ownscalenet/ownscale/config"
+	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/derrors"
 )
 
 func noisePath(dataDir, subdomain string) string {
 	return filepath.Join(dataDir, subdomain, "noise_private.key")
 }
+
+const noiseKeyConfigKey = "noise_private.key"
+
+// ensureNoiseKey dumps the key from database to filesystem, or creates it if
+// it does not exist in the database.
+func (s *Service) ensureNoiseKey(ctx context.Context, orgID, subdomain string) (err error) {
+	defer derrors.Wrap(&err, "s.ensureNoiseKey(%q)", subdomain)
+
+	path := noisePath(s.dataDir, subdomain)
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return err
+	}
+	file, err := os.ReadFile(path)
+	if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return err
+	}
+	fileKey := strings.TrimSpace(string(file))
+
+	row, err := s.queries.GetOrgConfig(ctx, sqlcgen.GetOrgConfigParams{
+		OrganizationID: orgID,
+		Path:           noiseKeyConfigKey,
+	})
+	switch {
+	case err == nil:
+		if fileKey == row.Content {
+			return nil
+		}
+		if fileKey != "" {
+			s.logger.Warn("noise key file differs from the stored key, restoring the stored one", "subdomain", subdomain)
+		}
+		return os.WriteFile(path, []byte(row.Content), 0600)
+	case !errors.Is(err, sql.ErrNoRows):
+		return err
+	}
+
+	stored := fileKey
+	if stored == "" {
+		text, err := key.NewMachine().MarshalText()
+		if err != nil {
+			return err
+		}
+		stored = string(text)
+	} else if err := new(key.MachinePrivate).UnmarshalText([]byte(stored)); err != nil {
+		return fmt.Errorf("parse noise key file: %w", err)
+	}
+	if _, err := s.queries.UpsertOrgConfig(ctx, sqlcgen.UpsertOrgConfigParams{
+		ID:             xid.New().String(),
+		OrganizationID: orgID,
+		Path:           noiseKeyConfigKey,
+		Content:        stored,
+	}); err != nil {
+		return err
+	}
+	if fileKey == "" {
+		return os.WriteFile(path, []byte(stored), 0600)
+	}
+	return nil
+}
+
 func sqlitePath(dataDir, subdomain string) string {
 	return filepath.Join(dataDir, subdomain, "db.sqlite")
 }

@@ -8,3 +8,7 @@
 - when deleting a node, how to warn users of funnels that rely on the node
 - add a page with explanations about huJSON for end users
 - stress tests
+- put inactive orgs to sleep by stopping their headscale process
+- if all headscale instances run in the same process, what are error conditions
+  that would bring the whole stack down (for example, does a derp map request
+  failure bring down the whole process?)
