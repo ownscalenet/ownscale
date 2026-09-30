@@ -7,3 +7,4 @@
 - TLS for DNS providers other than Azure
 - when deleting a node, how to warn users of funnels that rely on the node
 - add a page with explanations about huJSON for end users
+- stress tests

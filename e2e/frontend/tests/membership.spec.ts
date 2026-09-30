@@ -25,7 +25,7 @@ function registerURL(): string {
   return `https://${org}.${baseDomain}/register/hskey-authreq-${randomBytes(12).toString('hex')}`
 }
 
-test("a user of another organization can't sign in to its tailnet", async ({ browser }) => {
+test("a user of another organization can't sign in to its tailnet until switching to a member account", async ({ browser }) => {
   // user1 owns bbbb (see global.setup.ts). Signing in from the tailnet's
   // login page is refused by the console...
   const page = await signIn(browser, 'user1@ownscale.test', registerURL())
@@ -33,13 +33,20 @@ test("a user of another organization can't sign in to its tailnet", async ({ bro
     await expect(page.getByText("You aren't a member of this organization")).toBeVisible({ timeout: 15_000 })
 
     // ...and with a console session already in place, the OIDC provider
-    // sends headscale an access_denied error instead of an identity.
+    // asks to sign in with another account instead of failing.
+    await page.goto(registerURL())
+    await expect(page.getByText("You're signed in as user1@ownscale.test")).toBeVisible()
+
+    // Switching to a member (admin owns aaaa) hands headscale an identity.
     const callback = page.waitForRequest(
       (r) => r.isNavigationRequest() && r.url().startsWith(`https://${org}.${baseDomain}/oidc/callback`),
       { timeout: 30_000 },
     )
-    void page.goto(registerURL()).catch(() => {})
-    expect(new URL((await callback).url()).searchParams.get('error')).toBe('access_denied')
+    await page.getByRole('link', { name: 'Sign in with SSO' }).click()
+    await page.locator('#login').fill('admin@ownscale.test')
+    await page.locator('#password').fill('ownscale')
+    await page.locator('#submit-login').click()
+    expect(new URL((await callback).url()).searchParams.get('code')).toBeTruthy()
   } finally {
     await page.context().close()
   }
