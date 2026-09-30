@@ -48,11 +48,22 @@ func New(cfg *config.Config, queries *sqlcgen.Queries) (_ op.OpenIDProvider, _ *
 	if err != nil {
 		return nil, nil, err
 	}
-	storage.SetLoginURL(func(id string) string {
-		next := op.AuthCallbackURL(provider)(context.Background(), id)
-		return "/login?next=" + url.QueryEscape(next)
-	})
+	storage.SetLoginURL(newLoginURL(storage, op.AuthCallbackURL(provider)))
 	return newAuthorizingProvider(provider, storage), storage, nil
+}
+
+// newLoginURL returns where /authorize sends the browser for auth request id.
+// A request already authorized from the session goes straight to its
+// callback; any other one goes to the login page, which then lets a signed-in
+// user switch accounts instead of looping back to a request that isn't done.
+func newLoginURL(s *Storage, callbackURL func(context.Context, string) string) func(string) string {
+	return func(id string) string {
+		next := callbackURL(context.Background(), id)
+		if s.authRequestDone(id) {
+			return next
+		}
+		return "/login?next=" + url.QueryEscape(next)
+	}
 }
 
 type sessionUserKey struct{}
@@ -97,8 +108,9 @@ func (p *authorizingProvider) ValidateAuthRequest(ctx context.Context, authReq *
 		return subject, nil
 	}
 	if sessionUserID, _ := ctx.Value(sessionUserKey{}).(string); sessionUserID != "" {
+		// A non-member is sent to the login page to pick another account.
 		if err := p.storage.checkMember(ctx, authReq.ClientID, sessionUserID); errors.Is(err, ErrNotMember) {
-			return "", oidc.ErrAccessDenied().WithDescription("you aren't a member of this organization")
+			return subject, nil
 		} else if err != nil {
 			return "", oidc.ErrServerError().WithParent(err)
 		}

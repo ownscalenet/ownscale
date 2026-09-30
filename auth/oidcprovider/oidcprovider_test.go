@@ -6,6 +6,7 @@ import (
 	"crypto/rsa"
 	"encoding/json"
 	"errors"
+	"net/url"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -219,15 +220,57 @@ func TestMembershipGatesAuthRequests(t *testing.T) {
 				t.Errorf("Done() = %v, want %v", got.Done(), tt.wantMember)
 			}
 
+			// A non-member's session doesn't authorize the request, so they
+			// land on the login page to pick another account.
+			wantSubject := ""
+			if tt.wantMember {
+				wantSubject = tt.userID
+			}
 			provider := &authorizingProvider{storage: storage}
 			ctx := context.WithValue(t.Context(), sessionUserKey{}, tt.userID)
 			subject, err := provider.ValidateAuthRequest(ctx, authReq, storage, nil)
-			if tt.wantMember && (err != nil || subject != tt.userID) {
-				t.Errorf("ValidateAuthRequest = %q, %v, want %q", subject, err, tt.userID)
+			if err != nil || subject != wantSubject {
+				t.Errorf("ValidateAuthRequest = %q, %v, want %q", subject, err, wantSubject)
 			}
-			var oidcErr *oidc.Error
-			if !tt.wantMember && (!errors.As(err, &oidcErr) || oidcErr.ErrorType != oidc.AccessDenied) {
-				t.Errorf("ValidateAuthRequest error = %v, want access denied", err)
+		})
+	}
+}
+
+func TestLoginURL(t *testing.T) {
+	storage, queries := testStorage(t)
+	acme := dbtest.CreateOrg(t, queries, "acme")
+	clientRow, _ := insertTestClient(t, queries, acme.ID)
+	member := insertTestUser(t, queries, acme.ID)
+	loginURL := newLoginURL(storage, func(_ context.Context, id string) string {
+		return "/authorize/callback?id=" + id
+	})
+
+	tests := []struct {
+		name     string
+		userID   string
+		wantDone bool
+	}{
+		{"authorized from session", member.ID, true},
+		{"needs login", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := storage.CreateAuthRequest(t.Context(), &oidc.AuthRequest{
+				ClientID:     clientRow.ClientID,
+				RedirectURI:  "https://acme.example.com/oidc/callback",
+				ResponseType: oidc.ResponseTypeCode,
+				Scopes:       []string{oidc.ScopeOpenID},
+			}, tt.userID)
+			if err != nil {
+				t.Fatalf("CreateAuthRequest: %v", err)
+			}
+			callback := "/authorize/callback?id=" + req.GetID()
+			want := "/login?next=" + url.QueryEscape(callback)
+			if tt.wantDone {
+				want = callback
+			}
+			if got := loginURL(req.GetID()); got != want {
+				t.Errorf("loginURL = %q, want %q", got, want)
 			}
 		})
 	}

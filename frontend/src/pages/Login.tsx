@@ -22,6 +22,13 @@ function isSafeRelativeNext(next: string | null): next is string {
 // redirect the underlying fetch(), but that doesn't move the browser's own
 // location, so the SPA repeats the same "next-or-home" decision itself once
 // the fetch succeeds.
+// isAuthorizeCallback reports whether next finishes another organization's
+// headscale SSO login. The provider only sends a signed-in user here with such
+// a next when their account can't finish it, so they must pick another one.
+function isAuthorizeCallback(next: string | null): boolean {
+  return !!next && next.startsWith('/authorize/callback')
+}
+
 function goToNext(next: string | null) {
   window.location.assign(isSafeRelativeNext(next) ? next : '/')
 }
@@ -34,7 +41,8 @@ export default function Login() {
   const href = `/auth/oidc${nextParam}`
   const googleHref = `/auth/google${nextParam}`
   const microsoftHref = `/auth/microsoft${nextParam}`
-  const alreadyAuthed = !loading && !!user
+  const switchAccount = !loading && !!user && isAuthorizeCallback(next)
+  const alreadyAuthed = !loading && !!user && !switchAccount
 
   const [passkeySupported] = useState(() => browserSupportsWebAuthn())
   const [passkeyBusy, setPasskeyBusy] = useState(false)
@@ -89,11 +97,7 @@ export default function Login() {
       goToNext(next)
     } catch (err) {
       setPasskeyError(
-        err instanceof ApiError
-          ? err.message
-          : err instanceof Error
-            ? err.message
-            : String(err),
+        err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err),
       )
       setPasskeyBusy(false)
     }
@@ -104,7 +108,16 @@ export default function Login() {
       <div className="hero-content text-center">
         <div className="max-w-md">
           <h1 className="text-3xl font-bold mb-2">Ownscale console</h1>
-          <p className="mb-6 text-base-content/70">Sign in to continue.</p>
+          {switchAccount ? (
+            <div className="alert alert-warning mb-6 text-left">
+              <span>
+                You're signed in as {user?.Email}, which can't sign in to this organization. Sign in
+                with an account that belongs to it.
+              </span>
+            </div>
+          ) : (
+            <p className="mb-6 text-base-content/70">Sign in to continue.</p>
+          )}
 
           {passkeyError && (
             <div className="alert alert-error mb-4">
@@ -145,7 +158,10 @@ export default function Login() {
                   New here? Create an account with a passkey
                 </button>
               ) : (
-                <form className="flex flex-col gap-2" onSubmit={(e) => void handlePasskeyRegister(e)}>
+                <form
+                  className="flex flex-col gap-2"
+                  onSubmit={(e) => void handlePasskeyRegister(e)}
+                >
                   <label className="fieldset-label" htmlFor="passkey-email">
                     Email
                   </label>
@@ -171,4 +187,3 @@ export default function Login() {
     </div>
   )
 }
-

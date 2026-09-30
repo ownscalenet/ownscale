@@ -99,6 +99,13 @@ func (s *Storage) AuthorizeAuthRequest(ctx context.Context, id, userID string) (
 	return nil
 }
 
+func (s *Storage) authRequestDone(id string) bool {
+	s.lock.Lock()
+	defer s.lock.Unlock()
+	req, ok := s.authRequests[id]
+	return ok && req.done
+}
+
 func (s *Storage) checkMember(ctx context.Context, clientID, userID string) error {
 	client, err := s.queries.GetOIDCClientByClientID(ctx, clientID)
 	if err != nil {
