@@ -105,14 +105,27 @@ func NewUnix(socketPath string) *Client {
 	return &Client{api: api}
 }
 
-// check returns an error unless resp is a 200, carrying the reason from
-// headscale's application/problem+json body when there is one.
-func check(resp *http.Response, problem *clientv1.ErrorModel) error {
-	if resp.StatusCode == http.StatusOK {
-		return nil
+// response is what every generated XxxWithResponse call returns, with T the
+// operation's 200 body.
+type response[T any] interface {
+	StatusCode() int
+	Status() string
+	GetJSON200() *T
+	GetApplicationproblemJSONDefault() *clientv1.ErrorModel
+}
+
+// result returns resp's 200 JSON body, or an error carrying the reason from
+// headscale's application/problem+json body when there is one. A 200 without
+// a JSON body is an error too, so callers never see a nil body.
+func result[T any, R response[T]](resp R, err error) (*T, error) {
+	if err != nil {
+		return nil, err
+	}
+	if body := resp.GetJSON200(); resp.StatusCode() == http.StatusOK && body != nil {
+		return body, nil
 	}
 	var msgs []string
-	if problem != nil {
+	if problem := resp.GetApplicationproblemJSONDefault(); problem != nil {
 		if problem.Detail != nil {
 			msgs = append(msgs, *problem.Detail)
 		}
@@ -124,10 +137,22 @@ func check(resp *http.Response, problem *clientv1.ErrorModel) error {
 			}
 		}
 	}
-	if len(msgs) == 0 {
-		return fmt.Errorf("headscale: %s", resp.Status)
+	if resp.StatusCode() == http.StatusOK {
+		msgs = append(msgs, "response has no JSON body")
 	}
-	return fmt.Errorf("headscale: %s: %s", resp.Status, strings.Join(msgs, ": "))
+	if len(msgs) == 0 {
+		return nil, fmt.Errorf("headscale: %s", resp.Status())
+	}
+	return nil, fmt.Errorf("headscale: %s: %s", resp.Status(), strings.Join(msgs, ": "))
+}
+
+// convert applies f to each element of in.
+func convert[A, B any](in []A, f func(A) B) []B {
+	out := make([]B, 0, len(in))
+	for _, a := range in {
+		out = append(out, f(a))
+	}
+	return out
 }
 
 // ListNodes returns every node (machine) registered on this organization's
@@ -135,18 +160,11 @@ func check(resp *http.Response, problem *clientv1.ErrorModel) error {
 func (c *Client) ListNodes(ctx context.Context) (_ []Node, err error) {
 	defer derrors.Wrap(&err, "c.ListNodes()")
 
-	resp, err := c.api.ListNodesWithResponse(ctx, &clientv1.ListNodesParams{})
+	out, err := result(c.api.ListNodesWithResponse(ctx, &clientv1.ListNodesParams{}))
 	if err != nil {
 		return nil, err
 	}
-	if err := check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault); err != nil {
-		return nil, err
-	}
-	nodes := make([]Node, 0, len(resp.JSON200.Nodes))
-	for _, n := range resp.JSON200.Nodes {
-		nodes = append(nodes, toNode(n))
-	}
-	return nodes, nil
+	return convert(out.Nodes, toNode), nil
 }
 
 // ListUsers returns every user known to this organization's headscale
@@ -154,59 +172,43 @@ func (c *Client) ListNodes(ctx context.Context) (_ []Node, err error) {
 func (c *Client) ListUsers(ctx context.Context) (_ []User, err error) {
 	defer derrors.Wrap(&err, "c.ListUsers()")
 
-	resp, err := c.api.ListUsersWithResponse(ctx, &clientv1.ListUsersParams{})
+	out, err := result(c.api.ListUsersWithResponse(ctx, &clientv1.ListUsersParams{}))
 	if err != nil {
 		return nil, err
 	}
-	if err := check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault); err != nil {
-		return nil, err
-	}
-	users := make([]User, 0, len(resp.JSON200.Users))
-	for _, u := range resp.JSON200.Users {
-		users = append(users, toUser(u))
-	}
-	return users, nil
+	return convert(out.Users, toUser), nil
 }
 
 // CreateUser creates a headscale user from params.
 func (c *Client) CreateUser(ctx context.Context, params CreateUserParams) (_ User, err error) {
 	defer derrors.Wrap(&err, "c.CreateUser(%q)", params.Name)
 
-	resp, err := c.api.CreateUserWithResponse(ctx, clientv1.CreateUserJSONRequestBody{
+	out, err := result(c.api.CreateUserWithResponse(ctx, clientv1.CreateUserJSONRequestBody{
 		Name:        &params.Name,
 		Email:       &params.Email,
 		DisplayName: &params.DisplayName,
 		PictureUrl:  &params.PictureURL,
-	})
+	}))
 	if err != nil {
 		return User{}, err
 	}
-	if err := check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault); err != nil {
-		return User{}, err
-	}
-	return toUser(resp.JSON200.User), nil
+	return toUser(out.User), nil
 }
 
 // RenameUser renames the headscale user identified by id to newName.
 func (c *Client) RenameUser(ctx context.Context, id, newName string) (err error) {
 	defer derrors.Wrap(&err, "c.RenameUser(%q, %q)", id, newName)
 
-	resp, err := c.api.RenameUserWithResponse(ctx, id, newName)
-	if err != nil {
-		return err
-	}
-	return check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
+	_, err = result(c.api.RenameUserWithResponse(ctx, id, newName))
+	return err
 }
 
 // DeleteUser permanently removes the headscale user identified by id.
 func (c *Client) DeleteUser(ctx context.Context, id string) (err error) {
 	defer derrors.Wrap(&err, "c.DeleteUser(%q)", id)
 
-	resp, err := c.api.DeleteUserWithResponse(ctx, id)
-	if err != nil {
-		return err
-	}
-	return check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
+	_, err = result(c.api.DeleteUserWithResponse(ctx, id))
+	return err
 }
 
 // DeleteUserAndNodes deletes the headscale user identified by id and every
@@ -243,36 +245,27 @@ func (c *Client) DeleteUserAndNodes(ctx context.Context, id string) (err error) 
 func (c *Client) RegisterNode(ctx context.Context, user, key string) (_ Node, err error) {
 	defer derrors.Wrap(&err, "c.RegisterNode(%q, %q)", user, key)
 
-	resp, err := c.api.RegisterNodeWithResponse(ctx, &clientv1.RegisterNodeParams{User: &user, Key: &key})
+	out, err := result(c.api.RegisterNodeWithResponse(ctx, &clientv1.RegisterNodeParams{User: &user, Key: &key}))
 	if err != nil {
 		return Node{}, err
 	}
-	if err := check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault); err != nil {
-		return Node{}, err
-	}
-	return toNode(resp.JSON200.Node), nil
+	return toNode(out.Node), nil
 }
 
 // RenameNode sets nodeID's display name (givenName) to name.
 func (c *Client) RenameNode(ctx context.Context, nodeID, name string) (err error) {
 	defer derrors.Wrap(&err, "c.RenameNode(%q, %q)", nodeID, name)
 
-	resp, err := c.api.RenameNodeWithResponse(ctx, nodeID, name)
-	if err != nil {
-		return err
-	}
-	return check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
+	_, err = result(c.api.RenameNodeWithResponse(ctx, nodeID, name))
+	return err
 }
 
 // SetTags replaces nodeID's ACL tags with tags.
 func (c *Client) SetTags(ctx context.Context, nodeID string, tags []string) (err error) {
 	defer derrors.Wrap(&err, "c.SetTags(%q, %v)", nodeID, tags)
 
-	resp, err := c.api.SetTagsWithResponse(ctx, nodeID, clientv1.SetTagsJSONRequestBody{Tags: &tags})
-	if err != nil {
-		return err
-	}
-	return check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
+	_, err = result(c.api.SetTagsWithResponse(ctx, nodeID, clientv1.SetTagsJSONRequestBody{Tags: &tags}))
+	return err
 }
 
 // SetApprovedRoutes replaces the set of subnet/exit routes nodeID is
@@ -280,11 +273,8 @@ func (c *Client) SetTags(ctx context.Context, nodeID string, tags []string) (err
 func (c *Client) SetApprovedRoutes(ctx context.Context, nodeID string, routes []string) (err error) {
 	defer derrors.Wrap(&err, "c.SetApprovedRoutes(%q, %v)", nodeID, routes)
 
-	resp, err := c.api.SetApprovedRoutesWithResponse(ctx, nodeID, clientv1.SetApprovedRoutesJSONRequestBody{Routes: &routes})
-	if err != nil {
-		return err
-	}
-	return check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
+	_, err = result(c.api.SetApprovedRoutesWithResponse(ctx, nodeID, clientv1.SetApprovedRoutesJSONRequestBody{Routes: &routes}))
+	return err
 }
 
 // ExpireNode immediately expires nodeID's current session, forcing it to
@@ -292,22 +282,16 @@ func (c *Client) SetApprovedRoutes(ctx context.Context, nodeID string, routes []
 func (c *Client) ExpireNode(ctx context.Context, nodeID string) (err error) {
 	defer derrors.Wrap(&err, "c.ExpireNode(%q)", nodeID)
 
-	resp, err := c.api.ExpireNodeWithResponse(ctx, nodeID, clientv1.ExpireNodeJSONRequestBody{})
-	if err != nil {
-		return err
-	}
-	return check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
+	_, err = result(c.api.ExpireNodeWithResponse(ctx, nodeID, clientv1.ExpireNodeJSONRequestBody{}))
+	return err
 }
 
 // DeleteNode permanently removes nodeID from the tailnet.
 func (c *Client) DeleteNode(ctx context.Context, nodeID string) (err error) {
 	defer derrors.Wrap(&err, "c.DeleteNode(%q)", nodeID)
 
-	resp, err := c.api.DeleteNodeWithResponse(ctx, nodeID)
-	if err != nil {
-		return err
-	}
-	return check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
+	_, err = result(c.api.DeleteNodeWithResponse(ctx, nodeID))
+	return err
 }
 
 // ListPreAuthKeys returns every pre-authentication key for this
@@ -315,18 +299,11 @@ func (c *Client) DeleteNode(ctx context.Context, nodeID string) (err error) {
 func (c *Client) ListPreAuthKeys(ctx context.Context) (_ []PreAuthKey, err error) {
 	defer derrors.Wrap(&err, "c.ListPreAuthKeys()")
 
-	resp, err := c.api.ListPreAuthKeysWithResponse(ctx)
+	out, err := result(c.api.ListPreAuthKeysWithResponse(ctx))
 	if err != nil {
 		return nil, err
 	}
-	if err := check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault); err != nil {
-		return nil, err
-	}
-	keys := make([]PreAuthKey, 0, len(resp.JSON200.PreAuthKeys))
-	for _, k := range resp.JSON200.PreAuthKeys {
-		keys = append(keys, toPreAuthKey(k))
-	}
-	return keys, nil
+	return convert(out.PreAuthKeys, toPreAuthKey), nil
 }
 
 // CreatePreAuthKey creates a new pre-authentication key per params. The
@@ -346,14 +323,11 @@ func (c *Client) CreatePreAuthKey(ctx context.Context, params CreatePreAuthKeyPa
 	if !params.Expiration.IsZero() {
 		body.Expiration = &params.Expiration
 	}
-	resp, err := c.api.CreatePreAuthKeyWithResponse(ctx, body)
+	out, err := result(c.api.CreatePreAuthKeyWithResponse(ctx, body))
 	if err != nil {
 		return PreAuthKey{}, err
 	}
-	if err := check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault); err != nil {
-		return PreAuthKey{}, err
-	}
-	return toPreAuthKey(resp.JSON200.PreAuthKey), nil
+	return toPreAuthKey(out.PreAuthKey), nil
 }
 
 // ExpirePreAuthKey immediately expires the pre-authentication key
@@ -361,36 +335,27 @@ func (c *Client) CreatePreAuthKey(ctx context.Context, params CreatePreAuthKeyPa
 func (c *Client) ExpirePreAuthKey(ctx context.Context, id string) (err error) {
 	defer derrors.Wrap(&err, "c.ExpirePreAuthKey(%q)", id)
 
-	resp, err := c.api.ExpirePreAuthKeyWithResponse(ctx, clientv1.ExpirePreAuthKeyJSONRequestBody{Id: &id})
-	if err != nil {
-		return err
-	}
-	return check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
+	_, err = result(c.api.ExpirePreAuthKeyWithResponse(ctx, clientv1.ExpirePreAuthKeyJSONRequestBody{Id: &id}))
+	return err
 }
 
 // DeletePreAuthKey permanently deletes the pre-authentication key identified by id.
 func (c *Client) DeletePreAuthKey(ctx context.Context, id string) (err error) {
 	defer derrors.Wrap(&err, "c.DeletePreAuthKey(%q)", id)
 
-	resp, err := c.api.DeletePreAuthKeyWithResponse(ctx, &clientv1.DeletePreAuthKeyParams{Id: &id})
-	if err != nil {
-		return err
-	}
-	return check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
+	_, err = result(c.api.DeletePreAuthKeyWithResponse(ctx, &clientv1.DeletePreAuthKeyParams{Id: &id}))
+	return err
 }
 
 // GetPolicy returns the organization's access control policy.
 func (c *Client) GetPolicy(ctx context.Context) (_ string, err error) {
 	defer derrors.Wrap(&err, "c.GetPolicy()")
 
-	resp, err := c.api.GetPolicyWithResponse(ctx)
+	out, err := result(c.api.GetPolicyWithResponse(ctx))
 	if err != nil {
 		return "", err
 	}
-	if err := check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault); err != nil {
-		return "", err
-	}
-	return resp.JSON200.Policy, nil
+	return out.Policy, nil
 }
 
 // SetPolicy replaces the organization's access control policy with
@@ -399,11 +364,8 @@ func (c *Client) GetPolicy(ctx context.Context) (_ string, err error) {
 func (c *Client) SetPolicy(ctx context.Context, content string) (err error) {
 	defer derrors.Wrap(&err, "c.SetPolicy()")
 
-	resp, err := c.api.SetPolicyWithResponse(ctx, clientv1.SetPolicyJSONRequestBody{Policy: &content})
-	if err != nil {
-		return err
-	}
-	return check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
+	_, err = result(c.api.SetPolicyWithResponse(ctx, clientv1.SetPolicyJSONRequestBody{Policy: &content}))
+	return err
 }
 
 // toNode converts a generated Node into the plain Node shape handlers

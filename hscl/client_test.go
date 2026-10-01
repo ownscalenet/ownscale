@@ -1,6 +1,8 @@
 package hscl
 
 import (
+	"fmt"
+	"net/http"
 	"slices"
 	"strings"
 	"testing"
@@ -301,5 +303,19 @@ func TestDeleteUserAndNodes(t *testing.T) {
 				t.Errorf("nodes = %v, want %v", gotNodes, tt.wantNodes)
 			}
 		})
+	}
+}
+
+// TestNonJSONResponseIsAnError checks that a 200 without a JSON body, e.g.
+// from something other than headscale answering on the socket, fails
+// instead of being used as an empty result.
+func TestNonJSONResponseIsAnError(t *testing.T) {
+	c := NewUnix(hstest.Socket(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain")
+		fmt.Fprint(w, "hello")
+	})))
+
+	if _, err := c.ListNodes(t.Context()); err == nil {
+		t.Error("ListNodes: want error, got nil")
 	}
 }
