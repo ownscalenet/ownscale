@@ -14,9 +14,5 @@ node_modules/
 /site/public/
 /site/resources/_gen/
 
-# Generated Go client code (regenerate via sqlc/codegen, don't hand-edit
-# or grep through for editing purposes).
-hscl/hscodegen/
-
 webui/dist/*
 webui/dist/assets/*

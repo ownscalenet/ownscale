@@ -8,13 +8,6 @@ require (
 	github.com/descope/virtualwebauthn v1.0.5
 	github.com/glebarez/go-sqlite v1.22.0
 	github.com/go-jose/go-jose/v4 v4.1.4
-	github.com/go-openapi/errors v0.22.8
-	github.com/go-openapi/runtime v0.33.1
-	github.com/go-openapi/strfmt v0.27.0
-	github.com/go-openapi/swag/conv v0.29.1
-	github.com/go-openapi/swag/jsonutils v0.29.1
-	github.com/go-openapi/swag/typeutils v0.29.1
-	github.com/go-openapi/validate v0.26.3
 	github.com/go-webauthn/webauthn v0.18.1
 	github.com/gorilla/sessions v1.4.0
 	github.com/juanfont/headscale v0.29.4
@@ -42,6 +35,7 @@ require (
 	github.com/alexbrainman/sspi v0.0.0-20250919150558-7d374ff0d59e // indirect
 	github.com/andybalholm/brotli v1.2.2 // indirect
 	github.com/antlr4-go/antlr/v4 v4.13.1 // indirect
+	github.com/apapsch/go-jsonmerge/v2 v2.0.0 // indirect
 	github.com/arl/statsviz v0.8.0 // indirect
 	github.com/axiomhq/hyperloglog v0.2.6 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
@@ -73,18 +67,6 @@ require (
 	github.com/go-json-experiment/json v0.0.0-20260820222146-c27c302e5fc3 // indirect
 	github.com/go-logr/logr v1.4.4 // indirect
 	github.com/go-logr/stdr v1.2.2 // indirect
-	github.com/go-openapi/analysis v0.26.0 // indirect
-	github.com/go-openapi/jsonpointer v1.0.0 // indirect
-	github.com/go-openapi/jsonreference v1.0.0 // indirect
-	github.com/go-openapi/loads v0.25.1 // indirect
-	github.com/go-openapi/runtime/server-middleware v0.33.1 // indirect
-	github.com/go-openapi/spec v0.22.9 // indirect
-	github.com/go-openapi/swag/fileutils v0.28.0 // indirect
-	github.com/go-openapi/swag/loading v0.28.0 // indirect
-	github.com/go-openapi/swag/mangling v0.28.0 // indirect
-	github.com/go-openapi/swag/pools v0.29.1 // indirect
-	github.com/go-openapi/swag/stringutils v0.28.0 // indirect
-	github.com/go-openapi/swag/yamlutils v0.28.0 // indirect
 	github.com/go-sql-driver/mysql v1.10.0 // indirect
 	github.com/go-viper/mapstructure/v2 v2.5.0 // indirect
 	github.com/go-webauthn/x v0.3.1 // indirect
@@ -130,7 +112,7 @@ require (
 	github.com/muhlemmer/httpforwarded v0.1.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/ncruces/go-strftime v1.0.0 // indirect
-	github.com/oklog/ulid/v2 v2.1.2 // indirect
+	github.com/oapi-codegen/runtime v1.7.0 // indirect
 	github.com/paulmach/orb v0.13.0 // indirect
 	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
 	github.com/petermattis/goid v0.0.0-20260330135022-df67b199bc81 // indirect

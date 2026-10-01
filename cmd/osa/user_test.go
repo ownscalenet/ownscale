@@ -4,7 +4,6 @@ import (
 	"context"
 	"database/sql"
 	"errors"
-	"slices"
 	"strings"
 	"testing"
 
@@ -139,14 +138,26 @@ func TestDeleteUser(t *testing.T) {
 		_, queries := dbtest.New(t)
 		org := dbtest.CreateOrg(t, queries.Queries, "acme")
 		user := insertUser(t, queries.Queries, t.Context(), "linked@example.test", org, "member")
+		sock := hstest.Headscale(t)
+		client := hscl.NewUnix(sock)
+		hsUserIDs := map[string]string{}
+		for _, name := range []string{"linked", "other"} {
+			hsUser, err := client.CreateUser(t.Context(), hscl.CreateUserParams{Name: name})
+			if err != nil {
+				t.Fatalf("CreateUser(%q): %v", name, err)
+			}
+			hsUserIDs[name] = hsUser.ID
+			key := hstest.PendingNode(t, sock, name, name+"-laptop")
+			if _, err := client.RegisterNode(t.Context(), name, key); err != nil {
+				t.Fatalf("RegisterNode(%q): %v", name, err)
+			}
+		}
 		if err := queries.LinkUserHeadscaleUser(t.Context(), sqlcgen.LinkUserHeadscaleUserParams{
-			HeadscaleUserID: sql.NullString{String: "1", Valid: true},
+			HeadscaleUserID: sql.NullString{String: hsUserIDs["linked"], Valid: true},
 			ID:              user.ID,
 		}); err != nil {
 			t.Fatalf("LinkUserHeadscaleUser: %v", err)
 		}
-		fake := hstest.NewUsers([]string{"1", "2"}, []hstest.Node{{ID: "10", UserID: "1"}, {ID: "20", UserID: "2"}})
-		client := hscl.NewUnix(hstest.Socket(t, fake.Handler()))
 		var gotSubdomain string
 		clientFor := func(subdomain string) *hscl.Client {
 			gotSubdomain = subdomain
@@ -160,11 +171,19 @@ func TestDeleteUser(t *testing.T) {
 		if gotSubdomain != "acme" {
 			t.Errorf("headscale client for %q, want acme", gotSubdomain)
 		}
-		if got := fake.UserIDs(); !slices.Equal(got, []string{"2"}) {
-			t.Errorf("headscale users = %v, want [2]", got)
+		users, err := client.ListUsers(t.Context())
+		if err != nil {
+			t.Fatalf("ListUsers: %v", err)
 		}
-		if got := fake.NodeIDs(); !slices.Equal(got, []string{"20"}) {
-			t.Errorf("headscale nodes = %v, want [20]", got)
+		if len(users) != 1 || users[0].Name != "other" {
+			t.Errorf("headscale users = %+v, want only other", users)
+		}
+		nodes, err := client.ListNodes(t.Context())
+		if err != nil {
+			t.Fatalf("ListNodes: %v", err)
+		}
+		if len(nodes) != 1 || nodes[0].Name != "other-laptop" {
+			t.Errorf("headscale nodes = %+v, want only other-laptop", nodes)
 		}
 		if _, err := queries.GetUserByID(t.Context(), user.ID); !errors.Is(err, sql.ErrNoRows) {
 			t.Errorf("GetUserByID after delete: err = %v, want sql.ErrNoRows", err)

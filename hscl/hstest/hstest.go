@@ -1,4 +1,4 @@
-// Package hstest serves fake headscale APIs on unix sockets, the way
+// Package hstest serves real and fake headscale APIs on unix sockets, the way
 // ownscale reaches its in-process headscale instances.
 package hstest
 

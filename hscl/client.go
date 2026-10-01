@@ -1,26 +1,20 @@
-// Package hscl is a wrapper around the OpenAPI-generated headscale client in
-// ./hscodegen (regenerated with `make generate-headscale-client`).
+// Package hscl wraps headscale's own generated v1 API client
+// (github.com/juanfont/headscale/gen/client/v1), which ships with the
+// headscale module, so it always matches the server ownscale embeds.
 package hscl
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"io"
 	"net"
 	"net/http"
 	"slices"
 	"strings"
 	"time"
 
-	"github.com/go-openapi/runtime"
-	httptransport "github.com/go-openapi/runtime/client"
-	"github.com/go-openapi/strfmt"
+	clientv1 "github.com/juanfont/headscale/gen/client/v1"
 
 	"github.com/ownscalenet/ownscale/derrors"
-	hsclient "github.com/ownscalenet/ownscale/hscl/hscodegen/client"
-	"github.com/ownscalenet/ownscale/hscl/hscodegen/client/headscale_service"
-	"github.com/ownscalenet/ownscale/hscl/hscodegen/models"
 )
 
 // User is a headscale user (the owner of one or more Nodes), matching
@@ -79,50 +73,61 @@ type CreatePreAuthKeyParams struct {
 	ACLTags    []string
 }
 
+// CreateUserParams are the inputs to Client.CreateUser.
+type CreateUserParams struct {
+	Name        string `json:"name"`
+	Email       string `json:"email"`
+	DisplayName string `json:"displayName"`
+	PictureURL  string `json:"pictureUrl"`
+}
+
 // Client talks to a single organization's headscale management API over
 // the instance's unix socket (see orgs.Service.Client).
 type Client struct {
-	api *hsclient.Headscale
+	api *clientv1.ClientWithResponses
 }
 
 // NewUnix returns a Client that talks to headscale over its local unix
 // socket, which needs no API key.
 func NewUnix(socketPath string) *Client {
-	transport := httptransport.New("local", "/", []string{"http"})
-	transport.Transport = &http.Transport{
+	httpClient := &http.Client{Transport: &http.Transport{
 		DialContext: func(ctx context.Context, _, _ string) (net.Conn, error) {
 			var d net.Dialer
 			return d.DialContext(ctx, "unix", socketPath)
 		},
+	}}
+	// The URL's host is ignored: every request goes over the socket.
+	api, err := clientv1.NewClientWithResponses("http://local", clientv1.WithHTTPClient(httpClient))
+	if err != nil {
+		// Only fails for an unparsable server URL, which is a constant.
+		panic(err)
 	}
-	transport.Consumers["application/problem+json"] = runtime.ConsumerFunc(consumeProblem)
-	return &Client{api: hsclient.New(transport, strfmt.Default)}
+	return &Client{api: api}
 }
 
-// consumeProblem decodes headscale's application/problem+json error bodies
-// into the generated client's error payload, so the reason reaches callers.
-func consumeProblem(r io.Reader, v any) error {
-	var p struct {
-		Status int32  `json:"status"`
-		Detail string `json:"detail"`
-		Errors []struct {
-			Message string `json:"message"`
-		} `json:"errors"`
+// check returns an error unless resp is a 200, carrying the reason from
+// headscale's application/problem+json body when there is one.
+func check(resp *http.Response, problem *clientv1.ErrorModel) error {
+	if resp.StatusCode == http.StatusOK {
+		return nil
 	}
-	if err := json.NewDecoder(r).Decode(&p); err != nil {
-		return err
+	var msgs []string
+	if problem != nil {
+		if problem.Detail != nil {
+			msgs = append(msgs, *problem.Detail)
+		}
+		if problem.Errors != nil {
+			for _, e := range *problem.Errors {
+				if e.Message != nil {
+					msgs = append(msgs, *e.Message)
+				}
+			}
+		}
 	}
-	status, ok := v.(*models.RPCStatus)
-	if !ok {
-		return fmt.Errorf("unexpected problem+json target %T", v)
+	if len(msgs) == 0 {
+		return fmt.Errorf("headscale: %s", resp.Status)
 	}
-	msgs := []string{p.Detail}
-	for _, e := range p.Errors {
-		msgs = append(msgs, e.Message)
-	}
-	status.Code = p.Status
-	status.Message = strings.Join(msgs, ": ")
-	return nil
+	return fmt.Errorf("headscale: %s: %s", resp.Status, strings.Join(msgs, ": "))
 }
 
 // ListNodes returns every node (machine) registered on this organization's
@@ -130,13 +135,15 @@ func consumeProblem(r io.Reader, v any) error {
 func (c *Client) ListNodes(ctx context.Context) (_ []Node, err error) {
 	defer derrors.Wrap(&err, "c.ListNodes()")
 
-	params := headscale_service.NewHeadscaleServiceListNodesParams().WithContext(ctx)
-	resp, err := c.api.HeadscaleService.HeadscaleServiceListNodes(params)
+	resp, err := c.api.ListNodesWithResponse(ctx, &clientv1.ListNodesParams{})
 	if err != nil {
 		return nil, err
 	}
-	nodes := make([]Node, 0, len(resp.Payload.Nodes))
-	for _, n := range resp.Payload.Nodes {
+	if err := check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault); err != nil {
+		return nil, err
+	}
+	nodes := make([]Node, 0, len(resp.JSON200.Nodes))
+	for _, n := range resp.JSON200.Nodes {
 		nodes = append(nodes, toNode(n))
 	}
 	return nodes, nil
@@ -147,64 +154,59 @@ func (c *Client) ListNodes(ctx context.Context) (_ []Node, err error) {
 func (c *Client) ListUsers(ctx context.Context) (_ []User, err error) {
 	defer derrors.Wrap(&err, "c.ListUsers()")
 
-	params := headscale_service.NewHeadscaleServiceListUsersParams().WithContext(ctx)
-	resp, err := c.api.HeadscaleService.HeadscaleServiceListUsers(params)
+	resp, err := c.api.ListUsersWithResponse(ctx, &clientv1.ListUsersParams{})
 	if err != nil {
 		return nil, err
 	}
-	users := make([]User, 0, len(resp.Payload.Users))
-	for _, u := range resp.Payload.Users {
+	if err := check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault); err != nil {
+		return nil, err
+	}
+	users := make([]User, 0, len(resp.JSON200.Users))
+	for _, u := range resp.JSON200.Users {
 		users = append(users, toUser(u))
 	}
 	return users, nil
 }
 
-type CreateUserParams struct {
-	Name        string `json:"name"`
-	Email       string `json:"email"`
-	DisplayName string `json:"displayName"`
-	PictureURL  string `json:"pictureUrl"`
-}
-
+// CreateUser creates a headscale user from params.
 func (c *Client) CreateUser(ctx context.Context, params CreateUserParams) (_ User, err error) {
 	defer derrors.Wrap(&err, "c.CreateUser(%q)", params.Name)
 
-	p := headscale_service.NewHeadscaleServiceCreateUserParams().
-		WithContext(ctx).
-		WithBody(&models.V1CreateUserRequest{
-			Name:        params.Name,
-			Email:       params.Email,
-			DisplayName: params.DisplayName,
-			PictureURL:  params.PictureURL,
-		})
-	resp, err := c.api.HeadscaleService.HeadscaleServiceCreateUser(p)
+	resp, err := c.api.CreateUserWithResponse(ctx, clientv1.CreateUserJSONRequestBody{
+		Name:        &params.Name,
+		Email:       &params.Email,
+		DisplayName: &params.DisplayName,
+		PictureUrl:  &params.PictureURL,
+	})
 	if err != nil {
 		return User{}, err
 	}
-	return toUser(resp.Payload.User), nil
+	if err := check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault); err != nil {
+		return User{}, err
+	}
+	return toUser(resp.JSON200.User), nil
 }
 
 // RenameUser renames the headscale user identified by id to newName.
 func (c *Client) RenameUser(ctx context.Context, id, newName string) (err error) {
 	defer derrors.Wrap(&err, "c.RenameUser(%q, %q)", id, newName)
 
-	params := headscale_service.NewHeadscaleServiceRenameUserParams().
-		WithContext(ctx).
-		WithOldID(id).
-		WithNewName(newName)
-	_, err = c.api.HeadscaleService.HeadscaleServiceRenameUser(params)
-	return err
+	resp, err := c.api.RenameUserWithResponse(ctx, id, newName)
+	if err != nil {
+		return err
+	}
+	return check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
 }
 
 // DeleteUser permanently removes the headscale user identified by id.
 func (c *Client) DeleteUser(ctx context.Context, id string) (err error) {
 	defer derrors.Wrap(&err, "c.DeleteUser(%q)", id)
 
-	params := headscale_service.NewHeadscaleServiceDeleteUserParams().
-		WithContext(ctx).
-		WithID(id)
-	_, err = c.api.HeadscaleService.HeadscaleServiceDeleteUser(params)
-	return err
+	resp, err := c.api.DeleteUserWithResponse(ctx, id)
+	if err != nil {
+		return err
+	}
+	return check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
 }
 
 // DeleteUserAndNodes deletes the headscale user identified by id and every
@@ -241,39 +243,36 @@ func (c *Client) DeleteUserAndNodes(ctx context.Context, id string) (err error) 
 func (c *Client) RegisterNode(ctx context.Context, user, key string) (_ Node, err error) {
 	defer derrors.Wrap(&err, "c.RegisterNode(%q, %q)", user, key)
 
-	params := headscale_service.NewHeadscaleServiceRegisterNodeParams().
-		WithContext(ctx).
-		WithUser(&user).
-		WithKey(&key)
-	resp, err := c.api.HeadscaleService.HeadscaleServiceRegisterNode(params)
+	resp, err := c.api.RegisterNodeWithResponse(ctx, &clientv1.RegisterNodeParams{User: &user, Key: &key})
 	if err != nil {
 		return Node{}, err
 	}
-	return toNode(resp.Payload.Node), nil
+	if err := check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault); err != nil {
+		return Node{}, err
+	}
+	return toNode(resp.JSON200.Node), nil
 }
 
 // RenameNode sets nodeID's display name (givenName) to name.
 func (c *Client) RenameNode(ctx context.Context, nodeID, name string) (err error) {
 	defer derrors.Wrap(&err, "c.RenameNode(%q, %q)", nodeID, name)
 
-	params := headscale_service.NewHeadscaleServiceRenameNodeParams().
-		WithContext(ctx).
-		WithNodeID(nodeID).
-		WithNewName(name)
-	_, err = c.api.HeadscaleService.HeadscaleServiceRenameNode(params)
-	return err
+	resp, err := c.api.RenameNodeWithResponse(ctx, nodeID, name)
+	if err != nil {
+		return err
+	}
+	return check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
 }
 
 // SetTags replaces nodeID's ACL tags with tags.
 func (c *Client) SetTags(ctx context.Context, nodeID string, tags []string) (err error) {
 	defer derrors.Wrap(&err, "c.SetTags(%q, %v)", nodeID, tags)
 
-	params := headscale_service.NewHeadscaleServiceSetTagsParams().
-		WithContext(ctx).
-		WithNodeID(nodeID).
-		WithBody(&models.HeadscaleServiceSetTagsBody{Tags: tags})
-	_, err = c.api.HeadscaleService.HeadscaleServiceSetTags(params)
-	return err
+	resp, err := c.api.SetTagsWithResponse(ctx, nodeID, clientv1.SetTagsJSONRequestBody{Tags: &tags})
+	if err != nil {
+		return err
+	}
+	return check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
 }
 
 // SetApprovedRoutes replaces the set of subnet/exit routes nodeID is
@@ -281,12 +280,11 @@ func (c *Client) SetTags(ctx context.Context, nodeID string, tags []string) (err
 func (c *Client) SetApprovedRoutes(ctx context.Context, nodeID string, routes []string) (err error) {
 	defer derrors.Wrap(&err, "c.SetApprovedRoutes(%q, %v)", nodeID, routes)
 
-	params := headscale_service.NewHeadscaleServiceSetApprovedRoutesParams().
-		WithContext(ctx).
-		WithNodeID(nodeID).
-		WithBody(&models.HeadscaleServiceSetApprovedRoutesBody{Routes: routes})
-	_, err = c.api.HeadscaleService.HeadscaleServiceSetApprovedRoutes(params)
-	return err
+	resp, err := c.api.SetApprovedRoutesWithResponse(ctx, nodeID, clientv1.SetApprovedRoutesJSONRequestBody{Routes: &routes})
+	if err != nil {
+		return err
+	}
+	return check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
 }
 
 // ExpireNode immediately expires nodeID's current session, forcing it to
@@ -294,22 +292,22 @@ func (c *Client) SetApprovedRoutes(ctx context.Context, nodeID string, routes []
 func (c *Client) ExpireNode(ctx context.Context, nodeID string) (err error) {
 	defer derrors.Wrap(&err, "c.ExpireNode(%q)", nodeID)
 
-	params := headscale_service.NewHeadscaleServiceExpireNodeParams().
-		WithContext(ctx).
-		WithNodeID(nodeID)
-	_, err = c.api.HeadscaleService.HeadscaleServiceExpireNode(params)
-	return err
+	resp, err := c.api.ExpireNodeWithResponse(ctx, nodeID, clientv1.ExpireNodeJSONRequestBody{})
+	if err != nil {
+		return err
+	}
+	return check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
 }
 
 // DeleteNode permanently removes nodeID from the tailnet.
 func (c *Client) DeleteNode(ctx context.Context, nodeID string) (err error) {
 	defer derrors.Wrap(&err, "c.DeleteNode(%q)", nodeID)
 
-	params := headscale_service.NewHeadscaleServiceDeleteNodeParams().
-		WithContext(ctx).
-		WithNodeID(nodeID)
-	_, err = c.api.HeadscaleService.HeadscaleServiceDeleteNode(params)
-	return err
+	resp, err := c.api.DeleteNodeWithResponse(ctx, nodeID)
+	if err != nil {
+		return err
+	}
+	return check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
 }
 
 // ListPreAuthKeys returns every pre-authentication key for this
@@ -317,13 +315,15 @@ func (c *Client) DeleteNode(ctx context.Context, nodeID string) (err error) {
 func (c *Client) ListPreAuthKeys(ctx context.Context) (_ []PreAuthKey, err error) {
 	defer derrors.Wrap(&err, "c.ListPreAuthKeys()")
 
-	params := headscale_service.NewHeadscaleServiceListPreAuthKeysParams().WithContext(ctx)
-	resp, err := c.api.HeadscaleService.HeadscaleServiceListPreAuthKeys(params)
+	resp, err := c.api.ListPreAuthKeysWithResponse(ctx)
 	if err != nil {
 		return nil, err
 	}
-	keys := make([]PreAuthKey, 0, len(resp.Payload.PreAuthKeys))
-	for _, k := range resp.Payload.PreAuthKeys {
+	if err := check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault); err != nil {
+		return nil, err
+	}
+	keys := make([]PreAuthKey, 0, len(resp.JSON200.PreAuthKeys))
+	for _, k := range resp.JSON200.PreAuthKeys {
 		keys = append(keys, toPreAuthKey(k))
 	}
 	return keys, nil
@@ -335,23 +335,25 @@ func (c *Client) ListPreAuthKeys(ctx context.Context) (_ []PreAuthKey, err error
 func (c *Client) CreatePreAuthKey(ctx context.Context, params CreatePreAuthKeyParams) (_ PreAuthKey, err error) {
 	defer derrors.Wrap(&err, "c.CreatePreAuthKey(%q)", params.UserID)
 
-	req := &models.V1CreatePreAuthKeyRequest{
-		User:      params.UserID,
-		Reusable:  params.Reusable,
-		Ephemeral: params.Ephemeral,
-		ACLTags:   params.ACLTags,
+	body := clientv1.CreatePreAuthKeyJSONRequestBody{
+		Reusable:  &params.Reusable,
+		Ephemeral: &params.Ephemeral,
+		AclTags:   &params.ACLTags,
+	}
+	if params.UserID != "" {
+		body.User = &params.UserID
 	}
 	if !params.Expiration.IsZero() {
-		req.Expiration = strfmt.DateTime(params.Expiration)
+		body.Expiration = &params.Expiration
 	}
-	p := headscale_service.NewHeadscaleServiceCreatePreAuthKeyParams().
-		WithContext(ctx).
-		WithBody(req)
-	resp, err := c.api.HeadscaleService.HeadscaleServiceCreatePreAuthKey(p)
+	resp, err := c.api.CreatePreAuthKeyWithResponse(ctx, body)
 	if err != nil {
 		return PreAuthKey{}, err
 	}
-	return toPreAuthKey(resp.Payload.PreAuthKey), nil
+	if err := check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault); err != nil {
+		return PreAuthKey{}, err
+	}
+	return toPreAuthKey(resp.JSON200.PreAuthKey), nil
 }
 
 // ExpirePreAuthKey immediately expires the pre-authentication key
@@ -359,34 +361,36 @@ func (c *Client) CreatePreAuthKey(ctx context.Context, params CreatePreAuthKeyPa
 func (c *Client) ExpirePreAuthKey(ctx context.Context, id string) (err error) {
 	defer derrors.Wrap(&err, "c.ExpirePreAuthKey(%q)", id)
 
-	params := headscale_service.NewHeadscaleServiceExpirePreAuthKeyParams().
-		WithContext(ctx).
-		WithBody(&models.V1ExpirePreAuthKeyRequest{ID: id})
-	_, err = c.api.HeadscaleService.HeadscaleServiceExpirePreAuthKey(params)
-	return err
+	resp, err := c.api.ExpirePreAuthKeyWithResponse(ctx, clientv1.ExpirePreAuthKeyJSONRequestBody{Id: &id})
+	if err != nil {
+		return err
+	}
+	return check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
 }
 
 // DeletePreAuthKey permanently deletes the pre-authentication key identified by id.
 func (c *Client) DeletePreAuthKey(ctx context.Context, id string) (err error) {
 	defer derrors.Wrap(&err, "c.DeletePreAuthKey(%q)", id)
 
-	params := headscale_service.NewHeadscaleServiceDeletePreAuthKeyParams().
-		WithContext(ctx).
-		WithID(&id)
-	_, err = c.api.HeadscaleService.HeadscaleServiceDeletePreAuthKey(params)
-	return err
+	resp, err := c.api.DeletePreAuthKeyWithResponse(ctx, &clientv1.DeletePreAuthKeyParams{Id: &id})
+	if err != nil {
+		return err
+	}
+	return check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
 }
 
 // GetPolicy returns the organization's access control policy.
 func (c *Client) GetPolicy(ctx context.Context) (_ string, err error) {
 	defer derrors.Wrap(&err, "c.GetPolicy()")
 
-	params := headscale_service.NewHeadscaleServiceGetPolicyParams().WithContext(ctx)
-	resp, err := c.api.HeadscaleService.HeadscaleServiceGetPolicy(params)
+	resp, err := c.api.GetPolicyWithResponse(ctx)
 	if err != nil {
 		return "", err
 	}
-	return resp.Payload.Policy, nil
+	if err := check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault); err != nil {
+		return "", err
+	}
+	return resp.JSON200.Policy, nil
 }
 
 // SetPolicy replaces the organization's access control policy with
@@ -395,90 +399,85 @@ func (c *Client) GetPolicy(ctx context.Context) (_ string, err error) {
 func (c *Client) SetPolicy(ctx context.Context, content string) (err error) {
 	defer derrors.Wrap(&err, "c.SetPolicy()")
 
-	params := headscale_service.NewHeadscaleServiceSetPolicyParams().
-		WithContext(ctx).
-		WithBody(&models.V1SetPolicyRequest{Policy: content})
-	_, err = c.api.HeadscaleService.HeadscaleServiceSetPolicy(params)
-	return err
+	resp, err := c.api.SetPolicyWithResponse(ctx, clientv1.SetPolicyJSONRequestBody{Policy: &content})
+	if err != nil {
+		return err
+	}
+	return check(resp.HTTPResponse, resp.ApplicationproblemJSONDefault)
 }
 
-// toNode converts a generated V1Node into the plain Node shape handlers
+// toNode converts a generated Node into the plain Node shape handlers
 // serve as JSON.
-func toNode(n *models.V1Node) Node {
-	if n == nil {
-		return Node{}
-	}
+func toNode(n clientv1.Node) Node {
 	node := Node{
-		ID:              n.ID,
+		ID:              n.Id,
 		MachineKey:      n.MachineKey,
 		NodeKey:         n.NodeKey,
-		IPAddresses:     n.IPAddresses,
+		IPAddresses:     n.IpAddresses,
 		Name:            n.Name,
 		GivenName:       n.GivenName,
-		CreatedAt:       dateTimeString(n.CreatedAt),
+		User:            toUserPtr(n.User),
+		CreatedAt:       timeString(n.CreatedAt),
+		RegisterMethod:  string(n.RegisterMethod),
 		Online:          n.Online,
 		Tags:            n.Tags,
 		ApprovedRoutes:  n.ApprovedRoutes,
 		AvailableRoutes: n.AvailableRoutes,
 		SubnetRoutes:    n.SubnetRoutes,
 	}
-	if n.RegisterMethod != nil {
-		node.RegisterMethod = string(*n.RegisterMethod)
+	if n.LastSeen != nil {
+		if lastSeen := timeString(*n.LastSeen); lastSeen != "" {
+			node.LastSeen = &lastSeen
+		}
 	}
-	if n.User != nil {
-		u := toUser(n.User)
-		node.User = &u
-	}
-	if lastSeen := dateTimeString(n.LastSeen); lastSeen != "" {
-		node.LastSeen = &lastSeen
-	}
-	if expiry := dateTimeString(n.Expiry); expiry != "" {
-		node.Expiry = &expiry
+	if n.Expiry != nil {
+		if expiry := timeString(*n.Expiry); expiry != "" {
+			node.Expiry = &expiry
+		}
 	}
 	return node
 }
 
-// toUser converts a generated V1User into the plain User shape handlers
+// toUser converts a generated User into the plain User shape handlers
 // serve as JSON.
-func toUser(u *models.V1User) User {
-	if u == nil {
-		return User{}
-	}
+func toUser(u clientv1.User) User {
 	return User{
-		ID:          u.ID,
+		ID:          u.Id,
 		Name:        u.Name,
 		DisplayName: u.DisplayName,
 		Email:       u.Email,
-		CreatedAt:   dateTimeString(u.CreatedAt),
+		CreatedAt:   timeString(u.CreatedAt),
 	}
 }
 
-// toPreAuthKey converts a generated V1PreAuthKey into the plain
-// PreAuthKey shape handlers serve as JSON.
-func toPreAuthKey(k *models.V1PreAuthKey) PreAuthKey {
-	if k == nil {
-		return PreAuthKey{}
+// toUserPtr is toUser for an optional user: headscale sends null for tagged
+// nodes and tag-only keys, which the generated client decodes as a zero User.
+func toUserPtr(u clientv1.User) *User {
+	if u.Id == "" {
+		return nil
 	}
-	key := PreAuthKey{
-		ID:         k.ID,
+	user := toUser(u)
+	return &user
+}
+
+// toPreAuthKey converts a generated PreAuthKey into the plain PreAuthKey
+// shape handlers serve as JSON.
+func toPreAuthKey(k clientv1.PreAuthKey) PreAuthKey {
+	return PreAuthKey{
+		ID:         k.Id,
 		Key:        k.Key,
+		User:       toUserPtr(k.User),
 		Reusable:   k.Reusable,
 		Ephemeral:  k.Ephemeral,
 		Used:       k.Used,
-		ACLTags:    k.ACLTags,
-		CreatedAt:  dateTimeString(k.CreatedAt),
-		Expiration: dateTimeString(k.Expiration),
+		ACLTags:    k.AclTags,
+		CreatedAt:  timeString(k.CreatedAt),
+		Expiration: timeString(k.Expiration),
 	}
-	if k.User != nil {
-		u := toUser(k.User)
-		key.User = &u
-	}
-	return key
 }
 
-// dateTimeString formats dt as RFC3339, or "" if it's the zero value.
-func dateTimeString(dt strfmt.DateTime) string {
-	t := time.Time(dt)
+// timeString formats t as RFC3339, or "" if it's the zero value.
+func timeString(t time.Time) string {
 	if t.IsZero() {
 		return ""
 	}

@@ -1,11 +1,6 @@
 package hscl
 
 import (
-	"bytes"
-	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
 	"slices"
 	"strings"
 	"testing"
@@ -14,437 +9,296 @@ import (
 	"github.com/ownscalenet/ownscale/hscl/hstest"
 )
 
-// newTestClient builds a Client for a fake implementing the handful of
-// headscale management endpoints Client uses, recording requests for
-// assertions. Request bodies are drained and replaced with a fresh reader
-// before recording, so tests can decode them after the handler is done
-// with the request.
-func newTestClient(t *testing.T) (*Client, *[]*http.Request) {
+// policy owns the tags the tests use, which headscale requires before a tag
+// can be set on a node or key.
+const policy = `{
+	"tagOwners": {"tag:server": ["alice@"]},
+	"acls": [{"action": "accept", "src": ["*"], "dst": ["*:*"]}],
+}`
+
+// newTestClient returns a Client for a fresh real headscale holding policy and
+// user alice, and the headscale's socket.
+func newTestClient(t *testing.T) (*Client, string) {
 	t.Helper()
-	var requests []*http.Request
-	record := func(r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		r.Body = io.NopCloser(bytes.NewReader(body))
-		requests = append(requests, r)
+	sock := hstest.Headscale(t)
+	c := NewUnix(sock)
+	if _, err := c.CreateUser(t.Context(), CreateUserParams{Name: "alice", Email: "alice@example.com"}); err != nil {
+		t.Fatalf("CreateUser: %v", err)
 	}
-
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/node", func(w http.ResponseWriter, r *http.Request) {
-		record(r)
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"nodes":[{
-			"id":"1",
-			"machineKey":"mkey:abc",
-			"nodeKey":"nkey:def",
-			"ipAddresses":["100.64.0.1"],
-			"name":"node1",
-			"givenName":"node1",
-			"user":{"id":"1","name":"alice","displayName":"Alice","email":"alice@example.com","createdAt":"2024-01-01T00:00:00Z"},
-			"lastSeen":"2024-02-01T00:00:00Z",
-			"expiry":"0001-01-01T00:00:00Z",
-			"createdAt":"2024-01-01T00:00:00Z",
-			"registerMethod":"REGISTER_METHOD_OIDC",
-			"online":true,
-			"tags":["tag:server"],
-			"approvedRoutes":["10.0.0.0/24"],
-			"availableRoutes":["10.0.0.0/24","192.168.0.0/24"],
-			"subnetRoutes":["10.0.0.0/24"]
-		}]}`)
-	})
-	mux.HandleFunc("/api/v1/user", func(w http.ResponseWriter, r *http.Request) {
-		record(r)
-		w.Header().Set("Content-Type", "application/json")
-		if r.Method == http.MethodPost {
-			raw, _ := io.ReadAll(r.Body)
-			r.Body = io.NopCloser(bytes.NewReader(raw))
-			body := CreateUserParams{}
-			_ = json.Unmarshal(raw, &body)
-			resp := map[string]any{"user": map[string]any{
-				"id":          "3",
-				"name":        body.Name,
-				"displayName": body.DisplayName,
-				"email":       body.Email,
-				"pictureUrl":  body.PictureURL,
-				"createdAt":   "2024-01-01T00:00:00Z",
-			}}
-			_ = json.NewEncoder(w).Encode(resp)
-			return
-		}
-		fmt.Fprint(w, `{"users":[{"id":"1","name":"alice","displayName":"Alice","email":"alice@example.com","createdAt":"2024-01-01T00:00:00Z"}]}`)
-	})
-	mux.HandleFunc("/api/v1/user/1/rename/", func(w http.ResponseWriter, r *http.Request) {
-		record(r)
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"user":{"id":"1"}}`)
-	})
-	mux.HandleFunc("/api/v1/user/1", func(w http.ResponseWriter, r *http.Request) {
-		record(r)
-		if r.Method != http.MethodDelete {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{}`)
-	})
-	mux.HandleFunc("/api/v1/node/1/rename/", func(w http.ResponseWriter, r *http.Request) {
-		record(r)
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"node":{"id":"1"}}`)
-	})
-	mux.HandleFunc("/api/v1/node/1/tags", func(w http.ResponseWriter, r *http.Request) {
-		record(r)
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"node":{"id":"1"}}`)
-	})
-	mux.HandleFunc("/api/v1/node/1/approve_routes", func(w http.ResponseWriter, r *http.Request) {
-		record(r)
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"node":{"id":"1"}}`)
-	})
-	mux.HandleFunc("/api/v1/node/1/expire", func(w http.ResponseWriter, r *http.Request) {
-		record(r)
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"node":{"id":"1"}}`)
-	})
-	mux.HandleFunc("/api/v1/node/1", func(w http.ResponseWriter, r *http.Request) {
-		record(r)
-		if r.Method != http.MethodDelete {
-			http.NotFound(w, r)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{}`)
-	})
-	mux.HandleFunc("/api/v1/preauthkey", func(w http.ResponseWriter, r *http.Request) {
-		record(r)
-		w.Header().Set("Content-Type", "application/json")
-		if r.Method == http.MethodPost {
-			fmt.Fprint(w, `{"preAuthKey":{
-				"id":"2",
-				"key":"nodekey:abc123",
-				"user":{"id":"1","name":"alice","displayName":"Alice","email":"alice@example.com","createdAt":"2024-01-01T00:00:00Z"},
-				"reusable":true,
-				"ephemeral":false,
-				"used":false,
-				"aclTags":["tag:server"],
-				"createdAt":"2024-03-01T00:00:00Z",
-				"expiration":"2024-06-01T00:00:00Z"
-			}}`)
-			return
-		}
-		fmt.Fprint(w, `{"preAuthKeys":[{
-			"id":"1",
-			"key":"nodekey:def456",
-			"user":{"id":"1","name":"alice","displayName":"Alice","email":"alice@example.com","createdAt":"2024-01-01T00:00:00Z"},
-			"reusable":false,
-			"ephemeral":false,
-			"used":false,
-			"aclTags":[],
-			"createdAt":"2024-01-01T00:00:00Z",
-			"expiration":"2024-06-01T00:00:00Z"
-		}]}`)
-	})
-	mux.HandleFunc("/api/v1/preauthkey/expire", func(w http.ResponseWriter, r *http.Request) {
-		record(r)
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{}`)
-	})
-
-	return NewUnix(hstest.Socket(t, mux)), &requests
+	if err := c.SetPolicy(t.Context(), policy); err != nil {
+		t.Fatalf("SetPolicy: %v", err)
+	}
+	return c, sock
 }
 
-func TestClientListNodes(t *testing.T) {
-	c, _ := newTestClient(t)
-
-	nodes, err := c.ListNodes(t.Context())
+// registerNode registers a machine named name to user.
+func registerNode(t *testing.T, c *Client, sock, user, name string, routes ...string) Node {
+	t.Helper()
+	node, err := c.RegisterNode(t.Context(), user, hstest.PendingNode(t, sock, user, name, routes...))
 	if err != nil {
-		t.Fatalf("ListNodes: %v", err)
+		t.Fatalf("RegisterNode(%q): %v", name, err)
 	}
-	if len(nodes) != 1 {
-		t.Fatalf("got %d nodes, want 1", len(nodes))
-	}
-	n := nodes[0]
-	if n.ID != "1" || n.Name != "node1" || !n.Online {
-		t.Errorf("unexpected node: %+v", n)
-	}
-	if len(n.Tags) != 1 || n.Tags[0] != "tag:server" {
-		t.Errorf("unexpected tags: %v", n.Tags)
-	}
-	if n.User == nil || n.User.Name != "alice" {
-		t.Errorf("unexpected user: %+v", n.User)
-	}
-	if n.LastSeen == nil || *n.LastSeen == "" {
-		t.Errorf("expected non-nil LastSeen")
-	}
-	if n.Expiry != nil {
-		t.Errorf("expected nil Expiry for zero-value expiry, got %v", *n.Expiry)
-	}
-	if n.RegisterMethod != "REGISTER_METHOD_OIDC" {
-		t.Errorf("unexpected register method: %q", n.RegisterMethod)
-	}
+	return node
 }
 
-func TestClientListUsers(t *testing.T) {
-	c, _ := newTestClient(t)
-
+func userByName(t *testing.T, c *Client, name string) (User, bool) {
+	t.Helper()
 	users, err := c.ListUsers(t.Context())
 	if err != nil {
 		t.Fatalf("ListUsers: %v", err)
 	}
-	if len(users) != 1 || users[0].Name != "alice" {
-		t.Errorf("unexpected users: %+v", users)
+	for _, u := range users {
+		if u.Name == name {
+			return u, true
+		}
 	}
+	return User{}, false
 }
 
-func TestClientRenameNode(t *testing.T) {
-	c, reqs := newTestClient(t)
-
-	if err := c.RenameNode(t.Context(), "1", "new-name"); err != nil {
-		t.Fatalf("RenameNode: %v", err)
+func nodeByID(t *testing.T, c *Client, id string) (Node, bool) {
+	t.Helper()
+	nodes, err := c.ListNodes(t.Context())
+	if err != nil {
+		t.Fatalf("ListNodes: %v", err)
 	}
-	last := (*reqs)[len(*reqs)-1]
-	if !strings.HasSuffix(last.URL.Path, "/rename/new-name") {
-		t.Errorf("unexpected request path: %s", last.URL.Path)
+	for _, n := range nodes {
+		if n.ID == id {
+			return n, true
+		}
 	}
+	return Node{}, false
 }
 
-func TestClientCreateUser(t *testing.T) {
-	c, reqs := newTestClient(t)
+func TestUsers(t *testing.T) {
+	c, _ := newTestClient(t)
 
-	user, err := c.CreateUser(t.Context(), CreateUserParams{
-		Name:        "created-user",
-		Email:       "created-user@example.com",
-		DisplayName: "Created User",
-		PictureURL:  "https://example.com/avatar.png",
+	created, err := c.CreateUser(t.Context(), CreateUserParams{
+		Name:        "bob",
+		Email:       "bob@example.com",
+		DisplayName: "Bob",
+		PictureURL:  "https://example.com/bob.png",
 	})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)
 	}
-	if user.Name != "created-user" || user.Email != "created-user@example.com" || user.DisplayName != "Created User" {
-		t.Errorf("unexpected user: %+v", user)
+	if created.ID == "" || created.Name != "bob" || created.Email != "bob@example.com" ||
+		created.DisplayName != "Bob" || created.CreatedAt == "" {
+		t.Errorf("CreateUser = %+v", created)
 	}
-	last := (*reqs)[len(*reqs)-1]
-	if last.Method != http.MethodPost || last.URL.Path != "/api/v1/user" {
-		t.Errorf("unexpected request: %s %s", last.Method, last.URL.Path)
+	if got, ok := userByName(t, c, "bob"); !ok || got != created {
+		t.Errorf("listed user = %+v, %v, want %+v", got, ok, created)
 	}
-	body := CreateUserParams{}
-	if err := json.NewDecoder(last.Body).Decode(&body); err != nil {
-		t.Fatalf("decode body: %v", err)
-	}
-	if body.Name != "created-user" || body.Email != "created-user@example.com" ||
-		body.DisplayName != "Created User" || body.PictureURL != "https://example.com/avatar.png" {
-		t.Errorf("unexpected request body: %+v", body)
-	}
-}
 
-func TestClientRenameUser(t *testing.T) {
-	c, reqs := newTestClient(t)
-
-	if err := c.RenameUser(t.Context(), "1", "new-name"); err != nil {
+	if err := c.RenameUser(t.Context(), created.ID, "robert"); err != nil {
 		t.Fatalf("RenameUser: %v", err)
 	}
-	last := (*reqs)[len(*reqs)-1]
-	if !strings.HasSuffix(last.URL.Path, "/rename/new-name") {
-		t.Errorf("unexpected request path: %s", last.URL.Path)
+	if _, ok := userByName(t, c, "robert"); !ok {
+		t.Error("renamed user not listed")
 	}
-}
 
-func TestClientDeleteUser(t *testing.T) {
-	c, reqs := newTestClient(t)
-
-	if err := c.DeleteUser(t.Context(), "1"); err != nil {
+	if err := c.DeleteUser(t.Context(), created.ID); err != nil {
 		t.Fatalf("DeleteUser: %v", err)
 	}
-	last := (*reqs)[len(*reqs)-1]
-	if last.Method != http.MethodDelete || last.URL.Path != "/api/v1/user/1" {
-		t.Errorf("unexpected request: %s %s", last.Method, last.URL.Path)
+	if _, ok := userByName(t, c, "robert"); ok {
+		t.Error("deleted user still listed")
 	}
 }
 
-func TestClientSetTags(t *testing.T) {
-	c, reqs := newTestClient(t)
+func TestNodes(t *testing.T) {
+	c, sock := newTestClient(t)
+	alice, _ := userByName(t, c, "alice")
 
-	if err := c.SetTags(t.Context(), "1", []string{"tag:a", "tag:b"}); err != nil {
-		t.Fatalf("SetTags: %v", err)
+	node := registerNode(t, c, sock, "alice", "laptop", "10.0.0.0/24")
+	if node.ID == "" || node.Name != "laptop" || node.GivenName != "laptop" || len(node.IPAddresses) != 2 ||
+		node.RegisterMethod != "REGISTER_METHOD_CLI" || node.CreatedAt == "" {
+		t.Errorf("RegisterNode = %+v", node)
 	}
-	last := (*reqs)[len(*reqs)-1]
-	var body struct {
-		Tags []string `json:"tags"`
+	if node.User == nil || node.User.ID != alice.ID {
+		t.Errorf("node user = %+v, want alice", node.User)
 	}
-	if err := json.NewDecoder(last.Body).Decode(&body); err != nil {
-		t.Fatalf("decode body: %v", err)
-	}
-	if len(body.Tags) != 2 {
-		t.Errorf("unexpected tags sent: %v", body.Tags)
-	}
-}
 
-func TestClientSetApprovedRoutes(t *testing.T) {
-	c, reqs := newTestClient(t)
-
-	if err := c.SetApprovedRoutes(t.Context(), "1", []string{"10.0.0.0/24"}); err != nil {
+	if err := c.RenameNode(t.Context(), node.ID, "desktop"); err != nil {
+		t.Fatalf("RenameNode: %v", err)
+	}
+	if err := c.SetApprovedRoutes(t.Context(), node.ID, []string{"10.0.0.0/24"}); err != nil {
 		t.Fatalf("SetApprovedRoutes: %v", err)
 	}
-	last := (*reqs)[len(*reqs)-1]
-	if !strings.HasSuffix(last.URL.Path, "/approve_routes") {
-		t.Errorf("unexpected request path: %s", last.URL.Path)
+	got, _ := nodeByID(t, c, node.ID)
+	if got.GivenName != "desktop" {
+		t.Errorf("given name = %q, want desktop", got.GivenName)
 	}
-}
+	if !slices.Equal(got.ApprovedRoutes, []string{"10.0.0.0/24"}) {
+		t.Errorf("approved routes = %v, want [10.0.0.0/24]", got.ApprovedRoutes)
+	}
 
-func TestClientExpireNode(t *testing.T) {
-	c, _ := newTestClient(t)
-
-	if err := c.ExpireNode(t.Context(), "1"); err != nil {
+	if err := c.ExpireNode(t.Context(), node.ID); err != nil {
 		t.Fatalf("ExpireNode: %v", err)
 	}
-}
+	got, _ = nodeByID(t, c, node.ID)
+	if got.Expiry == nil {
+		t.Fatal("expiry = nil after ExpireNode")
+	}
+	if expiry, err := time.Parse(time.RFC3339, *got.Expiry); err != nil || expiry.After(time.Now()) {
+		t.Errorf("expiry = %q, want a past RFC3339 time", *got.Expiry)
+	}
 
-func TestClientDeleteNode(t *testing.T) {
-	c, reqs := newTestClient(t)
+	// Tagging a node hands its ownership from the user to the tag; headscale
+	// lists tagged nodes under a placeholder user.
+	if err := c.SetTags(t.Context(), node.ID, []string{"tag:server"}); err != nil {
+		t.Fatalf("SetTags: %v", err)
+	}
+	got, _ = nodeByID(t, c, node.ID)
+	if !slices.Equal(got.Tags, []string{"tag:server"}) || got.User != nil && got.User.ID == alice.ID {
+		t.Errorf("tagged node tags = %v, user = %+v, want [tag:server] and not owned by alice", got.Tags, got.User)
+	}
 
-	if err := c.DeleteNode(t.Context(), "1"); err != nil {
+	if err := c.DeleteNode(t.Context(), node.ID); err != nil {
 		t.Fatalf("DeleteNode: %v", err)
 	}
-	last := (*reqs)[len(*reqs)-1]
-	if last.Method != http.MethodDelete {
-		t.Errorf("expected DELETE, got %s", last.Method)
+	if _, ok := nodeByID(t, c, node.ID); ok {
+		t.Error("deleted node still listed")
 	}
 }
 
-func TestClientListPreAuthKeys(t *testing.T) {
+func TestPreAuthKeys(t *testing.T) {
 	c, _ := newTestClient(t)
+	alice, _ := userByName(t, c, "alice")
+	expiration := time.Now().Add(24 * time.Hour).Truncate(time.Second)
 
-	keys, err := c.ListPreAuthKeys(t.Context())
-	if err != nil {
-		t.Fatalf("ListPreAuthKeys: %v", err)
-	}
-	if len(keys) != 1 {
-		t.Fatalf("got %d keys, want 1", len(keys))
-	}
-	k := keys[0]
-	if k.ID != "1" || k.Key != "nodekey:def456" {
-		t.Errorf("unexpected key: %+v", k)
-	}
-	if k.User == nil || k.User.Name != "alice" {
-		t.Errorf("unexpected user: %+v", k.User)
-	}
-	if k.Expiration == "" {
-		t.Errorf("expected non-empty expiration")
-	}
-}
-
-func TestClientCreatePreAuthKey(t *testing.T) {
-	c, reqs := newTestClient(t)
-
-	key, err := c.CreatePreAuthKey(t.Context(), CreatePreAuthKeyParams{
-		UserID:     "1",
-		Reusable:   true,
-		Expiration: time.Now().Add(90 * 24 * time.Hour),
-		ACLTags:    []string{"tag:server"},
-	})
-	if err != nil {
-		t.Fatalf("CreatePreAuthKey: %v", err)
-	}
-	if key.ID != "2" || key.Key != "nodekey:abc123" || !key.Reusable {
-		t.Errorf("unexpected key: %+v", key)
-	}
-	last := (*reqs)[len(*reqs)-1]
-	if last.Method != http.MethodPost || last.URL.Path != "/api/v1/preauthkey" {
-		t.Errorf("unexpected request: %s %s", last.Method, last.URL.Path)
-	}
-	var body struct {
-		User     string   `json:"user"`
-		Reusable bool     `json:"reusable"`
-		ACLTags  []string `json:"aclTags"`
-	}
-	if err := json.NewDecoder(last.Body).Decode(&body); err != nil {
-		t.Fatalf("decode body: %v", err)
-	}
-	if body.User != "1" || !body.Reusable || len(body.ACLTags) != 1 {
-		t.Errorf("unexpected request body: %+v", body)
-	}
-}
-
-func TestClientExpirePreAuthKey(t *testing.T) {
-	c, reqs := newTestClient(t)
-
-	if err := c.ExpirePreAuthKey(t.Context(), "1"); err != nil {
-		t.Fatalf("ExpirePreAuthKey: %v", err)
-	}
-	last := (*reqs)[len(*reqs)-1]
-	if last.Method != http.MethodPost || last.URL.Path != "/api/v1/preauthkey/expire" {
-		t.Errorf("unexpected request: %s %s", last.Method, last.URL.Path)
-	}
-	var body struct {
-		ID string `json:"id"`
-	}
-	if err := json.NewDecoder(last.Body).Decode(&body); err != nil {
-		t.Fatalf("decode body: %v", err)
-	}
-	if body.ID != "1" {
-		t.Errorf("unexpected request body: %+v", body)
-	}
-}
-
-func TestClientDeletePreAuthKey(t *testing.T) {
-	c, reqs := newTestClient(t)
-
-	if err := c.DeletePreAuthKey(t.Context(), "1"); err != nil {
-		t.Fatalf("DeletePreAuthKey: %v", err)
-	}
-	last := (*reqs)[len(*reqs)-1]
-	if last.Method != http.MethodDelete || last.URL.Path != "/api/v1/preauthkey" {
-		t.Errorf("unexpected request: %s %s", last.Method, last.URL.Path)
-	}
-	if got := last.URL.Query().Get("id"); got != "1" {
-		t.Errorf("unexpected id query param: %q", got)
-	}
-}
-
-func TestProblemJSONErrorsCarryTheReason(t *testing.T) {
-	c := NewUnix(hstest.Socket(t, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/problem+json")
-		w.WriteHeader(http.StatusBadRequest)
-		fmt.Fprint(w, `{"title":"Bad Request","status":400,"detail":"setting policy","errors":[{"message":"multiple users found"}]}`)
-	})))
-
-	err := c.SetPolicy(t.Context(), "{}")
-	if err == nil {
-		t.Fatal("SetPolicy: want error, got nil")
-	}
-	if !strings.Contains(err.Error(), "setting policy: multiple users found") {
-		t.Errorf("error = %q, want it to contain the problem detail and message", err)
-	}
-}
-
-func TestClientDeleteUserAndNodes(t *testing.T) {
 	tests := []struct {
-		name      string
-		id        string
-		wantUsers []string
-		wantNodes []string
+		name     string
+		params   CreatePreAuthKeyParams
+		wantUser string
 	}{
-		{"user with nodes", "1", []string{"2"}, []string{"20", "30"}},
-		{"already deleted user", "9", []string{"1", "2"}, []string{"10", "11", "20", "30"}},
+		{"user key", CreatePreAuthKeyParams{UserID: alice.ID, Reusable: true, Expiration: expiration}, alice.ID},
+		{"tag-only key", CreatePreAuthKeyParams{Ephemeral: true, Expiration: expiration, ACLTags: []string{"tag:server"}}, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			fake := hstest.NewUsers([]string{"1", "2"}, []hstest.Node{
-				{ID: "10", UserID: "1"},
-				{ID: "11", UserID: "1"},
-				{ID: "20", UserID: "2"},
-				{ID: "30"}, // tagged
-			})
-			c := NewUnix(hstest.Socket(t, fake.Handler()))
+			key, err := c.CreatePreAuthKey(t.Context(), tt.params)
+			if err != nil {
+				t.Fatalf("CreatePreAuthKey: %v", err)
+			}
+			if key.ID == "" || key.Key == "" || key.Reusable != tt.params.Reusable || key.Ephemeral != tt.params.Ephemeral ||
+				!slices.Equal(key.ACLTags, tt.params.ACLTags) && len(tt.params.ACLTags) > 0 {
+				t.Errorf("CreatePreAuthKey = %+v", key)
+			}
+			if gotUser := key.User; (gotUser == nil) != (tt.wantUser == "") || gotUser != nil && gotUser.ID != tt.wantUser {
+				t.Errorf("key user = %+v, want %q", gotUser, tt.wantUser)
+			}
+			if got, err := time.Parse(time.RFC3339, key.Expiration); err != nil || !got.Equal(expiration) {
+				t.Errorf("expiration = %q, want %v", key.Expiration, expiration)
+			}
 
-			if err := c.DeleteUserAndNodes(t.Context(), tt.id); err != nil {
+			listed := func() (PreAuthKey, bool) {
+				keys, err := c.ListPreAuthKeys(t.Context())
+				if err != nil {
+					t.Fatalf("ListPreAuthKeys: %v", err)
+				}
+				i := slices.IndexFunc(keys, func(k PreAuthKey) bool { return k.ID == key.ID })
+				if i < 0 {
+					return PreAuthKey{}, false
+				}
+				return keys[i], true
+			}
+			if _, ok := listed(); !ok {
+				t.Fatal("created key not listed")
+			}
+
+			if err := c.ExpirePreAuthKey(t.Context(), key.ID); err != nil {
+				t.Fatalf("ExpirePreAuthKey: %v", err)
+			}
+			expired, _ := listed()
+			if got, err := time.Parse(time.RFC3339, expired.Expiration); err != nil || got.After(time.Now()) {
+				t.Errorf("expiration after ExpirePreAuthKey = %q, want a past time", expired.Expiration)
+			}
+
+			if err := c.DeletePreAuthKey(t.Context(), key.ID); err != nil {
+				t.Fatalf("DeletePreAuthKey: %v", err)
+			}
+			if _, ok := listed(); ok {
+				t.Error("deleted key still listed")
+			}
+		})
+	}
+}
+
+func TestPolicy(t *testing.T) {
+	c, _ := newTestClient(t)
+
+	got, err := c.GetPolicy(t.Context())
+	if err != nil {
+		t.Fatalf("GetPolicy: %v", err)
+	}
+	if got != policy {
+		t.Errorf("GetPolicy = %q, want the policy set", got)
+	}
+
+	// headscale's application/problem+json reason reaches the caller.
+	err = c.SetPolicy(t.Context(), `{"acls": [{"action": "bogus", "src": ["*"], "dst": ["*:*"]}]}`)
+	if err == nil {
+		t.Fatal("SetPolicy with an invalid action: want error, got nil")
+	}
+	if !strings.Contains(err.Error(), "bogus") {
+		t.Errorf("SetPolicy error = %q, want it to name the invalid action", err)
+	}
+}
+
+func TestDeleteUserAndNodes(t *testing.T) {
+	tests := []struct {
+		name      string
+		user      string
+		wantUsers []string
+		wantNodes []string
+	}{
+		{"user with nodes", "alice", []string{"bob"}, []string{"bob-laptop", "server"}},
+		{"already deleted user", "nobody", []string{"alice", "bob"}, []string{"alice-laptop", "alice-phone", "bob-laptop", "server"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c, sock := newTestClient(t)
+			if _, err := c.CreateUser(t.Context(), CreateUserParams{Name: "bob"}); err != nil {
+				t.Fatalf("CreateUser: %v", err)
+			}
+			registerNode(t, c, sock, "alice", "alice-laptop")
+			registerNode(t, c, sock, "alice", "alice-phone")
+			registerNode(t, c, sock, "bob", "bob-laptop")
+			server := registerNode(t, c, sock, "alice", "server")
+			if err := c.SetTags(t.Context(), server.ID, []string{"tag:server"}); err != nil {
+				t.Fatalf("SetTags: %v", err)
+			}
+
+			id := "999"
+			if u, ok := userByName(t, c, tt.user); ok {
+				id = u.ID
+			}
+			if err := c.DeleteUserAndNodes(t.Context(), id); err != nil {
 				t.Fatalf("DeleteUserAndNodes: %v", err)
 			}
-			if got := fake.UserIDs(); !slices.Equal(got, tt.wantUsers) {
-				t.Errorf("users = %v, want %v", got, tt.wantUsers)
+
+			users, err := c.ListUsers(t.Context())
+			if err != nil {
+				t.Fatalf("ListUsers: %v", err)
 			}
-			if got := fake.NodeIDs(); !slices.Equal(got, tt.wantNodes) {
-				t.Errorf("nodes = %v, want %v", got, tt.wantNodes)
+			var gotUsers []string
+			for _, u := range users {
+				gotUsers = append(gotUsers, u.Name)
+			}
+			nodes, err := c.ListNodes(t.Context())
+			if err != nil {
+				t.Fatalf("ListNodes: %v", err)
+			}
+			var gotNodes []string
+			for _, n := range nodes {
+				gotNodes = append(gotNodes, n.Name)
+			}
+			slices.Sort(gotUsers)
+			slices.Sort(gotNodes)
+			if !slices.Equal(gotUsers, tt.wantUsers) {
+				t.Errorf("users = %v, want %v", gotUsers, tt.wantUsers)
+			}
+			if !slices.Equal(gotNodes, tt.wantNodes) {
+				t.Errorf("nodes = %v, want %v", gotNodes, tt.wantNodes)
 			}
 		})
 	}
