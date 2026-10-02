@@ -205,12 +205,23 @@ func (p *Pool) ServeHTTP(w http.ResponseWriter, r *http.Request, label, subdomai
 		},
 		Transport: &http.Transport{
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				ctx, cancel := context.WithTimeout(ctx, funnelDialTimeout)
+				defer cancel()
 				return srv.Dial(ctx, network, addr)
 			},
+		},
+		// Same as the default ErrorHandler, except it uses our logger.
+		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			p.logger.Warn("funnel: proxy to target failed", "subdomain", subdomain, "label", label, "target", targetAddr, "error", err)
+			w.WriteHeader(http.StatusBadGateway)
 		},
 	}
 	proxy.ServeHTTP(w, r)
 }
+
+// funnelDialTimeout limits connecting to a funnel's target machine.
+// Without it the Dial hangs forever.
+const funnelDialTimeout = 10 * time.Second
 
 // waitForDERP polls lc.Status until the tsnet node has a relay (DERP
 // region) assigned, which means it can route packets to peers. It returns
