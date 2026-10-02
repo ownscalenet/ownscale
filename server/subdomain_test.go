@@ -1,7 +1,10 @@
 package server
 
 import (
+	"bufio"
 	"context"
+	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -82,7 +85,7 @@ func TestSubdomainProxyRoutesToOrg(t *testing.T) {
 		}
 		return (&net.Dialer{}).DialContext(ctx, "tcp", backend.Listener.Addr().String())
 	}
-	p := NewSubdomainProxy(http.NotFoundHandler(), "ownscale.test", dial)
+	p := NewSubdomainProxy(http.NotFoundHandler(), "ownscale.test", dial, slog.New(slog.DiscardHandler))
 
 	tests := []struct {
 		host     string
@@ -112,5 +115,53 @@ func TestSubdomainProxyRoutesToOrg(t *testing.T) {
 	}
 	if len(dialed) != 2 || dialed[0] != "aaaa" || dialed[1] != "gone" {
 		t.Errorf("dialed = %v, want [aaaa gone]", dialed)
+	}
+}
+
+// TestSubdomainProxyUpgrade checks that protocol upgrades, which devices use
+// for their control connection, pass through the proxy in both directions.
+func TestSubdomainProxyUpgrade(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		conn, brw, err := http.NewResponseController(w).Hijack()
+		if err != nil {
+			t.Errorf("backend Hijack: %v", err)
+			return
+		}
+		defer conn.Close()
+		brw.WriteString("HTTP/1.1 101 Switching Protocols\r\nConnection: Upgrade\r\nUpgrade: test\r\n\r\n")
+		brw.Flush()
+		// Echo one line back.
+		line, _ := brw.ReadString('\n')
+		brw.WriteString("echo " + line)
+		brw.Flush()
+	}))
+	t.Cleanup(backend.Close)
+	dial := func(ctx context.Context, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", backend.Listener.Addr().String())
+	}
+	front := httptest.NewServer(NewSubdomainProxy(http.NotFoundHandler(), "ownscale.test", dial, slog.New(slog.DiscardHandler)))
+	t.Cleanup(front.Close)
+
+	conn, err := net.Dial("tcp", front.Listener.Addr().String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := io.WriteString(conn, "GET / HTTP/1.1\r\nHost: aaaa.ownscale.test\r\nConnection: Upgrade\r\nUpgrade: test\r\n\r\n"); err != nil {
+		t.Fatal(err)
+	}
+	br := bufio.NewReader(conn)
+	resp, err := http.ReadResponse(br, nil)
+	if err != nil {
+		t.Fatalf("read upgrade response: %v", err)
+	}
+	if resp.StatusCode != http.StatusSwitchingProtocols {
+		t.Fatalf("status = %d, want 101", resp.StatusCode)
+	}
+	if _, err := io.WriteString(conn, "hello\n"); err != nil {
+		t.Fatal(err)
+	}
+	if got, err := br.ReadString('\n'); err != nil || got != "echo hello\n" {
+		t.Errorf("after upgrade got %q, %v, want %q", got, err, "echo hello\n")
 	}
 }
