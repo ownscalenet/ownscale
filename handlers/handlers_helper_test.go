@@ -35,7 +35,7 @@ func newTestHandlersWithBaseDomain(t *testing.T, baseDomain string) (*Handlers, 
 	t.Helper()
 	_, queries := dbtest.New(t)
 
-	h, err := New(queries, baseDomain, t.TempDir(), nil, slog.New(slog.DiscardHandler), config.DerpConfig{})
+	h, err := New(queries, baseDomain, t.TempDir(), nil, slog.New(slog.DiscardHandler), config.DerpConfig{}, config.AuthConfig{})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

@@ -121,6 +121,18 @@ func (h *Handlers) createNewUser(ctx context.Context, params sqlcgen.CreateUserP
 	return user, nil
 }
 
+// AuthProviders reports which upstream login providers are configured, so
+// the login page can render each button accordingly (greyed out with an
+// explanatory tooltip when disabled, rather than a dead link). Public:
+// served before login.
+func (h *Handlers) AuthProviders(w http.ResponseWriter, r *http.Request) {
+	h.writeJSON(w, http.StatusOK, map[string]bool{
+		"oidc":      h.authProviders.OIDC,
+		"google":    h.authProviders.Google,
+		"microsoft": h.authProviders.Microsoft,
+	})
+}
+
 // BeginAuth kicks off the OAuth flow for the {provider} path segment.
 func (h *Handlers) BeginAuth(w http.ResponseWriter, r *http.Request) {
 	if next := r.URL.Query().Get("next"); next != "" {

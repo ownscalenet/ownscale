@@ -29,7 +29,7 @@ test('registering a real device and managing it from the Machines page', async (
     // Rename.
     const newName = `${hostname}-renamed`
     await row.getByRole('button', { name: '⋯', exact: true }).click()
-    await row.getByRole('button', { name: 'Edit machine name', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Edit machine name', exact: true }).click()
     const renameDialog = page.locator('dialog.modal[open]')
     await renameDialog.locator('input[type="text"]').fill(newName)
     await renameDialog.getByRole('button', { name: 'Rename', exact: true }).click()
@@ -38,7 +38,7 @@ test('registering a real device and managing it from the Machines page', async (
 
     // Edit ACL tags.
     await renamedRow.getByRole('button', { name: '⋯', exact: true }).click()
-    await renamedRow.getByRole('button', { name: 'Edit ACL tags', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Edit ACL tags', exact: true }).click()
     const tagsDialog = page.locator('dialog.modal[open]')
     await tagsDialog.locator('input[type="text"]').fill('e2e-lifecycle')
     await tagsDialog.getByRole('button', { name: 'Save', exact: true }).click()
@@ -48,7 +48,7 @@ test('registering a real device and managing it from the Machines page', async (
     // subnet route, so the dialog is expected to show its empty state
     // (extending tscl-bridge to advertise routes is out of scope here).
     await renamedRow.getByRole('button', { name: '⋯', exact: true }).click()
-    await renamedRow.getByRole('button', { name: 'Edit route settings', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Edit route settings', exact: true }).click()
     const routesDialog = page.locator('dialog.modal[open]')
     await expect(routesDialog.getByText(/hasn.t advertised any routes/)).toBeVisible()
     await routesDialog.getByRole('button', { name: 'Cancel', exact: true }).click()

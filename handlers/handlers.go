@@ -38,6 +38,16 @@ type Handlers struct {
 	funnel          *funnelproxy.Pool
 	webauthn        *webauthn.WebAuthn
 	passkeySessions *passkeyCeremonyStore
+	authProviders   authProvidersStatus
+}
+
+// authProvidersStatus reports which upstream login providers are
+// configured, so the login page can render each button accordingly (see
+// AuthProviders).
+type authProvidersStatus struct {
+	OIDC      bool
+	Google    bool
+	Microsoft bool
 }
 
 // New builds the Handlers, wiring queries/baseDomain/dataDir into the
@@ -51,7 +61,8 @@ func New(
 	baseDomain, dataDir string,
 	oidc *oidcprovider.Storage,
 	logger *slog.Logger,
-	derpCfg config.DerpConfig) (_ *Handlers, err error) {
+	derpCfg config.DerpConfig,
+	authCfg config.AuthConfig) (_ *Handlers, err error) {
 	defer derrors.Wrap(&err, "handlers.New(%q)", baseDomain)
 
 	issuer := ""
@@ -87,6 +98,11 @@ func New(
 		funnel:          funnelproxy.NewPool(queries, orgSvc, dataDir, logger, orgSvc),
 		webauthn:        wa,
 		passkeySessions: newPasskeyCeremonyStore(),
+		authProviders: authProvidersStatus{
+			OIDC:      authCfg.UpstreamOIDC.Enabled(),
+			Google:    authCfg.Google.Enabled(),
+			Microsoft: authCfg.Microsoft.Enabled(),
+		},
 	}, nil
 }
 

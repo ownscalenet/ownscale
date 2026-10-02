@@ -3,10 +3,12 @@ import { Navigate } from 'react-router-dom'
 import { useAuth } from '../auth'
 import {
   ApiError,
+  getAuthProviders,
   passkeyLoginBegin,
   passkeyLoginFinish,
   passkeyRegisterBegin,
   passkeyRegisterFinish,
+  type AuthProviders,
 } from '../api'
 import { createPasskey, getPasskey, browserSupportsWebAuthn } from '../lib/webauthn'
 import { usePageTitle } from '../hooks/usePageTitle'
@@ -33,6 +35,45 @@ function goToNext(next: string | null) {
   window.location.assign(isSafeRelativeNext(next) ? next : '/')
 }
 
+// ssoLabels maps each AuthProviders key to its button copy.
+const ssoLabels: Record<keyof AuthProviders, string> = {
+  oidc: 'SSO',
+  google: 'Google',
+  microsoft: 'Microsoft',
+}
+
+// SSOButton renders a provider's sign-in link, or (when `enabled` is false
+// or still loading) a disabled button with a tooltip explaining it needs to
+// be enabled by the admin, instead of a dead link.
+function SSOButton({
+  provider,
+  enabled,
+  href,
+}: {
+  provider: keyof AuthProviders
+  enabled: boolean | undefined
+  href: string
+}) {
+  const label = ssoLabels[provider]
+  if (!enabled) {
+    return (
+      <button
+        type="button"
+        className="btn btn-outline btn-disabled"
+        disabled
+        title={`${label} sign-in is not enabled for this deployment.`}
+      >
+        Sign in with {label}
+      </button>
+    )
+  }
+  return (
+    <a href={href} className="btn btn-outline">
+      Sign in with {label}
+    </a>
+  )
+}
+
 export default function Login() {
   usePageTitle('Login')
   const { user, loading } = useAuth()
@@ -49,6 +90,23 @@ export default function Login() {
   const [passkeyError, setPasskeyError] = useState<string | null>(null)
   const [showRegister, setShowRegister] = useState(false)
   const [email, setEmail] = useState('')
+  const [authProviders, setAuthProviders] = useState<AuthProviders | null>(null)
+
+  // Fetched once on mount so SSO buttons can be greyed out (with an
+  // explanatory tooltip) instead of linking to a provider that isn't
+  // configured. A failed fetch is treated the same as "nothing
+  // configured": buttons stay disabled rather than risk a broken link.
+  useEffect(() => {
+    let cancelled = false
+    getAuthProviders()
+      .then((providers) => {
+        if (!cancelled) setAuthProviders(providers)
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [])
 
   // `next` may point at a backend-only route such as
   // /authorize/callback?id=... (used by the OIDC provider to finish an
@@ -127,24 +185,24 @@ export default function Login() {
 
           <div className="flex flex-col gap-2">
             {passkeySupported && (
-              <button
-                type="button"
-                className="btn btn-primary"
-                disabled={passkeyBusy}
-                onClick={() => void handlePasskeyLogin()}
-              >
-                Sign in with a passkey
-              </button>
+              <>
+                <p className="text-sm text-base-content/70 text-left">
+                  Passkeys are recommended: they don't share any personal information with
+                  Ownscale.
+                </p>
+                <button
+                  type="button"
+                  className="btn btn-primary"
+                  disabled={passkeyBusy}
+                  onClick={() => void handlePasskeyLogin()}
+                >
+                  Sign in with a passkey
+                </button>
+              </>
             )}
-            <a href={href} className="btn btn-outline">
-              Sign in with SSO
-            </a>
-            <a href={googleHref} className="btn btn-outline">
-              Sign in with Google
-            </a>
-            <a href={microsoftHref} className="btn btn-outline">
-              Sign in with Microsoft
-            </a>
+            <SSOButton provider="oidc" enabled={authProviders?.oidc} href={href} />
+            <SSOButton provider="google" enabled={authProviders?.google} href={googleHref} />
+            <SSOButton provider="microsoft" enabled={authProviders?.microsoft} href={microsoftHref} />
           </div>
 
           {passkeySupported && (

@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth'
 import { usePageTitle } from '../hooks/usePageTitle'
@@ -122,12 +123,13 @@ export default function Machines() {
     const tick = async (force: boolean) => {
       if (running) return
       clearTimeout(timer)
-      // Skip a hidden tab, and an open dialog: a refresh could reset what the
-      // user is editing, or unmount its row if it stops matching the filters.
+      // Skip a hidden tab, and an open dialog or row menu: a refresh could
+      // reset what the user is editing, or unmount its row if it stops
+      // matching the filters.
       if (
         force ||
         (document.visibilityState === 'visible' &&
-          !document.querySelector('dialog[open]'))
+          !document.querySelector('dialog[open], [role="menu"]'))
       ) {
         running = true
         await load(controller.signal)
@@ -499,75 +501,89 @@ function MachineRow({
         )}
       </td>
       <td className="text-right whitespace-nowrap">
-        <div className="dropdown dropdown-end">
-          <button tabIndex={0} className="btn btn-sm btn-ghost">
-            ⋯
-          </button>
-          <ul
-            tabIndex={0}
-            className="dropdown-content menu bg-base-100 rounded-box z-10 w-56 p-2 shadow"
+        {/* Headless UI renders the items in a portal next to the button, so the
+            table's scroll container can't clip them. */}
+        <Menu>
+          <MenuButton className="btn btn-sm btn-ghost">⋯</MenuButton>
+          <MenuItems
+            as="ul"
+            anchor="bottom end"
+            className="menu bg-base-100 rounded-box z-10 w-56 p-2 shadow [--anchor-gap:4px] focus:outline-none"
           >
             <li>
-              <button
-                type="button"
-                disabled={m.internal || !canEdit}
-                onClick={() => renameRef.current?.showModal()}
-              >
-                Edit machine name
-              </button>
+              <MenuItem disabled={m.internal || !canEdit}>
+                <button
+                  type="button"
+                  className="data-focus:bg-base-content/10"
+                  disabled={m.internal || !canEdit}
+                  onClick={() => renameRef.current?.showModal()}
+                >
+                  Edit machine name
+                </button>
+              </MenuItem>
             </li>
             <li>
-              <button
-                type="button"
-                disabled={m.internal || !canManage}
-                onClick={() => tagsRef.current?.showModal()}
-              >
-                Edit ACL tags
-              </button>
+              <MenuItem disabled={m.internal || !canManage}>
+                <button
+                  type="button"
+                  className="data-focus:bg-base-content/10"
+                  disabled={m.internal || !canManage}
+                  onClick={() => tagsRef.current?.showModal()}
+                >
+                  Edit ACL tags
+                </button>
+              </MenuItem>
             </li>
             <li>
-              <button
-                type="button"
-                disabled={m.internal || !canManage}
-                onClick={() => routesRef.current?.showModal()}
-              >
-                Edit route settings
-              </button>
+              <MenuItem disabled={m.internal || !canManage}>
+                <button
+                  type="button"
+                  className="data-focus:bg-base-content/10"
+                  disabled={m.internal || !canManage}
+                  onClick={() => routesRef.current?.showModal()}
+                >
+                  Edit route settings
+                </button>
+              </MenuItem>
             </li>
             <li className="border-t border-base-200 mt-1 pt-1">
-              <button
-                type="button"
-                className="text-error"
-                disabled={expired || busy || m.internal || !canEdit}
-                onClick={() => {
-                  if (confirm(`Expire the session of ${m.givenName}?`)) {
-                    void run(() => expireMachine(m.id))
-                  }
-                }}
-              >
-                Expire session
-              </button>
+              <MenuItem disabled={expired || busy || m.internal || !canEdit}>
+                <button
+                  type="button"
+                  className="text-error data-focus:bg-base-content/10"
+                  disabled={expired || busy || m.internal || !canEdit}
+                  onClick={() => {
+                    if (confirm(`Expire the session of ${m.givenName}?`)) {
+                      void run(() => expireMachine(m.id))
+                    }
+                  }}
+                >
+                  Expire session
+                </button>
+              </MenuItem>
             </li>
             <li>
-              <button
-                type="button"
-                className="text-error"
-                disabled={busy || !canEdit}
-                onClick={() => {
-                  if (m.internal) {
-                    openRemoveInternalDialog()
-                    return
-                  }
-                  if (confirm(`Permanently remove ${m.givenName}?`)) {
-                    void run(() => deleteMachine(m.id))
-                  }
-                }}
-              >
-                Remove
-              </button>
+              <MenuItem disabled={busy || !canEdit}>
+                <button
+                  type="button"
+                  className="text-error data-focus:bg-base-content/10"
+                  disabled={busy || !canEdit}
+                  onClick={() => {
+                    if (m.internal) {
+                      openRemoveInternalDialog()
+                      return
+                    }
+                    if (confirm(`Permanently remove ${m.givenName}?`)) {
+                      void run(() => deleteMachine(m.id))
+                    }
+                  }}
+                >
+                  Remove
+                </button>
+              </MenuItem>
             </li>
-          </ul>
-        </div>
+          </MenuItems>
+        </Menu>
 
         <dialog ref={renameRef} className="modal">
           <div className="modal-box text-left">

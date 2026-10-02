@@ -271,6 +271,14 @@ func TestValidate(t *testing.T) {
 		}
 	})
 
+	t.Run("upstream oidc unset still passes (optional)", func(t *testing.T) {
+		cfg := fullyPopulatedConfig()
+		cfg.Auth.UpstreamOIDC = UpstreamOIDCConfig{}
+		if err := cfg.Validate(); err != nil {
+			t.Errorf("Validate: %v", err)
+		}
+	})
+
 	t.Run("relative data_dir rejected", func(t *testing.T) {
 		cfg := fullyPopulatedConfig()
 		cfg.DataDir = "relative/data"
@@ -305,10 +313,6 @@ func TestValidate(t *testing.T) {
 		{"OWNSCALE_BASE_DOMAIN", func(c *Config) { c.BaseDomain = "" }, "OWNSCALE_BASE_DOMAIN"},
 		{"OWNSCALE_DATA_DIR", func(c *Config) { c.DataDir = "" }, "OWNSCALE_DATA_DIR"},
 		{"OWNSCALE_AUTH_SESSION_SECRET", func(c *Config) { c.Auth.SessionSecret = "" }, "OWNSCALE_AUTH_SESSION_SECRET"},
-		{"OWNSCALE_AUTH_UPSTREAM_OIDC_ISSUER", func(c *Config) { c.Auth.UpstreamOIDC.Issuer = "" }, "OWNSCALE_AUTH_UPSTREAM_OIDC_ISSUER"},
-		{"OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_ID", func(c *Config) { c.Auth.UpstreamOIDC.ClientID = "" }, "OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_ID"},
-		{"OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_SECRET", func(c *Config) { c.Auth.UpstreamOIDC.ClientSecret = "" }, "OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_SECRET"},
-		{"OWNSCALE_AUTH_UPSTREAM_OIDC_CALLBACK_URL", func(c *Config) { c.Auth.UpstreamOIDC.CallbackURL = "" }, "OWNSCALE_AUTH_UPSTREAM_OIDC_CALLBACK_URL"},
 		{"OWNSCALE_AUTH_OIDC_PROVIDER_ISSUER", func(c *Config) { c.Auth.OIDCProvider.Issuer = "" }, "OWNSCALE_AUTH_OIDC_PROVIDER_ISSUER"},
 		{"OWNSCALE_AUTH_OIDC_PROVIDER_SIGNING_KEY_PATH", func(c *Config) { c.Auth.OIDCProvider.SigningKeyPath = "" }, "OWNSCALE_AUTH_OIDC_PROVIDER_SIGNING_KEY_PATH"},
 	}

@@ -3,14 +3,19 @@ package handlers
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"reflect"
 	"regexp"
 	"testing"
 	"time"
 
 	"github.com/ownscalenet/ownscale/auth"
+	"github.com/ownscalenet/ownscale/config"
+	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/orgs"
 
@@ -373,5 +378,36 @@ func TestAPILogout(t *testing.T) {
 
 	if rec.Code != http.StatusNoContent {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusNoContent)
+	}
+}
+
+// TestAuthProviders verifies the login page's capabilities endpoint
+// reports each provider's configured state, so the frontend knows which
+// buttons to grey out.
+func TestAuthProviders(t *testing.T) {
+	_, queries := dbtest.New(t)
+	h, err := New(queries, "", t.TempDir(), nil, slog.New(slog.DiscardHandler), config.DerpConfig{}, config.AuthConfig{
+		UpstreamOIDC: config.UpstreamOIDCConfig{Issuer: "https://idp.example.com"},
+		Google:       config.GoogleConfig{ClientID: "google-id"},
+		// Microsoft left unset: Enabled() should report false.
+	})
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/providers", nil)
+	rec := httptest.NewRecorder()
+	h.AuthProviders(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	var got map[string]bool
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	want := map[string]bool{"oidc": true, "google": true, "microsoft": false}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("AuthProviders response = %+v, want %+v", got, want)
 	}
 }

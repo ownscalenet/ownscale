@@ -65,7 +65,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	h, err := handlers.New(queries, cfg.BaseDomain, cfg.DataDir, oidcStorage, logger, cfg.Derp)
+	h, err := handlers.New(queries, cfg.BaseDomain, cfg.DataDir, oidcStorage, logger, cfg.Derp, cfg.Auth)
 	if err != nil {
 		return err
 	}
@@ -94,12 +94,14 @@ func run() error {
 		serveErr <- srv.Serve(ln)
 	}()
 
-	if err := auth.RegisterUpstreamOIDC(
-		cfg.Auth.UpstreamOIDC.Issuer,
-		cfg.Auth.UpstreamOIDC.ClientID,
-		cfg.Auth.UpstreamOIDC.ClientSecret,
-		cfg.Auth.UpstreamOIDC.CallbackURL); err != nil {
-		return err
+	if cfg.Auth.UpstreamOIDC.Enabled() {
+		if err := auth.RegisterUpstreamOIDC(
+			cfg.Auth.UpstreamOIDC.Issuer,
+			cfg.Auth.UpstreamOIDC.ClientID,
+			cfg.Auth.UpstreamOIDC.ClientSecret,
+			cfg.Auth.UpstreamOIDC.CallbackURL); err != nil {
+			return err
+		}
 	}
 	if cfg.Auth.Google.Enabled() {
 		if err := auth.RegisterGoogle(

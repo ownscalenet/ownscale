@@ -54,6 +54,8 @@ type UpstreamOIDCConfig struct {
 	CallbackURL  string `env:"OWNSCALE_AUTH_UPSTREAM_OIDC_CALLBACK_URL"`
 }
 
+func (u UpstreamOIDCConfig) Enabled() bool { return u.ClientID != "" }
+
 type GoogleConfig struct {
 	// Leave ClientID empty to disable Google login.
 	ClientID     string `env:"OWNSCALE_AUTH_GOOGLE_CLIENT_ID"`
@@ -220,18 +222,6 @@ func (c *Config) Validate() (err error) {
 	}
 	if c.Auth.SessionSecret == "" {
 		missing = append(missing, "OWNSCALE_AUTH_SESSION_SECRET")
-	}
-	if c.Auth.UpstreamOIDC.Issuer == "" {
-		missing = append(missing, "OWNSCALE_AUTH_UPSTREAM_OIDC_ISSUER")
-	}
-	if c.Auth.UpstreamOIDC.ClientID == "" {
-		missing = append(missing, "OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_ID")
-	}
-	if c.Auth.UpstreamOIDC.ClientSecret == "" {
-		missing = append(missing, "OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_SECRET")
-	}
-	if c.Auth.UpstreamOIDC.CallbackURL == "" {
-		missing = append(missing, "OWNSCALE_AUTH_UPSTREAM_OIDC_CALLBACK_URL")
 	}
 	if c.Auth.OIDCProvider.Issuer == "" {
 		missing = append(missing, "OWNSCALE_AUTH_OIDC_PROVIDER_ISSUER")

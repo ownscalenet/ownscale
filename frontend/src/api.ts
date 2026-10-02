@@ -104,6 +104,19 @@ export function getSession() {
   return request<{ user: User; organization: Organization | null }>('/api/session')
 }
 
+export interface AuthProviders {
+  oidc: boolean
+  google: boolean
+  microsoft: boolean
+}
+
+// getAuthProviders reports which upstream login providers are configured,
+// so the login page can grey out buttons for ones that aren't (see
+// handlers.AuthProviders). Public: called before the user is signed in.
+export function getAuthProviders() {
+  return request<AuthProviders>('/api/auth/providers')
+}
+
 export function logout() {
   return request<void>('/api/logout', { method: 'POST' })
 }
