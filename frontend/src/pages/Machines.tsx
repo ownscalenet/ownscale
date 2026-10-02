@@ -21,6 +21,10 @@ import {
 
 // isExpired uses the server's verdict on the expiry rather than comparing
 // it with this browser's clock, which may be off.
+// refreshIntervalMs is how often the Machines page reloads the list, so online
+// status, last seen and expiry stay current.
+const refreshIntervalMs = 10_000
+
 function isExpired(m: Machine): boolean {
   return m.expired
 }
@@ -108,10 +112,40 @@ export default function Machines() {
     }
   }
 
+  // Reloads with the current filters every refreshIntervalMs. A filter change
+  // aborts the in-flight load and restarts polling with the new filters.
   useEffect(() => {
     const controller = new AbortController()
-    void load(controller.signal)
-    return () => controller.abort()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    let running = false
+
+    const tick = async (force: boolean) => {
+      if (running) return
+      clearTimeout(timer)
+      // Skip a hidden tab, and an open dialog: a refresh could reset what the
+      // user is editing, or unmount its row if it stops matching the filters.
+      if (
+        force ||
+        (document.visibilityState === 'visible' &&
+          !document.querySelector('dialog[open]'))
+      ) {
+        running = true
+        await load(controller.signal)
+        running = false
+      }
+      if (!controller.signal.aborted) timer = setTimeout(() => void tick(false), refreshIntervalMs)
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState === 'visible') void tick(false)
+    }
+
+    void tick(true)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    return () => {
+      controller.abort()
+      clearTimeout(timer)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
+    }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, userFilter, status])
 
