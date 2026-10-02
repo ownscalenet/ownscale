@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"slices"
+	"strings"
 
 	"github.com/peterbourgon/ff/v4"
 
@@ -25,6 +26,12 @@ func loadConfigAndLogger() (*config.Config, *slog.Logger, error) {
 	cfg, err := config.Load()
 	if err != nil {
 		return nil, nil, err
+	}
+
+	// Use less verbose level in CLI.
+	// DEBUG prints logs for queries and that makes the CLI output ugly.
+	if strings.ToUpper(cfg.Log.Level) == "DEBUG" {
+		cfg.Log.Level = "INFO"
 	}
 
 	logger, err := logging.New(cfg.Log)
