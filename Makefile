@@ -1,10 +1,8 @@
 # Build the ownscale binary. The frontend (frontend/) is a React + Vite
 # app that builds directly into webui/dist, which is embedded into
-# the Go binary via go:embed. webui/dist is committed to the repo
-# (go:embed needs real files at Go build time), so run `make frontend`
-# whenever frontend/ changes and commit the updated webui/dist.
+# the Go binary via go:embed.
 
-.PHONY: build frontend backend osa restore test coverage migration archive docker-image caddy-image purge ci docs load-cert dev-up devbox e2e e2e-frontend e2e-connectivity e2e-ssh e2e-remote e2e-remote-frontend e2e-remote-connectivity
+.PHONY: build frontend backend osa restore test coverage archive docker-image caddy-image purge ci docs load-cert dev-up devbox e2e e2e-deps e2e-setup e2e-frontend e2e-frontend-run e2e-connectivity e2e-ssh e2e-remote e2e-remote-frontend e2e-remote-connectivity
 
 DOCKER_IMAGE := ownscale:latest
 CADDY_IMAGE := ownscale-caddy:latest
@@ -31,20 +29,16 @@ osa:
 	docker compose exec ownscale ./osa $(filter-out osa,$(MAKECMDGOALS))
 
 # Build the images, start the full stack, then stream logs from all
-# containers. Organizations are created on each new user's first login; the
-# first six get the fixed subdomains aaaa/bbbb/cccc/dddd/eeee/ffff (see
-# orgs.Service.NextSubdomain).
+# containers. Organizations are created on each new user's first login.
 #
 # Pre-creates .litestream-backups as the host user before compose runs, so it's
 # not created later as root.
 #
 # Also upserts HOST_UID/HOST_GID into .env: docker-compose.yml's
 # user: "${HOST_UID:-0}:${HOST_GID:-0}" only sees these if they're in the shell
-# env or in .env -- persisting them to .env means a bare `docker compose ...`
-# (bypassing make) still runs containers as the host user instead of
-# silently falling back to root.
+# env or in .env
 #
-# Pass `make dev-up BUILD=1`) to forward --build to `docker compose up`.
+# Pass `make dev-up BUILD=1` to forward --build to `docker compose up`.
 BUILD ?=
 dev-up:
 	mkdir -p "$(DATA_DIR)/.litestream-backups"
@@ -55,11 +49,8 @@ dev-up:
 	done
 	docker compose up $(if $(BUILD),--build)
 
-# Spin up a throwaway ubuntu container running tailscaled, auto-join it to
-# an org's in-process headscale (ORG, default aaaa, the first org created --
-# see orgs.Service.NextSubdomain) via a freshly-minted ephemeral pre-auth key,
-# then drop into an interactive shell in that container. Requires
-# `make dev-up` already running and that org to exist (log in once first).
+# devbox opens up a shell in a container that has joined a tailnet.
+# It's useful for debugging, but requires make dev-up to already run.
 ORG ?= aaaa
 BASE_DOMAIN := $(shell grep -m1 '^BASE_DOMAIN=' .env 2>/dev/null | cut -d= -f2)
 BASE_DOMAIN := $(if $(BASE_DOMAIN),$(BASE_DOMAIN),ownscale.test)
@@ -86,20 +77,33 @@ devbox:
 			python3 -m http.server 80 --directory /var/www >/var/log/httpserver.log 2>&1 & \
 			exec bash"
 
-# Requires `make dev-up` already running.
-e2e: e2e-frontend e2e-connectivity e2e-ssh
+# Requires `make dev-up` already running. The suites use disjoint
+# organizations to perfoorm concurrent tests. ssh runs alone afterwards:
+# its devbox containers add and remove host network links, which makes Chromium
+# abort other browsers' in-flight requests (net::ERR_NETWORK_CHANGED).
+e2e: e2e-deps e2e-setup
+	$(MAKE) -j2 --output-sync=target E2E_FRONTEND_ARGS="--project=chromium --no-deps" \
+		e2e-frontend-run e2e-connectivity
+	$(MAKE) e2e-ssh E2E_SSH_ARGS="--project=ssh --no-deps"
 
-e2e-frontend:
+e2e-deps:
 	npm --prefix e2e/frontend ci
 	npx --prefix e2e/frontend playwright install chromium
-	npm --prefix e2e/frontend test
+
+# Signs in the e2e identities and records their organizations.
+e2e-setup:
+	npm --prefix e2e/frontend test -- --project=setup
+
+e2e-frontend: e2e-deps e2e-frontend-run
+e2e-frontend-run:
+	npm --prefix e2e/frontend test -- $(E2E_FRONTEND_ARGS)
 e2e-connectivity:
 	mkdir -p bin/connectivity-work
 	TMPDIR="$(CURDIR)/bin/connectivity-work" npm --prefix e2e/frontend run test:connectivity
 
 # Tailscale SSH and split DNS between devbox containers; also needs docker with /dev/net/tun.
 e2e-ssh:
-	npm --prefix e2e/frontend run test:ssh
+	npm --prefix e2e/frontend run test:ssh -- $(E2E_SSH_ARGS)
 
 REMOTE_BASE_DOMAIN ?= "beastbb.bond"
 
@@ -113,32 +117,8 @@ e2e-remote-connectivity:
 	E2E_BASE_URL=https://console.$(REMOTE_BASE_DOMAIN) E2E_BASE_DOMAIN=$(REMOTE_BASE_DOMAIN) E2E_CA_FILE= \
 		TMPDIR="$(CURDIR)/bin/connectivity-work" npm --prefix e2e/frontend run test:connectivity
 
-# Usage: make migration up | make migration status
-migration:
-	go run ./cmd/osa migrate $(filter-out migration,$(MAKECMDGOALS))
-
-
 restore:
 	docker compose run --rm --entrypoint /app/osa ownscale restore $(filter-out restore,$(MAKECMDGOALS))
-
-up down status:
-	@:
-
-# Swallows `make restore db`/`make restore organizations`'s positional
-# argument the same way `up down status:` does for `make migration ...`.
-db organizations:
-	@:
-
-ifneq (,$(filter osa,$(MAKECMDGOALS)))
-%:
-	@:
-endif
-
-run:
-	go run ./cmd/ownscale
-
-test:
-	go test ./...
 
 BROWSER := firefox
 coverage:

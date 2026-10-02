@@ -118,6 +118,9 @@ func TestNodes(t *testing.T) {
 	if node.User == nil || node.User.ID != alice.ID {
 		t.Errorf("node user = %+v, want alice", node.User)
 	}
+	if node.Expired {
+		t.Error("new node reports expired")
+	}
 
 	if err := c.RenameNode(t.Context(), node.ID, "desktop"); err != nil {
 		t.Fatalf("RenameNode: %v", err)
@@ -142,6 +145,9 @@ func TestNodes(t *testing.T) {
 	}
 	if expiry, err := time.Parse(time.RFC3339, *got.Expiry); err != nil || expiry.After(time.Now()) {
 		t.Errorf("expiry = %q, want a past RFC3339 time", *got.Expiry)
+	}
+	if !got.Expired {
+		t.Error("expired = false after ExpireNode")
 	}
 
 	// Tagging a node hands its ownership from the user to the tag; headscale
@@ -191,6 +197,9 @@ func TestPreAuthKeys(t *testing.T) {
 			if got, err := time.Parse(time.RFC3339, key.Expiration); err != nil || !got.Equal(expiration) {
 				t.Errorf("expiration = %q, want %v", key.Expiration, expiration)
 			}
+			if key.Expired {
+				t.Error("new key reports expired")
+			}
 
 			listed := func() (PreAuthKey, bool) {
 				keys, err := c.ListPreAuthKeys(t.Context())
@@ -213,6 +222,9 @@ func TestPreAuthKeys(t *testing.T) {
 			expired, _ := listed()
 			if got, err := time.Parse(time.RFC3339, expired.Expiration); err != nil || got.After(time.Now()) {
 				t.Errorf("expiration after ExpirePreAuthKey = %q, want a past time", expired.Expiration)
+			}
+			if !expired.Expired {
+				t.Error("expired = false after ExpirePreAuthKey")
 			}
 
 			if err := c.DeletePreAuthKey(t.Context(), key.ID); err != nil {

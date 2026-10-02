@@ -10,7 +10,7 @@ e2e/frontend/tests/.auth/
 e2e/frontend/test-results/
 e2e/frontend/playwright-report/
 e2e/frontend/blob-report/
-e2e/.frontend-run.lock
+e2e/.*-run.lock
 e2e/.connectivity-private/
 
 # Hugo build cache/artifacts for the site/ docs module.

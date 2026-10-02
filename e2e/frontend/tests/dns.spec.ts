@@ -1,4 +1,5 @@
-import { expect, test, type Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
+import { expect, test } from './support/account'
 import { dnsPageLoaded, snapshotDns } from './support/dnsPage'
 import { retryUntil } from './support/retry'
 
@@ -11,7 +12,7 @@ async function readGlobalNameservers(page: Page): Promise<string[]> {
 test('adding and removing a nameserver, split DNS domain, DNS record, and search domain, and toggling Magic DNS', async ({
   page,
 }) => {
-  // This test issues 10 back-to-back saves, each of which restarts aaaa's
+  // This test issues 10 back-to-back saves, each of which restarts the org's
   // headscale and can need retries (see support/retry.ts) --
   // comfortably longer than Playwright's 30s default is needed.
   test.setTimeout(300_000)

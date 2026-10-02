@@ -19,8 +19,10 @@ import {
   type Machine,
 } from '../api'
 
+// isExpired uses the server's verdict on the expiry rather than comparing
+// it with this browser's clock, which may be off.
 function isExpired(m: Machine): boolean {
-  return m.expiry != null && new Date(m.expiry).getTime() < Date.now()
+  return m.expired
 }
 
 function tags(m: Machine): string[] {

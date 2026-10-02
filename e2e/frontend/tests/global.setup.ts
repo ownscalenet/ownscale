@@ -1,8 +1,10 @@
+import { lookup } from 'node:dns/promises'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { expect, test as setup, type Page } from '@playwright/test'
 import { baseDomain, baseURL, consoleDomain } from './connectivity/environment'
 import { identities, OrgUI } from './connectivity/ui'
+import { accountNames, accountsFile, emailOf, signIn, storageStateOf } from './support/account'
 import { addVirtualAuthenticator, clearCredentials, exportCredential, importCredential } from './support/webauthn'
 
 const STORAGE_STATE = 'tests/.auth/admin.json'
@@ -114,5 +116,38 @@ setup.describe.serial('bootstrap fixed dev identities', () => {
       await context.close()
     }
   })
+
+  // The e2e accounts (see support/account.ts) sign in after the identities
+  // above, so on a fresh stack they get the next fixed subdomains.
+  for (const name of accountNames) {
+    setup(`${name} claims an org`, async ({ browser }) => {
+      const context = await browser.newContext({ baseURL, ignoreHTTPSErrors: true })
+      try {
+        const page = await context.newPage()
+        await signIn(page, emailOf(name))
+        const session = await page.request.get('/api/session').then(r => r.json())
+        const org = String(session.organization?.Domain ?? '').split('.')[0]
+        if (!org) throw new Error(`${name} has no organization`)
+        await context.storageState({ path: storageStateOf(name) })
+
+        const orgs = existsSync(accountsFile) ? JSON.parse(readFileSync(accountsFile, 'utf-8')) : {}
+        orgs[name] = org
+        writeFileSync(accountsFile, JSON.stringify(orgs, null, 2))
+        await checkHost(org)
+      } finally {
+        await context.close()
+      }
+    })
+  }
 })
 
+// checkHost fails with the missing /etc/hosts line when org's hostname
+// doesn't resolve on a local stack: real machines reach the org's headscale
+// by name.
+async function checkHost(org: string) {
+  if (baseDomain !== 'ownscale.test') return
+  const name = `${org}.${baseDomain}`
+  await lookup(name).catch(() => {
+    throw new Error(`${name} doesn't resolve; add to /etc/hosts:\n127.0.0.1 ${name}`)
+  })
+}

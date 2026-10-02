@@ -1,17 +1,21 @@
 import { execFile } from 'node:child_process'
 import { lookup, Resolver } from 'node:dns/promises'
-import { chmod, lstat, mkdir, readFile } from 'node:fs/promises'
+import { chmod, lstat, mkdir, readFile, rename } from 'node:fs/promises'
 import { request } from 'node:https'
 import { promisify } from 'node:util'
-import { acquireRunGuard } from '../../run-guard'
+import { acquireRunGuard, guardPath } from '../../run-guard'
 import { baseDomain, baseURL, bridgeBinary, caFile, dexURL, privateDir, root, scratchDir } from './environment'
 
 export async function buildBridge(): Promise<void> {
   await mkdir(scratchDir, { recursive: true, mode: 0o700 })
   try {
-    await promisify(execFile)('go', ['build', '-o', bridgeBinary, './e2e/connectivity/cmd/tscl-bridge'], {
+    // Built under a per-process name and renamed into place, so suites and
+    // workers building at the same time never run a half-written binary.
+    const tmp = `${bridgeBinary}.${process.pid}.tmp`
+    await promisify(execFile)('go', ['build', '-o', tmp, './e2e/connectivity/cmd/tscl-bridge'], {
       cwd: root, env: { ...process.env, TMPDIR: scratchDir }, timeout: 300_000, maxBuffer: 64 * 1024,
     })
+    await rename(tmp, bridgeBinary)
   } catch {
     throw new Error('Connectivity bridge build failed; run go build -o bin/tscl-bridge ./e2e/connectivity/cmd/tscl-bridge for local diagnostics')
   }
@@ -73,7 +77,7 @@ export async function checkPrerequisites(): Promise<void> {
 }
 
 export default async function setup() {
-  const release = await acquireRunGuard()
+  const release = await acquireRunGuard(guardPath('playwright.connectivity'))
   try {
     await checkPrerequisites()
     await buildBridge()

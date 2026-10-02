@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './support/account'
 
 // A policy whose "ssh" section lets users Tailscale SSH into their own
 // machines. dst is the only field varied below.

@@ -1,11 +1,9 @@
 import { randomBytes } from 'node:crypto'
-import { expect, test, type Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
+import { expect, test } from '../support/account'
 import { docker, ensureDevboxImage, removeDevbox, startDevbox } from '../support/devbox'
 import { dnsPageLoaded, snapshotDns } from '../support/dnsPage'
 import { retryUntil } from '../support/retry'
-
-// admin's organization.
-const org = 'aaaa'
 
 // answerIP is what dnsmasq on the server devbox answers; it's never routed,
 // only compared against the client's lookup result.
@@ -26,7 +24,7 @@ async function putPolicy(page: Page, content: string): Promise<void> {
   expect(res.ok(), await res.text()).toBe(true)
 }
 
-test('split DNS sends queries for a domain to its nameserver on the tailnet', async ({ page }) => {
+test('split DNS sends queries for a domain to its nameserver on the tailnet', async ({ page, account }) => {
   test.setTimeout(10 * 60_000)
   await ensureDevboxImage()
 
@@ -55,8 +53,8 @@ test('split DNS sends queries for a domain to its nameserver on the tailnet', as
   const originalPolicy = await getPolicy(page)
   try {
     await putPolicy(page, allowAll)
-    await startDevbox(server, org, `dns-srv-${suffix}`)
-    await startDevbox(client, org, `dns-cli-${suffix}`)
+    await startDevbox(server, account.org, `dns-srv-${suffix}`)
+    await startDevbox(client, account.org, `dns-cli-${suffix}`)
     const serverIP = await docker(['exec', server, 'tailscale', 'ip', '-4'])
     await docker([
       'exec', '-d', server, 'dnsmasq', '--keep-in-foreground', '--no-resolv', '--no-hosts',

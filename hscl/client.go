@@ -29,15 +29,18 @@ type User struct {
 
 // Node is a headscale node/machine.
 type Node struct {
-	ID              string   `json:"id"`
-	MachineKey      string   `json:"machineKey"`
-	NodeKey         string   `json:"nodeKey"`
-	IPAddresses     []string `json:"ipAddresses"`
-	Name            string   `json:"name"`
-	GivenName       string   `json:"givenName"`
-	User            *User    `json:"user"`
-	LastSeen        *string  `json:"lastSeen"`
-	Expiry          *string  `json:"expiry"`
+	ID          string   `json:"id"`
+	MachineKey  string   `json:"machineKey"`
+	NodeKey     string   `json:"nodeKey"`
+	IPAddresses []string `json:"ipAddresses"`
+	Name        string   `json:"name"`
+	GivenName   string   `json:"givenName"`
+	User        *User    `json:"user"`
+	LastSeen    *string  `json:"lastSeen"`
+	Expiry      *string  `json:"expiry"`
+	// Expired reports whether Expiry has passed by this server's clock, so
+	// clients don't compare it with their own, possibly skewed, clock.
+	Expired         bool     `json:"expired"`
 	CreatedAt       string   `json:"createdAt"`
 	RegisterMethod  string   `json:"registerMethod"`
 	Online          bool     `json:"online"`
@@ -60,6 +63,9 @@ type PreAuthKey struct {
 	ACLTags    []string `json:"aclTags"`
 	CreatedAt  string   `json:"createdAt"`
 	Expiration string   `json:"expiration"`
+	// Expired reports whether Expiration has passed by this server's clock,
+	// so clients don't compare it with their own, possibly skewed, clock.
+	Expired bool `json:"expired"`
 }
 
 // CreatePreAuthKeyParams are the inputs to Client.CreatePreAuthKey. UserID
@@ -396,6 +402,7 @@ func toNode(n clientv1.Node) Node {
 		if expiry := timeString(*n.Expiry); expiry != "" {
 			node.Expiry = &expiry
 		}
+		node.Expired = expired(*n.Expiry)
 	}
 	return node
 }
@@ -435,7 +442,14 @@ func toPreAuthKey(k clientv1.PreAuthKey) PreAuthKey {
 		ACLTags:    k.AclTags,
 		CreatedAt:  timeString(k.CreatedAt),
 		Expiration: timeString(k.Expiration),
+		Expired:    expired(k.Expiration),
 	}
+}
+
+// expired reports whether t is set and not in the future. Expiring
+// something sets its expiry to the current time, so equal counts.
+func expired(t time.Time) bool {
+	return !t.IsZero() && !t.After(time.Now())
 }
 
 // timeString formats t as RFC3339, or "" if it's the zero value.

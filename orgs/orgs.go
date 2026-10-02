@@ -44,7 +44,11 @@ const (
 
 // fixedSubdomains are handed out in order to the first organizations
 // created, so development identities land on predictable subdomains.
-var fixedSubdomains = []string{"aaaa", "bbbb", "cccc", "dddd", "eeee", "ffff"}
+// TODO: move these to env.
+var fixedSubdomains = []string{
+	"aaaa", "bbbb", "cccc", "dddd", "eeee",
+	"ffff", "gggg", "hhhh", "iiii", "jjjj",
+}
 
 // Service provisions organizations and manages the lifecycle of every
 // org's in-process hscontrol.Headscale instance.

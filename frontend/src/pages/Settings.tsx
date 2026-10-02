@@ -15,10 +15,10 @@ import { usePageTitle } from '../hooks/usePageTitle'
 
 const TAG_ONLY = '__tag_only__'
 
+// isExpired uses the server's verdict on the expiration rather than
+// comparing it with this browser's clock, which may be off.
 function isExpired(k: PreAuthKey): boolean {
-  if (k.used && !k.reusable) return true
-  if (k.expiration && new Date(k.expiration).getTime() < Date.now()) return true
-  return false
+  return (k.used && !k.reusable) || k.expired
 }
 
 function isActive(k: PreAuthKey): boolean {

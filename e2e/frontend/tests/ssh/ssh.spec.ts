@@ -1,10 +1,7 @@
 import { randomBytes } from 'node:crypto'
-import { expect, test, type Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
+import { expect, test } from '../support/account'
 import { docker, ensureDevboxImage, removeDevbox, startDevbox } from '../support/devbox'
-
-// admin's organization. `osa devbox-key` mints keys for its first headscale
-// user, so both devboxes below belong to the same user.
-const org = 'aaaa'
 
 const allowAll = `"acls": [{"action": "accept", "src": ["*"], "dst": ["*:*"]}],`
 const withSSH = `{
@@ -28,7 +25,9 @@ async function putPolicy(page: Page, content: string): Promise<void> {
   expect(res.ok(), await res.text()).toBe(true)
 }
 
-test('Tailscale SSH works between two machines only while the policy allows it', async ({ page }) => {
+// `osa devbox-key` mints keys for the org's first headscale user, so both
+// devboxes below belong to the same user, as autogroup:self requires.
+test('Tailscale SSH works between two machines only while the policy allows it', async ({ page, account }) => {
   test.setTimeout(10 * 60_000)
   await ensureDevboxImage()
 
@@ -52,8 +51,8 @@ test('Tailscale SSH works between two machines only while the policy allows it',
 
   try {
     await putPolicy(page, withSSH)
-    await startDevbox(server, org, `ssh-srv-${suffix}`)
-    await startDevbox(client, org, `ssh-cli-${suffix}`)
+    await startDevbox(server, account.org, `ssh-srv-${suffix}`)
+    await startDevbox(client, account.org, `ssh-cli-${suffix}`)
     serverIP = await docker(['exec', server, 'tailscale', 'ip', '-4'])
 
     await expect.poll(sshEcho, { timeout: 90_000, intervals: [2_000] }).toBe('ok')

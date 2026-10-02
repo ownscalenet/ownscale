@@ -1,5 +1,5 @@
 import { readFile } from 'node:fs/promises'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './support/account'
 import { registerRealMachine, teardownRealMachine, type RealMachine } from './support/realMachine'
 
 // These tests exercise the Machines page's row-level mutations (rename, tags,
@@ -8,9 +8,9 @@ import { registerRealMachine, teardownRealMachine, type RealMachine } from './su
 
 let machine: RealMachine
 
-test('registering a real device and managing it from the Machines page', async ({ page }) => {
+test('registering a real device and managing it from the Machines page', async ({ page, account }) => {
   test.setTimeout(120_000)
-  machine = await registerRealMachine(page)
+  machine = await registerRealMachine(page, account.org)
   try {
     const { hostname } = machine
     const row = page.getByRole('row').filter({ hasText: hostname })

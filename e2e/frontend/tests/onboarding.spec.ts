@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './support/account'
 
 // Uses a second seeded Dex identity (see etc/dex/config.yaml) so this
 // doesn't collide with the "admin" identity the "setup" project already

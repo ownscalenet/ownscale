@@ -11,8 +11,10 @@ export default defineConfig({
   // connectivity/, ssh/ and devbox/ have their own configs.
   testIgnore: ['**/connectivity/**', '**/ssh/**', '**/devbox/**'],
   globalSetup: './run-guard.ts',
+  // Each worker runs as its own account in its own organization (see
+  // tests/support/account.ts); files stay whole on one worker.
   fullyParallel: false,
-  workers: 1,
+  workers: 3,
   retries: 0,
   maxFailures: 1,
   reporter: [['list'], ['html', { open: 'never' }]],
@@ -34,7 +36,6 @@ export default defineConfig({
       name: 'chromium',
       use: {
         ...devices['Desktop Chrome'],
-        storageState: 'tests/.auth/admin.json',
       },
       dependencies: ['setup'],
     },

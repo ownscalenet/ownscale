@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './support/account'
 
 test('the register-machine dialog shows the org-specific login-server command', async ({
   page,

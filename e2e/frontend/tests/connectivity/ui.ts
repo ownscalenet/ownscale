@@ -53,6 +53,11 @@ export function validateSession(session: Session, identity: Identity): boolean {
   return session.organization.Status === 'active'
 }
 
+// stepTimeoutMs bounds each UI step of saving a policy. Saves take up to
+// about a second, but a busy stack (other suites running) or a remote one
+// can be several times slower.
+const stepTimeoutMs = 10_000
+
 /** OrgUI mutates resources only through the authenticated browser. */
 export class OrgUI {
   ownerID = ''
@@ -136,23 +141,23 @@ export class OrgUI {
   async savePolicy(content: string, timeoutMs = 90_000): Promise<void> {
     let phase = 'navigation'
     try {
-      await this.page.goto('/access-control', { timeout: 5_000 })
+      await this.page.goto('/access-control', { timeout: stepTimeoutMs })
       const editor = this.page.locator('textarea')
       phase = 'editor readiness'
-      await editor.waitFor({ timeout: 5_000 })
-      await expect(this.page.getByRole('heading', { name: 'Access Control', exact: true })).toBeVisible({ timeout: 5_000 })
+      await editor.waitFor({ timeout: stepTimeoutMs })
+      await expect(this.page.getByRole('heading', { name: 'Access Control', exact: true })).toBeVisible({ timeout: stepTimeoutMs })
       if (await editor.inputValue() !== content) {
         phase = 'editor input'
-        await editor.fill(content, { timeout: 5_000 })
+        await editor.fill(content, { timeout: stepTimeoutMs })
         phase = 'save request'
         const [response] = await Promise.all([
-          this.page.waitForResponse(r => new URL(r.url()).pathname === '/api/access-control' && r.request().method() === 'PUT', { timeout: 5_000 }),
-          this.page.getByRole('button', { name: 'Save', exact: true }).click({ timeout: 5_000 }),
+          this.page.waitForResponse(r => new URL(r.url()).pathname === '/api/access-control' && r.request().method() === 'PUT', { timeout: stepTimeoutMs }),
+          this.page.getByRole('button', { name: 'Save', exact: true }).click({ timeout: stepTimeoutMs }),
         ])
         phase = `save response HTTP ${response.status()}`
         if (!response.ok()) throw new Error('ACL save rejected')
         phase = 'save confirmation'
-        await expect(this.page.getByText('Policy saved. Headscale is restarting to apply it.')).toBeVisible({ timeout: 5_000 })
+        await expect(this.page.getByText('Policy saved. Headscale is restarting to apply it.')).toBeVisible({ timeout: stepTimeoutMs })
       }
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err)

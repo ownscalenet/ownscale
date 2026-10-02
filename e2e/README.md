@@ -14,13 +14,43 @@ Playwright and its browser binaries never weigh down the production
    "Deployment" sections) with `BASE_DOMAIN=ownscale.test` (the default in
    `.env.example`), including the `/etc/hosts` entries it documents.
 2. Node.js (matching `frontend/`'s toolchain).
-3. Go and the repository's Go dependencies, plus an `/etc/hosts` entry for
-   `aaaa.<base-domain>` (e.g. `127.0.0.1 aaaa.ownscale.test`) -- required
-   only by `machines-lifecycle.spec.ts` and `funnel.spec.ts`, which build
-   and launch `bin/tscl-bridge` (the same tsnet-backed real-device client
-   used by the connectivity suite below) to register one real, ephemeral
-   device per test. See "Browser-driven connectivity" below for the full
-   host-entry list if you're already set up for `make e2e-connectivity`.
+3. Go and the repository's Go dependencies, plus `/etc/hosts` entries for
+   the e2e accounts' organizations, which tests that register real devices
+   (via `bin/tscl-bridge` or devbox containers) reach by name. On a fresh
+   stack those are:
+
+   ```text
+   127.0.0.1 eeee.ownscale.test ffff.ownscale.test gggg.ownscale.test hhhh.ownscale.test
+   ```
+
+   The setup project fails with the exact missing line if one doesn't
+   resolve. See "Browser-driven connectivity" below for the connectivity
+   suite's own entries.
+
+## Test accounts and parallel runs
+
+Each suite, and each frontend worker, runs as its own Dex identity that owns
+its own organization, so they never change each other's policy, DNS,
+invites or members (`tests/support/account.ts`):
+
+| Who | Identity | Organization (fresh stack) |
+| --- | --- | --- |
+| connectivity suite | admin, user1, user2 | aaaa, bbbb, cccc |
+| `passkey.spec.ts` | passkey@ownscale.test | dddd |
+| frontend workers 0-2 | worker0-2@ownscale.test (invite invitee0-2) | eeee, ffff, gggg |
+| ssh suite | ssh@ownscale.test | hhhh |
+
+The setup project signs them in, in that order (new organizations take the
+next fixed subdomain, `aaaa`-`jjjj`), and records their organizations in
+`tests/.auth/accounts.json`. Specs never hard-code an organization: they get
+it from the `account` fixture, so `make e2e-remote` works with whatever names
+the remote stack assigned.
+
+`make e2e` installs and runs the setup once, then runs the frontend suite
+(3 workers) and the connectivity suite concurrently, and the ssh suite
+afterwards on its own: devbox containers add and remove host network links,
+which makes Chromium abort other browsers' in-flight requests with
+`net::ERR_NETWORK_CHANGED`. Each suite can still be run on its own.
 
 These tests run against whatever is already in your local dev stack and
 will create/modify real data there (pre-auth keys, invites, ACL policy
@@ -164,10 +194,12 @@ network timeout is a probe result, not a harness timeout.
 
 ### Exclusivity, cleanup, and recovery
 
-Both live frontend configs acquire `e2e/.frontend-run.lock` exclusively,
+Each live suite acquires its own lock exclusively (`e2e/.playwright-run.lock`,
+`e2e/.playwright.ssh-run.lock`, `e2e/.playwright.connectivity-run.lock`),
 outside Playwright's output directories. `--list` does not acquire it.
 An existing lock is never automatically discarded, even if its PID appears
-dead. Do not run the suites concurrently or change the same organizations
+dead. Different suites may run at once (they use disjoint organizations), but
+don't run the same suite twice concurrently or change its organizations
 manually during a run.
 
 Normal teardown restores captured ACLs, removes only this run's routes and

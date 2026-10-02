@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -36,6 +37,16 @@ func TestSessionEnsuresHeadscaleUserForActiveOrg(t *testing.T) {
 	}
 	if !got.HeadscaleUserID.Valid || got.HeadscaleUserID.String != "1" {
 		t.Errorf("headscaleUserId = %+v, want linked to headscale user 1 (alice) after one Session call", got.HeadscaleUserID)
+	}
+	// The call that makes the link reports it too, so clients needn't ask twice.
+	var body struct {
+		User sqlcgen.User `json:"user"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+		t.Fatalf("decode body: %v", err)
+	}
+	if body.User.HeadscaleUserID != got.HeadscaleUserID {
+		t.Errorf("response headscaleUserId = %+v, want %+v", body.User.HeadscaleUserID, got.HeadscaleUserID)
 	}
 }
 

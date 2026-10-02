@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './support/account'
 
 test('editing and saving the ACL policy round-trips through Format and Save', async ({ page }) => {
   await page.goto('/access-control')

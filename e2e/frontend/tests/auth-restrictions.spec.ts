@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './support/account'
 import { retryUntil } from './support/retry'
 
 test('editing and saving the OIDC allowlist round-trips through Format and Save', async ({

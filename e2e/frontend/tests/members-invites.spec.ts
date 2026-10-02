@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './support/account'
 
 // delete existing invites because tests rely on having zero pre-existing invites.
 test.beforeEach(async ({ page }) => {
@@ -33,6 +33,7 @@ test('creating and revoking an invite link', async ({ page }) => {
 test('accepting an invite adds a member, whose role can be changed and who can be removed', async ({
   page,
   browser,
+  account,
 }) => {
   await page.goto('/users')
   await expect(page.getByRole('heading', { name: 'Users' })).toBeVisible()
@@ -43,6 +44,7 @@ test('accepting an invite adds a member, whose role can be changed and who can b
   await dialog.getByRole('button', { name: 'Create invite link' }).click()
   await expect(dialog.getByText(/expires in 7 days/i)).toBeVisible()
   const inviteLink = await dialog.getByRole('textbox').inputValue()
+  expect(inviteLink).toContain('/invite/')
   await dialog.getByRole('button', { name: 'Done' }).click()
 
   const inviteeContext = await browser.newContext({ storageState: { cookies: [], origins: [] } })
@@ -52,7 +54,7 @@ test('accepting an invite adds a member, whose role can be changed and who can b
     await expect(inviteePage).toHaveURL(/\/login\?next=/)
 
     await inviteePage.getByRole('link', { name: 'Sign in with SSO' }).click()
-    await inviteePage.locator('#login').fill('user3@ownscale.test')
+    await inviteePage.locator('#login').fill(account.invitee)
     await inviteePage.locator('#password').fill('ownscale')
     await inviteePage.locator('#submit-login').click()
 
@@ -64,7 +66,7 @@ test('accepting an invite adds a member, whose role can be changed and who can b
   }
 
   await page.reload()
-  const memberRow = page.getByRole('row').filter({ hasText: 'user3@ownscale.test' })
+  const memberRow = page.getByRole('row').filter({ hasText: account.invitee })
   await expect(memberRow).toBeVisible()
   await expect(memberRow.getByRole('combobox')).toHaveValue('admin')
 

@@ -1,13 +1,13 @@
 import { readFileSync } from 'node:fs'
-import { expect, test } from '@playwright/test'
+import { expect, test } from './support/account'
 import { addVirtualAuthenticator, importCredential } from './support/webauthn'
 
 const PASSKEY_IDENTITY_EMAIL = 'passkey@ownscale.test'
 const PASSKEY_CREDENTIAL_STATE = 'tests/.auth/passkey-credential.json'
 
-// This test adds a passkey to the already-provisioned admin account from
+// This test adds a passkey to the worker's already-provisioned account from
 // User settings, then uses it to sign back in. It deliberately reuses the
-// "chromium" project's authenticated storageState (unlike login.spec.ts)
+// worker's authenticated storageState (unlike login.spec.ts)
 // rather than exercising brand-new self-registration, since that path
 // consumes one of the dev stack's fixed seed organizations -- brand-new
 // passkey self-registration is instead exercised once, deterministically,

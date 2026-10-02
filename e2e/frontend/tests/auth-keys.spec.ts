@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './support/account'
 import { sessionHeadscaleUserID } from './support/realMachine'
 
 // Uses a unique tag per run so repeat local runs against the same dev-up

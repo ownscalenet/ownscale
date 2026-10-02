@@ -1,5 +1,6 @@
 import { randomBytes } from 'node:crypto'
-import { expect, test, type Page } from '@playwright/test'
+import type { Page } from '@playwright/test'
+import { expect, test } from './support/account'
 import { baseDomain } from './connectivity/environment'
 import { registerRealMachine, teardownRealMachine } from './support/realMachine'
 import { dnsPageLoaded, snapshotDns } from './support/dnsPage'
@@ -10,11 +11,9 @@ import { retryUntil } from './support/retry'
 // headscale, from the outside: what a real enrolled device receives from the
 // control server, and how headscale's login endpoint treats a signed-in user.
 
-const org = 'aaaa'
-
-test('DNS settings reach a running device', async ({ page }) => {
+test('DNS settings reach a running device', async ({ page, account }) => {
   test.setTimeout(300_000)
-  const machine = await registerRealMachine(page, org)
+  const machine = await registerRealMachine(page, account.org)
   let restore = async () => {}
   try {
     const dns = () => machine.bridge.dns(machine.hostname)
@@ -157,7 +156,7 @@ test('DNS settings reach a running device', async ({ page }) => {
 // user is admitted -- without needing a real device to register. The console
 // finishes its part of the login client-side, so the outcome is the status of
 // the callback navigation, not of the first page load.
-async function registerLoginStatus(page: Page): Promise<number> {
+async function registerLoginStatus(page: Page, org: string): Promise<number> {
   // A separate tab (sharing the signed-in session), so the console's
   // client-side redirects can't interfere with the page the test drives.
   const tab = await page.context().newPage()
@@ -176,7 +175,7 @@ async function registerLoginStatus(page: Page): Promise<number> {
   }
 }
 
-test('login restrictions are enforced by headscale', async ({ page }) => {
+test('login restrictions are enforced by headscale', async ({ page, account }) => {
   test.setTimeout(240_000)
   const converge = { timeout: 90_000, intervals: [2_000] }
 
@@ -195,7 +194,7 @@ test('login restrictions are enforced by headscale', async ({ page }) => {
   const usersBefore = await headscaleUsers()
 
   // Baseline: the current allowlist admits this user.
-  await expect.poll(() => registerLoginStatus(page), converge).toBe(410)
+  await expect.poll(() => registerLoginStatus(page, account.org), converge).toBe(410)
 
   const save = async (content: string, marker: string) => {
     await page.goto('/auth-restrictions')
@@ -211,7 +210,7 @@ test('login restrictions are enforced by headscale', async ({ page }) => {
 
   try {
     await save('{"domains": ["example.org"], "groups": [], "users": []}', 'example\\.org')
-    await expect.poll(() => registerLoginStatus(page), converge).toBe(401)
+    await expect.poll(() => registerLoginStatus(page, account.org), converge).toBe(401)
   } finally {
     await page.goto('/auth-restrictions')
     await retryUntil(
@@ -223,7 +222,7 @@ test('login restrictions are enforced by headscale', async ({ page }) => {
       async () => expect(editor).not.toHaveValue(/example\.org/, { timeout: 8_000 }),
     )
   }
-  await expect.poll(() => registerLoginStatus(page), converge).toBe(410)
+  await expect.poll(() => registerLoginStatus(page, account.org), converge).toBe(410)
 
   expect(await headscaleUsers()).toEqual(usersBefore)
 })

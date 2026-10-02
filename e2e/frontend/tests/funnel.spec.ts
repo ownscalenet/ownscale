@@ -1,4 +1,4 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './support/account'
 import { registerRealMachine, teardownRealMachine, type RealMachine } from './support/realMachine'
 
 // Creates and deletes a funnel route targeting a real registered device.
@@ -8,9 +8,9 @@ import { registerRealMachine, teardownRealMachine, type RealMachine } from './su
 
 let machine: RealMachine
 
-test('creating and deleting a funnel route', async ({ page }) => {
+test('creating and deleting a funnel route', async ({ page, account }) => {
   test.setTimeout(120_000)
-  machine = await registerRealMachine(page)
+  machine = await registerRealMachine(page, account.org)
   try {
     const label = `e2e${Date.now()}`
 
@@ -23,7 +23,9 @@ test('creating and deleting a funnel route', async ({ page }) => {
     await page.getByRole('button', { name: 'Create' }).click()
 
     const row = page.getByRole('row').filter({ hasText: machine.hostname })
-    await expect(row).toBeVisible({ timeout: 25_000 })
+    // Creating the org's first funnel starts its tsnet client, which may wait
+    // up to funnelUpTimeout (45s) for a DERP relay before the route exists.
+    await expect(row).toBeVisible({ timeout: 60_000 })
     await expect(row.getByText('8080', { exact: true })).toBeVisible()
 
     await row.getByRole('button', { name: 'Remove' }).click()

@@ -49,6 +49,8 @@ export interface Machine {
   user: HeadscaleUser | null
   lastSeen: string | null
   expiry: string | null
+  // expired is whether expiry has passed by the server's clock.
+  expired: boolean
   createdAt: string
   registerMethod: string
   online: boolean
@@ -322,6 +324,8 @@ export interface PreAuthKey {
   aclTags: string[] | null
   createdAt: string
   expiration: string
+  // expired is whether expiration has passed by the server's clock.
+  expired: boolean
 }
 
 export interface AuthKeysResponse {

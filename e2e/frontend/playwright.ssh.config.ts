@@ -26,7 +26,9 @@ export default defineConfig({
       testMatch: /(ssh|devbox)\/.*\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
-        storageState: 'tests/.auth/admin.json',
+        // Its own account and organization, so it can run alongside the
+        // other suites.
+        accountName: 'ssh',
       },
       dependencies: ['setup'],
     },

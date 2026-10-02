@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
@@ -68,7 +67,7 @@ func matchesFilters(m hscl.Node, q, userFilter, status string) bool {
 		}
 	}
 	if status != "" {
-		expired := m.Expiry != nil && *m.Expiry != "" && isExpiredRFC3339(*m.Expiry)
+		expired := m.Expired
 		switch status {
 		case "online":
 			if !m.Online || expired {
@@ -465,15 +464,4 @@ func (h *Handlers) isFunnelMachine(ctx context.Context, client *hscl.Client, nod
 		}
 	}
 	return false, nil
-}
-
-// isExpiredRFC3339 reports whether expiry (an RFC3339 timestamp, as
-// produced by hscl) is in the past. Unparseable timestamps are
-// treated as not expired.
-func isExpiredRFC3339(expiry string) bool {
-	t, err := time.Parse(time.RFC3339, expiry)
-	if err != nil {
-		return false
-	}
-	return t.Before(time.Now())
 }

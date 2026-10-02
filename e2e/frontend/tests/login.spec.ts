@@ -1,11 +1,11 @@
-import { expect, test } from '@playwright/test'
+import { expect, test } from './support/account'
 
 // This spec drives the real SSO login/logout flow itself, so it can't
 // reuse the "chromium" project's cached storageState (see
 // playwright.config.ts) -- it needs to start every test unauthenticated.
 test.use({ storageState: { cookies: [], origins: [] } })
 
-test('signing in via SSO reaches the app, and logout returns to /login', async ({ page }) => {
+test('signing in via SSO reaches the app, and logout returns to /login', async ({ page, account }) => {
   // Provisioning a brand-new organization can take longer than Playwright's
   // default 30s test timeout on a completely fresh dev-up stack.
   test.setTimeout(90_000)
@@ -14,7 +14,7 @@ test('signing in via SSO reaches the app, and logout returns to /login', async (
   await expect(page.getByRole('heading', { name: 'Ownscale console' })).toBeVisible()
 
   await page.getByRole('link', { name: 'Sign in with SSO' }).click()
-  await page.locator('#login').fill('admin@ownscale.test')
+  await page.locator('#login').fill(account.email)
   await page.locator('#password').fill('ownscale')
   await page.locator('#submit-login').click()
 
