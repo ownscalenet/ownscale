@@ -20,7 +20,6 @@ export interface User {
   CreatedAt: string
   UpdatedAt: string
   Role: string
-  HeadscaleUserID: { String: string; Valid: boolean }
 }
 
 export interface Organization {
@@ -123,6 +122,8 @@ export function logout() {
 export interface MachinesResponse {
   machines: Machine[]
   users: HeadscaleUser[]
+  // The users the caller may register machines for.
+  assignableUsers: HeadscaleUser[]
   total: number
   // False for members, who may only manage their own machines.
   canManage: boolean
@@ -344,6 +345,8 @@ export interface AuthKeysResponse {
   // Members only get their own keys.
   authKeys: PreAuthKey[]
   users: HeadscaleUser[]
+  // The users the caller may create keys for.
+  assignableUsers: HeadscaleUser[]
   canManage: boolean
 }
 

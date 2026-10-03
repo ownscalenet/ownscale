@@ -91,10 +91,9 @@ export default function Machines() {
 
   const [machines, setMachines] = useState<Machine[]>([])
   const [users, setUsers] = useState<HeadscaleUser[]>([])
+  const [assignableUsers, setAssignableUsers] = useState<HeadscaleUser[]>([])
   const [total, setTotal] = useState(0)
   const [canManage, setCanManage] = useState(false)
-  const { user } = useAuth()
-  const ownUserId = user?.HeadscaleUserID.Valid ? user.HeadscaleUserID.String : ''
   const [notConfigured, setNotConfigured] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [dialog, setDialog] = useState<MachineDialog | null>(null)
@@ -105,6 +104,7 @@ export default function Machines() {
       const res = await listMachines({ q, user: userFilter, status }, signal)
       setMachines(res.machines ?? [])
       setUsers(res.users ?? [])
+      setAssignableUsers(res.assignableUsers ?? [])
       setTotal(res.total)
       setCanManage(res.canManage)
       setNotConfigured(false)
@@ -198,11 +198,7 @@ export default function Machines() {
       </div>
 
       {dialog?.kind === 'register' && (
-        <RegisterMachineDialog
-          users={canManage ? users : users.filter((u) => u.id === ownUserId)}
-          onClose={closeDialog}
-          onDone={load}
-        />
+        <RegisterMachineDialog users={assignableUsers} onClose={closeDialog} onDone={load} />
       )}
       {dialog?.kind === 'rename' && (
         <RenameDialog machine={dialog.machine} onClose={closeDialog} onDone={load} />
@@ -306,7 +302,7 @@ export default function Machines() {
                           key={m.id}
                           machine={m}
                           canManage={canManage}
-                          canEdit={canManage || (m.user != null && m.user.id === ownUserId)}
+                          canEdit={canManage || assignableUsers.some((u) => u.id === m.user?.id)}
                           onChange={load}
                           onOpen={(kind) => setDialog({ kind, machine: m })}
                         />

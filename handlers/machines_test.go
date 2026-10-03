@@ -191,6 +191,60 @@ func activeOrgUserWithPolicy(t *testing.T, h *Handlers, queries *dbpkg.TxQueries
 	return user, client, requests, policy, lastTags
 }
 
+// TestAssignableUsers checks which headscale users ListMachines and
+// ListAuthKeys offer for registering machines and creating keys.
+func TestAssignableUsers(t *testing.T) {
+	endpoints := []struct {
+		name    string
+		path    string
+		handler func(*Handlers) http.HandlerFunc
+	}{
+		{"machines", "/api/machines", func(h *Handlers) http.HandlerFunc { return h.ListMachines }},
+		{"auth keys", "/api/auth-keys", func(h *Handlers) http.HandlerFunc { return h.ListAuthKeys }},
+	}
+	cases := []struct {
+		name   string
+		role   string
+		linked string
+		want   []string
+	}{
+		{name: "owner gets everyone", role: RoleOwner, want: []string{"1", "2"}},
+		{name: "member gets their own user", role: RoleMember, linked: "2", want: []string{"2"}},
+		{name: "unlinked member gets nobody", role: RoleMember, want: []string{}},
+	}
+	for _, ep := range endpoints {
+		for _, tc := range cases {
+			t.Run(ep.name+"/"+tc.name, func(t *testing.T) {
+				h, queries := newTestHandlers(t)
+				user, client, _ := activeOrgUser(t, h, queries)
+				user.Role = tc.role
+				user.HeadscaleUserID = sql.NullString{String: tc.linked, Valid: tc.linked != ""}
+
+				req := withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodGet, ep.path, nil), user), client)
+				rec := httptest.NewRecorder()
+				ep.handler(h)(rec, req)
+
+				if rec.Code != http.StatusOK {
+					t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+				}
+				var body struct {
+					AssignableUsers []hscl.User `json:"assignableUsers"`
+				}
+				if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+					t.Fatalf("decode: %v", err)
+				}
+				got := []string{}
+				for _, u := range body.AssignableUsers {
+					got = append(got, u.ID)
+				}
+				if !slices.Equal(got, tc.want) {
+					t.Errorf("assignableUsers = %v, want %v", got, tc.want)
+				}
+			})
+		}
+	}
+}
+
 func TestListMachinesReturnsNodesAndUsers(t *testing.T) {
 	h, queries := newTestHandlers(t)
 	user, client, _ := activeOrgUser(t, h, queries)

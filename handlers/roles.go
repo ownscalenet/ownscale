@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"net/http"
+	"slices"
 
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
@@ -41,6 +42,18 @@ func isManager(role string) bool {
 // hsUserID.
 func ownsHeadscaleUser(caller *sqlcgen.User, hsUserID string) bool {
 	return caller.HeadscaleUserID.Valid && caller.HeadscaleUserID.String == hsUserID
+}
+
+// assignableUsers returns the headscale users caller may register machines
+// and create pre-auth keys for: all of them for managers, otherwise only the
+// one caller is linked to.
+func assignableUsers(caller *sqlcgen.User, users []hscl.User) []hscl.User {
+	if caller != nil && isManager(caller.Role) {
+		return users
+	}
+	return slices.DeleteFunc(slices.Clone(users), func(u hscl.User) bool {
+		return caller == nil || !ownsHeadscaleUser(caller, u.ID)
+	})
 }
 
 // requireManager writes a 403 with msg and returns false unless the caller

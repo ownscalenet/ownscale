@@ -123,10 +123,7 @@ export class OrgUI {
       const keys = await this.read<AuthKeysResponse>('/api/auth-keys', budget())
       const members = await this.read<{ canManage: boolean }>('/api/members', budget())
       if (!members.canManage) throw new Error(`${this.org}: manager permission required`)
-      const owner = keys.users.find(user =>
-        session.user.HeadscaleUserID?.Valid
-          ? String(user.id) === session.user.HeadscaleUserID.String
-          : user.email === this.identity.email)
+      const owner = keys.assignableUsers.find(user => user.email === this.identity.email)
       if (!owner) return undefined
       this.ownerID = String(owner.id)
       return true

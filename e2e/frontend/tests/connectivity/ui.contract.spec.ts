@@ -6,7 +6,7 @@ function session(identity: typeof identities[number]): Parameters<typeof validat
   return {
     user: {
       ID: 'test', Email: identity.email, Name: identity.name, Role: 'owner',
-      OrganizationID: 'org', HeadscaleUserID: { String: '1', Valid: true },
+      OrganizationID: 'org',
       Provider: 'oidc', ProviderUserID: 'fixture', AvatarUrl: '', CreatedAt: '', UpdatedAt: '',
     },
     organization: { Domain: `${identity.org}.${baseDomain}`, Status: 'active' },

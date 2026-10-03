@@ -1,5 +1,5 @@
 import { expect, test } from './support/account'
-import { sessionHeadscaleUserID } from './support/realMachine'
+import { ownHeadscaleUserID } from './support/realMachine'
 import { confirmDialog } from './support/confirm'
 
 // Uses a unique tag per run so repeat local runs against the same dev-up
@@ -52,7 +52,7 @@ test('creating and expiring a reusable, ephemeral pre-auth key for a real user',
   const dialog = page.locator('dialog.modal[open]')
   // "Tag only" is unchecked by default, so a real user must be selected.
   const userSelect = dialog.getByRole('combobox')
-  await userSelect.selectOption(await sessionHeadscaleUserID(page))
+  await userSelect.selectOption(await ownHeadscaleUserID(page))
   await dialog.getByPlaceholder('tag:server, tag:prod').fill(tag)
   await dialog.locator('label', { hasText: 'Reusable' }).click()
   await dialog.locator('label', { hasText: 'Ephemeral' }).click()

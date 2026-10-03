@@ -140,7 +140,7 @@ UPDATE users SET headscale_user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id 
 `
 
 type LinkUserHeadscaleUserParams struct {
-	HeadscaleUserID sql.NullString
+	HeadscaleUserID sql.NullString `json:"-"`
 	ID              string
 }
 
@@ -210,7 +210,7 @@ type ListUsersWithOrganizationRow struct {
 	EmailVerified   int64
 	LastLoginAt     sql.NullTime
 	Role            string
-	HeadscaleUserID sql.NullString
+	HeadscaleUserID sql.NullString `json:"-"`
 	OrgSubdomain    sql.NullString
 }
 

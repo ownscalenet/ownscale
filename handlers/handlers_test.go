@@ -38,15 +38,15 @@ func TestSessionEnsuresHeadscaleUserForActiveOrg(t *testing.T) {
 	if !got.HeadscaleUserID.Valid || got.HeadscaleUserID.String != "1" {
 		t.Errorf("headscaleUserId = %+v, want linked to headscale user 1 (alice) after one Session call", got.HeadscaleUserID)
 	}
-	// The call that makes the link reports it too, so clients needn't ask twice.
+	// The link is internal, so the session response leaves it out.
 	var body struct {
-		User sqlcgen.User `json:"user"`
+		User map[string]any `json:"user"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
-	if body.User.HeadscaleUserID != got.HeadscaleUserID {
-		t.Errorf("response headscaleUserId = %+v, want %+v", body.User.HeadscaleUserID, got.HeadscaleUserID)
+	if v, ok := body.User["HeadscaleUserID"]; ok {
+		t.Errorf("session user has HeadscaleUserID = %v, want it omitted", v)
 	}
 }
 

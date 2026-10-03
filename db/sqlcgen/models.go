@@ -71,7 +71,7 @@ type User struct {
 	EmailVerified   int64
 	LastLoginAt     sql.NullTime
 	Role            string
-	HeadscaleUserID sql.NullString
+	HeadscaleUserID sql.NullString `json:"-"`
 }
 
 type WebauthnCredential struct {

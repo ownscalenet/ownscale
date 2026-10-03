@@ -12,8 +12,8 @@ import (
 
 // ListAuthKeys handles GET /api/auth-keys. It returns the
 // pre-authentication keys for the caller's organization's tailnet (only
-// their own for members), plus the list of headscale users (so the
-// frontend can build a user filter/picker without a second round trip).
+// their own for members), the headscale users for filtering, and the ones
+// the caller may create keys for.
 // requireHeadscaleClient guarantees the client is reachable.
 func (h *Handlers) ListAuthKeys(w http.ResponseWriter, r *http.Request) {
 	client, _, _ := headscaleClientFromContext(r)
@@ -38,9 +38,10 @@ func (h *Handlers) ListAuthKeys(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.writeJSON(w, http.StatusOK, map[string]any{
-		"authKeys":  keys,
-		"users":     users,
-		"canManage": canManage,
+		"authKeys":        keys,
+		"users":           users,
+		"assignableUsers": assignableUsers(caller, users),
+		"canManage":       canManage,
 	})
 }
 

@@ -17,24 +17,29 @@ export interface RealMachine {
   addresses: string[]
 }
 
-/** sessionHeadscaleUserID returns the authenticated user's Headscale ID. */
-export async function sessionHeadscaleUserID(page: Page): Promise<string> {
+/**
+ * ownHeadscaleUserID returns the headscale user linked to the signed-in user,
+ * found by email among the users the auth-keys page offers.
+ */
+export async function ownHeadscaleUserID(page: Page): Promise<string> {
   // The session links the user to a headscale user, but not while the org's
   // headscale restarts (a settings save), so retry for a while.
   const deadline = Date.now() + 20_000
   for (;;) {
-    const response = await page.request.get('/api/session')
+    const session = await page.request.get('/api/session')
+    const keys = await page.request.get('/api/auth-keys')
     try {
-      if (!response.ok()) throw new Error(`session request returned HTTP ${response.status()}`)
-      const session = await response.json() as {
-        user?: { HeadscaleUserID?: { String?: string; Valid?: boolean } }
+      if (session.ok() && keys.ok()) {
+        const email = ((await session.json()) as { user?: { Email?: string } }).user?.Email
+        const users = ((await keys.json()) as { assignableUsers?: { id: string; email: string }[] }).assignableUsers ?? []
+        const own = users.find((u) => email && u.email.toLowerCase() === email.toLowerCase())
+        if (own) return own.id
       }
-      const id = session.user?.HeadscaleUserID
-      if (id?.Valid && id.String) return id.String
     } finally {
-      await response.dispose()
+      await session.dispose()
+      await keys.dispose()
     }
-    if (Date.now() > deadline) throw new Error('signed-in user has no Headscale user ID')
+    if (Date.now() > deadline) throw new Error('signed-in user has no headscale user')
     await new Promise((resolve) => setTimeout(resolve, 1_000))
   }
 }
@@ -66,7 +71,7 @@ export async function registerRealMachine(page: Page, orgSubdomain: string): Pro
   }
   const createDialog = page.locator('dialog.modal[open]')
   const userSelect = createDialog.getByRole('combobox')
-  const ownerID = await sessionHeadscaleUserID(page)
+  const ownerID = await ownHeadscaleUserID(page)
   await userSelect.selectOption(ownerID)
   await createDialog.getByLabel('Reusable', { exact: true }).uncheck()
   await createDialog.getByLabel('Ephemeral', { exact: true }).check()

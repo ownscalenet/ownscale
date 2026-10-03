@@ -60,9 +60,8 @@ export default function Settings() {
 
   const [authKeys, setAuthKeys] = useState<PreAuthKey[]>([])
   const [users, setUsers] = useState<HeadscaleUser[]>([])
+  const [assignableUsers, setAssignableUsers] = useState<HeadscaleUser[]>([])
   const [canManage, setCanManage] = useState(false)
-  const { user } = useAuth()
-  const ownUserId = user?.HeadscaleUserID.Valid ? user.HeadscaleUserID.String : ''
   const [notConfigured, setNotConfigured] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const createRef = useRef<HTMLDialogElement>(null)
@@ -72,6 +71,7 @@ export default function Settings() {
       const res = await listAuthKeys(signal)
       setAuthKeys(res.authKeys ?? [])
       setUsers(res.users ?? [])
+      setAssignableUsers(res.assignableUsers ?? [])
       setCanManage(res.canManage)
       setNotConfigured(false)
       setError(null)
@@ -204,7 +204,7 @@ export default function Settings() {
 
       <CreateAuthKeyDialog
         dialogRef={createRef}
-        users={canManage ? users : users.filter((u) => u.id === ownUserId)}
+        users={assignableUsers}
         canManage={canManage}
         onCreated={load}
       />

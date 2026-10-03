@@ -105,7 +105,8 @@ func isFunnelNode(n hscl.Node) bool {
 
 // ListMachines handles GET /api/machines. It returns every machine
 // (headscale node) for the caller's organization, applying the optional
-// q/user/status query-string filters. requireHeadscaleClient guarantees
+// q/user/status query-string filters, plus the headscale users and the ones
+// the caller may register machines for. requireHeadscaleClient guarantees
 // the client is reachable.
 func (h *Handlers) ListMachines(w http.ResponseWriter, r *http.Request) {
 	client, _, _ := headscaleClientFromContext(r)
@@ -134,10 +135,11 @@ func (h *Handlers) ListMachines(w http.ResponseWriter, r *http.Request) {
 
 	caller, _ := auth.UserFromContext(r.Context())
 	h.writeJSON(w, http.StatusOK, map[string]any{
-		"machines":  filtered,
-		"users":     users,
-		"total":     len(nodes),
-		"canManage": caller != nil && isManager(caller.Role),
+		"machines":        filtered,
+		"users":           users,
+		"assignableUsers": assignableUsers(caller, users),
+		"total":           len(nodes),
+		"canManage":       caller != nil && isManager(caller.Role),
 	})
 }
 
