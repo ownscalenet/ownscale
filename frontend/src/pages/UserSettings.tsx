@@ -10,6 +10,7 @@ import {
 } from '../api'
 import { createPasskey, browserSupportsWebAuthn } from '../lib/webauthn'
 import { usePageTitle } from '../hooks/usePageTitle'
+import { useConfirm } from '../lib/confirm'
 
 export default function UserSettings() {
   usePageTitle('User settings')
@@ -26,6 +27,7 @@ export default function UserSettings() {
 }
 
 function PasskeysCard() {
+  const confirm = useConfirm()
   const supported = browserSupportsWebAuthn()
   const [passkeys, setPasskeys] = useState<Passkey[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -67,7 +69,13 @@ function PasskeysCard() {
   }
 
   const handleDelete = async (p: Passkey) => {
-    if (!confirm(`Delete the passkey "${p.name}"? This can't be undone.`)) return
+    const ok = await confirm({
+      title: `Delete the passkey "${p.name}"?`,
+      message: "This can't be undone.",
+      confirmLabel: 'Delete passkey',
+      danger: true,
+    })
+    if (!ok) return
     setBusy(true)
     try {
       await deletePasskey(p.id)

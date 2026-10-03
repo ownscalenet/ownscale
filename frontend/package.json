@@ -12,6 +12,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@headlessui/react": "^2.2.10",
     "@simplewebauthn/browser": "^14.0.0",
     "diff": "^9.0.0",
     "react": "^19.2.8",

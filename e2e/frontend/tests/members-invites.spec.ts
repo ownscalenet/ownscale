@@ -1,4 +1,5 @@
 import { expect, test } from './support/account'
+import { confirmDialog } from './support/confirm'
 
 // delete existing invites because tests rely on having zero pre-existing invites.
 test.beforeEach(async ({ page }) => {
@@ -75,7 +76,7 @@ test('accepting an invite adds a member, whose role can be changed and who can b
   await memberRow.getByRole('combobox').selectOption('auditor')
   await expect(memberRow.getByRole('combobox')).toHaveValue('auditor')
 
-  page.once('dialog', (d) => void d.accept())
   await memberRow.getByRole('button', { name: 'Remove' }).click()
+  await confirmDialog(page, 'Remove member')
   await expect(memberRow).toBeHidden()
 })

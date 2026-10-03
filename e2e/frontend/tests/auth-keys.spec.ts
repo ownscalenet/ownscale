@@ -1,5 +1,6 @@
 import { expect, test } from './support/account'
 import { sessionHeadscaleUserID } from './support/realMachine'
+import { confirmDialog } from './support/confirm'
 
 // Uses a unique tag per run so repeat local runs against the same dev-up
 // stack (mingling with existing data is fine) don't collide with keys left
@@ -27,12 +28,12 @@ test('creating, expiring and deleting a tag-only pre-auth key', async ({ page })
   await expect(row).toBeVisible()
   await expect(row.getByText('(Tag Only)')).toBeVisible()
 
-  page.once('dialog', (d) => void d.accept())
   await row.getByRole('button', { name: 'Expire Key' }).click()
+  await confirmDialog(page, 'Expire key')
   await expect(row.getByText('Expired')).toBeVisible()
 
-  page.once('dialog', (d) => void d.accept())
   await row.getByRole('button', { name: 'Delete' }).click()
+  await confirmDialog(page, 'Delete key')
   await expect(row).toBeHidden()
   // The key must be gone from headscale, not just from the page.
   const res = await page.request.get('/api/auth-keys')
@@ -64,7 +65,7 @@ test('creating and expiring a reusable, ephemeral pre-auth key for a real user',
   await expect(row).toBeVisible()
   await expect(row.getByRole('cell', { name: 'Yes' }).first()).toBeVisible()
 
-  page.once('dialog', (d) => void d.accept())
   await row.getByRole('button', { name: 'Expire Key' }).click()
+  await confirmDialog(page, 'Expire key')
   await expect(row.getByText('Expired')).toBeVisible()
 })

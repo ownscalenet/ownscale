@@ -9,7 +9,7 @@ test('setting a machine\'s ACL tags succeeds with or without the tag: prefix, ev
   const { page } = org
   await page.goto('/machines')
   const row = page.getByRole('row').filter({ has: page.getByText(endpoint.info.hostname, { exact: true }) })
-  const dialog = page.locator('dialog.modal[open]')
+  const dialog = page.getByRole('dialog')
 
   await test.step('a tag typed without the tag: prefix is normalized and accepted', async () => {
     await row.getByRole('button', { name: '⋯', exact: true }).click()

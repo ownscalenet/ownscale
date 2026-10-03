@@ -5,6 +5,7 @@ import type {
 } from '../../../../frontend/src/api'
 import { baseDomain, baseURL } from './environment'
 import { Recovery, type OwnedResource } from './recovery'
+import { confirmDialog } from '../support/confirm'
 
 export const identities = [
   { name: 'admin', email: 'admin@ownscale.test', org: 'aaaa' },
@@ -267,8 +268,8 @@ export class OrgUI {
             return matches.length === 1 ? matches[0] : -1
           }, key.key)
           if (index < 0) throw new Error('Key row missing')
-          this.page.once('dialog', d => void d.accept())
           await rows.nth(index).getByRole('button', { name: 'Expire Key' }).click()
+          await confirmDialog(this.page, 'Expire key')
           await poll(`${this.org} key expiration`, 15_000, async () => {
             const observed = (await this.read<AuthKeysResponse>('/api/auth-keys')).authKeys.find(k => String(k.id) === resource.id)
             return !observed || (observed.used && !observed.reusable) || new Date(observed.expiration).getTime() <= Date.now() ? true : undefined
@@ -289,8 +290,8 @@ export class OrgUI {
         await this.page.goto('/machines')
         const row = this.page.getByRole('row').filter({ has: this.page.getByText(machine.givenName, { exact: true }) })
         await row.getByRole('button', { name: '⋯', exact: true }).click()
-        this.page.once('dialog', d => void d.accept())
         await this.page.getByRole('menuitem', { name: 'Remove', exact: true }).click()
+        await confirmDialog(this.page, 'Remove')
         await poll(`${this.org} machine removal`, 15_000, async () =>
           (await this.read<MachinesResponse>('/api/machines')).machines.some(m => String(m.id) === resource.id) ? undefined : true)
       }

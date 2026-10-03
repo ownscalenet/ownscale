@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { expect, test } from './support/account'
+import { confirmDialog } from './support/confirm'
 import { addVirtualAuthenticator, importCredential } from './support/webauthn'
 
 const PASSKEY_IDENTITY_EMAIL = 'passkey@ownscale.test'
@@ -35,8 +36,8 @@ test('adding a passkey in User settings and signing in with it', async ({ page }
 
   // Clean up: remove the passkey this test added so repeat runs start fresh.
   await page.goto('/user-settings')
-  page.once('dialog', (dialog) => void dialog.accept())
   await row.getByRole('button', { name: 'Delete' }).click()
+  await confirmDialog(page, 'Delete passkey')
   await expect(row).toBeHidden()
 })
 

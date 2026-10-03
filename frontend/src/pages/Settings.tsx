@@ -12,6 +12,7 @@ import {
   type PreAuthKey,
 } from '../api'
 import { usePageTitle } from '../hooks/usePageTitle'
+import { useConfirm } from '../lib/confirm'
 
 const TAG_ONLY = '__tag_only__'
 
@@ -212,12 +213,18 @@ export default function Settings() {
 }
 
 function AuthKeyRow({ authKey: k, onChange }: { authKey: PreAuthKey; onChange: () => void }) {
+  const confirm = useConfirm()
   const [busy, setBusy] = useState(false)
   const expired = isExpired(k)
 
   const handleExpire = async () => {
-    if (!confirm('Expire this pre-auth key? It will no longer be usable to register new machines.'))
-      return
+    const ok = await confirm({
+      title: 'Expire pre-auth key',
+      message: 'It will no longer be usable to register new machines.',
+      confirmLabel: 'Expire key',
+      danger: true,
+    })
+    if (!ok) return
     setBusy(true)
     try {
       await expireAuthKey(k.id)
@@ -228,7 +235,13 @@ function AuthKeyRow({ authKey: k, onChange }: { authKey: PreAuthKey; onChange: (
   }
 
   const handleDelete = async () => {
-    if (!confirm("Delete this pre-auth key? This can't be undone.")) return
+    const ok = await confirm({
+      title: 'Delete pre-auth key',
+      message: "This can't be undone.",
+      confirmLabel: 'Delete key',
+      danger: true,
+    })
+    if (!ok) return
     setBusy(true)
     try {
       await deleteAuthKey(k.id)

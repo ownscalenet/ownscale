@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { expect, test } from './support/account'
+import { confirmDialog } from './support/confirm'
 import { registerRealMachine, teardownRealMachine, type RealMachine } from './support/realMachine'
 
 // These tests exercise the Machines page's row-level mutations (rename, tags,
@@ -30,7 +31,7 @@ test('registering a real device and managing it from the Machines page', async (
     const newName = `${hostname}-renamed`
     await row.getByRole('button', { name: '⋯', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Edit machine name', exact: true }).click()
-    const renameDialog = page.locator('dialog.modal[open]')
+    const renameDialog = page.getByRole('dialog')
     await renameDialog.locator('input[type="text"]').fill(newName)
     await renameDialog.getByRole('button', { name: 'Rename', exact: true }).click()
     const renamedRow = page.getByRole('row').filter({ hasText: newName })
@@ -39,7 +40,7 @@ test('registering a real device and managing it from the Machines page', async (
     // Edit ACL tags.
     await renamedRow.getByRole('button', { name: '⋯', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Edit ACL tags', exact: true }).click()
-    const tagsDialog = page.locator('dialog.modal[open]')
+    const tagsDialog = page.getByRole('dialog')
     await tagsDialog.locator('input[type="text"]').fill('e2e-lifecycle')
     await tagsDialog.getByRole('button', { name: 'Save', exact: true }).click()
     await expect(renamedRow.getByText('tag:e2e-lifecycle', { exact: true })).toBeVisible()
@@ -49,20 +50,20 @@ test('registering a real device and managing it from the Machines page', async (
     // (extending tscl-bridge to advertise routes is out of scope here).
     await renamedRow.getByRole('button', { name: '⋯', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Edit route settings', exact: true }).click()
-    const routesDialog = page.locator('dialog.modal[open]')
+    const routesDialog = page.getByRole('dialog')
     await expect(routesDialog.getByText(/hasn.t advertised any routes/)).toBeVisible()
     await routesDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
 
     // Expire the session.
-    page.once('dialog', (d) => void d.accept())
     await renamedRow.getByRole('button', { name: '⋯', exact: true }).click()
-    await renamedRow.getByRole('button', { name: 'Expire session', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Expire session', exact: true }).click()
+    await confirmDialog(page, 'Expire session')
     await expect(renamedRow.getByText('Expired', { exact: true })).toBeVisible()
 
     // Delete.
-    page.once('dialog', (d) => void d.accept())
     await renamedRow.getByRole('button', { name: '⋯', exact: true }).click()
-    await renamedRow.getByRole('button', { name: 'Remove', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Remove', exact: true }).click()
+    await confirmDialog(page, 'Remove')
     await expect(renamedRow).toBeHidden()
   } finally {
     await teardownRealMachine(machine)

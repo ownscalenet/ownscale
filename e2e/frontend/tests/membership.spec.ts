@@ -1,6 +1,7 @@
 import { randomBytes } from 'node:crypto'
 import type { Browser, Page } from '@playwright/test'
 import { expect, test } from './support/account'
+import { confirmDialog } from './support/confirm'
 import { baseDomain } from './connectivity/environment'
 import { registerRealMachine, teardownRealMachine } from './support/realMachine'
 
@@ -81,8 +82,8 @@ test("removing a member removes their machines from the tailnet", async ({ page,
 
       await page.goto('/users')
       const memberRow = page.getByRole('row').filter({ hasText: account.invitee })
-      page.once('dialog', (d) => void d.accept())
       await memberRow.getByRole('button', { name: 'Remove' }).click()
+      await confirmDialog(page, 'Remove member')
       await expect(memberRow).toBeHidden()
 
       expect(await machineNames()).not.toContain(machine.hostname)

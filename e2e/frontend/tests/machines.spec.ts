@@ -7,7 +7,7 @@ test('the register-machine dialog shows the org-specific login-server command', 
   await expect(page.getByRole('heading', { name: 'Machines' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Register machine' }).click()
-  const dialog = page.locator('dialog.modal[open]')
+  const dialog = page.getByRole('dialog')
   await expect(dialog.locator('code')).toContainText('tailscale up --login-server=https://')
 
   await dialog.getByRole('button', { name: 'Cancel' }).click()

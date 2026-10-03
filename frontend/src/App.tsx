@@ -1,6 +1,7 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './auth'
 import Layout from './Layout'
+import ConfirmProvider from './components/ConfirmProvider'
 import Login from './pages/Login'
 import Machines from './pages/Machines'
 import Users from './pages/Users'
@@ -62,7 +63,9 @@ function AppRoutes() {
 export default function App() {
   return (
     <AuthProvider>
-      <AppRoutes />
+      <ConfirmProvider>
+        <AppRoutes />
+      </ConfirmProvider>
     </AuthProvider>
   )
 }

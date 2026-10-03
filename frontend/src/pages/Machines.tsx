@@ -1,9 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { faqURL } from '../lib/faq'
+import { useConfirm } from '../lib/confirm'
+import Modal from '../components/Modal'
 import {
   ApiError,
   deleteMachine,
@@ -20,12 +22,12 @@ import {
   type Machine,
 } from '../api'
 
-// isExpired uses the server's verdict on the expiry rather than comparing
-// it with this browser's clock, which may be off.
 // refreshIntervalMs is how often the Machines page reloads the list, so online
 // status, last seen and expiry stay current.
 const refreshIntervalMs = 10_000
 
+// isExpired uses the server's verdict on the expiry rather than comparing
+// it with this browser's clock, which may be off.
 function isExpired(m: Machine): boolean {
   return m.expired
 }
@@ -91,7 +93,8 @@ export default function Machines() {
   const ownUserId = user?.HeadscaleUserID.Valid ? user.HeadscaleUserID.String : ''
   const [notConfigured, setNotConfigured] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const registerRef = useRef<HTMLDialogElement>(null)
+  const [dialog, setDialog] = useState<MachineDialog | null>(null)
+  const closeDialog = () => setDialog(null)
 
   const load = async (signal?: AbortSignal) => {
     try {
@@ -129,7 +132,7 @@ export default function Machines() {
       if (
         force ||
         (document.visibilityState === 'visible' &&
-          !document.querySelector('dialog[open], [role="menu"]'))
+          !document.querySelector('[role="dialog"], [role="menu"]'))
       ) {
         running = true
         await load(controller.signal)
@@ -166,18 +169,32 @@ export default function Machines() {
           <button
             type="button"
             className="btn btn-sm btn-primary"
-            onClick={() => registerRef.current?.showModal()}
+            onClick={() => setDialog({ kind: 'register' })}
           >
             Register machine
           </button>
         )}
       </div>
 
-      <RegisterMachineDialog
-        dialogRef={registerRef}
-        users={canManage ? users : users.filter((u) => u.id === ownUserId)}
-        onRegistered={load}
-      />
+      {dialog?.kind === 'register' && (
+        <RegisterMachineDialog
+          users={canManage ? users : users.filter((u) => u.id === ownUserId)}
+          onClose={closeDialog}
+          onDone={load}
+        />
+      )}
+      {dialog?.kind === 'rename' && (
+        <RenameDialog machine={dialog.machine} onClose={closeDialog} onDone={load} />
+      )}
+      {dialog?.kind === 'tags' && (
+        <TagsDialog machine={dialog.machine} onClose={closeDialog} onDone={load} />
+      )}
+      {dialog?.kind === 'routes' && (
+        <RoutesDialog machine={dialog.machine} onClose={closeDialog} onDone={load} />
+      )}
+      {dialog?.kind === 'removeInternal' && (
+        <RemoveInternalDialog machine={dialog.machine} onClose={closeDialog} onDone={load} />
+      )}
 
       {error && (
         <div className="alert alert-error mb-4">
@@ -270,6 +287,7 @@ export default function Machines() {
                           canManage={canManage}
                           canEdit={canManage || (m.user != null && m.user.id === ownUserId)}
                           onChange={load}
+                          onOpen={(kind) => setDialog({ kind, machine: m })}
                         />
                       ))}
                     </tbody>
@@ -290,149 +308,369 @@ export default function Machines() {
   )
 }
 
-function RegisterMachineDialog({
-  dialogRef,
-  users,
-  onRegistered,
-}: {
-  dialogRef: React.RefObject<HTMLDialogElement | null>
-  users: HeadscaleUser[]
-  onRegistered: () => void
-}) {
-  const [userId, setUserId] = useState('')
-  const [key, setKey] = useState('')
+// MachineDialog is the dialog the Machines page has open, if any.
+type MachineDialog =
+  { kind: 'register' } | { kind: 'rename' | 'tags' | 'routes' | 'removeInternal'; machine: Machine }
+
+type MachineDialogKind = Exclude<MachineDialog['kind'], 'register'>
+
+// useDialogAction runs a dialog's action: busy while it runs, its error shown
+// in the dialog, and on success onDone (reload the list) and onClose.
+function useDialogAction(onClose: () => void, onDone: () => void) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const { organization } = useAuth()
-  const loginServer = `${window.location.protocol}//${organization?.Domain}`
-
-  const reset = () => {
-    setUserId('')
-    setKey('')
-    setError(null)
-  }
-
-  const close = () => {
-    dialogRef.current?.close()
-    reset()
-  }
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setError(null)
-    if (!userId) {
-      setError('Choose a user to own this machine.')
-      return
-    }
-    if (!key.trim()) {
-      setError('Paste the registration key or URL shown by `tailscale up`.')
-      return
-    }
+  const run = async (action: () => Promise<unknown>) => {
     setBusy(true)
+    setError(null)
     try {
-      await registerMachine(userId, key.trim())
-      onRegistered()
-      close()
+      await action()
+      onDone()
+      onClose()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     } finally {
       setBusy(false)
     }
   }
+  return { busy, error, run }
+}
+
+function ErrorAlert({ error }: { error: string | null }) {
+  if (!error) return null
+  return (
+    <div role="alert" className="alert alert-error mb-4">
+      <span>{error}</span>
+    </div>
+  )
+}
+
+function RegisterMachineDialog({
+  users,
+  onClose,
+  onDone,
+}: {
+  users: HeadscaleUser[]
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [userId, setUserId] = useState('')
+  const [key, setKey] = useState('')
+  const [validation, setValidation] = useState<string | null>(null)
+  const { busy, error, run } = useDialogAction(onClose, onDone)
+  const { organization } = useAuth()
+  const loginServer = `${window.location.protocol}//${organization?.Domain}`
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    setValidation(null)
+    if (!userId) {
+      setValidation('Choose a user to own this machine.')
+      return
+    }
+    if (!key.trim()) {
+      setValidation('Paste the registration key or URL shown by `tailscale up`.')
+      return
+    }
+    void run(() => registerMachine(userId, key.trim()))
+  }
 
   return (
-    <dialog ref={dialogRef} className="modal">
-      <div className="modal-box text-left">
-        <h3 className="text-lg font-bold mb-4">Register machine</h3>
-        <p className="text-sm opacity-60 mb-2">Run this on the device you want to add:</p>
-        <div className="mockup-code text-xs mb-4 overflow-x-auto">
-          <pre data-prefix="$">
-            <code>tailscale up --login-server={loginServer}</code>
-          </pre>
-        </div>
-        {error && (
-          <div className="alert alert-error mb-4">
-            <span>{error}</span>
-          </div>
-        )}
-        <form className="space-y-4" onSubmit={(e) => void handleSubmit(e)}>
-          <fieldset className="fieldset">
-            <legend className="fieldset-legend">Registration key or URL</legend>
-            <input
-              id="register-machine-key"
-              type="text"
-              className="input input-bordered w-full font-mono"
-              placeholder="hskey-authreq-… or the full registration URL"
-              value={key}
-              onChange={(e) => setKey(e.target.value)}
-              required
-            />
-            <span className="opacity-60 mt-1 text-sm">
-              Printed by the command above once the device is waiting to register.
-            </span>
-          </fieldset>
-          <fieldset className="fieldset">
-            <legend className="fieldset-legend">Owner</legend>
-            <select
-              id="register-machine-user"
-              className="select select-bordered w-full"
-              value={userId}
-              onChange={(e) => setUserId(e.target.value)}
-              required
-            >
-              <option value="" disabled>
-                Select a user
-              </option>
-              {users.map((u) => (
-                <option key={u.id} value={u.name}>
-                  {u.name}
-                </option>
-              ))}
-            </select>
-          </fieldset>
-          <div className="modal-action">
-            <button type="submit" className="btn btn-primary" disabled={busy}>
-              Register
-            </button>
-            <button type="button" className="btn btn-ghost" onClick={close}>
-              Cancel
-            </button>
-          </div>
-        </form>
+    <Modal open onClose={onClose} title="Register machine">
+      <p className="text-sm opacity-60 mb-2">Run this on the device you want to add:</p>
+      <div className="mockup-code text-xs mb-4 overflow-x-auto">
+        <pre data-prefix="$">
+          <code>tailscale up --login-server={loginServer}</code>
+        </pre>
       </div>
-      <form method="dialog" className="modal-backdrop">
-        <button>close</button>
+      <ErrorAlert error={validation ?? error} />
+      <form className="space-y-4" onSubmit={handleSubmit}>
+        <fieldset className="fieldset">
+          <legend className="fieldset-legend">Registration key or URL</legend>
+          <input
+            id="register-machine-key"
+            type="text"
+            className="input input-bordered w-full font-mono"
+            placeholder="hskey-authreq-… or the full registration URL"
+            value={key}
+            onChange={(e) => setKey(e.target.value)}
+            required
+          />
+          <span className="opacity-60 mt-1 text-sm">
+            Printed by the command above once the device is waiting to register.
+          </span>
+        </fieldset>
+        <fieldset className="fieldset">
+          <legend className="fieldset-legend">Owner</legend>
+          <select
+            id="register-machine-user"
+            className="select select-bordered w-full"
+            value={userId}
+            onChange={(e) => setUserId(e.target.value)}
+            required
+          >
+            <option value="" disabled>
+              Select a user
+            </option>
+            {users.map((u) => (
+              <option key={u.id} value={u.name}>
+                {u.name}
+              </option>
+            ))}
+          </select>
+        </fieldset>
+        <div className="modal-action">
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            Register
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+        </div>
       </form>
-    </dialog>
+    </Modal>
+  )
+}
+
+function RenameDialog({
+  machine: m,
+  onClose,
+  onDone,
+}: {
+  machine: Machine
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [name, setName] = useState(m.givenName)
+  const { busy, error, run } = useDialogAction(onClose, onDone)
+  return (
+    <Modal open onClose={onClose} title={`Rename ${m.givenName}`}>
+      <ErrorAlert error={error} />
+      <form
+        className="space-y-4"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void run(() => renameMachine(m.id, name))
+        }}
+      >
+        <input
+          type="text"
+          className="input input-bordered w-full"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          required
+        />
+        <div className="modal-action">
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            Rename
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+function TagsDialog({
+  machine: m,
+  onClose,
+  onDone,
+}: {
+  machine: Machine
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [tagsInput, setTagsInput] = useState(tags(m).join(', '))
+  const { busy, error, run } = useDialogAction(onClose, onDone)
+  return (
+    <Modal open onClose={onClose} title={`Edit ACL tags of ${m.givenName}`}>
+      <ErrorAlert error={error} />
+      <form
+        className="space-y-4"
+        onSubmit={(e) => {
+          e.preventDefault()
+          const parsed = tagsInput
+            .split(',')
+            .map((t) => t.trim())
+            .filter(Boolean)
+            .map((t) => (t.startsWith('tag:') ? t : `tag:${t}`))
+          void run(() => setMachineTags(m.id, parsed))
+        }}
+      >
+        <input
+          type="text"
+          className="input input-bordered w-full font-mono"
+          placeholder="tag:server, tag:prod"
+          value={tagsInput}
+          onChange={(e) => setTagsInput(e.target.value)}
+        />
+        <p className="text-sm opacity-60">
+          Comma-separated. The <code>tag:</code> prefix is added automatically.
+        </p>
+        <div className="modal-action">
+          <button type="submit" className="btn btn-primary" disabled={busy}>
+            Save
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+function RoutesDialog({
+  machine: m,
+  onClose,
+  onDone,
+}: {
+  machine: Machine
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [selectedRoutes, setSelectedRoutes] = useState<string[]>(m.approvedRoutes ?? [])
+  const { busy, error, run } = useDialogAction(onClose, onDone)
+  const availableRoutes = m.availableRoutes ?? []
+  return (
+    <Modal open onClose={onClose} title={`Edit route settings of ${m.givenName}`}>
+      <ErrorAlert error={error} />
+      <form
+        className="space-y-4"
+        onSubmit={(e) => {
+          e.preventDefault()
+          void run(() => setMachineRoutes(m.id, selectedRoutes))
+        }}
+      >
+        {availableRoutes.length > 0 ? (
+          <ul className="space-y-2">
+            {availableRoutes.map((route) => (
+              <li key={route}>
+                <label className="fieldset-label cursor-pointer gap-3">
+                  <input
+                    type="checkbox"
+                    className="checkbox checkbox-sm"
+                    checked={selectedRoutes.includes(route)}
+                    onChange={(e) => {
+                      setSelectedRoutes((prev) =>
+                        e.target.checked ? [...prev, route] : prev.filter((r) => r !== route),
+                      )
+                    }}
+                  />
+                  <span className="font-mono text-sm">{route}</span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm opacity-60">This machine hasn&rsquo;t advertised any routes.</p>
+        )}
+        <div className="modal-action">
+          <button
+            type="submit"
+            className="btn btn-primary"
+            disabled={busy || availableRoutes.length === 0}
+          >
+            Save
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+        </div>
+      </form>
+    </Modal>
+  )
+}
+
+// RemoveInternalDialog removes a funnel's internal machine, listing the
+// funnels that go with it.
+function RemoveInternalDialog({
+  machine: m,
+  onClose,
+  onDone,
+}: {
+  machine: Machine
+  onClose: () => void
+  onDone: () => void
+}) {
+  const [funnels, setFunnels] = useState<FunnelRoute[] | null>(null)
+  const [funnelsError, setFunnelsError] = useState<string | null>(null)
+  const { busy, error, run } = useDialogAction(onClose, onDone)
+
+  useEffect(() => {
+    const controller = new AbortController()
+    listFunnelRoutes(controller.signal)
+      .then((res) => setFunnels(res.funnelRoutes))
+      .catch((err) => {
+        if (isAbortError(err)) return
+        setFunnelsError(err instanceof Error ? err.message : String(err))
+      })
+    return () => controller.abort()
+  }, [])
+
+  return (
+    <Modal open onClose={onClose} title={`Remove ${m.givenName}`} className="whitespace-normal">
+      <div role="alert" className="alert alert-warning mb-4">
+        <span>
+          This machine is used internally by the funnel feature. The following funnels will be
+          deleted and no longer accessible:
+        </span>
+      </div>
+      {funnelsError ? (
+        <ErrorAlert error={funnelsError} />
+      ) : funnels === null ? (
+        <div className="flex justify-center py-2">
+          <span className="loading loading-spinner loading-sm"></span>
+        </div>
+      ) : funnels.length === 0 ? (
+        <p className="text-sm opacity-60">No funnels are currently configured.</p>
+      ) : (
+        <ul className="list-disc list-inside space-y-1">
+          {funnels.map((f) => (
+            <li key={f.id} className="font-mono text-sm">
+              {f.hostname}
+            </li>
+          ))}
+        </ul>
+      )}
+      <ErrorAlert error={error} />
+      <div className="modal-action">
+        <button
+          type="button"
+          className="btn btn-error"
+          disabled={busy || (funnels === null && !funnelsError)}
+          onClick={() => void run(() => deleteMachine(m.id))}
+        >
+          Delete machine and funnels
+        </button>
+        <button type="button" className="btn btn-ghost" onClick={onClose}>
+          Cancel
+        </button>
+      </div>
+    </Modal>
   )
 }
 
 // MachineRow renders one machine. canEdit allows renaming, expiring and
-// removing it; tags and routes need canManage.
+// removing it; tags and routes need canManage. Its dialogs are opened on the
+// page through onOpen.
 function MachineRow({
   machine: m,
   canManage,
   canEdit,
   onChange,
+  onOpen,
 }: {
   machine: Machine
   canManage: boolean
   canEdit: boolean
   onChange: () => void
+  onOpen: (kind: MachineDialogKind) => void
 }) {
-  const renameRef = useRef<HTMLDialogElement>(null)
-  const tagsRef = useRef<HTMLDialogElement>(null)
-  const routesRef = useRef<HTMLDialogElement>(null)
-  const removeInternalRef = useRef<HTMLDialogElement>(null)
-  const [name, setName] = useState(m.givenName)
-  const [tagsInput, setTagsInput] = useState(tags(m).join(', '))
-  const [selectedRoutes, setSelectedRoutes] = useState<string[]>(m.approvedRoutes ?? [])
+  const confirm = useConfirm()
   const [busy, setBusy] = useState(false)
-  const [affectedFunnels, setAffectedFunnels] = useState<FunnelRoute[]>([])
-  const [affectedFunnelsLoading, setAffectedFunnelsLoading] = useState(false)
-  const [affectedFunnelsError, setAffectedFunnelsError] = useState<string | null>(null)
   const expired = isExpired(m)
-  const availableRoutes = m.availableRoutes ?? []
 
   const run = async (fn: () => Promise<unknown>) => {
     setBusy(true)
@@ -442,18 +680,6 @@ function MachineRow({
     } finally {
       setBusy(false)
     }
-  }
-
-  const openRemoveInternalDialog = () => {
-    removeInternalRef.current?.showModal()
-    setAffectedFunnelsLoading(true)
-    setAffectedFunnelsError(null)
-    listFunnelRoutes()
-      .then((res) => setAffectedFunnels(res.funnelRoutes))
-      .catch((err) => {
-        setAffectedFunnelsError(err instanceof Error ? err.message : String(err))
-      })
-      .finally(() => setAffectedFunnelsLoading(false))
   }
 
   return (
@@ -516,7 +742,7 @@ function MachineRow({
                   type="button"
                   className="data-focus:bg-base-content/10"
                   disabled={m.internal || !canEdit}
-                  onClick={() => renameRef.current?.showModal()}
+                  onClick={() => onOpen('rename')}
                 >
                   Edit machine name
                 </button>
@@ -528,7 +754,7 @@ function MachineRow({
                   type="button"
                   className="data-focus:bg-base-content/10"
                   disabled={m.internal || !canManage}
-                  onClick={() => tagsRef.current?.showModal()}
+                  onClick={() => onOpen('tags')}
                 >
                   Edit ACL tags
                 </button>
@@ -540,7 +766,7 @@ function MachineRow({
                   type="button"
                   className="data-focus:bg-base-content/10"
                   disabled={m.internal || !canManage}
-                  onClick={() => routesRef.current?.showModal()}
+                  onClick={() => onOpen('routes')}
                 >
                   Edit route settings
                 </button>
@@ -552,10 +778,14 @@ function MachineRow({
                   type="button"
                   className="text-error data-focus:bg-base-content/10"
                   disabled={expired || busy || m.internal || !canEdit}
-                  onClick={() => {
-                    if (confirm(`Expire the session of ${m.givenName}?`)) {
-                      void run(() => expireMachine(m.id))
-                    }
+                  onClick={async () => {
+                    const ok = await confirm({
+                      title: `Expire the session of ${m.givenName}?`,
+                      message: 'It will have to log in again to reconnect.',
+                      confirmLabel: 'Expire session',
+                      danger: true,
+                    })
+                    if (ok) void run(() => expireMachine(m.id))
                   }}
                 >
                   Expire session
@@ -568,14 +798,18 @@ function MachineRow({
                   type="button"
                   className="text-error data-focus:bg-base-content/10"
                   disabled={busy || !canEdit}
-                  onClick={() => {
+                  onClick={async () => {
                     if (m.internal) {
-                      openRemoveInternalDialog()
+                      onOpen('removeInternal')
                       return
                     }
-                    if (confirm(`Permanently remove ${m.givenName}?`)) {
-                      void run(() => deleteMachine(m.id))
-                    }
+                    const ok = await confirm({
+                      title: `Permanently remove ${m.givenName}?`,
+                      message: 'It will be removed from the tailnet.',
+                      confirmLabel: 'Remove',
+                      danger: true,
+                    })
+                    if (ok) void run(() => deleteMachine(m.id))
                   }}
                 >
                   Remove
@@ -584,199 +818,6 @@ function MachineRow({
             </li>
           </MenuItems>
         </Menu>
-
-        <dialog ref={renameRef} className="modal">
-          <div className="modal-box text-left">
-            <h3 className="text-lg font-bold mb-4">Rename {m.givenName}</h3>
-            <form
-              className="space-y-4"
-              onSubmit={(e) => {
-                e.preventDefault()
-                void run(() => renameMachine(m.id, name)).then(() => renameRef.current?.close())
-              }}
-            >
-              <input
-                type="text"
-                className="input input-bordered w-full"
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
-              <div className="modal-action">
-                <button type="submit" className="btn btn-primary" disabled={busy}>
-                  Rename
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() => renameRef.current?.close()}
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-          <form method="dialog" className="modal-backdrop">
-            <button>close</button>
-          </form>
-        </dialog>
-
-        <dialog ref={tagsRef} className="modal">
-          <div className="modal-box text-left">
-            <h3 className="text-lg font-bold mb-4">Edit ACL tags of {m.givenName}</h3>
-            <form
-              className="space-y-4"
-              onSubmit={(e) => {
-                e.preventDefault()
-                const parsed = tagsInput
-                  .split(',')
-                  .map((t) => t.trim())
-                  .filter(Boolean)
-                  .map((t) => (t.startsWith('tag:') ? t : `tag:${t}`))
-                void run(() => setMachineTags(m.id, parsed)).then(() => tagsRef.current?.close())
-              }}
-            >
-              <input
-                type="text"
-                className="input input-bordered w-full font-mono"
-                placeholder="tag:server, tag:prod"
-                value={tagsInput}
-                onChange={(e) => setTagsInput(e.target.value)}
-              />
-              <p className="text-sm opacity-60">
-                Comma-separated. The <code>tag:</code> prefix is added automatically.
-              </p>
-              <div className="modal-action">
-                <button type="submit" className="btn btn-primary" disabled={busy}>
-                  Save
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() => tagsRef.current?.close()}
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-          <form method="dialog" className="modal-backdrop">
-            <button>close</button>
-          </form>
-        </dialog>
-
-        <dialog ref={routesRef} className="modal">
-          <div className="modal-box text-left">
-            <h3 className="text-lg font-bold mb-4">Edit route settings of {m.givenName}</h3>
-            <form
-              className="space-y-4"
-              onSubmit={(e) => {
-                e.preventDefault()
-                void run(() => setMachineRoutes(m.id, selectedRoutes)).then(() =>
-                  routesRef.current?.close(),
-                )
-              }}
-            >
-              {availableRoutes.length > 0 ? (
-                <ul className="space-y-2">
-                  {availableRoutes.map((route) => (
-                    <li key={route}>
-                      <label className="fieldset-label cursor-pointer gap-3">
-                        <input
-                          type="checkbox"
-                          className="checkbox checkbox-sm"
-                          checked={selectedRoutes.includes(route)}
-                          onChange={(e) => {
-                            setSelectedRoutes((prev) =>
-                              e.target.checked ? [...prev, route] : prev.filter((r) => r !== route),
-                            )
-                          }}
-                        />
-                        <span className="font-mono text-sm">{route}</span>
-                      </label>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-sm opacity-60">
-                  This machine hasn&rsquo;t advertised any routes.
-                </p>
-              )}
-              <div className="modal-action">
-                <button
-                  type="submit"
-                  className="btn btn-primary"
-                  disabled={busy || availableRoutes.length === 0}
-                >
-                  Save
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() => routesRef.current?.close()}
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </div>
-          <form method="dialog" className="modal-backdrop">
-            <button>close</button>
-          </form>
-        </dialog>
-
-        <dialog ref={removeInternalRef} className="modal">
-          <div className="modal-box text-left whitespace-normal">
-            <h3 className="text-lg font-bold mb-4">Remove {m.givenName}</h3>
-            <div role="alert" className="alert alert-warning mb-4">
-              <span>
-                This machine is used internally by the funnel feature. The following funnels will
-                be deleted and no longer accessible:
-              </span>
-            </div>
-            {affectedFunnelsLoading ? (
-              <div className="flex justify-center py-2">
-                <span className="loading loading-spinner loading-sm"></span>
-              </div>
-            ) : affectedFunnelsError ? (
-              <div role="alert" className="alert alert-error mb-2">
-                <span>{affectedFunnelsError}</span>
-              </div>
-            ) : affectedFunnels.length === 0 ? (
-              <p className="text-sm opacity-60">No funnels are currently configured.</p>
-            ) : (
-              <ul className="list-disc list-inside space-y-1">
-                {affectedFunnels.map((f) => (
-                  <li key={f.id} className="font-mono text-sm">
-                    {f.hostname}
-                  </li>
-                ))}
-              </ul>
-            )}
-            <div className="modal-action">
-              <button
-                type="button"
-                className="btn btn-error"
-                disabled={busy || affectedFunnelsLoading}
-                onClick={() => {
-                  void run(() => deleteMachine(m.id)).then(() => removeInternalRef.current?.close())
-                }}
-              >
-                Delete machine and funnels
-              </button>
-              <button
-                type="button"
-                className="btn btn-ghost"
-                onClick={() => removeInternalRef.current?.close()}
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-          <form method="dialog" className="modal-backdrop">
-            <button>close</button>
-          </form>
-        </dialog>
       </td>
     </tr>
   )

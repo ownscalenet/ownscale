@@ -15,6 +15,7 @@ import {
   type Member,
   type Role,
 } from '../api'
+import { useConfirm } from '../lib/confirm'
 
 function roleLabel(role: string): string {
   return role
@@ -297,6 +298,7 @@ function MemberRow({
   busy: boolean
   run: (fn: () => Promise<unknown>) => Promise<void>
 }) {
+  const confirm = useConfirm()
   const canRemove = canManage && m.role !== 'owner' && !caller
 
   return (
@@ -331,10 +333,13 @@ function MemberRow({
               type="button"
               className="btn btn-xs btn-outline mr-2"
               disabled={busy}
-              onClick={() => {
-                if (confirm(`Transfer ownership to ${m.name}? You will become an admin.`)) {
-                  void run(() => transferOwnership(m.id))
-                }
+              onClick={async () => {
+                const ok = await confirm({
+                  title: `Transfer ownership to ${m.name}?`,
+                  message: 'You will become an admin.',
+                  confirmLabel: 'Transfer ownership',
+                })
+                if (ok) void run(() => transferOwnership(m.id))
               }}
             >
               Make owner
@@ -345,14 +350,14 @@ function MemberRow({
               type="button"
               className="btn btn-xs btn-outline btn-error"
               disabled={busy}
-              onClick={() => {
-                if (
-                  confirm(
-                    `Remove ${m.name} from this organization? Their machines will be removed from the tailnet.`,
-                  )
-                ) {
-                  void run(() => removeMember(m.id))
-                }
+              onClick={async () => {
+                const ok = await confirm({
+                  title: `Remove ${m.name} from this organization?`,
+                  message: 'Their machines will be removed from the tailnet.',
+                  confirmLabel: 'Remove member',
+                  danger: true,
+                })
+                if (ok) void run(() => removeMember(m.id))
               }}
             >
               Remove
