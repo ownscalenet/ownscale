@@ -303,6 +303,7 @@ export class OrgUI {
         await this.page.goto('/funnel')
         const row = this.page.getByRole('row').filter({ has: this.page.getByRole('link', { name: `https://${route.hostname}`, exact: true }) })
         await row.getByRole('button', { name: 'Remove', exact: true }).click()
+        await confirmDialog(this.page, 'Remove route')
         await poll(`${this.org} funnel removal`, 15_000, async () =>
           (await this.read<FunnelRoutesResponse>('/api/funnel')).funnelRoutes.some(r => String(r.id) === resource.id) ? undefined : true)
       }
