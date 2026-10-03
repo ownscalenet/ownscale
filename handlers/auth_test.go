@@ -387,7 +387,7 @@ func TestAPILogout(t *testing.T) {
 func TestAuthProviders(t *testing.T) {
 	_, queries := dbtest.New(t)
 	h, err := New(queries, "", t.TempDir(), nil, slog.New(slog.DiscardHandler), config.DerpConfig{}, config.AuthConfig{
-		UpstreamOIDC: config.UpstreamOIDCConfig{Issuer: "https://idp.example.com"},
+		UpstreamOIDC: config.UpstreamOIDCConfig{Issuer: "https://idp.example.com", ClientID: "oidc-id"},
 		Google:       config.GoogleConfig{ClientID: "google-id"},
 		// Microsoft left unset: Enabled() should report false.
 	})
