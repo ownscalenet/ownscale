@@ -10,9 +10,8 @@ import DiffModal from '../components/DiffModal'
 import LineNumberedTextarea from '../components/LineNumberedTextarea'
 import { usePageTitle } from '../hooks/usePageTitle'
 
-// cheatsheet is a static reference for the OIDC login allowlist's HuJSON
-// shape, rendered alongside the editor, mirroring AccessControl.tsx's
-// Cheatsheet.
+// Cheatsheet is a static reference for the OIDC login allowlist's HuJSON
+// shape, shown next to the editor.
 function Cheatsheet() {
   return (
     <div className="card bg-base-100 shadow h-full">

@@ -5,9 +5,8 @@ import { getInvitePreview, isAbortError, type InvitePreview } from '../api'
 import { usePageTitle } from '../hooks/usePageTitle'
 
 // AcceptInvite is the /invite/:token landing page. An unauthenticated
-// visitor is sent through /login?next=/invite/:token (mirroring Login.tsx's
-// existing next= redirect pattern) so they come right back here once
-// signed in.
+// visitor is sent through /login?next=/invite/:token, so they come back here
+// once signed in.
 export default function AcceptInvite() {
   usePageTitle('Accept Invite')
   const { token } = useParams<{ token: string }>()

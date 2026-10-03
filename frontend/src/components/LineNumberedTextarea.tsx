@@ -1,12 +1,7 @@
 import { useRef, type ChangeEvent, type UIEvent } from 'react'
 
 // LineNumberedTextarea wraps a plain <textarea> with a scroll-synced line-
-// number gutter. Shared by AccessControl.tsx and AuthRestrictions.tsx.
-//
-// Line-wrapping is disabled (nowrap + horizontal scroll) so one logical
-// line always renders as exactly one visual line -- otherwise a wrapped
-// long line would visually span multiple rows while the gutter still
-// showed a single number for it, misaligning the two.
+// number gutter. Lines don't wrap, so each one stays level with its number.
 export default function LineNumberedTextarea({
   value,
   onChange,

@@ -10,9 +10,8 @@ import DiffModal from '../components/DiffModal'
 import LineNumberedTextarea from '../components/LineNumberedTextarea'
 import { usePageTitle } from '../hooks/usePageTitle'
 
-// cheatsheet is a static reference for headscale's HuJSON ACL policy
-// syntax (https://headscale.net/stable/ref/acls/). It never calls the API
-// -- it's just documentation rendered alongside the editor.
+// Cheatsheet is a static reference for headscale's HuJSON ACL policy syntax
+// (https://headscale.net/stable/ref/acls/), shown next to the editor.
 function Cheatsheet() {
   return (
     <div className="card bg-base-100 shadow h-full">

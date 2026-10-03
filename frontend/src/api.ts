@@ -426,11 +426,8 @@ export function deletePasskey(id: string) {
   return request<{ ok: boolean }>(`/api/passkeys/${id}`, { method: 'DELETE' })
 }
 
-// The passkey register/login begin+finish endpoints return/accept the raw
-// go-webauthn JSON shapes (PublicKeyCredentialCreationOptions wrapped in
-// "publicKey", and the browser's attestation/assertion response
-// respectively) rather than an app-specific envelope, so they're typed as
-// unknown here and passed straight through to lib/webauthn.ts.
+// The passkey begin/finish endpoints use go-webauthn's JSON shapes (options
+// wrapped in "publicKey"), which lib/webauthn.ts adapts for the browser.
 
 export function passkeyRegisterBegin(email: string, next?: string) {
   return request<{ publicKey: PublicKeyCredentialCreationOptionsJSON }>(

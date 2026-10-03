@@ -25,9 +25,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setUser(user)
       setOrganization(organization)
     } catch (err) {
-      // There was this flakyness I only met once: after login, during provisioning
-      // of the org, the user would get promptly logged out. Could that have been
-      // because of an error here?
       if (err instanceof ApiError && err.status === 401) {
         setUser(null)
         setOrganization(null)

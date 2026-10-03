@@ -1,8 +1,7 @@
 import { diffLines } from 'diff'
 
-// DiffModal renders a line-level diff between saved and current text
-// content inside a daisyUI dialog (same pattern as Users.tsx's modals).
-// Shared by AccessControl.tsx and AuthRestrictions.tsx.
+// DiffModal shows a line-level diff between the saved and current content of
+// a policy editor.
 export default function DiffModal({
   dialogRef,
   savedContent,

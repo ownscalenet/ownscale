@@ -19,11 +19,6 @@ function isSafeRelativeNext(next: string | null): next is string {
   return !!next && next.startsWith('/') && !next.startsWith('//')
 }
 
-// goToNext mirrors the redirect logic handlers.finishLogin performs
-// server-side (see handlers/auth.go): the passkey finish endpoints already
-// redirect the underlying fetch(), but that doesn't move the browser's own
-// location, so the SPA repeats the same "next-or-home" decision itself once
-// the fetch succeeds.
 // isAuthorizeCallback reports whether next finishes another organization's
 // headscale SSO login. The provider only sends a signed-in user here with such
 // a next when their account can't finish it, so they must pick another one.
@@ -31,6 +26,8 @@ function isAuthorizeCallback(next: string | null): boolean {
   return !!next && next.startsWith('/authorize/callback')
 }
 
+// goToNext makes the same next-or-home redirect as handlers.finishLogin. The
+// passkey finish endpoints redirect only the fetch(), not the browser.
 function goToNext(next: string | null) {
   window.location.assign(isSafeRelativeNext(next) ? next : '/')
 }
@@ -92,10 +89,8 @@ export default function Login() {
   const [email, setEmail] = useState('')
   const [authProviders, setAuthProviders] = useState<AuthProviders | null>(null)
 
-  // Fetched once on mount so SSO buttons can be greyed out (with an
-  // explanatory tooltip) instead of linking to a provider that isn't
-  // configured. A failed fetch is treated the same as "nothing
-  // configured": buttons stay disabled rather than risk a broken link.
+  // Unconfigured providers get disabled buttons rather than broken links; a
+  // failed fetch counts as nothing configured.
   useEffect(() => {
     let cancelled = false
     getAuthProviders()
@@ -108,15 +103,8 @@ export default function Login() {
     }
   }, [])
 
-  // `next` may point at a backend-only route such as
-  // /authorize/callback?id=... (used by the OIDC provider to finish an
-  // authorization request for another organization's headscale SSO
-  // login). That route isn't part of the SPA's client-side router, so
-  // it must be reached via a real HTTP navigation, not React Router's
-  // <Navigate>, or the browser is left on a blank page that matches no
-  // route. A full navigation is used whenever `next` is present; plain "no
-  // next" (e.g. visiting /login directly while already signed in) can stay
-  // as an in-app client-side redirect to "/".
+  // `next` may be a backend-only route such as /authorize/callback, which the
+  // SPA router doesn't know, so it needs a full navigation, not <Navigate>.
   useEffect(() => {
     if (alreadyAuthed && isSafeRelativeNext(next)) {
       window.location.replace(next)
