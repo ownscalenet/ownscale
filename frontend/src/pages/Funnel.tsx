@@ -10,9 +10,11 @@ import {
   type Machine,
 } from '../api'
 import { usePageTitle } from '../hooks/usePageTitle'
+import { useConfirm } from '../lib/confirm'
 
 export default function Funnel() {
   usePageTitle('Funnel')
+  const confirm = useConfirm()
   const [routes, setRoutes] = useState<FunnelRoute[]>([])
   const [machines, setMachines] = useState<Machine[]>([])
   const [canManage, setCanManage] = useState(false)
@@ -24,6 +26,7 @@ export default function Funnel() {
   const [targetPort, setTargetPort] = useState('')
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState<string | null>(null)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
 
   const load = async (signal?: AbortSignal) => {
     try {
@@ -69,12 +72,22 @@ export default function Funnel() {
     }
   }
 
-  const handleDelete = async (id: string) => {
+  const handleDelete = async (r: FunnelRoute) => {
+    const ok = await confirm({
+      title: `Remove https://${r.hostname}?`,
+      message: 'It will stop being reachable from the internet.',
+      confirmLabel: 'Remove route',
+      danger: true,
+    })
+    if (!ok) return
+    setDeletingId(r.id)
     try {
-      await deleteFunnelRoute(id)
+      await deleteFunnelRoute(r.id)
       await load()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
+    } finally {
+      setDeletingId(null)
     }
   }
 
@@ -156,7 +169,8 @@ export default function Funnel() {
                         <button
                           type="button"
                           className="btn btn-ghost btn-xs"
-                          onClick={() => void handleDelete(r.id)}
+                          disabled={deletingId === r.id}
+                          onClick={() => void handleDelete(r)}
                         >
                           Remove
                         </button>

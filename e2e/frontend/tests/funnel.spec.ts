@@ -1,4 +1,5 @@
 import { expect, test } from './support/account'
+import { confirmDialog } from './support/confirm'
 import { registerRealMachine, teardownRealMachine, type RealMachine } from './support/realMachine'
 
 // Creates and deletes a funnel route targeting a real registered device.
@@ -29,6 +30,7 @@ test('creating and deleting a funnel route', async ({ page, account }) => {
     await expect(row.getByText('8080', { exact: true })).toBeVisible()
 
     await row.getByRole('button', { name: 'Remove' }).click()
+    await confirmDialog(page, 'Remove route')
     await expect(row).toBeHidden()
   } finally {
     await teardownRealMachine(machine)

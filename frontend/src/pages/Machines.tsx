@@ -26,6 +26,10 @@ import {
 // status, last seen and expiry stay current.
 const refreshIntervalMs = 10_000
 
+// searchDelayMs is how long the search box waits for typing to stop before
+// filtering, so a word costs one request instead of one per keystroke.
+const searchDelayMs = 300
+
 // isExpired uses the server's verdict on the expiry rather than comparing
 // it with this browser's clock, which may be off.
 function isExpired(m: Machine): boolean {
@@ -154,12 +158,29 @@ export default function Machines() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [q, userFilter, status])
 
+  // Filters replace the history entry, so Back leaves the page instead of
+  // stepping through every filter change.
   const updateFilter = (key: string, value: string) => {
-    const next = new URLSearchParams(searchParams)
-    if (value) next.set(key, value)
-    else next.delete(key)
-    setSearchParams(next)
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        if (value) next.set(key, value)
+        else next.delete(key)
+        return next
+      },
+      { replace: true },
+    )
   }
+
+  const [qInput, setQInput] = useState(q)
+  // Follows the URL when it changes some other way, e.g. Clear or Back.
+  useEffect(() => setQInput(q), [q])
+  useEffect(() => {
+    if (qInput === q) return
+    const timer = setTimeout(() => updateFilter('q', qInput), searchDelayMs)
+    return () => clearTimeout(timer)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [qInput])
 
   return (
     <>
@@ -216,8 +237,8 @@ export default function Machines() {
               type="text"
               placeholder="Search by name or IP…"
               className="input input-bordered input-sm w-64"
-              value={q}
-              onChange={(e) => updateFilter('q', e.target.value)}
+              value={qInput}
+              onChange={(e) => setQInput(e.target.value)}
             />
             <select
               className="select select-bordered select-sm"
@@ -245,7 +266,7 @@ export default function Machines() {
               <button
                 type="button"
                 className="btn btn-sm btn-ghost"
-                onClick={() => setSearchParams({})}
+                onClick={() => setSearchParams({}, { replace: true })}
               >
                 Clear
               </button>

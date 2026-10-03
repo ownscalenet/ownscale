@@ -96,7 +96,7 @@ export default function Settings() {
     const next = new URLSearchParams(searchParams)
     if (value) next.set(key, value)
     else next.delete(key)
-    setSearchParams(next)
+    setSearchParams(next, { replace: true })
   }
 
   const visible = authKeys.filter((k) => matchesUser(k, userFilter) && matchesStatus(k, status))
@@ -158,7 +158,7 @@ export default function Settings() {
                 <button
                   type="button"
                   className="btn btn-sm btn-ghost"
-                  onClick={() => setSearchParams({})}
+                  onClick={() => setSearchParams({}, { replace: true })}
                 >
                   Clear
                 </button>
@@ -188,7 +188,7 @@ export default function Settings() {
                   </thead>
                   <tbody>
                     {visible.map((k) => (
-                      <AuthKeyRow key={k.id} authKey={k} onChange={load} />
+                      <AuthKeyRow key={k.id} authKey={k} onChange={load} onError={setError} />
                     ))}
                   </tbody>
                 </table>
@@ -212,7 +212,15 @@ export default function Settings() {
   )
 }
 
-function AuthKeyRow({ authKey: k, onChange }: { authKey: PreAuthKey; onChange: () => void }) {
+function AuthKeyRow({
+  authKey: k,
+  onChange,
+  onError,
+}: {
+  authKey: PreAuthKey
+  onChange: () => void
+  onError: (message: string) => void
+}) {
   const confirm = useConfirm()
   const [busy, setBusy] = useState(false)
   const expired = isExpired(k)
@@ -229,6 +237,8 @@ function AuthKeyRow({ authKey: k, onChange }: { authKey: PreAuthKey; onChange: (
     try {
       await expireAuthKey(k.id)
       onChange()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err))
     } finally {
       setBusy(false)
     }
@@ -246,6 +256,8 @@ function AuthKeyRow({ authKey: k, onChange }: { authKey: PreAuthKey; onChange: (
     try {
       await deleteAuthKey(k.id)
       onChange()
+    } catch (err) {
+      onError(err instanceof Error ? err.message : String(err))
     } finally {
       setBusy(false)
     }

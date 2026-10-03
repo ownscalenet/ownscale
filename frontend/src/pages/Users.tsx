@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useAuth } from '../auth'
 import { usePageTitle } from '../hooks/usePageTitle'
 import {
+  ApiError,
   ROLES,
   createInvite,
   deleteInvite,
@@ -59,6 +60,8 @@ export default function Users() {
     } catch (err) {
       if (isAbortError(err)) return
       // Non-managers get a 403 here; just leave the list empty.
+      if (err instanceof ApiError && err.status === 403) return
+      setError(err instanceof Error ? err.message : String(err))
     }
   }
 
