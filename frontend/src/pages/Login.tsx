@@ -187,8 +187,7 @@ export default function Login() {
             {passkeySupported && (
               <>
                 <p className="text-sm text-base-content/70 text-left">
-                  Passkeys are recommended: they don't share any personal information with
-                  Ownscale.
+                  Passkeys are recommended: they don't share any personal information with Ownscale.
                 </p>
                 <button
                   type="button"
@@ -202,7 +201,11 @@ export default function Login() {
             )}
             <SSOButton provider="oidc" enabled={authProviders?.oidc} href={href} />
             <SSOButton provider="google" enabled={authProviders?.google} href={googleHref} />
-            <SSOButton provider="microsoft" enabled={authProviders?.microsoft} href={microsoftHref} />
+            <SSOButton
+              provider="microsoft"
+              enabled={authProviders?.microsoft}
+              href={microsoftHref}
+            />
           </div>
 
           {passkeySupported && (

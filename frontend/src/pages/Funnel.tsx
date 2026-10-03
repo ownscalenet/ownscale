@@ -105,15 +105,13 @@ export default function Funnel() {
 
       <div role="alert" className="alert alert-warning mb-4">
         <div>
-        <p>
-          Funnel exposes a machine&apos;s port to the <strong>entire public internet</strong>, not
-          just this tailnet. Anyone with the URL below can reach it, without needing to join this
-          tailnet at all. Only create a funnel route for a service you intend to be publicly
-          reachable.
-        </p>
-        <p>
-          A machine running on the ownscale server is needed for funnel functionality.
-        </p>
+          <p>
+            Funnel exposes a machine&apos;s port to the <strong>entire public internet</strong>, not
+            just this tailnet. Anyone with the URL below can reach it, without needing to join this
+            tailnet at all. Only create a funnel route for a service you intend to be publicly
+            reachable.
+          </p>
+          <p>A machine running on the ownscale server is needed for funnel functionality.</p>
         </div>
       </div>
 

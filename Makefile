@@ -2,7 +2,7 @@
 # app that builds directly into webui/dist, which is embedded into
 # the Go binary via go:embed.
 
-.PHONY: build frontend backend osa restore test coverage archive docker-image caddy-image purge ci docs load-cert dev-up devbox e2e e2e-deps e2e-setup e2e-frontend e2e-frontend-run e2e-connectivity e2e-ssh e2e-remote e2e-remote-frontend e2e-remote-connectivity
+.PHONY: build frontend frontend-check backend osa restore test coverage archive docker-image caddy-image purge ci docs load-cert dev-up devbox e2e e2e-deps e2e-setup e2e-frontend e2e-frontend-run e2e-connectivity e2e-ssh e2e-remote e2e-remote-frontend e2e-remote-connectivity
 
 DOCKER_IMAGE := ownscale:latest
 CADDY_IMAGE := ownscale-caddy:latest
@@ -24,6 +24,12 @@ frontend:
 	npm --prefix frontend run build
 	rm -rf etc/caddy/site
 	hugo --source site --destination ../etc/caddy/site --minify
+
+# Lint, formatting and type checks for the frontend, as run in CI.
+frontend-check:
+	npm --prefix frontend run lint
+	npm --prefix frontend run format:check
+	cd frontend && npx tsc -b
 
 osa:
 	docker compose exec ownscale ./osa $(filter-out osa,$(MAKECMDGOALS))
@@ -184,7 +190,7 @@ load-cert:
 
 # Run the same checks as .github/workflows/ci.yml, for local sanity-checking
 # before pushing. Requires golangci-lint and govulncheck.
-ci:
+ci: frontend-check
 	go build ./...
 	go vet ./...
 	go fix ./...

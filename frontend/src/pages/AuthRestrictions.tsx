@@ -28,9 +28,9 @@ function Cheatsheet() {
           >
             JWCC
           </a>{' '}
-          (JSON with comments and trailing commas allowed).
-          It restricts which OIDC-authenticated users can join this organization.
-          Leave a list empty (or omit its key) to not restrict on that field.
+          (JSON with comments and trailing commas allowed). It restricts which OIDC-authenticated
+          users can join this organization. Leave a list empty (or omit its key) to not restrict on
+          that field.
         </p>
 
         <div className="divider my-2">Top-level keys</div>

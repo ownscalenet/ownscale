@@ -27,9 +27,7 @@ interface CredentialRequestBody {
 // CredentialCreation response body (as returned by
 // /api/passkey(s)/register/begin) and returns the attestation response to
 // POST to the matching .../register/finish endpoint.
-export function createPasskey(
-  body: CredentialCreationBody,
-): Promise<RegistrationResponseJSON> {
+export function createPasskey(body: CredentialCreationBody): Promise<RegistrationResponseJSON> {
   return startRegistration({ optionsJSON: body.publicKey })
 }
 
@@ -37,8 +35,6 @@ export function createPasskey(
 // CredentialAssertion response body (as returned by
 // /api/passkey/login/begin) and returns the assertion response to POST to
 // /api/passkey/login/finish.
-export function getPasskey(
-  body: CredentialRequestBody,
-): Promise<AuthenticationResponseJSON> {
+export function getPasskey(body: CredentialRequestBody): Promise<AuthenticationResponseJSON> {
   return startAuthentication({ optionsJSON: body.publicKey })
 }
