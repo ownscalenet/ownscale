@@ -1,11 +1,8 @@
 {
-	acme_dns azure {
-		subscription_id {$AZURE_SUBSCRIPTION_ID}
-		resource_group_name {$AZURE_RESOURCE_GROUP_NAME}
-		tenant_id {$AZURE_TENANT_ID}
-		client_id {$AZURE_CLIENT_ID}
-		client_secret {$AZURE_CLIENT_SECRET}
-	}
+	# Selects which DNS-01 provider solves the ACME challenge for the
+	# *.{$BASE_DOMAIN} wildcard cert. See providers directory for required
+    # credential env vars.
+	import /etc/caddy/providers/{$DNS_PROVIDER}.caddyfile
 
 	# Set CADDY_LOCAL_CERTS=local_certs in .env whenever BASE_DOMAIN isn't a
 	# publicly-resolvable domain (e.g. "os.test", or any local dev domain

@@ -118,11 +118,13 @@ Dex's own certificate -- from its own internal, self-signed CA instead of
 ACME. Leave it unset in production, where `base_domain` is a real,
 reachable public domain and Caddy should get publicly-trusted certificates.
 
-### Wildcard TLS certificate (production, via Azure DNS-01)
+### Wildcard TLS certificate (production, via DNS-01)
 
 For organizations names and funnels we use separate subdomains. TLS is done with
-a wildcard certificate. That needs API support and a caddy plugin. Because ownscale
-is deployed on azure, only azure is supported now.
+a wildcard certificate, which needs a DNS-01 challenge. Caddy ships with plugins
+for 5 providers (see `etc/caddy/providers/`); pick one with `DNS_PROVIDER` in
+`.env` and set that provider's credential vars: `azure` (default), `cloudflare`,
+`route53`, `hetzner`, `digitalocean`.
 
 ## Trust Caddy local dev certs
 
