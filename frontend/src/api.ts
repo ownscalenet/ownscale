@@ -82,11 +82,10 @@ export function isAbortError(err: unknown): boolean {
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(path, {
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json', ...(init?.headers ?? {}) },
-    ...init,
-  })
+  // Spread init first: its own headers would otherwise replace the merged ones.
+  const headers = new Headers(init?.body ? { 'Content-Type': 'application/json' } : undefined)
+  new Headers(init?.headers).forEach((value, key) => headers.set(key, value))
+  const res = await fetch(path, { ...init, credentials: 'same-origin', headers })
   if (res.status === 204) {
     return undefined as T
   }
