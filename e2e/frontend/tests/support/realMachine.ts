@@ -69,7 +69,7 @@ export async function registerRealMachine(page: Page, orgSubdomain: string): Pro
       await page.waitForTimeout(2_000)
     }
   }
-  const createDialog = page.locator('dialog.modal[open]')
+  const createDialog = page.getByRole('dialog')
   const userSelect = createDialog.getByRole('combobox')
   const ownerID = await ownHeadscaleUserID(page)
   await userSelect.selectOption(ownerID)

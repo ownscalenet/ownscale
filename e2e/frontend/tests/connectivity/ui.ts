@@ -169,7 +169,7 @@ export class OrgUI {
     const resource: OwnedResource = { token, org: this.org, kind: 'key', reference: token }
     await this.page.goto('/settings')
     await this.page.getByRole('button', { name: 'Create pre-auth key' }).click()
-    const dialog = this.page.locator('dialog.modal[open]')
+    const dialog = this.page.getByRole('dialog')
     await dialog.getByRole('combobox').selectOption(this.ownerID)
     await dialog.getByLabel('Reusable', { exact: true }).uncheck()
     await dialog.getByLabel('Ephemeral', { exact: true }).check()

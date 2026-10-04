@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getAuthRestrictions,
@@ -89,7 +89,7 @@ export default function AuthRestrictions() {
   // draft holds unsaved edits, so a refetch never overwrites them.
   const [draft, setDraft] = useState<string | null>(null)
   const content = draft ?? savedContent
-  const diffRef = useRef<HTMLDialogElement>(null)
+  const [showDiff, setShowDiff] = useState(false)
 
   const save = useMutation({
     mutationFn: updateAuthRestrictions,
@@ -150,7 +150,7 @@ export default function AuthRestrictions() {
                       type="button"
                       className="btn btn-ghost btn-sm"
                       disabled={!dirty}
-                      onClick={() => diffRef.current?.showModal()}
+                      onClick={() => setShowDiff(true)}
                     >
                       View diff
                     </button>
@@ -187,7 +187,13 @@ export default function AuthRestrictions() {
                   Only owners and admins can edit authentication restrictions.
                 </p>
               )}
-              <DiffModal dialogRef={diffRef} savedContent={savedContent} content={content} />
+              {showDiff && (
+                <DiffModal
+                  onClose={() => setShowDiff(false)}
+                  savedContent={savedContent}
+                  content={content}
+                />
+              )}
             </div>
           </div>
         </div>

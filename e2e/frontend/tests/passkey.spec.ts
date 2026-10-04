@@ -22,8 +22,10 @@ test('adding a passkey in User settings and signing in with it', async ({ page }
   await page.goto('/user-settings')
   await expect(page.getByRole('heading', { name: 'Passkeys' })).toBeVisible()
 
-  page.once('dialog', (dialog) => void dialog.accept('E2E test passkey'))
   await page.getByRole('button', { name: 'Add a passkey' }).click()
+  const nameDialog = page.getByRole('dialog')
+  await nameDialog.getByRole('textbox').fill('E2E test passkey')
+  await nameDialog.getByRole('button', { name: 'Add passkey', exact: true }).click()
 
   const row = page.getByRole('row').filter({ hasText: 'E2E test passkey' })
   await expect(row).toBeVisible({ timeout: 15_000 })

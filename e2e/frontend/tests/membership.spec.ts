@@ -57,7 +57,7 @@ test("removing a member removes their machines from the tailnet", async ({ page,
 
   await page.goto('/users')
   await page.getByRole('button', { name: 'Invite member' }).click()
-  const dialog = page.locator('dialog.modal[open]')
+  const dialog = page.getByRole('dialog')
   await dialog.getByRole('combobox').selectOption('member')
   await dialog.getByRole('button', { name: 'Create invite link' }).click()
   // Until the link renders, the dialog's only textbox is the optional email

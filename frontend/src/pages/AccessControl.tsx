@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getAccessControlPolicy,
@@ -149,7 +149,7 @@ export default function AccessControl() {
   // draft holds unsaved edits, so a refetch never overwrites them.
   const [draft, setDraft] = useState<string | null>(null)
   const content = draft ?? savedContent
-  const diffRef = useRef<HTMLDialogElement>(null)
+  const [showDiff, setShowDiff] = useState(false)
 
   const save = useMutation({
     mutationFn: updateAccessControlPolicy,
@@ -218,7 +218,7 @@ export default function AccessControl() {
                       type="button"
                       className="btn btn-ghost btn-sm"
                       disabled={!dirty}
-                      onClick={() => diffRef.current?.showModal()}
+                      onClick={() => setShowDiff(true)}
                     >
                       View diff
                     </button>
@@ -255,7 +255,13 @@ export default function AccessControl() {
                   Only owners and admins can edit the access control policy.
                 </p>
               )}
-              <DiffModal dialogRef={diffRef} savedContent={savedContent} content={content} />
+              {showDiff && (
+                <DiffModal
+                  onClose={() => setShowDiff(false)}
+                  savedContent={savedContent}
+                  content={content}
+                />
+              )}
             </div>
           </div>
         </div>

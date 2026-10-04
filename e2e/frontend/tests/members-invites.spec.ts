@@ -14,7 +14,7 @@ test('creating and revoking an invite link', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Users' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Invite member' }).click()
-  const dialog = page.locator('dialog.modal[open]')
+  const dialog = page.getByRole('dialog')
   await dialog.getByRole('button', { name: 'Create invite link' }).click()
 
   await expect(dialog.getByText(/expires in 7 days/i)).toBeVisible()
@@ -40,7 +40,7 @@ test('accepting an invite adds a member, whose role can be changed and who can b
   await expect(page.getByRole('heading', { name: 'Users' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Invite member' }).click()
-  const dialog = page.locator('dialog.modal[open]')
+  const dialog = page.getByRole('dialog')
   await dialog.getByRole('combobox').selectOption('admin')
   await dialog.getByRole('button', { name: 'Create invite link' }).click()
   await expect(dialog.getByText(/expires in 7 days/i)).toBeVisible()

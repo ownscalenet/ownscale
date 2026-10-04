@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   listPasskeys,
@@ -10,6 +11,7 @@ import {
 import { createPasskey, browserSupportsWebAuthn } from '../lib/webauthn'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { useConfirm } from '../lib/confirm'
+import Modal from '../components/Modal'
 import { ErrorAlert, PageHeader } from '../components/ui'
 
 export default function UserSettings() {
@@ -44,10 +46,12 @@ function PasskeysCard() {
   const failure = add.error ?? remove.error ?? query.error
   const error = failure ? errorMessage(failure) : null
 
-  const handleAdd = () => {
-    const name = window.prompt('Name this passkey (e.g. "MacBook Touch ID")', 'Passkey') ?? ''
+  const [naming, setNaming] = useState(false)
+
+  const handleAdd = (name: string) => {
+    setNaming(false)
     remove.reset()
-    add.mutate(name.trim())
+    add.mutate(name)
   }
 
   const handleDelete = async (p: Passkey) => {
@@ -65,6 +69,7 @@ function PasskeysCard() {
   return (
     <div className="card bg-base-100 shadow">
       <div className="card-body">
+        {naming && <PasskeyNameDialog onClose={() => setNaming(false)} onSubmit={handleAdd} />}
         <div className="flex items-center justify-between">
           <div>
             <h2 className="card-title">Passkeys</h2>
@@ -78,7 +83,7 @@ function PasskeysCard() {
               type="button"
               className="btn btn-sm btn-primary"
               disabled={busy}
-              onClick={handleAdd}
+              onClick={() => setNaming(true)}
             >
               Add a passkey
             </button>
@@ -132,5 +137,46 @@ function PasskeysCard() {
         )}
       </div>
     </div>
+  )
+}
+
+// PasskeyNameDialog asks for a name for a new passkey before creating it.
+function PasskeyNameDialog({
+  onClose,
+  onSubmit,
+}: {
+  onClose: () => void
+  onSubmit: (name: string) => void
+}) {
+  const [name, setName] = useState('Passkey')
+  return (
+    <Modal open onClose={onClose} title="Add a passkey">
+      <form
+        onSubmit={(e) => {
+          e.preventDefault()
+          onSubmit(name.trim())
+        }}
+      >
+        <fieldset className="fieldset">
+          <legend className="fieldset-legend">Name</legend>
+          <input
+            type="text"
+            className="input input-bordered w-full"
+            placeholder="MacBook Touch ID"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            autoFocus
+          />
+        </fieldset>
+        <div className="modal-action">
+          <button type="submit" className="btn btn-primary">
+            Add passkey
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+        </div>
+      </form>
+    </Modal>
   )
 }

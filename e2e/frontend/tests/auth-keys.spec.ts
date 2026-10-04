@@ -15,7 +15,7 @@ test('creating, expiring and deleting a tag-only pre-auth key', async ({ page })
   await expect(page.getByRole('heading', { name: 'Pre-Auth Keys' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Create pre-auth key' }).click()
-  const dialog = page.locator('dialog.modal[open]')
+  const dialog = page.getByRole('dialog')
   await dialog.getByText('Tag only (no owning user)').click()
   await dialog.getByPlaceholder('tag:server, tag:prod').fill(tag)
   await dialog.getByRole('button', { name: 'Create' }).click()
@@ -49,7 +49,7 @@ test('creating and expiring a reusable, ephemeral pre-auth key for a real user',
   await expect(page.getByRole('heading', { name: 'Pre-Auth Keys' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Create pre-auth key' }).click()
-  const dialog = page.locator('dialog.modal[open]')
+  const dialog = page.getByRole('dialog')
   // "Tag only" is unchecked by default, so a real user must be selected.
   const userSelect = dialog.getByRole('combobox')
   await userSelect.selectOption(await ownHeadscaleUserID(page))
