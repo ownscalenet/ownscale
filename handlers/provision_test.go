@@ -182,3 +182,37 @@ func TestStartLinksMembers(t *testing.T) {
 		}
 	}
 }
+
+// TestSleepingOrganizationWakes checks that headscale-backed endpoints wake
+// an organization whose headscale was put to sleep.
+func TestSleepingOrganizationWakes(t *testing.T) {
+	tests := []struct {
+		name    string
+		handler func(*Handlers) http.HandlerFunc
+	}{
+		{"list machines", func(h *Handlers) http.HandlerFunc { return h.ReadHeadscale(h.ListMachines) }},
+		{"list auth keys", func(h *Handlers) http.HandlerFunc { return h.ReadHeadscale(h.ListAuthKeys) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, org, users := newOrgTestHandlers(t, RoleOwner)
+			if _, err := h.orgs.Ensure(t.Context(), org.Subdomain); err != nil {
+				t.Fatalf("Ensure: %v", err)
+			}
+			if err := h.orgs.ForOrg(org).Sleep(t.Context()); err != nil {
+				t.Fatalf("Sleep: %v", err)
+			}
+
+			req := withTestUser(httptest.NewRequest(http.MethodGet, "/", nil), users[0])
+			rec := httptest.NewRecorder()
+			tt.handler(h)(rec, req)
+
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusOK, rec.Body)
+			}
+			if got := h.orgs.Status(org.Subdomain); got != orgs.StatusActive {
+				t.Errorf("Status = %q, want %q", got, orgs.StatusActive)
+			}
+		})
+	}
+}

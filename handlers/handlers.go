@@ -22,14 +22,13 @@ import (
 	"github.com/ownscalenet/ownscale/orgs"
 )
 
-// headscaleClients returns an organization's headscale client. Implemented
-// by *orgs.Service.
 // headscaleClients reaches organizations' headscale instances. Implemented
 // by *orgs.Service.
 type headscaleClients interface {
-	// Client returns a running instance's client, or orgs.ErrNotProvisioned
-	// for an organization whose headscale never started.
-	Client(subdomain string) (*hscl.Client, error)
+	// Wake returns the instance's client, starting it first if it's asleep,
+	// or orgs.ErrNotProvisioned for an organization whose headscale never
+	// started.
+	Wake(ctx context.Context, subdomain string) (*hscl.Client, error)
 	// Ensure returns the client, starting the instance first if needed.
 	Ensure(ctx context.Context, subdomain string) (*hscl.Client, error)
 }
@@ -111,6 +110,7 @@ func New(
 		},
 	}
 	orgSvc.OnStart(h.linkAllMembers)
+	orgSvc.OnSleep(h.funnel.Evict)
 	return h, nil
 }
 
@@ -144,13 +144,10 @@ func (h *Handlers) DialOrg(ctx context.Context, subdomain string) (net.Conn, err
 	return h.orgs.DialOrg(ctx, subdomain)
 }
 
-// Start restarts existing orgs' headscale instances. It is non-blocking.
+// Start runs background work, such as putting idle organizations to sleep,
+// until ctx is done. It is non-blocking.
 func (h *Handlers) Start(ctx context.Context) {
-	go func() {
-		if err := h.orgs.Start(ctx); err != nil {
-			h.logger.Error("org service startup failed", "error", err)
-		}
-	}()
+	go h.orgs.RunSleeper(ctx)
 }
 
 // writeJSON encodes v as the JSON response body with the given status code.

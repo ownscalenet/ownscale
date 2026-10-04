@@ -37,12 +37,14 @@ for (const example of [
 
 test('a not yet serving organization waits, and manager readiness is accepted', () => {
   const value = session(identities[0])
-  for (const status of ['update_pending', 'starting', 'unavailable']) {
+  for (const status of ['update_pending', 'unavailable']) {
     value.organization!.Status = status
     expect(validateSession(value, identities[0])).toBe(false)
   }
-  value.organization!.Status = 'unprovisioned'
-  expect(validateSession(value, identities[0])).toBe(true)
+  for (const status of ['unprovisioned', 'sleeping']) {
+    value.organization!.Status = status
+    expect(validateSession(value, identities[0])).toBe(true)
+  }
   value.organization!.Status = 'active'
   value.user.Role = 'admin'
   expect(validateSession(value, identities[0])).toBe(true)

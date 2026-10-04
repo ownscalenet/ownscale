@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"context"
 	"database/sql"
 	"encoding/json"
 	"errors"
@@ -192,10 +191,6 @@ var randomSubdomainRe = regexp.MustCompile(`^[a-z0-9]+$`)
 func TestAuthCallbackAutoAssignsOrganization(t *testing.T) {
 	setupSessions()
 	h, queries := newTestHandlers(t)
-
-	provisionerCtx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	h.Start(provisionerCtx)
 
 	orig := gothic.CompleteUserAuth
 	t.Cleanup(func() { gothic.CompleteUserAuth = orig })

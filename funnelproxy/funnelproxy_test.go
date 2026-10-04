@@ -81,7 +81,7 @@ type fakeHeadscaleClients struct {
 	err    error
 }
 
-func (f *fakeHeadscaleClients) Client(string) (*hscl.Client, error) {
+func (f *fakeHeadscaleClients) Wake(context.Context, string) (*hscl.Client, error) {
 	if f.err != nil {
 		return nil, f.err
 	}

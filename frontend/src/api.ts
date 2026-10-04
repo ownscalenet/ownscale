@@ -28,9 +28,10 @@ export interface Organization {
   CreatedAt: string
   // The state of the org's headscale: 'unprovisioned' until its first use
   // (registering a machine, creating a key, saving the ACL policy),
-  // 'update_pending' while a settings save restarts it, 'starting' while the
-  // server boots, 'unavailable' when it failed to start or stopped.
-  Status: 'active' | 'unprovisioned' | 'update_pending' | 'starting' | 'unavailable'
+  // 'update_pending' while a settings save restarts it, 'sleeping' when it
+  // was stopped while unused (it starts on next use), 'unavailable' when it
+  // failed to start or stopped.
+  Status: 'active' | 'unprovisioned' | 'update_pending' | 'sleeping' | 'unavailable'
 }
 
 // AssignableUser is an organization member the caller may register machines

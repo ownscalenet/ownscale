@@ -31,6 +31,15 @@ type OrgService struct {
 	subdomain string
 	// restart restarts the org's headscale so it picks up its stored config.
 	restart func(ctx context.Context) error
+	// sleep stops the org's headscale until its next use.
+	sleep func(ctx context.Context) error
+}
+
+// Sleep stops o's headscale to free its resources, closing its device
+// connections. It starts again on next use. A no-op if it isn't running.
+func (o *OrgService) Sleep(ctx context.Context) (err error) {
+	defer derrors.Wrap(&err, "o.Sleep(%q)", o.subdomain)
+	return o.sleep(ctx)
 }
 
 func (o *OrgService) getHeadscaleConfig(ctx context.Context) (_ *HeadscaleConfig, err error) {
@@ -52,7 +61,7 @@ func (o *OrgService) getHeadscaleConfig(ctx context.Context) (_ *HeadscaleConfig
 
 // applyHeadscaleConfig persists cfg to the orgconfigs row and restarts its
 // headscale instance so the new config takes effect. If the restart fails
-// the org is unavailable until a later save or process start succeeds.
+// the org is unavailable until a later save or start succeeds.
 // extraWrites runs within the same short transaction as the config row
 // write.
 //

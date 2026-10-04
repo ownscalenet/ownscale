@@ -37,10 +37,10 @@ type Queries interface {
 	GetFunnelRouteBySubdomainAndLabel(ctx context.Context, arg sqlcgen.GetFunnelRouteBySubdomainAndLabelParams) (sqlcgen.FunnelRoute, error)
 }
 
-// HeadscaleClients returns an organization's headscale client. Implemented
-// by *orgs.Service.
+// HeadscaleClients returns an organization's headscale client, starting
+// its headscale if it's asleep. Implemented by *orgs.Service.
 type HeadscaleClients interface {
-	Client(subdomain string) (*hscl.Client, error)
+	Wake(ctx context.Context, subdomain string) (*hscl.Client, error)
 }
 
 // Pool proxies incoming funnel HTTP requests into the target
@@ -170,7 +170,7 @@ func (p *Pool) ServeHTTP(w http.ResponseWriter, r *http.Request, label, subdomai
 		return
 	}
 
-	client, err := p.hs.Client(subdomain)
+	client, err := p.hs.Wake(ctx, subdomain)
 	if err != nil {
 		p.logger.Error("funnel: resolve headscale client", "subdomain", subdomain, "error", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)

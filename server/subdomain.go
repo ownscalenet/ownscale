@@ -29,6 +29,10 @@ type SubdomainProxy struct {
 
 type subdomainKey struct{}
 
+// proxyIdleConnTimeout is how long an idle keep-alive connection to an
+// organization's headscale is kept.
+const proxyIdleConnTimeout = 90 * time.Second
+
 // NewSubdomainProxy builds a SubdomainProxy. dial connects to a subdomain's
 // in-process headscale instance; an organization that isn't running
 // (orgs.ErrNotRunning) gets a 503.
@@ -44,6 +48,8 @@ func NewSubdomainProxy(next http.Handler, baseDomain string, dial func(ctx conte
 			subdomain, _ := ctx.Value(subdomainKey{}).(string)
 			return p.dial(ctx, subdomain)
 		},
+		// Open connections keep an org awake, so don't hold idle ones.
+		IdleConnTimeout: proxyIdleConnTimeout,
 	}
 	return p
 }

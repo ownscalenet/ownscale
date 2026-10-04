@@ -31,7 +31,7 @@ type fakeHeadscaleClients struct {
 	err    error
 }
 
-func (f fakeHeadscaleClients) Client(string) (*hscl.Client, error) {
+func (f fakeHeadscaleClients) Wake(context.Context, string) (*hscl.Client, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -39,18 +39,18 @@ func (f fakeHeadscaleClients) Client(string) (*hscl.Client, error) {
 }
 
 func (f fakeHeadscaleClients) Ensure(_ context.Context, subdomain string) (*hscl.Client, error) {
-	return f.Client(subdomain)
+	return f.Wake(context.Background(), subdomain)
 }
 
 // lazyHeadscaleClients is fakeHeadscaleClients for an organization whose
-// headscale hasn't started yet: Client reports it unprovisioned until
+// headscale hasn't started yet: Wake reports it unprovisioned until
 // Ensure starts it.
 type lazyHeadscaleClients struct {
 	client  *hscl.Client
 	started bool
 }
 
-func (l *lazyHeadscaleClients) Client(string) (*hscl.Client, error) {
+func (l *lazyHeadscaleClients) Wake(context.Context, string) (*hscl.Client, error) {
 	if !l.started {
 		return nil, orgs.ErrNotProvisioned
 	}

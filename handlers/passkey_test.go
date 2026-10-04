@@ -81,9 +81,6 @@ func loginBuilder(rp vwa.RelyingParty, authenticator vwa.Authenticator, cred vwa
 func TestPasskeyRegisterSelfServiceProvisionsOrganization(t *testing.T) {
 	setupSessions()
 	h, queries := newTestHandlersWithBaseDomain(t, testBaseDomain)
-	provisionerCtx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	h.Start(provisionerCtx)
 
 	rp := testRelyingParty(testBaseDomain)
 	authenticator := vwa.NewAuthenticator()
@@ -139,9 +136,6 @@ func TestPasskeyRegisterSelfServiceProvisionsOrganization(t *testing.T) {
 func TestPasskeyRegisterFinishAssignsInvitedOrganization(t *testing.T) {
 	setupSessions()
 	h, queries := newTestHandlersWithBaseDomain(t, testBaseDomain)
-	provisionerCtx, cancel := context.WithCancel(context.Background())
-	t.Cleanup(cancel)
-	h.Start(provisionerCtx)
 
 	owner := insertUser(t, queries)
 	org, err := queries.GetOrganization(t.Context(), owner.OrganizationID)

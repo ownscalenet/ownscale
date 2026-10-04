@@ -41,6 +41,14 @@ const (
 	// maxBindAttempts bounds how often a start retries on a fresh port
 	// when another process took the port before headscale listened on it.
 	maxBindAttempts = 3
+
+	// idleTimeout is how long an organization's headscale runs unused
+	// before RunSleeper stops it.
+	idleTimeout = time.Minute
+	// sweepInterval is how often RunSleeper looks for idle organizations.
+	sweepInterval = time.Second
+	// sleepTimeout bounds waiting for a headscale instance to stop.
+	sleepTimeout = 30 * time.Second
 )
 
 // fixedSubdomains are handed out in order to the first organizations
@@ -65,13 +73,17 @@ type Service struct {
 	// restarts counts each org's in-flight restarts, including those still
 	// waiting on startMu; a counter as two settings saves can overlap.
 	restarts utils.Map[string, *atomic.Int32]
-	// starting is set while Start brings up existing organizations.
-	starting atomic.Bool
 	// startFailures holds when Ensure last failed to start each org, so
 	// device traffic can't retry a broken org on every request.
 	startFailures utils.Map[string, time.Time]
 	// onStart, if set, runs once Ensure started an org's headscale.
 	onStart func(ctx context.Context, subdomain string, client *hscl.Client)
+	// onSleep, if set, runs once an org's headscale was put to sleep.
+	onSleep func(subdomain string)
+
+	// idleTimeout and sweepInterval are overridden in tests.
+	idleTimeout   time.Duration
+	sweepInterval time.Duration
 
 	// startMu serializes headscale startup (headscale's DERP map shuffling
 	// shares one non-thread-safe rand.Rand across instances). This is not
@@ -98,12 +110,33 @@ type orgRuntime struct {
 	// server leaves them attached to the stopped instance instead of
 	// letting the devices reconnect to the new one.
 	conns utils.Map[net.Conn, struct{}]
+
+	// lastActivity is when the org was last used, in Unix nanoseconds.
+	lastActivity atomic.Int64
+}
+
+// touch records that the org is being used now.
+func (rt *orgRuntime) touch() {
+	rt.lastActivity.Store(time.Now().UnixNano())
+}
+
+// idle reports whether the org has no open connections and wasn't used
+// for d before now.
+func (rt *orgRuntime) idle(now time.Time, d time.Duration) bool {
+	for range rt.conns.Range {
+		return false
+	}
+	return now.Sub(time.Unix(0, rt.lastActivity.Load())) >= d
 }
 
 // track registers conn for closing on restart, until it's closed.
 func (rt *orgRuntime) track(conn net.Conn) net.Conn {
+	rt.touch()
 	tc := &trackedConn{Conn: conn}
-	tc.untrack = func() { rt.conns.Delete(tc) }
+	tc.untrack = func() {
+		rt.conns.Delete(tc)
+		rt.touch()
+	}
 	rt.conns.Store(tc, struct{}{})
 	return tc
 }
@@ -128,13 +161,15 @@ type instance struct {
 // NewService builds a Service that manages organizations under baseDomain.
 func NewService(queries *db.TxQueries, baseDomain, issuer string, derpCfg config.DerpConfig, logger *slog.Logger, dataDir string) *Service {
 	return &Service{
-		queries:    queries,
-		baseDomain: baseDomain,
-		issuer:     issuer,
-		derpCfg:    derpCfg,
-		logger:     logger,
-		dataDir:    dataDir,
-		createFn:   createHeadscale,
+		queries:       queries,
+		baseDomain:    baseDomain,
+		issuer:        issuer,
+		derpCfg:       derpCfg,
+		logger:        logger,
+		dataDir:       dataDir,
+		createFn:      createHeadscale,
+		idleTimeout:   idleTimeout,
+		sweepInterval: sweepInterval,
 	}
 }
 
@@ -143,6 +178,12 @@ func NewService(queries *db.TxQueries, baseDomain, issuer string, derpCfg config
 // used.
 func (s *Service) OnStart(f func(ctx context.Context, subdomain string, client *hscl.Client)) {
 	s.onStart = f
+}
+
+// OnSleep sets f to run each time an organization's headscale is put to
+// sleep. It must be set before the Service is used.
+func (s *Service) OnSleep(f func(subdomain string)) {
+	s.onSleep = f
 }
 
 // ForOrg instantiates an OrgService for the given organization.
@@ -154,6 +195,9 @@ func (s *Service) ForOrg(org sqlcgen.Organization) *OrgService {
 		subdomain: sub,
 		restart: func(ctx context.Context) error {
 			return s.restartHeadscale(ctx, sub)
+		},
+		sleep: func(ctx context.Context) error {
+			return s.sleepHeadscale(ctx, sub)
 		},
 	}
 }
@@ -188,7 +232,7 @@ func (s *Service) provisioned(subdomain string) bool {
 }
 
 // Status reports the state of subdomain's headscale instance: one of
-// StatusUpdatePending, StatusActive, StatusUnprovisioned, StatusStarting or
+// StatusUpdatePending, StatusActive, StatusUnprovisioned, StatusSleeping or
 // StatusUnavailable.
 func (s *Service) Status(subdomain string) string {
 	if n, ok := s.restarts.Load(subdomain); ok && n.Load() > 0 {
@@ -200,10 +244,21 @@ func (s *Service) Status(subdomain string) string {
 	if !s.provisioned(subdomain) {
 		return StatusUnprovisioned
 	}
-	if s.starting.Load() {
-		return StatusStarting
+	if _, ok := s.startFailures.Load(subdomain); ok {
+		return StatusUnavailable
 	}
-	return StatusUnavailable
+	// Sleeping clears the instance; one left behind exited on its own.
+	if rt, ok := s.orgs.Load(subdomain); ok && rt.inst.Load() != nil {
+		return StatusUnavailable
+	}
+	return StatusSleeping
+}
+
+// touch records that subdomain's org is being used now.
+func (s *Service) touch(subdomain string) {
+	if rt, ok := s.orgs.Load(subdomain); ok {
+		rt.touch()
+	}
 }
 
 // Client returns a client for subdomain's running headscale instance. It
@@ -216,7 +271,20 @@ func (s *Service) Client(subdomain string) (*hscl.Client, error) {
 		}
 		return nil, ErrNotRunning
 	}
+	s.touch(subdomain)
 	return inst.client, nil
+}
+
+// Wake returns a client for subdomain's headscale instance, starting it
+// first if it's asleep (see Ensure). It returns ErrNotProvisioned if the
+// instance never started.
+func (s *Service) Wake(ctx context.Context, subdomain string) (_ *hscl.Client, err error) {
+	defer derrors.Wrap(&err, "s.Wake(%q)", subdomain)
+
+	if !s.provisioned(subdomain) {
+		return nil, ErrNotProvisioned
+	}
+	return s.Ensure(ctx, subdomain)
 }
 
 var (
@@ -240,12 +308,14 @@ func (s *Service) Ensure(ctx context.Context, subdomain string) (_ *hscl.Client,
 	defer derrors.Wrap(&err, "s.Ensure(%q)", subdomain)
 
 	if inst, ok := s.running(subdomain); ok {
+		s.touch(subdomain)
 		return inst.client, nil
 	}
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
 	// Another caller may have started it while this one waited.
 	if inst, ok := s.running(subdomain); ok {
+		s.touch(subdomain)
 		return inst.client, nil
 	}
 	if failed, ok := s.startFailures.Load(subdomain); ok && time.Since(failed) < startRetryDelay {
@@ -296,17 +366,17 @@ func (s *Service) loadConfig(ctx context.Context, subdomain string) (sqlcgen.Org
 }
 
 // DialOrg connects to subdomain's headscale instance, starting it first
-// (see Ensure) if it never started in this process. The connection is
-// closed when the instance is restarted.
+// (see Ensure) if it isn't running. The connection is closed when the
+// instance is restarted or put to sleep.
 func (s *Service) DialOrg(ctx context.Context, subdomain string) (net.Conn, error) {
-	rt, ok := s.orgs.Load(subdomain)
-	if !ok {
+	if _, ok := s.running(subdomain); !ok {
 		if _, err := s.Ensure(ctx, subdomain); err != nil {
 			return nil, fmt.Errorf("%w: %w", ErrNotRunning, err)
 		}
-		if rt, ok = s.orgs.Load(subdomain); !ok {
-			return nil, ErrNotRunning
-		}
+	}
+	rt, ok := s.orgs.Load(subdomain)
+	if !ok {
+		return nil, ErrNotRunning
 	}
 	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", fmt.Sprintf("127.0.0.1:%d", rt.port))
 	if err != nil {
@@ -478,58 +548,13 @@ func (s *Service) insertProvisioned(ctx context.Context, subdomain, clientID, cl
 	return org, nil
 }
 
-// Start starts the headscale instances of existing provisioned
-// organizations. It returns once all of them have started. Failure to start
-// one org is logged, not returned.
-func (s *Service) Start(ctx context.Context) (err error) {
-	defer derrors.Wrap(&err, "s.Start()")
-
-	s.starting.Store(true)
-	defer s.starting.Store(false)
-
-	orgs, err := s.queries.ListOrganizations(ctx)
-	if err != nil {
-		return err
-	}
-	for _, org := range orgs {
-		if !s.provisioned(org.Subdomain) {
-			continue
-		}
-		cfgRow, err := s.queries.GetOrgConfig(ctx, sqlcgen.GetOrgConfigParams{
-			OrganizationID: org.ID,
-			Path:           HeadscaleConfigKey,
-		})
-		if err != nil {
-			s.logger.Warn("load org config for recovery; skipping", "subdomain", org.Subdomain, "error", err)
-			continue
-		}
-		parsedCfg, err := parseHeadscaleConfig(cfgRow.Content)
-		if err != nil {
-			s.logger.Warn("parse org config for recovery; skipping", "subdomain", org.Subdomain, "error", err)
-			continue
-		}
-
-		if err := s.startHeadscale(ctx, org.ID, org.Subdomain, parsedCfg); err != nil {
-			s.logger.Error("recover active org headscale instance", "subdomain", org.Subdomain, "error", err)
-		}
-	}
-	return nil
-}
-
-// startHeadscale creates and launches an hscontrol.Headscale instance for
+// startLocked creates and launches an hscontrol.Headscale instance for
 // subdomain, registering it in s.orgs. It listens on a loopback port
 // picked by the kernel, reused across restarts of the instance within this
 // process; if another process took that port, it retries on a new one.
+// Callers hold startMu, so instances start one at a time.
 //
-// Instances start one at a time: this returns once the instance serves,
-// or with the reason it doesn't.
-func (s *Service) startHeadscale(ctx context.Context, orgID, subdomain string, hsCfg *HeadscaleConfig) error {
-	s.startMu.Lock()
-	defer s.startMu.Unlock()
-	return s.startLocked(ctx, orgID, subdomain, hsCfg)
-}
-
-// startLocked is startHeadscale for callers already holding startMu.
+// It returns once the instance serves, or with the reason it doesn't.
 func (s *Service) startLocked(ctx context.Context, orgID, subdomain string, hsCfg *HeadscaleConfig) error {
 	if err := s.ensureNoiseKey(ctx, orgID, subdomain); err != nil {
 		return err
@@ -563,6 +588,7 @@ func (s *Service) startLocked(ctx context.Context, orgID, subdomain string, hsCf
 		if inst != nil {
 			rt.inst.Store(inst)
 		}
+		rt.touch()
 		return nil
 	}
 }
@@ -688,20 +714,100 @@ func (s *Service) restartHeadscale(ctx context.Context, subdomain string) (err e
 	}
 
 	if rt, ok := s.orgs.Load(subdomain); ok {
-		// Cleared only once stopped, so a timed-out stop is retried by the
-		// next restart instead of leaving it running unreferenced.
-		if inst := rt.inst.Load(); inst != nil {
-			inst.cancel()
-			select {
-			case <-inst.exited:
-			case <-ctx.Done():
-				return fmt.Errorf("waiting for headscale to stop: %w", ctx.Err())
-			}
-			rt.inst.Store(nil)
+		if err := stopLocked(ctx, rt); err != nil {
+			return err
 		}
-		rt.closeConns()
 	}
-	return s.startLocked(ctx, org.ID, subdomain, hsCfg)
+	if err := s.startLocked(ctx, org.ID, subdomain, hsCfg); err != nil {
+		s.startFailures.Store(subdomain, time.Now())
+		return err
+	}
+	s.startFailures.Delete(subdomain)
+	return nil
+}
+
+// stopLocked stops rt's headscale instance, if any, and closes its
+// connections. Callers hold startMu.
+func stopLocked(ctx context.Context, rt *orgRuntime) error {
+	// Cleared only once stopped, so a timed-out stop is retried by the next
+	// stop instead of leaving it running unreferenced.
+	if inst := rt.inst.Load(); inst != nil {
+		// Open connections would hold up headscale's HTTP shutdown.
+		rt.closeConns()
+		inst.cancel()
+		select {
+		case <-inst.exited:
+		case <-ctx.Done():
+			return fmt.Errorf("waiting for headscale to stop: %w", ctx.Err())
+		}
+		rt.inst.Store(nil)
+	}
+	rt.closeConns()
+	return nil
+}
+
+// sleepHeadscale stops subdomain's headscale instance, keeping its port for
+// when it's woken. It's a no-op if the instance isn't running.
+func (s *Service) sleepHeadscale(ctx context.Context, subdomain string) (err error) {
+	defer derrors.Wrap(&err, "s.sleepHeadscale(%q)", subdomain)
+
+	s.logger.Info("putting org to sleep", "org", subdomain)
+	s.startMu.Lock()
+	defer s.startMu.Unlock()
+
+	rt, ok := s.orgs.Load(subdomain)
+	if !ok || rt.inst.Load() == nil {
+		return nil
+	}
+	if err := stopLocked(ctx, rt); err != nil {
+		return err
+	}
+	if s.onSleep != nil {
+		s.onSleep(subdomain)
+	}
+	return nil
+}
+
+// RunSleeper puts organizations whose headscale went unused for
+// idleTimeout to sleep, checking every sweepInterval until ctx is done.
+func (s *Service) RunSleeper(ctx context.Context) {
+	t := time.NewTicker(s.sweepInterval)
+	defer t.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-t.C:
+			s.sleepIdle(ctx)
+		}
+	}
+}
+
+// sleepIdle puts every running organization idle for idleTimeout to sleep.
+func (s *Service) sleepIdle(ctx context.Context) {
+	s.logger.Info("sweeping idle organizations")
+	orgs, err := s.queries.ListOrganizations(ctx)
+	if err != nil {
+		s.logger.Warn("list organizations to sleep", "error", err)
+		return
+	}
+	for _, org := range orgs {
+		rt, ok := s.orgs.Load(org.Subdomain)
+		if !ok || !rt.idle(time.Now(), s.idleTimeout) {
+			continue
+		}
+		if _, ok := s.running(org.Subdomain); !ok {
+			continue
+		}
+		sleepCtx, cancel := context.WithTimeout(ctx, sleepTimeout)
+		err := s.ForOrg(org).Sleep(sleepCtx)
+		cancel()
+		if err != nil {
+			s.logger.Warn("put idle organization to sleep", "subdomain", org.Subdomain, "error", err)
+			continue
+		}
+		s.logger.Info("put idle organization to sleep", "subdomain", org.Subdomain)
+	}
 }
 
 // randomAlphaNum generates a random alphanumeric string of n characters
@@ -730,8 +836,9 @@ const (
 	// StatusUnprovisioned means its headscale never started: it starts on
 	// first use.
 	StatusUnprovisioned = "unprovisioned"
-	// StatusStarting means Start hasn't reached the organization yet.
-	StatusStarting = "starting"
+	// StatusSleeping means its headscale isn't running because it went
+	// unused or this process just started: it starts on next use.
+	StatusSleeping = "sleeping"
 	// StatusUnavailable means its headscale failed to start or stopped.
 	StatusUnavailable = "unavailable"
 )

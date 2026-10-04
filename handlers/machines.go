@@ -44,7 +44,7 @@ func (h *Handlers) resolveHeadscale(r *http.Request) (_ *hscl.Client, org sqlcge
 	if err != nil {
 		return nil, sqlcgen.Organization{}, err
 	}
-	client, err := h.hs.Client(org.Subdomain)
+	client, err := h.hs.Wake(r.Context(), org.Subdomain)
 	if err != nil {
 		if !errors.Is(err, orgs.ErrNotProvisioned) {
 			h.logger.With("org", org.Subdomain).Warn("get headscale client", "error", err)

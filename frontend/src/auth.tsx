@@ -52,12 +52,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void refresh()
   }, [])
 
-  // An unprovisioned org stays that way until its first use, so there's
-  // nothing to wait for.
+  // Unprovisioned and sleeping orgs stay that way until their next use, so
+  // there's nothing to wait for.
   const pending =
     organization != null &&
     organization.Status !== 'active' &&
-    organization.Status !== 'unprovisioned'
+    organization.Status !== 'unprovisioned' &&
+    organization.Status !== 'sleeping'
   useEffect(() => {
     if (!pending) return
     const timer = setInterval(() => void refresh(), pendingPollMs)

@@ -331,33 +331,6 @@ func TestNextSubdomain(t *testing.T) {
 	}
 }
 
-// TestStartRecoversOrganizations checks that Start restarts the headscale
-// instance of a provisioned organization left over from a previous process,
-// and leaves an unprovisioned one for its first use.
-func TestStartRecoversOrganizations(t *testing.T) {
-	seed := newTestService(t)
-	for _, sub := range []string{"acme", "idle"} {
-		if _, err := seed.Create(t.Context(), sub); err != nil {
-			t.Fatalf("Create(%q): %v", sub, err)
-		}
-	}
-	markProvisioned(t, seed, "acme")
-
-	// A second Service on the same database and data directory simulates a
-	// process restart.
-	svc := NewService(seed.queries, "example.com", "https://auth.example.com", config.DerpConfig{}, slog.New(slog.DiscardHandler), seed.dataDir)
-	svc.createFn = noopCreateFn
-
-	if err := svc.Start(t.Context()); err != nil {
-		t.Fatalf("Start: %v", err)
-	}
-	for sub, want := range map[string]bool{"acme": true, "idle": false} {
-		if _, got := svc.LookupPort(sub); got != want {
-			t.Errorf("%s started = %v, want %v", sub, got, want)
-		}
-	}
-}
-
 // blockingCreateFn returns a createFn that signals entered and then blocks
 // until release is closed, building no instance.
 func blockingCreateFn(entered chan<- struct{}, release <-chan struct{}) func(string, string, string, int, *HeadscaleConfig, config.DerpConfig) (*hscontrol.Headscale, error) {
@@ -385,16 +358,20 @@ func runBlocked(t *testing.T, svc *Service, f func()) {
 	})
 }
 
-// serving stores a running instance for subdomain in svc, exited already
-// if exited is set.
-func serving(svc *Service, subdomain string, exited bool) {
+// serving stores a running instance for subdomain on port in svc, exited
+// already if exited is set, and returns its runtime.
+func serving(svc *Service, subdomain string, port int, exited bool) *orgRuntime {
 	inst := &instance{exited: make(chan struct{})}
+	var once sync.Once
+	inst.cancel = func() { once.Do(func() { close(inst.exited) }) }
 	if exited {
-		close(inst.exited)
+		inst.cancel()
 	}
-	rt := &orgRuntime{port: 1}
+	rt := &orgRuntime{port: port}
 	rt.inst.Store(inst)
+	rt.touch()
 	svc.orgs.Store(subdomain, rt)
+	return rt
 }
 
 func TestStatus(t *testing.T) {
@@ -406,12 +383,12 @@ func TestStatus(t *testing.T) {
 	}{
 		{
 			name:  "serving instance",
-			setup: func(_ *testing.T, svc *Service) string { serving(svc, "acme", false); return "acme" },
+			setup: func(_ *testing.T, svc *Service) string { serving(svc, "acme", 1, false); return "acme" },
 			want:  StatusActive,
 		},
 		{
 			name:  "exited instance",
-			setup: func(_ *testing.T, svc *Service) string { serving(svc, "acme", true); return "acme" },
+			setup: func(_ *testing.T, svc *Service) string { serving(svc, "acme", 1, true); return "acme" },
 			want:  StatusUnavailable,
 		},
 		{
@@ -430,12 +407,29 @@ func TestStatus(t *testing.T) {
 				markProvisioned(t, svc, "acme")
 				return "acme"
 			},
-			want: StatusUnavailable,
+			want: StatusSleeping,
 		},
 		{
-			name: "started without an instance",
+			name: "put to sleep",
 			setup: func(t *testing.T, svc *Service) string {
-				createStarted(t, svc, "acme")
+				serving(svc, "acme", 1, false)
+				if err := svc.sleepHeadscale(t.Context(), "acme"); err != nil {
+					t.Fatalf("sleepHeadscale: %v", err)
+				}
+				return "acme"
+			},
+			want: StatusSleeping,
+		},
+		{
+			name: "failed to start",
+			setup: func(t *testing.T, svc *Service) string {
+				if _, err := svc.Create(t.Context(), "acme"); err != nil {
+					t.Fatalf("Create: %v", err)
+				}
+				var starts int
+				svc.createFn = failingCreateFn(&starts)
+				_, _ = svc.Ensure(t.Context(), "acme")
+				markProvisioned(t, svc, "acme")
 				return "acme"
 			},
 			want: StatusUnavailable,
@@ -448,21 +442,6 @@ func TestStatus(t *testing.T) {
 				return "acme"
 			},
 			want: StatusUpdatePending,
-		},
-		{
-			name: "Start not there yet",
-			setup: func(t *testing.T, svc *Service) string {
-				for _, sub := range []string{"aaaa", "bbbb"} {
-					if _, err := svc.Create(t.Context(), sub); err != nil {
-						t.Fatalf("Create(%q): %v", sub, err)
-					}
-					markProvisioned(t, svc, sub)
-				}
-				// Start goes in subdomain order, so it blocks on aaaa first.
-				runBlocked(t, svc, func() { _ = svc.Start(t.Context()) })
-				return "bbbb"
-			},
-			want: StatusStarting,
 		},
 	}
 	for _, tt := range tests {
@@ -502,8 +481,8 @@ func TestRestartClosesOrgConnections(t *testing.T) {
 	}()
 	port := ln.Addr().(*net.TCPAddr).Port
 	// Both orgs "run" on the fake listener.
-	svc.orgs.Store("acme", &orgRuntime{port: port})
-	svc.orgs.Store("other", &orgRuntime{port: port})
+	serving(svc, "acme", port, false)
+	serving(svc, "other", port, false)
 
 	acme, err := svc.DialOrg(t.Context(), "acme")
 	if err != nil {
@@ -544,12 +523,15 @@ func TestStartRetriesTakenPort(t *testing.T) {
 	svc.orgs.Store("acme", &orgRuntime{port: taken})
 	org := dbtest.CreateOrg(t, svc.queries.Queries, "acme")
 
-	if err := svc.startHeadscale(t.Context(), org.ID, "acme", newHeadscaleConfig("acme", OIDCConfig{Issuer: "https://auth.example.com"})); err != nil {
-		t.Fatalf("startHeadscale: %v", err)
+	svc.startMu.Lock()
+	err = svc.startLocked(t.Context(), org.ID, "acme", newHeadscaleConfig("acme", OIDCConfig{Issuer: "https://auth.example.com"}))
+	svc.startMu.Unlock()
+	if err != nil {
+		t.Fatalf("startLocked: %v", err)
 	}
 	inst, ok := svc.running("acme")
 	if !ok {
-		t.Fatal("acme not running after startHeadscale")
+		t.Fatal("acme not running after startLocked")
 	}
 	t.Cleanup(func() { inst.cancel(); <-inst.exited })
 
