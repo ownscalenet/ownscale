@@ -1,0 +1,2 @@
+# No DNS-01 provider: for local dev, where CADDY_LOCAL_CERTS issues every
+# certificate from the internal CA instead of ACME.
