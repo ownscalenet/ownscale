@@ -49,6 +49,8 @@ const (
 	sweepInterval = time.Second
 	// sleepTimeout bounds waiting for a headscale instance to stop.
 	sleepTimeout = 30 * time.Second
+	// startTimeout bounds starting a headscale instance.
+	startTimeout = 30 * time.Second
 )
 
 // fixedSubdomains are handed out in order to the first organizations
@@ -322,6 +324,9 @@ func (s *Service) Ensure(ctx context.Context, subdomain string) (_ *hscl.Client,
 		return nil, ErrNotRunning
 	}
 
+	// A canceled request must not abort a start other callers wait on.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), startTimeout)
+	defer cancel()
 	org, hsCfg, err := s.loadConfig(ctx, subdomain)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, ErrNotRunning

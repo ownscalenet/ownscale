@@ -185,3 +185,21 @@ func TestRunSleeper(t *testing.T) {
 	cancel()
 	<-done
 }
+
+// TestWakeIgnoresCanceledRequest verifies that a canceled request doesn't
+// abort a start, which would leave the org down for startRetryDelay.
+func TestWakeIgnoresCanceledRequest(t *testing.T) {
+	svc := newRealService(t)
+	org := createStarted(t, svc, "acme")
+	if err := svc.ForOrg(org).Sleep(t.Context()); err != nil {
+		t.Fatalf("Sleep: %v", err)
+	}
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	if _, err := svc.Wake(ctx, "acme"); err != nil {
+		t.Fatalf("Wake with canceled ctx: %v", err)
+	}
+	if got := svc.Status("acme"); got != StatusActive {
+		t.Errorf("Status = %q, want %q", got, StatusActive)
+	}
+}
