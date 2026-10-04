@@ -79,7 +79,7 @@ func procRSS() (total, anon, file int64) {
 	if err != nil {
 		return 0, 0, 0
 	}
-	for _, line := range strings.Split(string(b), "\n") {
+	for line := range strings.SplitSeq(string(b), "\n") {
 		k, v, ok := strings.Cut(line, ":")
 		if !ok {
 			continue
