@@ -16,6 +16,7 @@ import (
 	"github.com/ownscalenet/ownscale/auth/oidcprovider"
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/db"
+	"github.com/ownscalenet/ownscale/debugserver"
 	"github.com/ownscalenet/ownscale/handlers"
 	"github.com/ownscalenet/ownscale/logging"
 	"github.com/ownscalenet/ownscale/server"
@@ -78,6 +79,18 @@ func run() error {
 	handler := server.NewSubdomainProxy(consoleMux, cfg.BaseDomain, h.DialOrg, logger)
 
 	srv := &http.Server{Addr: cfg.Addr, Handler: handler}
+
+	if cfg.DebugAddr != "" {
+		dln, err := net.Listen("tcp", cfg.DebugAddr)
+		if err != nil {
+			return fmt.Errorf("listen on %q: %w", cfg.DebugAddr, err)
+		}
+		defer dln.Close()
+		go func() {
+			logger.Info("debug server listening", "addr", cfg.DebugAddr)
+			_ = http.Serve(dln, debugserver.Handler())
+		}()
+	}
 
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()

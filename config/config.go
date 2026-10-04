@@ -4,6 +4,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"path/filepath"
 	"strings"
 	"time"
@@ -22,6 +23,8 @@ type Config struct {
 	BaseDomain  string `env:"OWNSCALE_BASE_DOMAIN"`
 	DataDir     string `env:"OWNSCALE_DATA_DIR"`
 	LocalCADir  string `env:"OWNSCALE_LOCAL_CA_DIR"`
+	// DebugAddr enables a pprof/runtime-metrics server; must be loopback.
+	DebugAddr string `env:"OWNSCALE_DEBUG_ADDR"`
 
 	Auth AuthConfig
 	Log  LogConfig
@@ -232,6 +235,9 @@ func (c *Config) Validate() (err error) {
 	if len(missing) > 0 {
 		return fmt.Errorf("missing required config values: %s", strings.Join(missing, ", "))
 	}
+	if c.DebugAddr != "" && !isLoopbackAddr(c.DebugAddr) {
+		return fmt.Errorf("OWNSCALE_DEBUG_ADDR %q must bind a loopback IP", c.DebugAddr)
+	}
 	if strings.EqualFold(c.BaseDomain, "localhost") {
 		return fmt.Errorf(`OWNSCALE_BASE_DOMAIN must not be "localhost": for local testing use ownscale.test` +
 			` and set up your /etc/hosts with:
@@ -257,4 +263,13 @@ EOF`)
 
 func (c Config) Database() string {
 	return filepath.Join(c.DataDir, "ownscale.sqlite")
+}
+
+func isLoopbackAddr(addr string) bool {
+	host, _, err := net.SplitHostPort(addr)
+	if err != nil {
+		return false
+	}
+	ip := net.ParseIP(host)
+	return ip != nil && ip.IsLoopback()
 }

@@ -305,6 +305,29 @@ func TestValidate(t *testing.T) {
 		}
 	})
 
+	debugAddrs := []struct {
+		addr    string
+		wantErr bool
+	}{
+		{"", false},
+		{"127.0.0.1:6060", false},
+		{"[::1]:6060", false},
+		{":6060", true},
+		{"0.0.0.0:6060", true},
+		{"localhost:6060", true},
+		{"10.0.0.1:6060", true},
+		{"127.0.0.1", true},
+	}
+	for _, tt := range debugAddrs {
+		t.Run("debug_addr "+tt.addr, func(t *testing.T) {
+			cfg := fullyPopulatedConfig()
+			cfg.DebugAddr = tt.addr
+			if err := cfg.Validate(); (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+
 	fields := []struct {
 		name   string
 		breakF func(*Config)
