@@ -1,14 +1,17 @@
 package orgs
 
 import (
-	"database/sql"
+	"context"
 	"encoding/json"
 	"errors"
 	"log/slog"
 	"net"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
+	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -19,6 +22,7 @@ import (
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/hscl"
 )
 
 // newRealService builds a Service backed by a fresh database that starts
@@ -41,10 +45,58 @@ func noopCreateFn(string, string, string, int, *HeadscaleConfig, config.DerpConf
 	return nil, nil
 }
 
-// TestCreate verifies that Create stores an organization with its
-// OIDC client and a HeadscaleConfig holding the client's credentials.
+// createStarted creates organization subdomain on svc and starts its
+// headscale, as its first use would.
+func createStarted(t *testing.T, svc *Service, subdomain string) sqlcgen.Organization {
+	t.Helper()
+	org, err := svc.Create(t.Context(), subdomain)
+	if err != nil {
+		t.Fatalf("Create(%q): %v", subdomain, err)
+	}
+	// noopCreateFn builds no instance, which Ensure reports as not running.
+	if _, err := svc.Ensure(t.Context(), subdomain); err != nil && !errors.Is(err, ErrNotRunning) {
+		t.Fatalf("Ensure(%q): %v", subdomain, err)
+	}
+	if !svc.provisioned(subdomain) {
+		t.Fatalf("%q not provisioned after Ensure", subdomain)
+	}
+	t.Cleanup(func() {
+		if inst, ok := svc.running(subdomain); ok {
+			inst.cancel()
+			<-inst.exited
+		}
+	})
+	return org
+}
+
+// markProvisioned writes the headscale database an earlier start of
+// subdomain would have left in svc's data directory.
+func markProvisioned(t *testing.T, svc *Service, subdomain string) {
+	t.Helper()
+	path := sqlitePath(svc.dataDir, subdomain)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// failingCreateFn returns a createFn that fails, counting its calls in n.
+func failingCreateFn(n *int) func(string, string, string, int, *HeadscaleConfig, config.DerpConfig) (*hscontrol.Headscale, error) {
+	return func(string, string, string, int, *HeadscaleConfig, config.DerpConfig) (*hscontrol.Headscale, error) {
+		*n++
+		return nil, errors.New("headscale failed (injected)")
+	}
+}
+
+// TestCreate verifies that Create stores an organization with its OIDC
+// client and a HeadscaleConfig holding the client's credentials, without
+// starting headscale.
 func TestCreate(t *testing.T) {
 	svc := newTestService(t)
+	var starts int
+	svc.createFn = failingCreateFn(&starts)
 
 	org, err := svc.Create(t.Context(), "acme")
 	if err != nil {
@@ -52,6 +104,12 @@ func TestCreate(t *testing.T) {
 	}
 	if org.Subdomain != "acme" {
 		t.Errorf("org = %+v, want acme", org)
+	}
+	if starts != 0 {
+		t.Errorf("headscale started %d times, want 0", starts)
+	}
+	if got := svc.Status("acme"); got != StatusUnprovisioned {
+		t.Errorf("Status = %q, want %q", got, StatusUnprovisioned)
 	}
 
 	client, err := svc.queries.GetOIDCClientByOrganizationID(t.Context(), org.ID)
@@ -97,17 +155,117 @@ func TestCreateRejectsInvalidSubdomain(t *testing.T) {
 	}
 }
 
-func TestCreateSurfacesHeadscaleFailure(t *testing.T) {
+// TestEnsureBacksOffAfterFailedStart verifies a failed start is reported,
+// and that Ensure then fails fast instead of starting again until
+// startRetryDelay has passed.
+func TestEnsureBacksOffAfterFailedStart(t *testing.T) {
 	svc := newTestService(t)
-	svc.createFn = func(string, string, string, int, *HeadscaleConfig, config.DerpConfig) (*hscontrol.Headscale, error) {
-		return nil, errors.New("headscale failed (injected)")
+	if _, err := svc.Create(t.Context(), "acme"); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	var starts int
+	svc.createFn = failingCreateFn(&starts)
+
+	if _, err := svc.Ensure(t.Context(), "acme"); err == nil || errors.Is(err, ErrNotRunning) {
+		t.Fatalf("first Ensure: err = %v, want the start failure", err)
+	}
+	if _, err := svc.Ensure(t.Context(), "acme"); !errors.Is(err, ErrNotRunning) {
+		t.Errorf("Ensure within the retry delay: err = %v, want ErrNotRunning", err)
+	}
+	if starts != 1 {
+		t.Errorf("starts within the retry delay = %d, want 1", starts)
 	}
 
-	if _, err := svc.Create(t.Context(), "acme"); err == nil {
-		t.Fatal("Create: want error when createFn fails, got nil")
+	svc.startFailures.Store("acme", time.Now().Add(-startRetryDelay))
+	if _, err := svc.Ensure(t.Context(), "acme"); err == nil {
+		t.Error("Ensure after the retry delay: want the start failure, got nil")
 	}
-	if _, err := svc.queries.GetOrganizationBySubdomain(t.Context(), "acme"); !errors.Is(err, sql.ErrNoRows) {
-		t.Errorf("organization row after failed Create: err = %v, want sql.ErrNoRows", err)
+	if starts != 2 {
+		t.Errorf("starts after the retry delay = %d, want 2", starts)
+	}
+}
+
+// TestEnsureStartsOnce verifies concurrent Ensure calls on an unprovisioned
+// organization start one headscale, run the OnStart hook once, and all get
+// its client.
+func TestEnsureStartsOnce(t *testing.T) {
+	svc := newRealService(t)
+	if _, err := svc.Create(t.Context(), "acme"); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	var starts, hooks atomic.Int32
+	svc.createFn = func(dataDir, subdomain, baseDomain string, port int, hsCfg *HeadscaleConfig, derpCfg config.DerpConfig) (*hscontrol.Headscale, error) {
+		starts.Add(1)
+		return createHeadscale(dataDir, subdomain, baseDomain, port, hsCfg, derpCfg)
+	}
+	svc.OnStart(func(context.Context, string, *hscl.Client) { hooks.Add(1) })
+	t.Cleanup(func() {
+		if inst, ok := svc.running("acme"); ok {
+			inst.cancel()
+			<-inst.exited
+		}
+	})
+
+	var wg sync.WaitGroup
+	errs := make([]error, 4)
+	for i := range errs {
+		wg.Go(func() { _, errs[i] = svc.Ensure(t.Context(), "acme") })
+	}
+	wg.Wait()
+	for i, err := range errs {
+		if err != nil {
+			t.Errorf("Ensure #%d: %v", i, err)
+		}
+	}
+	if n := starts.Load(); n != 1 {
+		t.Errorf("headscale started %d times, want 1", n)
+	}
+	if n := hooks.Load(); n != 1 {
+		t.Errorf("OnStart ran %d times, want 1", n)
+	}
+	if got := svc.Status("acme"); got != StatusActive {
+		t.Errorf("Status = %q, want %q", got, StatusActive)
+	}
+}
+
+// TestDialOrgStartsOrganization verifies device traffic starts an
+// organization that never ran, and is refused for an unknown subdomain.
+func TestDialOrgStartsOrganization(t *testing.T) {
+	svc := newRealService(t)
+	if _, err := svc.Create(t.Context(), "acme"); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	t.Cleanup(func() {
+		if inst, ok := svc.running("acme"); ok {
+			inst.cancel()
+			<-inst.exited
+		}
+	})
+
+	tests := []struct {
+		subdomain string
+		wantErr   error
+	}{
+		{"acme", nil},
+		{"unknown", ErrNotRunning},
+	}
+	for _, tt := range tests {
+		t.Run(tt.subdomain, func(t *testing.T) {
+			conn, err := svc.DialOrg(t.Context(), tt.subdomain)
+			if tt.wantErr != nil {
+				if !errors.Is(err, tt.wantErr) {
+					t.Errorf("DialOrg: err = %v, want %v", err, tt.wantErr)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("DialOrg: %v", err)
+			}
+			conn.Close()
+			if got := svc.Status(tt.subdomain); got != StatusActive {
+				t.Errorf("Status = %q, want %q", got, StatusActive)
+			}
+		})
 	}
 }
 
@@ -174,22 +332,29 @@ func TestNextSubdomain(t *testing.T) {
 }
 
 // TestStartRecoversOrganizations checks that Start restarts the headscale
-// instance of an organization left over from a previous process.
+// instance of a provisioned organization left over from a previous process,
+// and leaves an unprovisioned one for its first use.
 func TestStartRecoversOrganizations(t *testing.T) {
 	seed := newTestService(t)
-	if _, err := seed.Create(t.Context(), "acme"); err != nil {
-		t.Fatalf("Create: %v", err)
+	for _, sub := range []string{"acme", "idle"} {
+		if _, err := seed.Create(t.Context(), sub); err != nil {
+			t.Fatalf("Create(%q): %v", sub, err)
+		}
 	}
+	markProvisioned(t, seed, "acme")
 
-	// A second Service on the same database simulates a process restart.
-	svc := NewService(seed.queries, "example.com", "https://auth.example.com", config.DerpConfig{}, slog.New(slog.DiscardHandler), t.TempDir())
+	// A second Service on the same database and data directory simulates a
+	// process restart.
+	svc := NewService(seed.queries, "example.com", "https://auth.example.com", config.DerpConfig{}, slog.New(slog.DiscardHandler), seed.dataDir)
 	svc.createFn = noopCreateFn
 
 	if err := svc.Start(t.Context()); err != nil {
 		t.Fatalf("Start: %v", err)
 	}
-	if _, ok := svc.LookupPort("acme"); !ok {
-		t.Error("port not registered for recovered org \"acme\"")
+	for sub, want := range map[string]bool{"acme": true, "idle": false} {
+		if _, got := svc.LookupPort(sub); got != want {
+			t.Errorf("%s started = %v, want %v", sub, got, want)
+		}
 	}
 }
 
@@ -250,16 +415,27 @@ func TestStatus(t *testing.T) {
 			want:  StatusUnavailable,
 		},
 		{
-			name:  "never started",
-			setup: func(*testing.T, *Service) string { return "acme" },
-			want:  StatusUnavailable,
-		},
-		{
-			name: "started without an instance",
+			name: "created, never started",
 			setup: func(t *testing.T, svc *Service) string {
 				if _, err := svc.Create(t.Context(), "acme"); err != nil {
 					t.Fatalf("Create: %v", err)
 				}
+				return "acme"
+			},
+			want: StatusUnprovisioned,
+		},
+		{
+			name: "provisioned before this process",
+			setup: func(t *testing.T, svc *Service) string {
+				markProvisioned(t, svc, "acme")
+				return "acme"
+			},
+			want: StatusUnavailable,
+		},
+		{
+			name: "started without an instance",
+			setup: func(t *testing.T, svc *Service) string {
+				createStarted(t, svc, "acme")
 				return "acme"
 			},
 			want: StatusUnavailable,
@@ -267,9 +443,7 @@ func TestStatus(t *testing.T) {
 		{
 			name: "restart in flight",
 			setup: func(t *testing.T, svc *Service) string {
-				if _, err := svc.Create(t.Context(), "acme"); err != nil {
-					t.Fatalf("Create: %v", err)
-				}
+				createStarted(t, svc, "acme")
 				runBlocked(t, svc, func() { _ = svc.restartHeadscale(t.Context(), "acme") })
 				return "acme"
 			},
@@ -282,6 +456,7 @@ func TestStatus(t *testing.T) {
 					if _, err := svc.Create(t.Context(), sub); err != nil {
 						t.Fatalf("Create(%q): %v", sub, err)
 					}
+					markProvisioned(t, svc, sub)
 				}
 				// Start goes in subdomain order, so it blocks on aaaa first.
 				runBlocked(t, svc, func() { _ = svc.Start(t.Context()) })
@@ -428,11 +603,8 @@ func TestCreateHeadscaleDERP(t *testing.T) {
 
 func TestSetOIDCIdentity(t *testing.T) {
 	svc := newRealService(t)
-	if _, err := svc.Create(t.Context(), "acme"); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
+	createStarted(t, svc, "acme")
 	inst, _ := svc.running("acme")
-	t.Cleanup(func() { inst.cancel(); <-inst.exited })
 	state := inst.app.GetState()
 
 	newUser := func(name string) string {

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -12,30 +13,45 @@ import (
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/funnelproxy"
 	"github.com/ownscalenet/ownscale/hscl"
+	"github.com/ownscalenet/ownscale/orgs"
 	"github.com/tailscale/hujson"
 )
 
 // resolveHeadscaleClient returns the calling user's organization's
-// hscl.Client, along with the resolved org. notConfigured is
-// true (nil client, nil error) when the org isn't active or its headscale
-// isn't running.
+// hscl.Client, along with the resolved org. notConfigured is true (nil
+// client, nil error) when its headscale isn't running, or never started.
 func (h *Handlers) resolveHeadscaleClient(r *http.Request) (_ *hscl.Client, org sqlcgen.Organization, notConfigured bool, err error) {
-	user, ok := auth.UserFromContext(r.Context())
-	if !ok {
-		return nil, sqlcgen.Organization{}, true, nil
-	}
-
-	org, err = h.queries.GetOrganization(r.Context(), user.OrganizationID)
-	if err != nil {
-		return nil, sqlcgen.Organization{}, false, err
-	}
-
-	client, err := h.hs.Client(org.Subdomain)
-	if err != nil {
-		h.logger.With("org", org.Subdomain).Warn("get headscale client", "error", err)
+	client, org, err := h.resolveHeadscale(r)
+	if errors.Is(err, errNoHeadscale) {
 		return nil, org, true, nil
 	}
-	return client, org, false, nil
+	return client, org, false, err
+}
+
+// errNoHeadscale wraps the reason resolveHeadscale has no client: the
+// caller has no organization, or its headscale isn't running, which
+// includes orgs.ErrNotProvisioned.
+var errNoHeadscale = errors.New("no headscale client")
+
+// resolveHeadscale returns the calling user's organization and its
+// headscale client. Without a client, the error wraps errNoHeadscale.
+func (h *Handlers) resolveHeadscale(r *http.Request) (_ *hscl.Client, org sqlcgen.Organization, err error) {
+	user, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		return nil, sqlcgen.Organization{}, errNoHeadscale
+	}
+	org, err = h.queries.GetOrganization(r.Context(), user.OrganizationID)
+	if err != nil {
+		return nil, sqlcgen.Organization{}, err
+	}
+	client, err := h.hs.Client(org.Subdomain)
+	if err != nil {
+		if !errors.Is(err, orgs.ErrNotProvisioned) {
+			h.logger.With("org", org.Subdomain).Warn("get headscale client", "error", err)
+		}
+		return nil, org, fmt.Errorf("%w: %w", errNoHeadscale, err)
+	}
+	return client, org, nil
 }
 
 // matchesFilters reports whether m satisfies the optional q (case
@@ -85,12 +101,16 @@ func matchesFilters(m hscl.Node, q, userFilter, status string) bool {
 type machineResponse struct {
 	hscl.Node
 	Internal bool `json:"internal"`
+	// CanEdit reports whether the caller may manage this machine.
+	CanEdit bool `json:"canEdit"`
 }
 
-func toMachineResponse(n hscl.Node) machineResponse {
+func toMachineResponse(n hscl.Node, caller *sqlcgen.User) machineResponse {
 	return machineResponse{
 		Node:     n,
 		Internal: isFunnelNode(n),
+		CanEdit: caller != nil &&
+			(isManager(caller.Role) || n.User != nil && ownsHeadscaleUser(caller, n.User.ID)),
 	}
 }
 
@@ -101,21 +121,28 @@ func isFunnelNode(n hscl.Node) bool {
 
 // ListMachines handles GET /api/machines. It returns every machine
 // (headscale node) for the caller's organization, applying the optional
-// q/user/status query-string filters, plus the headscale users and the ones
-// the caller may register machines for. requireHeadscaleClient guarantees
-// the client is reachable.
+// q/user/status query-string filters, plus the headscale users and the
+// members the caller may register machines for. With no client (see
+// ReadHeadscale) there are no machines or headscale users yet.
 func (h *Handlers) ListMachines(w http.ResponseWriter, r *http.Request) {
 	client, _, _ := headscaleClientFromContext(r)
+	caller, _ := auth.UserFromContext(r.Context())
 
-	nodes, err := client.ListNodes(r.Context())
+	assignable, err := h.assignableUsers(r.Context(), caller)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}
-	users, err := client.ListUsers(r.Context())
-	if err != nil {
-		h.serverError(w, r, err)
-		return
+	nodes, users := []hscl.Node{}, []hscl.User{}
+	if client != nil {
+		if nodes, err = client.ListNodes(r.Context()); err != nil {
+			h.serverError(w, r, err)
+			return
+		}
+		if users, err = client.ListUsers(r.Context()); err != nil {
+			h.serverError(w, r, err)
+			return
+		}
 	}
 
 	q := r.URL.Query().Get("q")
@@ -125,15 +152,14 @@ func (h *Handlers) ListMachines(w http.ResponseWriter, r *http.Request) {
 	filtered := make([]machineResponse, 0, len(nodes))
 	for _, n := range nodes {
 		if matchesFilters(n, q, userFilter, status) {
-			filtered = append(filtered, toMachineResponse(n))
+			filtered = append(filtered, toMachineResponse(n, caller))
 		}
 	}
 
-	caller, _ := auth.UserFromContext(r.Context())
 	h.writeJSON(w, http.StatusOK, map[string]any{
 		"machines":        filtered,
 		"users":           users,
-		"assignableUsers": assignableUsers(caller, users),
+		"assignableUsers": assignable,
 		"total":           len(nodes),
 		"canManage":       caller != nil && isManager(caller.Role),
 	})
@@ -141,21 +167,21 @@ func (h *Handlers) ListMachines(w http.ResponseWriter, r *http.Request) {
 
 // RegisterMachine handles POST /api/machines/register. It registers a
 // machine that's waiting at its interactive registration key/URL (i.e.
-// ran `tailscale up --login-server=...`) to the given user. Members may
-// only register machines for themselves. requireHeadscaleClient guarantees
+// ran `tailscale up --login-server=...`) to the member memberId. Members
+// may only register machines for themselves. ProvisionHeadscale guarantees
 // the client is reachable.
 func (h *Handlers) RegisterMachine(w http.ResponseWriter, r *http.Request) {
-	client, _, _ := headscaleClientFromContext(r)
+	client, org, _ := headscaleClientFromContext(r)
 
 	var req struct {
-		User string `json:"user"`
-		Key  string `json:"key"`
+		MemberID string `json:"memberId"`
+		Key      string `json:"key"`
 	}
 	if !h.decodeJSONBody(w, r, &req) {
 		return
 	}
-	if strings.TrimSpace(req.User) == "" {
-		h.writeError(w, http.StatusBadRequest, "user is required")
+	if strings.TrimSpace(req.MemberID) == "" {
+		h.writeError(w, http.StatusBadRequest, "memberId is required")
 		return
 	}
 	key, err := hscl.NormalizeRegistrationKey(req.Key)
@@ -163,19 +189,16 @@ func (h *Handlers) RegisterMachine(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if caller, _ := auth.UserFromContext(r.Context()); caller == nil || !isManager(caller.Role) {
-		ok, err := h.isCallerHeadscaleUserName(r, client, req.User)
-		if err != nil {
-			h.serverError(w, r, err)
-			return
-		}
-		if !ok {
-			h.writeError(w, http.StatusForbidden, "you can only register machines for yourself")
-			return
-		}
+	if caller, _ := auth.UserFromContext(r.Context()); !canAssignTo(caller, req.MemberID) {
+		h.writeError(w, http.StatusForbidden, "you can only register machines for yourself")
+		return
+	}
+	hsUser, ok := h.requireMemberHeadscaleUser(w, r, client, org, req.MemberID)
+	if !ok {
+		return
 	}
 
-	node, err := client.RegisterNode(r.Context(), req.User, key)
+	node, err := client.RegisterNode(r.Context(), hsUser.Name, key)
 	if err != nil {
 		h.serverError(w, r, err)
 		return
@@ -183,23 +206,19 @@ func (h *Handlers) RegisterMachine(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, map[string]any{"machine": node})
 }
 
-// isCallerHeadscaleUserName reports whether name is the name of the
-// caller's linked headscale user.
-func (h *Handlers) isCallerHeadscaleUserName(r *http.Request, client *hscl.Client, name string) (bool, error) {
-	caller, ok := auth.UserFromContext(r.Context())
-	if !ok {
-		return false, nil
+// requireMemberHeadscaleUser is memberHeadscaleUser, writing the error
+// response and returning false on failure.
+func (h *Handlers) requireMemberHeadscaleUser(w http.ResponseWriter, r *http.Request, client *hscl.Client, org sqlcgen.Organization, memberID string) (hscl.User, bool) {
+	hsUser, err := h.memberHeadscaleUser(r.Context(), client, org, memberID)
+	if errors.Is(err, errMemberNotFound) {
+		h.writeError(w, http.StatusNotFound, "member not found")
+		return hscl.User{}, false
 	}
-	users, err := client.ListUsers(r.Context())
 	if err != nil {
-		return false, err
+		h.serverError(w, r, err)
+		return hscl.User{}, false
 	}
-	for _, u := range users {
-		if u.Name == name {
-			return ownsHeadscaleUser(caller, u.ID), nil
-		}
-	}
-	return false, nil
+	return hsUser, true
 }
 
 // machineIDAndClient extracts the {id} path value and the caller's

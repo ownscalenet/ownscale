@@ -18,29 +18,18 @@ export interface RealMachine {
 }
 
 /**
- * ownHeadscaleUserID returns the headscale user linked to the signed-in user,
- * found by email among the users the auth-keys page offers.
+ * ownMemberID returns the signed-in user's ID, which the register-machine
+ * and create-key dialogs use to pick the owner.
  */
-export async function ownHeadscaleUserID(page: Page): Promise<string> {
-  // The session links the user to a headscale user, but not while the org's
-  // headscale restarts (a settings save), so retry for a while.
-  const deadline = Date.now() + 20_000
-  for (;;) {
-    const session = await page.request.get('/api/session')
-    const keys = await page.request.get('/api/auth-keys')
-    try {
-      if (session.ok() && keys.ok()) {
-        const email = ((await session.json()) as { user?: { Email?: string } }).user?.Email
-        const users = ((await keys.json()) as { assignableUsers?: { id: string; email: string }[] }).assignableUsers ?? []
-        const own = users.find((u) => email && u.email.toLowerCase() === email.toLowerCase())
-        if (own) return own.id
-      }
-    } finally {
-      await session.dispose()
-      await keys.dispose()
-    }
-    if (Date.now() > deadline) throw new Error('signed-in user has no headscale user')
-    await new Promise((resolve) => setTimeout(resolve, 1_000))
+export async function ownMemberID(page: Page): Promise<string> {
+  const session = await page.request.get('/api/session')
+  try {
+    if (!session.ok()) throw new Error(`GET /api/session: ${session.status()}`)
+    const id = ((await session.json()) as { user?: { ID?: string } }).user?.ID
+    if (!id) throw new Error('no signed-in user')
+    return id
+  } finally {
+    await session.dispose()
   }
 }
 
@@ -71,7 +60,7 @@ export async function registerRealMachine(page: Page, orgSubdomain: string): Pro
   }
   const createDialog = page.getByRole('dialog')
   const userSelect = createDialog.getByRole('combobox')
-  const ownerID = await ownHeadscaleUserID(page)
+  const ownerID = await ownMemberID(page)
   await userSelect.selectOption(ownerID)
   await createDialog.getByLabel('Reusable', { exact: true }).uncheck()
   await createDialog.getByLabel('Ephemeral', { exact: true }).check()

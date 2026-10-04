@@ -1,8 +1,8 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
-	"slices"
 
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
@@ -44,16 +44,40 @@ func ownsHeadscaleUser(caller *sqlcgen.User, hsUserID string) bool {
 	return caller.HeadscaleUserID.Valid && caller.HeadscaleUserID.String == hsUserID
 }
 
-// assignableUsers returns the headscale users caller may register machines
-// and create pre-auth keys for: all of them for managers, otherwise only the
-// one caller is linked to.
-func assignableUsers(caller *sqlcgen.User, users []hscl.User) []hscl.User {
-	if caller != nil && isManager(caller.Role) {
-		return users
+// assignableUser is a member of the caller's organization that the caller
+// may register machines and create pre-auth keys for. ID is the member's
+// ownscale user ID.
+type assignableUser struct {
+	ID    string `json:"id"`
+	Name  string `json:"name"`
+	Email string `json:"email"`
+}
+
+// assignableUsers returns the members of caller's organization that caller
+// may register machines and create pre-auth keys for: all of them for
+// managers, otherwise only caller. They come from ownscale, so they're
+// known before the organization's headscale first starts.
+func (h *Handlers) assignableUsers(ctx context.Context, caller *sqlcgen.User) ([]assignableUser, error) {
+	if caller == nil {
+		return []assignableUser{}, nil
 	}
-	return slices.DeleteFunc(slices.Clone(users), func(u hscl.User) bool {
-		return caller == nil || !ownsHeadscaleUser(caller, u.ID)
-	})
+	members, err := h.queries.ListUsersByOrganization(ctx, caller.OrganizationID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]assignableUser, 0, len(members))
+	for _, m := range members {
+		if canAssignTo(caller, m.ID) {
+			out = append(out, assignableUser{ID: m.ID, Name: m.Name, Email: m.Email})
+		}
+	}
+	return out, nil
+}
+
+// canAssignTo reports whether caller may register machines and create
+// pre-auth keys for the member memberID.
+func canAssignTo(caller *sqlcgen.User, memberID string) bool {
+	return caller != nil && (isManager(caller.Role) || caller.ID == memberID)
 }
 
 // requireManager writes a 403 with msg and returns false unless the caller

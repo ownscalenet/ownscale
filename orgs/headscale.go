@@ -98,10 +98,10 @@ func SocketPath(dataDir, subdomain string) string {
 	return filepath.Join(dataDir, subdomain, "headscale.sock")
 }
 
-// defaultACLPolicy is the HuJSON access control policy seeded into every
+// DefaultACLPolicy is the HuJSON access control policy seeded into every
 // new organization's headscale instance. headscale's database policy mode
 // starts with no policy; callers shouldn't have to special-case that.
-const defaultACLPolicy = `{
+const DefaultACLPolicy = `{
 	// Start a line with // to leave a comment.
 	// See https://headscale.net/stable/ref/acls/ for the full HuJSON syntax.
 	"acls": [

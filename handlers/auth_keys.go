@@ -12,24 +12,30 @@ import (
 
 // ListAuthKeys handles GET /api/auth-keys. It returns the
 // pre-authentication keys for the caller's organization's tailnet (only
-// their own for members), the headscale users for filtering, and the ones
-// the caller may create keys for.
-// requireHeadscaleClient guarantees the client is reachable.
+// their own for members), the headscale users for filtering, and the
+// members the caller may create keys for. With no client (see
+// ReadHeadscale) there are no keys or headscale users yet.
 func (h *Handlers) ListAuthKeys(w http.ResponseWriter, r *http.Request) {
 	client, _, _ := headscaleClientFromContext(r)
-
-	keys, err := client.ListPreAuthKeys(r.Context())
-	if err != nil {
-		h.serverError(w, r, err)
-		return
-	}
-	users, err := client.ListUsers(r.Context())
-	if err != nil {
-		h.serverError(w, r, err)
-		return
-	}
-
 	caller, _ := auth.UserFromContext(r.Context())
+
+	assignable, err := h.assignableUsers(r.Context(), caller)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	keys, users := []hscl.PreAuthKey{}, []hscl.User{}
+	if client != nil {
+		if keys, err = client.ListPreAuthKeys(r.Context()); err != nil {
+			h.serverError(w, r, err)
+			return
+		}
+		if users, err = client.ListUsers(r.Context()); err != nil {
+			h.serverError(w, r, err)
+			return
+		}
+	}
+
 	canManage := caller != nil && isManager(caller.Role)
 	if !canManage {
 		keys = slices.DeleteFunc(keys, func(k hscl.PreAuthKey) bool {
@@ -40,21 +46,21 @@ func (h *Handlers) ListAuthKeys(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, map[string]any{
 		"authKeys":        keys,
 		"users":           users,
-		"assignableUsers": assignableUsers(caller, users),
+		"assignableUsers": assignable,
 		"canManage":       canManage,
 	})
 }
 
 // CreateAuthKey handles POST /api/auth-keys. The request body must set
-// either userID (the owning headscale user) or a non-empty aclTags (for a
-// "tag only" key with no owning user). Members may only create untagged
-// keys for themselves. requireHeadscaleClient guarantees the client is
+// either memberId (the member owning the key) or a non-empty aclTags (for
+// a "tag only" key with no owning user). Members may only create untagged
+// keys for themselves. ProvisionHeadscale guarantees the client is
 // reachable.
 func (h *Handlers) CreateAuthKey(w http.ResponseWriter, r *http.Request) {
-	client, _, _ := headscaleClientFromContext(r)
+	client, org, _ := headscaleClientFromContext(r)
 
 	var req struct {
-		UserID     string   `json:"userId"`
+		MemberID   string   `json:"memberId"`
 		ACLTags    []string `json:"aclTags"`
 		ExpiryDays int      `json:"expiryDays"`
 		Reusable   bool     `json:"reusable"`
@@ -63,8 +69,8 @@ func (h *Handlers) CreateAuthKey(w http.ResponseWriter, r *http.Request) {
 	if !h.decodeJSONBody(w, r, &req) {
 		return
 	}
-	if strings.TrimSpace(req.UserID) == "" && len(req.ACLTags) == 0 {
-		h.writeError(w, http.StatusBadRequest, "either userId or aclTags is required")
+	if strings.TrimSpace(req.MemberID) == "" && len(req.ACLTags) == 0 {
+		h.writeError(w, http.StatusBadRequest, "either memberId or aclTags is required")
 		return
 	}
 	if req.ExpiryDays < 1 {
@@ -72,14 +78,22 @@ func (h *Handlers) CreateAuthKey(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if caller, _ := auth.UserFromContext(r.Context()); caller == nil || !isManager(caller.Role) {
-		if caller == nil || !ownsHeadscaleUser(caller, req.UserID) || len(req.ACLTags) > 0 {
+		if caller == nil || req.MemberID != caller.ID || len(req.ACLTags) > 0 {
 			h.writeError(w, http.StatusForbidden, "you can only create untagged keys for yourself")
 			return
 		}
 	}
+	var hsUserID string
+	if req.MemberID != "" {
+		hsUser, ok := h.requireMemberHeadscaleUser(w, r, client, org, req.MemberID)
+		if !ok {
+			return
+		}
+		hsUserID = hsUser.ID
+	}
 
 	key, err := client.CreatePreAuthKey(r.Context(), hscl.CreatePreAuthKeyParams{
-		UserID:     req.UserID,
+		UserID:     hsUserID,
 		Reusable:   req.Reusable,
 		Ephemeral:  req.Ephemeral,
 		Expiration: time.Now().Add(time.Duration(req.ExpiryDays) * 24 * time.Hour),

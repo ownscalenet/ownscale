@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"net/http"
 
 	"github.com/ownscalenet/ownscale/auth"
@@ -61,21 +60,7 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if client, _, notConfigured, err := h.resolveHeadscaleClient(r); err == nil && !notConfigured {
-		claimed := claimedHeadscaleUserIDs(users)
-		for i, u := range users {
-			if u.HeadscaleUserID.Valid {
-				continue
-			}
-			hsID, err := h.ensureHeadscaleUser(r.Context(), org.Subdomain, client, u, claimed)
-			if err != nil {
-				// Best-effort: e.g. headscale rejected the create call, or
-				// a unique-constraint conflict racing another request.
-				// Leave this member unlinked and move on.
-				continue
-			}
-			users[i].HeadscaleUserID = sql.NullString{String: hsID, Valid: true}
-			claimed[hsID] = true
-		}
+		h.linkMembers(r.Context(), org.Subdomain, client, users)
 	}
 
 	members := make([]member, 0, len(users))

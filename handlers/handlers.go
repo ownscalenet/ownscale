@@ -24,8 +24,14 @@ import (
 
 // headscaleClients returns an organization's headscale client. Implemented
 // by *orgs.Service.
+// headscaleClients reaches organizations' headscale instances. Implemented
+// by *orgs.Service.
 type headscaleClients interface {
+	// Client returns a running instance's client, or orgs.ErrNotProvisioned
+	// for an organization whose headscale never started.
 	Client(subdomain string) (*hscl.Client, error)
+	// Ensure returns the client, starting the instance first if needed.
+	Ensure(ctx context.Context, subdomain string) (*hscl.Client, error)
 }
 
 type Handlers struct {
@@ -88,7 +94,7 @@ func New(
 		return nil, err
 	}
 
-	return &Handlers{
+	h := &Handlers{
 		queries:         queries,
 		baseDomain:      baseDomain,
 		oidc:            oidc,
@@ -103,7 +109,9 @@ func New(
 			Google:    authCfg.Google.Enabled(),
 			Microsoft: authCfg.Microsoft.Enabled(),
 		},
-	}, nil
+	}
+	orgSvc.OnStart(h.linkAllMembers)
+	return h, nil
 }
 
 // Close releases resources held by Handlers across the process's

@@ -49,10 +49,11 @@ export function validateSession(session: Session, identity: Identity): boolean {
   if (session.organization.Domain !== `${identity.org}.${baseDomain}`) {
     throw new Error(`${identity.name} must belong to ${identity.org}.${baseDomain}; unexpected registration assignment. Do not reassign or delete existing users.`)
   }
-  // Anything but active means the org's headscale isn't serving yet: it's
-  // restarting to apply saved settings, the server is booting, or it failed.
-  if (!['active', 'update_pending', 'starting', 'unavailable'].includes(session.organization.Status)) throw new Error(`${identity.org}: unknown organization status`)
-  return session.organization.Status === 'active'
+  // Active, or unprovisioned until its first use, is ready. Anything else
+  // means the org's headscale isn't serving yet: it's restarting to apply
+  // saved settings, the server is booting, or it failed.
+  if (!['active', 'unprovisioned', 'update_pending', 'starting', 'unavailable'].includes(session.organization.Status)) throw new Error(`${identity.org}: unknown organization status`)
+  return ['active', 'unprovisioned'].includes(session.organization.Status)
 }
 
 // stepTimeoutMs bounds each UI step of saving a policy. Saves take up to
@@ -187,7 +188,7 @@ export class OrgUI {
       const { authKey } = await response.json()
       if (!authKey?.id) throw new Error('Missing key ownership ID')
       await recovery.update(resource, { id: String(authKey.id) })
-      if (authKey.reusable || !authKey.ephemeral || String(authKey.user?.id) !== this.ownerID) throw new Error('Wrong key properties')
+      if (authKey.reusable || !authKey.ephemeral || authKey.user?.email !== this.identity.email) throw new Error('Wrong key properties')
       await dialog.getByText('Pre-auth key created', { exact: true }).waitFor()
       const key = await dialog.locator('pre code').first().textContent()
       if (!key || key !== authKey.key) throw new Error('One-time key unavailable')

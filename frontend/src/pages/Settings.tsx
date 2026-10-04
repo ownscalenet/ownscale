@@ -9,7 +9,7 @@ import {
   errorMessage,
   isNotConfigured,
   listAuthKeys,
-  type HeadscaleUser,
+  type AssignableUser,
   type PreAuthKey,
 } from '../api'
 import { usePageTitle } from '../hooks/usePageTitle'
@@ -299,17 +299,17 @@ function CreateAuthKeyDialog({
   onCreated,
 }: {
   onClose: () => void
-  users: HeadscaleUser[]
+  users: AssignableUser[]
   canManage: boolean
   onCreated: () => void
 }) {
   const [tagOnly, setTagOnly] = useState(false)
-  const [userId, setUserId] = useState('')
+  const [memberId, setMemberId] = useState('')
   const [tagsInput, setTagsInput] = useState('')
   const [expiryDays, setExpiryDays] = useState(90)
   const [reusable, setReusable] = useState(false)
   const [ephemeral, setEphemeral] = useState(false)
-  const { organization } = useAuth()
+  const { organization, refresh } = useAuth()
   const loginServer = `${window.location.protocol}//${organization?.Domain}`
   const [validationError, setValidationError] = useState<string | null>(null)
   const [createdKey, setCreatedKey] = useState<string | null>(null)
@@ -318,6 +318,8 @@ function CreateAuthKeyDialog({
     onSuccess: (res) => {
       setCreatedKey(res.authKey.key)
       onCreated()
+      // The first key starts the org's headscale, changing its status.
+      void refresh()
     },
   })
   const busy = create.isPending
@@ -332,7 +334,7 @@ function CreateAuthKeyDialog({
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setValidationError(null)
-    if (!tagOnly && !userId) {
+    if (!tagOnly && !memberId) {
       setValidationError('Choose a user, or toggle "Tag only" and provide ACL tags.')
       return
     }
@@ -341,7 +343,7 @@ function CreateAuthKeyDialog({
       return
     }
     create.mutate({
-      userId: tagOnly ? undefined : userId,
+      memberId: tagOnly ? undefined : memberId,
       aclTags: parsedTags,
       expiryDays,
       reusable,
@@ -401,14 +403,14 @@ function CreateAuthKeyDialog({
                 <legend className="fieldset-legend">User</legend>
                 <select
                   className="select select-bordered w-full"
-                  value={userId}
-                  onChange={(e) => setUserId(e.target.value)}
+                  value={memberId}
+                  onChange={(e) => setMemberId(e.target.value)}
                   required={!tagOnly}
                 >
                   <option value="">Select a user…</option>
                   {users.map((u) => (
                     <option key={u.id} value={u.id}>
-                      {u.name}
+                      {u.name || u.email}
                     </option>
                   ))}
                 </select>

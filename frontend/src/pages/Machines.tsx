@@ -18,7 +18,7 @@ import {
   renameMachine,
   setMachineRoutes,
   setMachineTags,
-  type HeadscaleUser,
+  type AssignableUser,
   type Machine,
 } from '../api'
 import { ErrorAlert, PageHeader } from '../components/ui'
@@ -255,7 +255,7 @@ export default function Machines() {
                           key={m.id}
                           machine={m}
                           canManage={canManage}
-                          canEdit={canManage || assignableUsers.some((u) => u.id === m.user?.id)}
+                          canEdit={m.canEdit}
                           onChange={reload}
                           onError={setActionError}
                           onOpen={(kind) => setDialog({ kind, machine: m })}
@@ -307,21 +307,25 @@ function RegisterMachineDialog({
   onClose,
   onDone,
 }: {
-  users: HeadscaleUser[]
+  users: AssignableUser[]
   onClose: () => void
   onDone: () => void
 }) {
-  const [userId, setUserId] = useState('')
+  const [memberId, setMemberId] = useState('')
   const [key, setKey] = useState('')
   const [validation, setValidation] = useState<string | null>(null)
-  const { busy, error, run } = useDialogAction(onClose, onDone)
-  const { organization } = useAuth()
+  const { organization, refresh } = useAuth()
+  // The first registration starts the org's headscale, changing its status.
+  const { busy, error, run } = useDialogAction(onClose, () => {
+    onDone()
+    void refresh()
+  })
   const loginServer = `${window.location.protocol}//${organization?.Domain}`
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
     setValidation(null)
-    if (!userId) {
+    if (!memberId) {
       setValidation('Choose a user to own this machine.')
       return
     }
@@ -329,7 +333,7 @@ function RegisterMachineDialog({
       setValidation('Paste the registration key or URL shown by `tailscale up`.')
       return
     }
-    run(() => registerMachine(userId, key.trim()))
+    run(() => registerMachine(memberId, key.trim()))
   }
 
   return (
@@ -362,16 +366,16 @@ function RegisterMachineDialog({
           <select
             id="register-machine-user"
             className="select select-bordered w-full"
-            value={userId}
-            onChange={(e) => setUserId(e.target.value)}
+            value={memberId}
+            onChange={(e) => setMemberId(e.target.value)}
             required
           >
             <option value="" disabled>
               Select a user
             </option>
             {users.map((u) => (
-              <option key={u.id} value={u.name}>
-                {u.name}
+              <option key={u.id} value={u.id}>
+                {u.name || u.email}
               </option>
             ))}
           </select>

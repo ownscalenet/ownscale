@@ -23,16 +23,16 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	mux.HandleFunc("GET /api/session", requireAuthAPI(h.Session))
 	mux.HandleFunc("POST /api/logout", requireAuthAPI(h.APILogout))
 
-	mux.HandleFunc("GET /api/machines", requireAuthAPI(h.RequireHeadscaleClient(h.ListMachines)))
-	mux.HandleFunc("POST /api/machines/register", requireAuthAPI(h.RequireHeadscaleClient(h.RegisterMachine)))
+	mux.HandleFunc("GET /api/machines", requireAuthAPI(h.ReadHeadscale(h.ListMachines)))
+	mux.HandleFunc("POST /api/machines/register", requireAuthAPI(h.ProvisionHeadscale(h.RegisterMachine)))
 	mux.HandleFunc("POST /api/machines/{id}/rename", requireAuthAPI(h.RequireHeadscaleClient(h.RenameMachine)))
 	mux.HandleFunc("POST /api/machines/{id}/tags", requireAuthAPI(h.RequireHeadscaleClient(h.SetMachineTags)))
 	mux.HandleFunc("POST /api/machines/{id}/routes", requireAuthAPI(h.RequireHeadscaleClient(h.SetMachineRoutes)))
 	mux.HandleFunc("POST /api/machines/{id}/expire", requireAuthAPI(h.RequireHeadscaleClient(h.ExpireMachine)))
 	mux.HandleFunc("DELETE /api/machines/{id}", requireAuthAPI(h.RequireHeadscaleClient(h.DeleteMachine)))
 
-	mux.HandleFunc("GET /api/auth-keys", requireAuthAPI(h.RequireHeadscaleClient(h.ListAuthKeys)))
-	mux.HandleFunc("POST /api/auth-keys", requireAuthAPI(h.RequireHeadscaleClient(h.CreateAuthKey)))
+	mux.HandleFunc("GET /api/auth-keys", requireAuthAPI(h.ReadHeadscale(h.ListAuthKeys)))
+	mux.HandleFunc("POST /api/auth-keys", requireAuthAPI(h.ProvisionHeadscale(h.CreateAuthKey)))
 	mux.HandleFunc("POST /api/auth-keys/{id}/expire", requireAuthAPI(h.RequireHeadscaleClient(h.ExpireAuthKey)))
 	mux.HandleFunc("DELETE /api/auth-keys/{id}", requireAuthAPI(h.RequireHeadscaleClient(h.DeleteAuthKey)))
 
@@ -58,8 +58,8 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	mux.HandleFunc("POST /api/passkeys/register/finish", requireAuthAPI(h.PasskeyAddFinish))
 	mux.HandleFunc("DELETE /api/passkeys/{id}", requireAuthAPI(h.DeletePasskey))
 
-	mux.HandleFunc("GET /api/access-control", requireAuthAPI(h.RequireHeadscaleClient(h.GetAccessControlPolicy)))
-	mux.HandleFunc("PUT /api/access-control", requireAuthAPI(h.RequireHeadscaleClient(h.UpdateAccessControlPolicy)))
+	mux.HandleFunc("GET /api/access-control", requireAuthAPI(h.ReadHeadscale(h.GetAccessControlPolicy)))
+	mux.HandleFunc("PUT /api/access-control", requireAuthAPI(h.ProvisionHeadscale(h.UpdateAccessControlPolicy)))
 	mux.HandleFunc("POST /api/hujson/format", requireAuthAPI(h.FormatHuJSON))
 
 	mux.HandleFunc("GET /api/auth-restrictions", requireAuthAPI(h.GetAuthRestrictions))
@@ -68,7 +68,7 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	mux.HandleFunc("GET /api/dns", requireAuthAPI(h.GetDNSSettings))
 	mux.HandleFunc("PUT /api/dns", requireAuthAPI(h.UpdateDNSSettings))
 
-	mux.HandleFunc("GET /api/funnel", requireAuthAPI(h.RequireHeadscaleClient(h.ListFunnelRoutes)))
+	mux.HandleFunc("GET /api/funnel", requireAuthAPI(h.ReadHeadscale(h.ListFunnelRoutes)))
 	mux.HandleFunc("POST /api/funnel", requireAuthAPI(h.RequireHeadscaleClient(h.CreateFunnelRoute)))
 	mux.HandleFunc("DELETE /api/funnel/{id}", requireAuthAPI(h.DeleteFunnelRoute))
 

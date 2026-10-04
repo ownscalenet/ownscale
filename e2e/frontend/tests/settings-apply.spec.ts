@@ -191,10 +191,12 @@ test('login restrictions are enforced by headscale', async ({ page, account }) =
     const body = await response.json() as { users: { name: string }[] }
     return body.users.map(u => u.name).sort()
   }
-  const usersBefore = await headscaleUsers()
 
-  // Baseline: the current allowlist admits this user.
+  // Baseline: the current allowlist admits this user. This login also
+  // starts the org's headscale if nothing used it yet, which links its
+  // members to headscale users, so the users are counted after it.
   await expect.poll(() => registerLoginStatus(page, account.org), converge).toBe(410)
+  const usersBefore = await headscaleUsers()
 
   const save = async (content: string, marker: string) => {
     await page.goto('/auth-restrictions')

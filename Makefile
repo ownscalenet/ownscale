@@ -160,6 +160,8 @@ purge:
 	sudo find data -mindepth 1 -maxdepth 1 ! -name local-ca -exec rm -rf {} +
 	# The connectivity suite's recovery records describe orgs that are now gone.
 	rm -rf e2e/.connectivity-private/recovery
+	# Guards left by e2e runs that were killed before releasing them.
+	rm -f e2e/.*-run.lock
 
 # ghetto script for trusting caddy's self-signed certificates.
 # To manually trust the certificates in firefox:

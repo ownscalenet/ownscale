@@ -3,7 +3,9 @@ package handlers
 import (
 	"context"
 	"database/sql"
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
@@ -130,6 +132,73 @@ func (h *Handlers) ensureHeadscaleUser(
 	}
 	h.setOIDCIdentity(ctx, subdomain, created.ID, user.ID)
 	return created.ID, nil
+}
+
+// linkMembers links each of members, the members of subdomain's
+// organization, to a headscale user if it has none, updating members in
+// place. It's best-effort: a member that fails to link, e.g. as headscale
+// rejected the create call or another request linked it first, stays
+// unlinked.
+func (h *Handlers) linkMembers(ctx context.Context, subdomain string, client *hscl.Client, members []sqlcgen.User) {
+	claimed := claimedHeadscaleUserIDs(members)
+	for i, m := range members {
+		if m.HeadscaleUserID.Valid {
+			continue
+		}
+		hsID, err := h.ensureHeadscaleUser(ctx, subdomain, client, m, claimed)
+		if err != nil {
+			h.logger.Warn("link member to headscale user", "subdomain", subdomain, "user_id", m.ID, "error", err)
+			continue
+		}
+		members[i].HeadscaleUserID = sql.NullString{String: hsID, Valid: true}
+		claimed[hsID] = true
+	}
+}
+
+// linkAllMembers links every member of subdomain's organization to a
+// headscale user. It runs when the organization's headscale starts (see
+// orgs.Service.OnStart), so a member's first OIDC login through headscale
+// finds their headscale user instead of creating another one.
+func (h *Handlers) linkAllMembers(ctx context.Context, subdomain string, client *hscl.Client) {
+	org, err := h.queries.GetOrganizationBySubdomain(ctx, subdomain)
+	if err != nil {
+		h.logger.Warn("link members on start: get organization", "subdomain", subdomain, "error", err)
+		return
+	}
+	members, err := h.queries.ListUsersByOrganization(ctx, org.ID)
+	if err != nil {
+		h.logger.Warn("link members on start: list members", "subdomain", subdomain, "error", err)
+		return
+	}
+	h.linkMembers(ctx, subdomain, client, members)
+}
+
+// errMemberNotFound means a member ID doesn't belong to the organization.
+var errMemberNotFound = errors.New("member not found")
+
+// memberHeadscaleUser returns the headscale user of the member memberID of
+// org, linking one first if the member has none (see ensureHeadscaleUser).
+func (h *Handlers) memberHeadscaleUser(ctx context.Context, client *hscl.Client, org sqlcgen.Organization, memberID string) (hscl.User, error) {
+	members, err := h.queries.ListUsersByOrganization(ctx, org.ID)
+	if err != nil {
+		return hscl.User{}, err
+	}
+	i := slices.IndexFunc(members, func(m sqlcgen.User) bool { return m.ID == memberID })
+	if i < 0 {
+		return hscl.User{}, errMemberNotFound
+	}
+	hsID, err := h.ensureHeadscaleUser(ctx, org.Subdomain, client, members[i], claimedHeadscaleUserIDs(members))
+	if err != nil {
+		return hscl.User{}, err
+	}
+	users, err := client.ListUsers(ctx)
+	if err != nil {
+		return hscl.User{}, err
+	}
+	if j := slices.IndexFunc(users, func(u hscl.User) bool { return u.ID == hsID }); j >= 0 {
+		return users[j], nil
+	}
+	return hscl.User{}, fmt.Errorf("headscale user %s of member %s not found", hsID, memberID)
 }
 
 // setOIDCIdentity is orgs.Service.SetOIDCIdentity, best-effort: a failure

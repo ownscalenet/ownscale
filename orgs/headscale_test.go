@@ -159,15 +159,7 @@ func TestEnsureNoiseKey(t *testing.T) {
 // clients, which never re-fetch the key, can still reach it.
 func TestNoiseKeySurvivesLostFile(t *testing.T) {
 	svc := newRealService(t)
-	if _, err := svc.Create(t.Context(), "acme"); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	t.Cleanup(func() {
-		if inst, ok := svc.running("acme"); ok {
-			inst.cancel()
-			<-inst.exited
-		}
-	})
+	createStarted(t, svc, "acme")
 	first, _ := svc.running("acme")
 	want := first.app.NoisePublicKey()
 

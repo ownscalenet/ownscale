@@ -2,11 +2,13 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"net/http"
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/hscl"
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 type orgContextKey int
@@ -49,23 +51,64 @@ func (h *Handlers) loggerFromContext(ctx context.Context) *slog.Logger {
 }
 
 // RequireHeadscaleClient wraps next so it only runs once the caller's
-// organization's headscale client is resolved, short-circuiting with
-// 409+notConfigured if the org isn't active or headscale isn't reachable.
+// organization's headscale client is resolved. It answers 404 for an
+// organization whose headscale never started, as nothing next could act on
+// exists yet, and 409+notConfigured if headscale isn't running.
 func (h *Handlers) RequireHeadscaleClient(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		client, org, notConfigured, err := h.resolveHeadscaleClient(r)
+	return h.withHeadscale(next, func(w http.ResponseWriter, r *http.Request, _ sqlcgen.Organization) {
+		h.writeError(w, http.StatusNotFound, "not found")
+	})
+}
+
+// ReadHeadscale is RequireHeadscaleClient, except that for an organization
+// whose headscale never started it runs next with a nil client, so next
+// answers with empty results.
+func (h *Handlers) ReadHeadscale(next http.HandlerFunc) http.HandlerFunc {
+	return h.withHeadscale(next, func(w http.ResponseWriter, r *http.Request, org sqlcgen.Organization) {
+		next(w, withHeadscaleContext(r, nil, org))
+	})
+}
+
+// ProvisionHeadscale is RequireHeadscaleClient for operations that need
+// headscale: it starts the organization's headscale first if it never
+// started, then runs next.
+func (h *Handlers) ProvisionHeadscale(next http.HandlerFunc) http.HandlerFunc {
+	return h.withHeadscale(next, func(w http.ResponseWriter, r *http.Request, org sqlcgen.Organization) {
+		client, err := h.hs.Ensure(r.Context(), org.Subdomain)
 		if err != nil {
-			h.serverError(w, r, err)
+			h.loggerFromContext(r.Context()).Warn("start headscale", "error", err)
+			h.writeError(w, http.StatusServiceUnavailable, "headscale is unavailable right now, try again in a moment")
 			return
 		}
+		next(w, withHeadscaleContext(r, client, org))
+	})
+}
+
+// withHeadscale runs next with the caller's organization's headscale
+// client in the request context. An organization whose headscale never
+// started is handed to unprovisioned instead; one whose headscale isn't
+// running gets 409+notConfigured.
+func (h *Handlers) withHeadscale(next http.HandlerFunc, unprovisioned func(w http.ResponseWriter, r *http.Request, org sqlcgen.Organization)) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		client, org, err := h.resolveHeadscale(r)
 		if org.Subdomain != "" {
 			r = r.WithContext(h.withOrgLogger(r.Context(), org.Subdomain))
 		}
-		if notConfigured {
+		switch {
+		case errors.Is(err, orgs.ErrNotProvisioned):
+			unprovisioned(w, r, org)
+		case errors.Is(err, errNoHeadscale):
 			h.writeJSON(w, http.StatusConflict, map[string]bool{"notConfigured": true})
-			return
+		case err != nil:
+			h.serverError(w, r, err)
+		default:
+			next(w, withHeadscaleContext(r, client, org))
 		}
-		ctx := context.WithValue(r.Context(), headscaleClientContextKey, headscaleContext{client: client, org: org})
-		next(w, r.WithContext(ctx))
 	}
+}
+
+// withHeadscaleContext returns r carrying client and org for
+// headscaleClientFromContext.
+func withHeadscaleContext(r *http.Request, client *hscl.Client, org sqlcgen.Organization) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), headscaleClientContextKey, headscaleContext{client: client, org: org}))
 }

@@ -59,8 +59,8 @@ func (h *Handlers) toFunnelRouteResponse(route sqlcgen.FunnelRoute, subdomain st
 	return resp
 }
 
-// ListFunnelRoutes handles GET /api/funnel. RequireHeadscaleClient
-// guarantees the org's headscale client is resolved.
+// ListFunnelRoutes handles GET /api/funnel. With no client (see
+// ReadHeadscale) there are no machines to describe the routes' targets.
 func (h *Handlers) ListFunnelRoutes(w http.ResponseWriter, r *http.Request) {
 	caller, ok := auth.UserFromContext(r.Context())
 	if !ok {
@@ -75,10 +75,12 @@ func (h *Handlers) ListFunnelRoutes(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nodes, err := client.ListNodes(r.Context())
-	if err != nil {
-		h.serverError(w, r, err)
-		return
+	var nodes []hscl.Node
+	if client != nil {
+		if nodes, err = client.ListNodes(r.Context()); err != nil {
+			h.serverError(w, r, err)
+			return
+		}
 	}
 	nodesByID := make(map[string]hscl.Node, len(nodes))
 	for _, n := range nodes {

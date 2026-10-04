@@ -26,10 +26,19 @@ export interface Organization {
   ID: string
   Domain: string
   CreatedAt: string
-  // The state of the org's headscale: 'update_pending' while a settings
-  // save restarts it, 'starting' while the server boots, 'unavailable' when
-  // it failed to start or stopped.
-  Status: 'active' | 'update_pending' | 'starting' | 'unavailable'
+  // The state of the org's headscale: 'unprovisioned' until its first use
+  // (registering a machine, creating a key, saving the ACL policy),
+  // 'update_pending' while a settings save restarts it, 'starting' while the
+  // server boots, 'unavailable' when it failed to start or stopped.
+  Status: 'active' | 'unprovisioned' | 'update_pending' | 'starting' | 'unavailable'
+}
+
+// AssignableUser is an organization member the caller may register machines
+// and create keys for. id is the member's ownscale user ID.
+export interface AssignableUser {
+  id: string
+  name: string
+  email: string
 }
 
 export interface HeadscaleUser {
@@ -60,6 +69,8 @@ export interface Machine {
   availableRoutes: string[] | null
   subnetRoutes: string[] | null
   internal: boolean
+  // canEdit is whether the caller may manage this machine.
+  canEdit: boolean
 }
 
 export class ApiError extends Error {
@@ -128,8 +139,8 @@ export function logout() {
 export interface MachinesResponse {
   machines: Machine[]
   users: HeadscaleUser[]
-  // The users the caller may register machines for.
-  assignableUsers: HeadscaleUser[]
+  // The members the caller may register machines for.
+  assignableUsers: AssignableUser[]
   total: number
   // False for members, who may only manage their own machines.
   canManage: boolean
@@ -147,10 +158,10 @@ export function listMachines(
   return request<MachinesResponse>(`/api/machines${suffix}`, { signal })
 }
 
-export function registerMachine(user: string, key: string) {
+export function registerMachine(memberId: string, key: string) {
   return request<{ machine: Machine }>('/api/machines/register', {
     method: 'POST',
-    body: JSON.stringify({ user, key }),
+    body: JSON.stringify({ memberId, key }),
   })
 }
 
@@ -351,8 +362,8 @@ export interface AuthKeysResponse {
   // Members only get their own keys.
   authKeys: PreAuthKey[]
   users: HeadscaleUser[]
-  // The users the caller may create keys for.
-  assignableUsers: HeadscaleUser[]
+  // The members the caller may create keys for.
+  assignableUsers: AssignableUser[]
   canManage: boolean
 }
 
@@ -361,7 +372,7 @@ export function listAuthKeys(signal?: AbortSignal) {
 }
 
 export interface CreateAuthKeyParams {
-  userId?: string
+  memberId?: string
   aclTags?: string[]
   expiryDays: number
   reusable: boolean

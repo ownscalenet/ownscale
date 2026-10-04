@@ -4,14 +4,15 @@ import (
 	"net/http"
 
 	"github.com/ownscalenet/ownscale/auth"
+	"github.com/ownscalenet/ownscale/orgs"
 	"github.com/tailscale/hujson"
 )
 
 // GetAccessControlPolicy handles GET /api/access-control. It returns the
 // caller's organization's headscale ACL policy (HuJSON), plus whether the
 // caller can edit it (owner/admin, mirroring ListMembers' canManage).
-// RequireHeadscaleClient guarantees the org's headscale client is
-// resolved.
+// With no client (see ReadHeadscale) it returns the default policy the
+// organization's headscale will start with.
 func (h *Handlers) GetAccessControlPolicy(w http.ResponseWriter, r *http.Request) {
 	caller, ok := auth.UserFromContext(r.Context())
 	if !ok {
@@ -20,10 +21,13 @@ func (h *Handlers) GetAccessControlPolicy(w http.ResponseWriter, r *http.Request
 	}
 	client, _, _ := headscaleClientFromContext(r)
 
-	content, err := client.GetPolicy(r.Context())
-	if err != nil {
-		h.serverError(w, r, err)
-		return
+	content := orgs.DefaultACLPolicy
+	if client != nil {
+		var err error
+		if content, err = client.GetPolicy(r.Context()); err != nil {
+			h.serverError(w, r, err)
+			return
+		}
 	}
 	// orgs.Service seeds a default policy when it starts an organization's
 	// headscale, so an empty response here just means headscale genuinely
@@ -39,8 +43,8 @@ func (h *Handlers) GetAccessControlPolicy(w http.ResponseWriter, r *http.Request
 // before anything is sent to headscale, so a malformed policy is rejected
 // with a 400 and a parser error message; headscale itself may still reject
 // a syntactically valid policy (e.g. bad tag/user references), which is
-// also surfaced as a 400 rather than a 500. RequireHeadscaleClient
-// guarantees the org's headscale client is resolved.
+// also surfaced as a 400 rather than a 500. ProvisionHeadscale guarantees
+// the org's headscale client is resolved.
 func (h *Handlers) UpdateAccessControlPolicy(w http.ResponseWriter, r *http.Request) {
 	caller, ok := auth.UserFromContext(r.Context())
 	if !ok {

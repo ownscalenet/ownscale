@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net"
 	"net/http"
+	"os"
 	"slices"
 	"strconv"
 	"sync"
@@ -66,6 +67,11 @@ type Service struct {
 	restarts utils.Map[string, *atomic.Int32]
 	// starting is set while Start brings up existing organizations.
 	starting atomic.Bool
+	// startFailures holds when Ensure last failed to start each org, so
+	// device traffic can't retry a broken org on every request.
+	startFailures utils.Map[string, time.Time]
+	// onStart, if set, runs once Ensure started an org's headscale.
+	onStart func(ctx context.Context, subdomain string, client *hscl.Client)
 
 	// startMu serializes headscale startup (headscale's DERP map shuffling
 	// shares one non-thread-safe rand.Rand across instances). This is not
@@ -132,6 +138,13 @@ func NewService(queries *db.TxQueries, baseDomain, issuer string, derpCfg config
 	}
 }
 
+// OnStart sets f to run each time Ensure starts an organization's
+// headscale, before Ensure returns. It must be set before the Service is
+// used.
+func (s *Service) OnStart(f func(ctx context.Context, subdomain string, client *hscl.Client)) {
+	s.onStart = f
+}
+
 // ForOrg instantiates an OrgService for the given organization.
 func (s *Service) ForOrg(org sqlcgen.Organization) *OrgService {
 	sub := org.Subdomain
@@ -164,8 +177,19 @@ func (s *Service) running(subdomain string) (*instance, bool) {
 	}
 }
 
+// provisioned reports whether subdomain's headscale was ever started: in
+// this process, or before it, which left headscale's database behind.
+func (s *Service) provisioned(subdomain string) bool {
+	if _, ok := s.orgs.Load(subdomain); ok {
+		return true
+	}
+	_, err := os.Stat(sqlitePath(s.dataDir, subdomain))
+	return err == nil
+}
+
 // Status reports the state of subdomain's headscale instance: one of
-// StatusUpdatePending, StatusActive, StatusStarting or StatusUnavailable.
+// StatusUpdatePending, StatusActive, StatusUnprovisioned, StatusStarting or
+// StatusUnavailable.
 func (s *Service) Status(subdomain string) string {
 	if n, ok := s.restarts.Load(subdomain); ok && n.Load() > 0 {
 		return StatusUpdatePending
@@ -173,31 +197,116 @@ func (s *Service) Status(subdomain string) string {
 	if _, ok := s.running(subdomain); ok {
 		return StatusActive
 	}
+	if !s.provisioned(subdomain) {
+		return StatusUnprovisioned
+	}
 	if s.starting.Load() {
 		return StatusStarting
 	}
 	return StatusUnavailable
 }
 
-// Client returns a client for subdomain's running headscale instance.
+// Client returns a client for subdomain's running headscale instance. It
+// returns ErrNotProvisioned if the instance never started.
 func (s *Service) Client(subdomain string) (*hscl.Client, error) {
 	inst, ok := s.running(subdomain)
 	if !ok {
+		if !s.provisioned(subdomain) {
+			return nil, ErrNotProvisioned
+		}
 		return nil, ErrNotRunning
 	}
 	return inst.client, nil
 }
 
-// ErrNotRunning is returned for an organization without a running
-// headscale instance.
-var ErrNotRunning = errors.New("organization not running")
+var (
+	// ErrNotRunning is returned for an organization without a running
+	// headscale instance.
+	ErrNotRunning = errors.New("organization not running")
+	// ErrNotProvisioned is returned for an organization whose headscale
+	// instance never started.
+	ErrNotProvisioned = errors.New("organization not provisioned")
+)
 
-// DialOrg connects to subdomain's headscale instance. The connection is
+// startRetryDelay is how long Ensure fails fast after it failed to start
+// an organization.
+const startRetryDelay = 30 * time.Second
+
+// Ensure returns a client for subdomain's headscale instance, starting it
+// first if it isn't running, which provisions an organization that never
+// ran. For startRetryDelay after a failed start it returns ErrNotRunning
+// without trying again. An unknown subdomain gets ErrNotRunning.
+func (s *Service) Ensure(ctx context.Context, subdomain string) (_ *hscl.Client, err error) {
+	defer derrors.Wrap(&err, "s.Ensure(%q)", subdomain)
+
+	if inst, ok := s.running(subdomain); ok {
+		return inst.client, nil
+	}
+	s.startMu.Lock()
+	defer s.startMu.Unlock()
+	// Another caller may have started it while this one waited.
+	if inst, ok := s.running(subdomain); ok {
+		return inst.client, nil
+	}
+	if failed, ok := s.startFailures.Load(subdomain); ok && time.Since(failed) < startRetryDelay {
+		return nil, ErrNotRunning
+	}
+
+	org, hsCfg, err := s.loadConfig(ctx, subdomain)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotRunning
+	}
+	if err != nil {
+		return nil, err
+	}
+	if err := s.startLocked(ctx, org.ID, subdomain, hsCfg); err != nil {
+		s.startFailures.Store(subdomain, time.Now())
+		return nil, err
+	}
+	s.startFailures.Delete(subdomain)
+	inst, ok := s.running(subdomain)
+	if !ok {
+		return nil, ErrNotRunning // createFn built no instance (tests)
+	}
+	if s.onStart != nil {
+		s.onStart(ctx, subdomain, inst.client)
+	}
+	return inst.client, nil
+}
+
+// loadConfig returns subdomain's organization and its stored headscale
+// config.
+func (s *Service) loadConfig(ctx context.Context, subdomain string) (sqlcgen.Organization, *HeadscaleConfig, error) {
+	org, err := s.queries.GetOrganizationBySubdomain(ctx, subdomain)
+	if err != nil {
+		return sqlcgen.Organization{}, nil, err
+	}
+	cfgRow, err := s.queries.GetOrgConfig(ctx, sqlcgen.GetOrgConfigParams{
+		OrganizationID: org.ID,
+		Path:           HeadscaleConfigKey,
+	})
+	if err != nil {
+		return sqlcgen.Organization{}, nil, err
+	}
+	hsCfg, err := parseHeadscaleConfig(cfgRow.Content)
+	if err != nil {
+		return sqlcgen.Organization{}, nil, err
+	}
+	return org, hsCfg, nil
+}
+
+// DialOrg connects to subdomain's headscale instance, starting it first
+// (see Ensure) if it never started in this process. The connection is
 // closed when the instance is restarted.
 func (s *Service) DialOrg(ctx context.Context, subdomain string) (net.Conn, error) {
 	rt, ok := s.orgs.Load(subdomain)
 	if !ok {
-		return nil, ErrNotRunning
+		if _, err := s.Ensure(ctx, subdomain); err != nil {
+			return nil, fmt.Errorf("%w: %w", ErrNotRunning, err)
+		}
+		if rt, ok = s.orgs.Load(subdomain); !ok {
+			return nil, ErrNotRunning
+		}
 	}
 	conn, err := (&net.Dialer{}).DialContext(ctx, "tcp", fmt.Sprintf("127.0.0.1:%d", rt.port))
 	if err != nil {
@@ -294,8 +403,8 @@ func (s *Service) NextSubdomain(ctx context.Context) (_ string, err error) {
 	return "", errors.New("no unused subdomain found")
 }
 
-// Create provisions a new active organization with the given subdomain and
-// starts its headscale instance.
+// Create stores a new organization with the given subdomain. Its headscale
+// instance starts later, on first use (see Ensure).
 func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organization, err error) {
 	defer derrors.Wrap(&err, "s.Create(%q)", subdomain)
 
@@ -329,19 +438,7 @@ func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organ
 		return sqlcgen.Organization{}, err
 	}
 
-	// Insert first: the unique subdomain constraint must reject a duplicate
-	// before its headscale would replace the running one.
-	org, err := s.insertProvisioned(ctx, subdomain, clientID, string(clientSecretHash), string(redirectURIsJSON), hsConfig)
-	if err != nil {
-		return sqlcgen.Organization{}, err
-	}
-	if err := s.startHeadscale(ctx, org.ID, subdomain, hsCfg); err != nil {
-		if delErr := s.queries.DeleteOrganization(context.WithoutCancel(ctx), org.ID); delErr != nil {
-			err = errors.Join(err, fmt.Errorf("delete organization: %w", delErr))
-		}
-		return sqlcgen.Organization{}, err
-	}
-	return org, nil
+	return s.insertProvisioned(ctx, subdomain, clientID, string(clientSecretHash), string(redirectURIsJSON), hsConfig)
 }
 
 func (s *Service) insertProvisioned(ctx context.Context, subdomain, clientID, clientSecretHash, redirectURIsJSON, hsConfig string) (_ sqlcgen.Organization, err error) {
@@ -381,9 +478,9 @@ func (s *Service) insertProvisioned(ctx context.Context, subdomain, clientID, cl
 	return org, nil
 }
 
-// Start starts the headscale instances of existing organizations. It
-// returns once all of them have started. Failure to start one org is logged,
-// not returned.
+// Start starts the headscale instances of existing provisioned
+// organizations. It returns once all of them have started. Failure to start
+// one org is logged, not returned.
 func (s *Service) Start(ctx context.Context) (err error) {
 	defer derrors.Wrap(&err, "s.Start()")
 
@@ -395,6 +492,9 @@ func (s *Service) Start(ctx context.Context) (err error) {
 		return err
 	}
 	for _, org := range orgs {
+		if !s.provisioned(org.Subdomain) {
+			continue
+		}
 		cfgRow, err := s.queries.GetOrgConfig(ctx, sqlcgen.GetOrgConfigParams{
 			OrganizationID: org.ID,
 			Path:           HeadscaleConfigKey,
@@ -483,7 +583,7 @@ func (s *Service) launch(ctx context.Context, subdomain string, port int, hsCfg 
 	}
 
 	if _, err := app.GetState().GetPolicy(); err != nil {
-		if _, err := app.GetState().SetPolicyInDB(defaultACLPolicy); err != nil {
+		if _, err := app.GetState().SetPolicyInDB(DefaultACLPolicy); err != nil {
 			s.logger.Warn("seed default ACL policy", "subdomain", subdomain, "error", err)
 		}
 	}
@@ -566,7 +666,8 @@ func freeLoopbackPort() (int, error) {
 
 // restartHeadscale stops subdomain's running headscale instance (if any) and
 // starts a new one from the organization's latest stored config, on the same
-// port. It starts an instance that isn't running yet.
+// port. It starts a provisioned instance that isn't running, and leaves an
+// unprovisioned organization alone.
 func (s *Service) restartHeadscale(ctx context.Context, subdomain string) (err error) {
 	defer derrors.Wrap(&err, "s.restartHeadscale(%q)", subdomain)
 
@@ -577,18 +678,11 @@ func (s *Service) restartHeadscale(ctx context.Context, subdomain string) (err e
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
 
-	org, err := s.queries.GetOrganizationBySubdomain(ctx, subdomain)
-	if err != nil {
-		return err
+	// The stored config takes effect on the first start.
+	if !s.provisioned(subdomain) {
+		return nil
 	}
-	cfgRow, err := s.queries.GetOrgConfig(ctx, sqlcgen.GetOrgConfigParams{
-		OrganizationID: org.ID,
-		Path:           HeadscaleConfigKey,
-	})
-	if err != nil {
-		return err
-	}
-	hsCfg, err := parseHeadscaleConfig(cfgRow.Content)
+	org, hsCfg, err := s.loadConfig(ctx, subdomain)
 	if err != nil {
 		return err
 	}
@@ -633,6 +727,9 @@ const (
 	StatusActive = "active"
 	// StatusUpdatePending means its headscale is restarting to apply config.
 	StatusUpdatePending = "update_pending"
+	// StatusUnprovisioned means its headscale never started: it starts on
+	// first use.
+	StatusUnprovisioned = "unprovisioned"
 	// StatusStarting means Start hasn't reached the organization yet.
 	StatusStarting = "starting"
 	// StatusUnavailable means its headscale failed to start or stopped.

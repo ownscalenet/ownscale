@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -20,6 +21,7 @@ import (
 	"github.com/ownscalenet/ownscale/funnelproxy"
 	"github.com/ownscalenet/ownscale/hscl"
 	"github.com/ownscalenet/ownscale/hscl/hstest"
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 // fakeHeadscaleClients stands in for orgs.Service's running headscale
@@ -34,6 +36,30 @@ func (f fakeHeadscaleClients) Client(string) (*hscl.Client, error) {
 		return nil, f.err
 	}
 	return f.client, nil
+}
+
+func (f fakeHeadscaleClients) Ensure(_ context.Context, subdomain string) (*hscl.Client, error) {
+	return f.Client(subdomain)
+}
+
+// lazyHeadscaleClients is fakeHeadscaleClients for an organization whose
+// headscale hasn't started yet: Client reports it unprovisioned until
+// Ensure starts it.
+type lazyHeadscaleClients struct {
+	client  *hscl.Client
+	started bool
+}
+
+func (l *lazyHeadscaleClients) Client(string) (*hscl.Client, error) {
+	if !l.started {
+		return nil, orgs.ErrNotProvisioned
+	}
+	return l.client, nil
+}
+
+func (l *lazyHeadscaleClients) Ensure(context.Context, string) (*hscl.Client, error) {
+	l.started = true
+	return l.client, nil
 }
 
 // newFakeHeadscaleServer builds a fake implementing enough of
@@ -191,54 +217,54 @@ func activeOrgUserWithPolicy(t *testing.T, h *Handlers, queries *dbpkg.TxQueries
 	return user, client, requests, policy, lastTags
 }
 
-// TestAssignableUsers checks which headscale users ListMachines and
-// ListAuthKeys offer for registering machines and creating keys.
+// TestAssignableUsers checks which members ListMachines and ListAuthKeys
+// offer for registering machines and creating keys, with or without a
+// running headscale.
 func TestAssignableUsers(t *testing.T) {
 	endpoints := []struct {
 		name    string
-		path    string
 		handler func(*Handlers) http.HandlerFunc
 	}{
-		{"machines", "/api/machines", func(h *Handlers) http.HandlerFunc { return h.ListMachines }},
-		{"auth keys", "/api/auth-keys", func(h *Handlers) http.HandlerFunc { return h.ListAuthKeys }},
-	}
-	cases := []struct {
-		name   string
-		role   string
-		linked string
-		want   []string
-	}{
-		{name: "owner gets everyone", role: RoleOwner, want: []string{"1", "2"}},
-		{name: "member gets their own user", role: RoleMember, linked: "2", want: []string{"2"}},
-		{name: "unlinked member gets nobody", role: RoleMember, want: []string{}},
+		{"machines", func(h *Handlers) http.HandlerFunc { return h.ListMachines }},
+		{"auth keys", func(h *Handlers) http.HandlerFunc { return h.ListAuthKeys }},
 	}
 	for _, ep := range endpoints {
-		for _, tc := range cases {
-			t.Run(ep.name+"/"+tc.name, func(t *testing.T) {
-				h, queries := newTestHandlers(t)
-				user, client, _ := activeOrgUser(t, h, queries)
-				user.Role = tc.role
-				user.HeadscaleUserID = sql.NullString{String: tc.linked, Valid: tc.linked != ""}
+		for _, provisioned := range []bool{true, false} {
+			t.Run(fmt.Sprintf("%s/provisioned=%v", ep.name, provisioned), func(t *testing.T) {
+				h, org, users := newOrgTestHandlers(t, RoleOwner, RoleMember)
+				owner, member := users[0], users[1]
+				var client *hscl.Client
+				if provisioned {
+					client, _, _, _ = newFakeHeadscaleServer(t)
+				}
 
-				req := withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodGet, ep.path, nil), user), client)
-				rec := httptest.NewRecorder()
-				ep.handler(h)(rec, req)
+				for _, tc := range []struct {
+					caller sqlcgen.User
+					want   []string
+				}{
+					{owner, []string{owner.ID, member.ID}},
+					{member, []string{member.ID}},
+				} {
+					req := withTestUser(httptest.NewRequest(http.MethodGet, "/", nil), tc.caller)
+					rec := httptest.NewRecorder()
+					ep.handler(h)(rec, withHeadscaleContext(req, client, org))
 
-				if rec.Code != http.StatusOK {
-					t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
-				}
-				var body struct {
-					AssignableUsers []hscl.User `json:"assignableUsers"`
-				}
-				if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-					t.Fatalf("decode: %v", err)
-				}
-				got := []string{}
-				for _, u := range body.AssignableUsers {
-					got = append(got, u.ID)
-				}
-				if !slices.Equal(got, tc.want) {
-					t.Errorf("assignableUsers = %v, want %v", got, tc.want)
+					if rec.Code != http.StatusOK {
+						t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+					}
+					var body struct {
+						AssignableUsers []assignableUser `json:"assignableUsers"`
+					}
+					if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+						t.Fatalf("decode: %v", err)
+					}
+					var got []string
+					for _, u := range body.AssignableUsers {
+						got = append(got, u.ID)
+					}
+					if !slices.Equal(got, tc.want) {
+						t.Errorf("%s: assignableUsers = %v, want %v", tc.caller.Role, got, tc.want)
+					}
 				}
 			})
 		}
@@ -644,40 +670,40 @@ func TestRegisterMachine(t *testing.T) {
 	}{
 		{
 			name:       "bare token",
-			body:       `{"user":"alice","key":"abcdefghijklmnopqrstuvwx"}`,
+			body:       `{"memberId":"{alice}","key":"abcdefghijklmnopqrstuvwx"}`,
 			wantStatus: http.StatusOK,
 			wantQuery:  url.Values{"user": {"alice"}, "key": {"hskey-authreq-abcdefghijklmnopqrstuvwx"}},
 		},
 		{
 			name:       "already prefixed key",
-			body:       `{"user":"bob","key":"hskey-authreq-abcdefghijklmnopqrstuvwx"}`,
+			body:       `{"memberId":"{bob}","key":"hskey-authreq-abcdefghijklmnopqrstuvwx"}`,
 			wantStatus: http.StatusOK,
 			wantQuery:  url.Values{"user": {"bob"}, "key": {"hskey-authreq-abcdefghijklmnopqrstuvwx"}},
 		},
 		{
 			name:       "full registration URL",
-			body:       `{"user":"alice","key":"https://hs.example.test/register/abcdefghijklmnopqrstuvwx"}`,
+			body:       `{"memberId":"{alice}","key":"https://hs.example.test/register/abcdefghijklmnopqrstuvwx"}`,
 			wantStatus: http.StatusOK,
 			wantQuery:  url.Values{"user": {"alice"}, "key": {"hskey-authreq-abcdefghijklmnopqrstuvwx"}},
 		},
 		{
-			name:       "missing user",
+			name:       "missing member",
 			body:       `{"key":"abcdefghijklmnopqrstuvwx"}`,
 			wantStatus: http.StatusBadRequest,
 		},
 		{
 			name:       "missing key",
-			body:       `{"user":"alice"}`,
+			body:       `{"memberId":"{alice}"}`,
 			wantStatus: http.StatusBadRequest,
 		},
 		{
 			name:       "unrecognized key format",
-			body:       `{"user":"alice","key":"not a key!!"}`,
+			body:       `{"memberId":"{alice}","key":"not a key!!"}`,
 			wantStatus: http.StatusBadRequest,
 		},
 		{
 			name:       "headscale error propagates as 500",
-			body:       `{"user":"alice","key":"hskey-authreq-failme00000000000000000000"}`,
+			body:       `{"memberId":"{alice}","key":"hskey-authreq-failme00000000000000000000"}`,
 			wantStatus: http.StatusInternalServerError,
 		},
 	}
@@ -686,8 +712,16 @@ func TestRegisterMachine(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			h, queries := newTestHandlers(t)
 			user, client, requests := activeOrgUser(t, h, queries)
+			// Members linked to the fake's headscale users alice (1) and bob (2).
+			alice := callerWithRole(t, h, user, RoleMember, "1")
+			bob := callerWithRole(t, h, user, RoleMember, "2")
+			body := strings.NewReplacer("{alice}", alice.ID, "{bob}", bob.ID).Replace(tc.body)
+			org, err := queries.GetOrganization(t.Context(), user.OrganizationID)
+			if err != nil {
+				t.Fatalf("GetOrganization: %v", err)
+			}
 
-			req := withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/register", strings.NewReader(tc.body)), user), client)
+			req := withHeadscaleClientOrg(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/register", strings.NewReader(body)), user), client, org)
 			rec := httptest.NewRecorder()
 			h.RegisterMachine(rec, req)
 

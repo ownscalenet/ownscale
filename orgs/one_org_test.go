@@ -13,16 +13,12 @@ import (
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
 
-// newTestOrgService creates organization "acme" on a newTestService and
-// returns both.
+// newTestOrgService creates and starts organization "acme" on a
+// newTestService and returns both.
 func newTestOrgService(t *testing.T) (*Service, *OrgService) {
 	t.Helper()
 	svc := newTestService(t)
-	org, err := svc.Create(t.Context(), "acme")
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	return svc, svc.ForOrg(org)
+	return svc, svc.ForOrg(createStarted(t, svc, "acme"))
 }
 
 // assertStatus fails t unless svc reports status want for "acme".
@@ -210,22 +206,37 @@ func TestSettingsRestartFailureLeavesUnavailable(t *testing.T) {
 	assertStatus(t, svc, StatusUnavailable)
 }
 
+// TestSettingsOnUnprovisionedOrg verifies settings saved before an
+// organization's first use are stored without starting its headscale.
+func TestSettingsOnUnprovisionedOrg(t *testing.T) {
+	svc := newTestService(t)
+	org, err := svc.Create(t.Context(), "acme")
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	var starts int
+	svc.createFn = failingCreateFn(&starts)
+	o := svc.ForOrg(org)
+
+	const content = `{"domains":["example.com"]}`
+	if err := o.SetAuthRestrictions(t.Context(), content); err != nil {
+		t.Fatalf("SetAuthRestrictions: %v", err)
+	}
+	if got, err := o.GetAuthRestrictions(t.Context()); err != nil || got != content {
+		t.Errorf("GetAuthRestrictions = %q, %v; want %q", got, err, content)
+	}
+	if starts != 0 {
+		t.Errorf("headscale started %d times, want 0", starts)
+	}
+	assertStatus(t, svc, StatusUnprovisioned)
+}
+
 // TestSettingsApplyToRunningHeadscale uses real headscale instances to
 // verify saved settings reach the restarted server, which keeps its port,
 // and leave the org active.
 func TestSettingsApplyToRunningHeadscale(t *testing.T) {
 	svc := newRealService(t)
-
-	org, err := svc.Create(t.Context(), "acme")
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	t.Cleanup(func() {
-		if inst, ok := svc.running("acme"); ok {
-			inst.cancel()
-			<-inst.exited
-		}
-	})
+	org := createStarted(t, svc, "acme")
 	port, _ := svc.LookupPort("acme")
 	first, _ := svc.running("acme")
 

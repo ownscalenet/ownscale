@@ -93,9 +93,11 @@ export default function Layout() {
                       className={`badge badge-xs ${
                         organization.Status === 'active'
                           ? 'badge-success'
-                          : organization.Status === 'unavailable'
-                            ? 'badge-error'
-                            : 'badge-warning'
+                          : organization.Status === 'unprovisioned'
+                            ? 'badge-ghost'
+                            : organization.Status === 'unavailable'
+                              ? 'badge-error'
+                              : 'badge-warning'
                       }`}
                     >
                       {organization.Status}

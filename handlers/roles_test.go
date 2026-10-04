@@ -43,8 +43,8 @@ func TestRoleAccessToMachinesAndKeys(t *testing.T) {
 		del    = endpoint{func(h *Handlers) http.HandlerFunc { return h.DeleteMachine }, http.MethodDelete, "1", ""}
 		tags   = endpoint{func(h *Handlers) http.HandlerFunc { return h.SetMachineTags }, http.MethodPost, "1", `{"tags":["tag:server"]}`}
 		routes = endpoint{func(h *Handlers) http.HandlerFunc { return h.SetMachineRoutes }, http.MethodPost, "1", `{"routes":["10.0.0.0/24"]}`}
-		reg    = func(user string) endpoint {
-			return endpoint{func(h *Handlers) http.HandlerFunc { return h.RegisterMachine }, http.MethodPost, "", `{"user":"` + user + `","key":"` + registerKey + `"}`}
+		reg    = func(member string) endpoint {
+			return endpoint{func(h *Handlers) http.HandlerFunc { return h.RegisterMachine }, http.MethodPost, "", `{"memberId":"` + member + `","key":"` + registerKey + `"}`}
 		}
 		createKey = func(body string) endpoint {
 			return endpoint{func(h *Handlers) http.HandlerFunc { return h.CreateAuthKey }, http.MethodPost, "", body}
@@ -72,12 +72,13 @@ func TestRoleAccessToMachinesAndKeys(t *testing.T) {
 		{"admin tags machine", RoleAdmin, "2", tags, http.StatusOK},
 		{"member approves routes on own machine", RoleMember, "1", routes, http.StatusForbidden},
 		{"admin approves routes", RoleAdmin, "2", routes, http.StatusOK},
-		{"member registers machine for self", RoleMember, "1", reg("alice"), http.StatusOK},
-		{"member registers machine for other", RoleMember, "1", reg("bob"), http.StatusForbidden},
-		{"admin registers machine for other", RoleAdmin, "1", reg("bob"), http.StatusOK},
-		{"member creates own key", RoleMember, "1", createKey(`{"userId":"1","expiryDays":1}`), http.StatusOK},
-		{"member creates tagged key", RoleMember, "1", createKey(`{"userId":"1","aclTags":["tag:server"],"expiryDays":1}`), http.StatusForbidden},
-		{"member creates key for other", RoleMember, "2", createKey(`{"userId":"1","expiryDays":1}`), http.StatusForbidden},
+		{"member registers machine for self", RoleMember, "1", reg("{self}"), http.StatusOK},
+		{"member registers machine for other", RoleMember, "1", reg("{other}"), http.StatusForbidden},
+		{"admin registers machine for other", RoleAdmin, "1", reg("{other}"), http.StatusOK},
+		{"admin registers machine for non-member", RoleAdmin, "1", reg("nobody"), http.StatusNotFound},
+		{"member creates own key", RoleMember, "1", createKey(`{"memberId":"{self}","expiryDays":1}`), http.StatusOK},
+		{"member creates tagged key", RoleMember, "1", createKey(`{"memberId":"{self}","aclTags":["tag:server"],"expiryDays":1}`), http.StatusForbidden},
+		{"member creates key for other", RoleMember, "2", createKey(`{"memberId":"{other}","expiryDays":1}`), http.StatusForbidden},
 		{"admin creates tag-only key", RoleAdmin, "2", createKey(`{"aclTags":["tag:server"],"expiryDays":1}`), http.StatusOK},
 		{"member expires own key", RoleMember, "1", expireKey, http.StatusOK},
 		{"member expires other's key", RoleMember, "2", expireKey, http.StatusForbidden},
@@ -90,9 +91,16 @@ func TestRoleAccessToMachinesAndKeys(t *testing.T) {
 			h, queries := newTestHandlers(t)
 			owner, client, _ := activeOrgUser(t, h, queries)
 			caller := callerWithRole(t, h, owner, tt.role, tt.hsUserID)
+			// other is linked to whichever of "1" and "2" caller isn't.
+			other := callerWithRole(t, h, owner, RoleMember, map[string]string{"1": "2", "2": "1"}[tt.hsUserID])
+			body := strings.NewReplacer("{self}", caller.ID, "{other}", other.ID).Replace(tt.endpoint.body)
+			org, err := queries.GetOrganization(t.Context(), owner.OrganizationID)
+			if err != nil {
+				t.Fatalf("GetOrganization: %v", err)
+			}
 
-			req := httptest.NewRequest(tt.endpoint.method, "/", strings.NewReader(tt.endpoint.body))
-			req = withPathValue(withHeadscaleClient(withTestUser(req, caller), client), "id", tt.endpoint.id)
+			req := httptest.NewRequest(tt.endpoint.method, "/", strings.NewReader(body))
+			req = withPathValue(withHeadscaleClientOrg(withTestUser(req, caller), client, org), "id", tt.endpoint.id)
 			rec := httptest.NewRecorder()
 			tt.endpoint.handler(h)(rec, req)
 

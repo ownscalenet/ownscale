@@ -9,7 +9,3 @@ sql:
         out: "db/sqlcgen"
         sql_package: "database/sql"
         emit_json_tags: false
-        overrides:
-          # The headscale user link is internal; the session API mustn't expose it.
-          - column: "users.headscale_user_id"
-            go_struct_tag: 'json:"-"'

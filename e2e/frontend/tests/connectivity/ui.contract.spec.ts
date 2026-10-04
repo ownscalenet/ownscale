@@ -41,6 +41,8 @@ test('a not yet serving organization waits, and manager readiness is accepted', 
     value.organization!.Status = status
     expect(validateSession(value, identities[0])).toBe(false)
   }
+  value.organization!.Status = 'unprovisioned'
+  expect(validateSession(value, identities[0])).toBe(true)
   value.organization!.Status = 'active'
   value.user.Role = 'admin'
   expect(validateSession(value, identities[0])).toBe(true)
