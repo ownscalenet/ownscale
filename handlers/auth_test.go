@@ -235,8 +235,8 @@ func TestAuthCallbackAutoAssignsOrganization(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetOrganization: %v", err)
 	}
-	if org.Status != orgs.StatusActive {
-		t.Errorf("organization status = %q, want %q", org.Status, orgs.StatusActive)
+	if got := h.orgs.Status(org.Subdomain); got != orgs.StatusActive {
+		t.Errorf("organization status = %q, want %q", got, orgs.StatusActive)
 	}
 	if !randomSubdomainRe.MatchString(org.Subdomain) {
 		t.Errorf("organization subdomain = %q, want match for %s", org.Subdomain, randomSubdomainRe)

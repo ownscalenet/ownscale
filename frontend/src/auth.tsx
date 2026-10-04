@@ -19,7 +19,7 @@ interface AuthState {
 const AuthContext = createContext<AuthState | null>(null)
 
 // pendingPollMs is how often the session is re-read while the organization
-// applies settings, so its status doesn't stay stale.
+// isn't active, so its status doesn't stay stale.
 const pendingPollMs = 3_000
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -52,7 +52,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     void refresh()
   }, [])
 
-  const pending = organization?.Status === 'update_pending'
+  const pending = organization != null && organization.Status !== 'active'
   useEffect(() => {
     if (!pending) return
     const timer = setInterval(() => void refresh(), pendingPollMs)

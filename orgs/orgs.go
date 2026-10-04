@@ -61,6 +61,11 @@ type Service struct {
 	dataDir    string
 
 	orgs utils.Map[string, *orgRuntime]
+	// restarts counts each org's in-flight restarts, including those still
+	// waiting on startMu; a counter as two settings saves can overlap.
+	restarts utils.Map[string, *atomic.Int32]
+	// starting is set while Start brings up existing organizations.
+	starting atomic.Bool
 
 	// startMu serializes headscale startup (headscale's DERP map shuffling
 	// shares one non-thread-safe rand.Rand across instances). This is not
@@ -140,14 +145,38 @@ func (s *Service) ForOrg(org sqlcgen.Organization) *OrgService {
 	}
 }
 
-// running returns subdomain's running headscale instance.
+// running returns subdomain's running headscale instance. An instance
+// whose Serve returned isn't running.
 func (s *Service) running(subdomain string) (*instance, bool) {
 	rt, ok := s.orgs.Load(subdomain)
 	if !ok {
 		return nil, false
 	}
 	inst := rt.inst.Load()
-	return inst, inst != nil
+	if inst == nil {
+		return nil, false
+	}
+	select {
+	case <-inst.exited:
+		return nil, false
+	default:
+		return inst, true
+	}
+}
+
+// Status reports the state of subdomain's headscale instance: one of
+// StatusUpdatePending, StatusActive, StatusStarting or StatusUnavailable.
+func (s *Service) Status(subdomain string) string {
+	if n, ok := s.restarts.Load(subdomain); ok && n.Load() > 0 {
+		return StatusUpdatePending
+	}
+	if _, ok := s.running(subdomain); ok {
+		return StatusActive
+	}
+	if s.starting.Load() {
+		return StatusStarting
+	}
+	return StatusUnavailable
 }
 
 // Client returns a client for subdomain's running headscale instance.
@@ -325,7 +354,6 @@ func (s *Service) insertProvisioned(ctx context.Context, subdomain, clientID, cl
 	org, err := txQueries.CreateOrganization(ctx, sqlcgen.CreateOrganizationParams{
 		ID:        xid.New().String(),
 		Subdomain: subdomain,
-		Status:    StatusActive,
 	})
 	if err != nil {
 		return sqlcgen.Organization{}, fmt.Errorf("create organization record (already exists?): %w", err)
@@ -354,9 +382,13 @@ func (s *Service) insertProvisioned(ctx context.Context, subdomain, clientID, cl
 }
 
 // Start starts the headscale instances of existing organizations. It
-// returns once all of them have started or failed to.
+// returns once all of them have started. Failure to start one org is logged,
+// not returned.
 func (s *Service) Start(ctx context.Context) (err error) {
 	defer derrors.Wrap(&err, "s.Start()")
+
+	s.starting.Store(true)
+	defer s.starting.Store(false)
 
 	orgs, err := s.queries.ListOrganizations(ctx)
 	if err != nil {
@@ -538,6 +570,10 @@ func freeLoopbackPort() (int, error) {
 func (s *Service) restartHeadscale(ctx context.Context, subdomain string) (err error) {
 	defer derrors.Wrap(&err, "s.restartHeadscale(%q)", subdomain)
 
+	n, _ := s.restarts.LoadOrStore(subdomain, new(atomic.Int32))
+	n.Add(1)
+	defer n.Add(-1)
+
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
 
@@ -591,11 +627,14 @@ func randomAlphaNum(n int) (_ string, err error) {
 	return "os" + string(suffix), nil
 }
 
-// Organization lifecycle statuses. These must stay in sync with the CHECK
-// constraint added to that column in migrations.
+// Organization statuses, as reported by Service.Status.
 const (
-	// StatusActive is set on a provisioned organization.
+	// StatusActive means the organization's headscale is serving.
 	StatusActive = "active"
-	// StatusUpdatePending is set while an organization's headscale config is applied.
+	// StatusUpdatePending means its headscale is restarting to apply config.
 	StatusUpdatePending = "update_pending"
+	// StatusStarting means Start hasn't reached the organization yet.
+	StatusStarting = "starting"
+	// StatusUnavailable means its headscale failed to start or stopped.
+	StatusUnavailable = "unavailable"
 )

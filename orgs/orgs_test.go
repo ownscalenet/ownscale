@@ -41,7 +41,7 @@ func noopCreateFn(string, string, string, int, *HeadscaleConfig, config.DerpConf
 	return nil, nil
 }
 
-// TestCreate verifies that Create stores an active organization with its
+// TestCreate verifies that Create stores an organization with its
 // OIDC client and a HeadscaleConfig holding the client's credentials.
 func TestCreate(t *testing.T) {
 	svc := newTestService(t)
@@ -50,8 +50,8 @@ func TestCreate(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if org.Status != StatusActive || org.Subdomain != "acme" {
-		t.Errorf("org = %+v, want active acme", org)
+	if org.Subdomain != "acme" {
+		t.Errorf("org = %+v, want acme", org)
 	}
 
 	client, err := svc.queries.GetOIDCClientByOrganizationID(t.Context(), org.ID)
@@ -190,6 +190,114 @@ func TestStartRecoversOrganizations(t *testing.T) {
 	}
 	if _, ok := svc.LookupPort("acme"); !ok {
 		t.Error("port not registered for recovered org \"acme\"")
+	}
+}
+
+// blockingCreateFn returns a createFn that signals entered and then blocks
+// until release is closed, building no instance.
+func blockingCreateFn(entered chan<- struct{}, release <-chan struct{}) func(string, string, string, int, *HeadscaleConfig, config.DerpConfig) (*hscontrol.Headscale, error) {
+	return func(string, string, string, int, *HeadscaleConfig, config.DerpConfig) (*hscontrol.Headscale, error) {
+		entered <- struct{}{}
+		<-release
+		return nil, nil
+	}
+}
+
+// runBlocked runs f in the background with svc's createFn blocked, and
+// returns once f reached createFn. f is released and awaited on cleanup.
+func runBlocked(t *testing.T, svc *Service, f func()) {
+	t.Helper()
+	entered, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	svc.createFn = blockingCreateFn(entered, release)
+	go func() {
+		defer close(done)
+		f()
+	}()
+	<-entered
+	t.Cleanup(func() {
+		close(release)
+		<-done
+	})
+}
+
+// serving stores a running instance for subdomain in svc, exited already
+// if exited is set.
+func serving(svc *Service, subdomain string, exited bool) {
+	inst := &instance{exited: make(chan struct{})}
+	if exited {
+		close(inst.exited)
+	}
+	rt := &orgRuntime{port: 1}
+	rt.inst.Store(inst)
+	svc.orgs.Store(subdomain, rt)
+}
+
+func TestStatus(t *testing.T) {
+	tests := []struct {
+		name string
+		// setup prepares svc and returns the subdomain to check.
+		setup func(t *testing.T, svc *Service) string
+		want  string
+	}{
+		{
+			name:  "serving instance",
+			setup: func(_ *testing.T, svc *Service) string { serving(svc, "acme", false); return "acme" },
+			want:  StatusActive,
+		},
+		{
+			name:  "exited instance",
+			setup: func(_ *testing.T, svc *Service) string { serving(svc, "acme", true); return "acme" },
+			want:  StatusUnavailable,
+		},
+		{
+			name:  "never started",
+			setup: func(*testing.T, *Service) string { return "acme" },
+			want:  StatusUnavailable,
+		},
+		{
+			name: "started without an instance",
+			setup: func(t *testing.T, svc *Service) string {
+				if _, err := svc.Create(t.Context(), "acme"); err != nil {
+					t.Fatalf("Create: %v", err)
+				}
+				return "acme"
+			},
+			want: StatusUnavailable,
+		},
+		{
+			name: "restart in flight",
+			setup: func(t *testing.T, svc *Service) string {
+				if _, err := svc.Create(t.Context(), "acme"); err != nil {
+					t.Fatalf("Create: %v", err)
+				}
+				runBlocked(t, svc, func() { _ = svc.restartHeadscale(t.Context(), "acme") })
+				return "acme"
+			},
+			want: StatusUpdatePending,
+		},
+		{
+			name: "Start not there yet",
+			setup: func(t *testing.T, svc *Service) string {
+				for _, sub := range []string{"aaaa", "bbbb"} {
+					if _, err := svc.Create(t.Context(), sub); err != nil {
+						t.Fatalf("Create(%q): %v", sub, err)
+					}
+				}
+				// Start goes in subdomain order, so it blocks on aaaa first.
+				runBlocked(t, svc, func() { _ = svc.Start(t.Context()) })
+				return "bbbb"
+			},
+			want: StatusStarting,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := newTestService(t)
+			subdomain := tt.setup(t, svc)
+			if got := svc.Status(subdomain); got != tt.want {
+				t.Errorf("Status(%q) = %q, want %q", subdomain, got, tt.want)
+			}
+		})
 	}
 }
 

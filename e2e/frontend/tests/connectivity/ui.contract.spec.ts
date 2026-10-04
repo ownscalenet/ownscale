@@ -35,10 +35,12 @@ for (const example of [
   })
 }
 
-test('a restarting organization waits, and manager readiness is accepted', () => {
+test('a not yet serving organization waits, and manager readiness is accepted', () => {
   const value = session(identities[0])
-  value.organization!.Status = 'update_pending'
-  expect(validateSession(value, identities[0])).toBe(false)
+  for (const status of ['update_pending', 'starting', 'unavailable']) {
+    value.organization!.Status = status
+    expect(validateSession(value, identities[0])).toBe(false)
+  }
   value.organization!.Status = 'active'
   value.user.Role = 'admin'
   expect(validateSession(value, identities[0])).toBe(true)

@@ -26,8 +26,10 @@ export interface Organization {
   ID: string
   Domain: string
   CreatedAt: string
-  // 'update_pending' while a settings save restarts the org's headscale.
-  Status: 'active' | 'update_pending'
+  // The state of the org's headscale: 'update_pending' while a settings
+  // save restarts it, 'starting' while the server boots, 'unavailable' when
+  // it failed to start or stopped.
+  Status: 'active' | 'update_pending' | 'starting' | 'unavailable'
 }
 
 export interface HeadscaleUser {

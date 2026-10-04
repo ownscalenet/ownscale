@@ -46,7 +46,6 @@ type Organization struct {
 	Subdomain string
 	CreatedAt time.Time
 	UpdatedAt time.Time
-	Status    string
 }
 
 type Orgconfig struct {

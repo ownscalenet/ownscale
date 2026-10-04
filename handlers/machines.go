@@ -12,7 +12,6 @@ import (
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/funnelproxy"
 	"github.com/ownscalenet/ownscale/hscl"
-	"github.com/ownscalenet/ownscale/orgs"
 	"github.com/tailscale/hujson"
 )
 
@@ -29,9 +28,6 @@ func (h *Handlers) resolveHeadscaleClient(r *http.Request) (_ *hscl.Client, org 
 	org, err = h.queries.GetOrganization(r.Context(), user.OrganizationID)
 	if err != nil {
 		return nil, sqlcgen.Organization{}, false, err
-	}
-	if org.Status != orgs.StatusActive {
-		return nil, org, true, nil
 	}
 
 	client, err := h.hs.Client(org.Subdomain)

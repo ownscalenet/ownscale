@@ -89,15 +89,13 @@ func New(t *testing.T) (*sql.DB, *dbpkg.TxQueries) {
 	return pool, dbpkg.New(pool, slog.New(slog.DiscardHandler))
 }
 
-// CreateOrg inserts an active organization row for subdomain, without an
-// OIDC client, stored config, or running headscale.
+// CreateOrg inserts an organization row for subdomain, without an OIDC
+// client, stored config, or running headscale.
 func CreateOrg(t testing.TB, q *sqlcgen.Queries, subdomain string) sqlcgen.Organization {
 	t.Helper()
 	org, err := q.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
 		ID:        xid.New().String(),
 		Subdomain: subdomain,
-		// orgs.StatusActive; orgs can't be imported here as its tests use dbtest.
-		Status: "active",
 	})
 	if err != nil {
 		t.Fatalf("CreateOrg(%q): %v", subdomain, err)

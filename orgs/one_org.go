@@ -50,11 +50,11 @@ func (o *OrgService) getHeadscaleConfig(ctx context.Context) (_ *HeadscaleConfig
 	return cfg, nil
 }
 
-// applyHeadscaleConfig persists cfg to the orgconfigs row, marks the
-// org update_pending, restarts its headscale instance so the new config
-// takes effect, then marks the org active again. If the restart fails the
-// org stays update_pending, and startup recovery retries it. extraWrites
-// runs within the same short transaction as the config row write.
+// applyHeadscaleConfig persists cfg to the orgconfigs row and restarts its
+// headscale instance so the new config takes effect. If the restart fails
+// the org is unavailable until a later save or process start succeeds.
+// extraWrites runs within the same short transaction as the config row
+// write.
 //
 // This function is NOT a single big transaction because headscale
 // restarting takes several seconds and that would block all other DB ops.
@@ -69,32 +69,23 @@ func (o *OrgService) applyHeadscaleConfig(ctx context.Context, cfg *HeadscaleCon
 		return err
 	}
 
-	if err := o.persistConfigAndMarkUpdatePending(ctx, updated, extraWrites); err != nil {
+	if err := o.persistConfig(ctx, updated, extraWrites); err != nil {
 		return err
 	}
-
 	if err := o.restart(ctx); err != nil {
-		return fmt.Errorf("restart headscale (organization stays %s): %w", StatusUpdatePending, err)
-	}
-
-	if _, err := o.queries.UpdateOrganizationStatus(ctx, sqlcgen.UpdateOrganizationStatusParams{
-		ID:     o.orgID,
-		Status: StatusActive,
-	}); err != nil {
-		return fmt.Errorf("mark organization active: %w", err)
+		return fmt.Errorf("restart headscale: %w", err)
 	}
 	return nil
 }
 
-// persistConfigAndMarkUpdatePending runs extraWrites (if non-nil),
-// upserts o's HeadscaleConfigKey orgconfigs row to updated, and sets its status
-// to StatusUpdatePending.
-func (o *OrgService) persistConfigAndMarkUpdatePending(
+// persistConfig runs extraWrites (if non-nil) and upserts o's
+// HeadscaleConfigKey orgconfigs row to updated, in one transaction.
+func (o *OrgService) persistConfig(
 	ctx context.Context,
 	updated string,
 	extraWrites func(ctx context.Context, txQueries *sqlcgen.Queries) error,
 ) (err error) {
-	defer derrors.Wrap(&err, "o.persistConfigAndMarkUpdatePending(%q)", o.orgID)
+	defer derrors.Wrap(&err, "o.persistConfig(%q)", o.orgID)
 
 	txQueries, commit, rollback, err := o.queries.StartTx(ctx)
 	if err != nil {
@@ -115,13 +106,6 @@ func (o *OrgService) persistConfigAndMarkUpdatePending(
 		Content:        updated,
 	}); err != nil {
 		return fmt.Errorf("save config: %w", err)
-	}
-
-	if _, err := txQueries.UpdateOrganizationStatus(ctx, sqlcgen.UpdateOrganizationStatusParams{
-		ID:     o.orgID,
-		Status: StatusUpdatePending,
-	}); err != nil {
-		return fmt.Errorf("mark organization update-pending: %w", err)
 	}
 
 	if err := commit(); err != nil {

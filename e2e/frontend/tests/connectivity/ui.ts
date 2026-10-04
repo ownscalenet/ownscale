@@ -49,8 +49,9 @@ export function validateSession(session: Session, identity: Identity): boolean {
   if (session.organization.Domain !== `${identity.org}.${baseDomain}`) {
     throw new Error(`${identity.name} must belong to ${identity.org}.${baseDomain}; unexpected registration assignment. Do not reassign or delete existing users.`)
   }
-  // update_pending: the org's headscale is restarting to apply saved settings.
-  if (!['active', 'update_pending'].includes(session.organization.Status)) throw new Error(`${identity.org}: unknown organization status`)
+  // Anything but active means the org's headscale isn't serving yet: it's
+  // restarting to apply saved settings, the server is booting, or it failed.
+  if (!['active', 'update_pending', 'starting', 'unavailable'].includes(session.organization.Status)) throw new Error(`${identity.org}: unknown organization status`)
   return session.organization.Status === 'active'
 }
 

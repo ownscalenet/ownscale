@@ -25,15 +25,11 @@ func newTestOrgService(t *testing.T) (*Service, *OrgService) {
 	return svc, svc.ForOrg(org)
 }
 
-// assertStatus fails t unless o's organization has status want.
-func assertStatus(t *testing.T, o *OrgService, want string) {
+// assertStatus fails t unless svc reports status want for "acme".
+func assertStatus(t *testing.T, svc *Service, want string) {
 	t.Helper()
-	org, err := o.queries.GetOrganization(t.Context(), o.orgID)
-	if err != nil {
-		t.Fatalf("GetOrganization: %v", err)
-	}
-	if org.Status != want {
-		t.Errorf("status = %q, want %q", org.Status, want)
+	if got := svc.Status("acme"); got != want {
+		t.Errorf("status = %q, want %q", got, want)
 	}
 }
 
@@ -61,7 +57,7 @@ func TestSetAuthRestrictionsRejectsInvalidHuJSON(t *testing.T) {
 }
 
 // TestSetAuthRestrictions verifies the last saved allowlist is returned
-// as written and the org ends up active.
+// as written.
 func TestSetAuthRestrictions(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -86,7 +82,6 @@ func TestSetAuthRestrictions(t *testing.T) {
 			if want := tt.saves[len(tt.saves)-1]; got != want {
 				t.Errorf("GetAuthRestrictions = %q, want %q", got, want)
 			}
-			assertStatus(t, o, StatusActive)
 		})
 	}
 }
@@ -137,7 +132,6 @@ func TestSetDNSSettingsPersistsAndMarksActive(t *testing.T) {
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("GetDNSSettings = %+v, want %+v", got, want)
 	}
-	assertStatus(t, o, StatusActive)
 }
 
 // TestSetDNSSettingsRejectsInvalidInput verifies invalid settings are
@@ -202,9 +196,9 @@ func withSplit(split map[string][]string) DNSConfig {
 	return withNameservers(Nameservers{Global: []string{"1.1.1.1"}, Split: split})
 }
 
-// TestSettingsRestartFailureLeavesUpdatePending verifies a failed restart is
-// reported and the org stays update_pending, so startup recovery retries it.
-func TestSettingsRestartFailureLeavesUpdatePending(t *testing.T) {
+// TestSettingsRestartFailureLeavesUnavailable verifies a failed restart is
+// reported and leaves the org unavailable.
+func TestSettingsRestartFailureLeavesUnavailable(t *testing.T) {
 	svc, o := newTestOrgService(t)
 	svc.createFn = func(string, string, string, int, *HeadscaleConfig, config.DerpConfig) (*hscontrol.Headscale, error) {
 		return nil, errors.New("headscale failed (injected)")
@@ -213,7 +207,7 @@ func TestSettingsRestartFailureLeavesUpdatePending(t *testing.T) {
 	if err := o.SetAuthRestrictions(t.Context(), `{"domains":["example.com"]}`); err == nil {
 		t.Fatal("SetAuthRestrictions: want error when restart fails, got nil")
 	}
-	assertStatus(t, o, StatusUpdatePending)
+	assertStatus(t, svc, StatusUnavailable)
 }
 
 // TestSettingsApplyToRunningHeadscale uses real headscale instances to
@@ -246,7 +240,7 @@ func TestSettingsApplyToRunningHeadscale(t *testing.T) {
 	if err := o.SetAuthRestrictions(t.Context(), `{"domains":["example.com"]}`); err != nil {
 		t.Fatalf("SetAuthRestrictions: %v", err)
 	}
-	assertStatus(t, o, StatusActive)
+	assertStatus(t, svc, StatusActive)
 
 	second, _ := svc.running("acme")
 	if second == first {

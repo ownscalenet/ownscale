@@ -9,13 +9,16 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/peterbourgon/ff/v4"
 
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/derrors"
+	"github.com/ownscalenet/ownscale/hscl"
 	"github.com/ownscalenet/ownscale/logging"
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 // loadConfigAndLogger reads the config from OWNSCALE_* environment
@@ -107,13 +110,32 @@ func newOrganizationListCommand(parent *ff.FlagSet) *ff.Command {
 			if err != nil {
 				return err
 			}
-			return listOrganizations(ctx, os.Stdout, res.queries)
+			probe := func(ctx context.Context, subdomain string) string {
+				return probeHeadscale(ctx, hscl.NewUnix(orgs.SocketPath(res.cfg.DataDir, subdomain)))
+			}
+			return listOrganizations(ctx, os.Stdout, res.queries, probe)
 		},
 	}
 }
 
-// listOrganizations prints every organization recorded in queries to out.
-func listOrganizations(ctx context.Context, out io.Writer, queries *db.TxQueries) (err error) {
+// probeTimeout bounds how long probeHeadscale waits for an answer.
+const probeTimeout = 2 * time.Second
+
+// probeHeadscale reports whether the headscale behind client answers. The
+// status lives in the running ownscale process, so this only works where
+// cfg.DataDir is shared with it.
+func probeHeadscale(ctx context.Context, client *hscl.Client) string {
+	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
+	defer cancel()
+	if _, err := client.ListUsers(ctx); err != nil {
+		return "unreachable"
+	}
+	return "running"
+}
+
+// listOrganizations prints every organization recorded in queries to out,
+// with the status probe reports for its subdomain.
+func listOrganizations(ctx context.Context, out io.Writer, queries *db.TxQueries, probe func(ctx context.Context, subdomain string) string) (err error) {
 	defer derrors.Wrap(&err, "listOrganizations()")
 	organizations, err := queries.ListOrganizations(ctx)
 	if err != nil {
@@ -124,15 +146,15 @@ func listOrganizations(ctx context.Context, out io.Writer, queries *db.TxQueries
 		return nil
 	}
 
-	_, _ = fmt.Fprintf(out, "%-20s %-6s %-10s %-20s\n", "SUBDOMAIN", "USERS", "STATUS", "CREATED")
+	_, _ = fmt.Fprintf(out, "%-20s %-6s %-12s %-20s\n", "SUBDOMAIN", "USERS", "STATUS", "CREATED")
 	for _, org := range organizations {
 		ucount, err := queries.CountOrgUsers(ctx, org.ID)
 		if err != nil {
 			return err
 		}
 
-		_, _ = fmt.Fprintf(out, "%-20s %-6d %-10s %-20s\n",
-			org.Subdomain, ucount, org.Status,
+		_, _ = fmt.Fprintf(out, "%-20s %-6d %-12s %-20s\n",
+			org.Subdomain, ucount, probe(ctx, org.Subdomain),
 			org.CreatedAt.Format("2006-01-02 15:04:05"))
 	}
 	return nil

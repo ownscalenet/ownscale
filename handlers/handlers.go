@@ -177,7 +177,7 @@ func (h *Handlers) toOrganizationResponse(org sqlcgen.Organization) organization
 	return organizationResponse{
 		Domain:    org.Subdomain + "." + h.baseDomain,
 		CreatedAt: org.CreatedAt,
-		Status:    org.Status,
+		Status:    h.orgs.Status(org.Subdomain),
 	}
 }
 
@@ -209,7 +209,7 @@ func (h *Handlers) Session(w http.ResponseWriter, r *http.Request) {
 // yet, and returns user with that link, so the response that made it
 // already reports it.
 func (h *Handlers) ensureCallerHeadscaleUser(r *http.Request, user sqlcgen.User, org sqlcgen.Organization) sqlcgen.User {
-	if user.HeadscaleUserID.Valid || org.Status != orgs.StatusActive {
+	if user.HeadscaleUserID.Valid {
 		return user
 	}
 	logger := h.logger.With("org", org.Subdomain)
