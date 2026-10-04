@@ -158,6 +158,8 @@ purge:
 	docker compose down
 	# rm everything under data/ (org dirs, DBs, backups) except data/local-ca
 	sudo find data -mindepth 1 -maxdepth 1 ! -name local-ca -exec rm -rf {} +
+	# The connectivity suite's recovery records describe orgs that are now gone.
+	rm -rf e2e/.connectivity-private/recovery
 
 # ghetto script for trusting caddy's self-signed certificates.
 # To manually trust the certificates in firefox:
