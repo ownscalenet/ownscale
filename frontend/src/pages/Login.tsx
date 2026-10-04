@@ -13,6 +13,7 @@ import {
 } from '../api'
 import { createPasskey, getPasskey, browserSupportsWebAuthn } from '../lib/webauthn'
 import { usePageTitle } from '../hooks/usePageTitle'
+import { ErrorAlert } from '../components/ui'
 
 // isSafeRelativeNext guards against open redirects: only a same-origin,
 // path-absolute URL (no scheme-relative "//host" tricks) is followed.
@@ -157,11 +158,7 @@ export default function Login() {
             <p className="mb-6 text-base-content/70">Sign in to continue.</p>
           )}
 
-          {passkeyError && (
-            <div className="alert alert-error mb-4">
-              <span>{passkeyError}</span>
-            </div>
-          )}
+          <ErrorAlert error={passkeyError} />
 
           <div className="flex flex-col gap-2">
             {passkeySupported && (

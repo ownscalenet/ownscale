@@ -3,6 +3,17 @@ import { NavLink, Outlet } from 'react-router-dom'
 import { useAuth } from './auth'
 import { logout } from './api'
 
+// navLinks are the sidebar's pages. NavLink marks the current one active.
+const navLinks = [
+  ['/machines', 'Machines'],
+  ['/users', 'Users'],
+  ['/access-control', 'Access Control'],
+  ['/auth-restrictions', 'Auth Restrictions'],
+  ['/dns', 'DNS'],
+  ['/funnel', 'Funnel'],
+  ['/settings', 'Settings'],
+] as const
+
 export default function Layout() {
   const { user, organization, refresh } = useAuth()
   const drawerToggleRef = useRef<HTMLInputElement>(null)
@@ -59,57 +70,16 @@ export default function Layout() {
         <aside className="bg-base-100 min-h-full w-64 flex flex-col">
           <div className="p-4 text-xl font-bold border-b border-base-200">Ownscale console</div>
           <ul className="menu p-4 w-full" onClick={closeDrawer}>
-            <li>
-              <NavLink to="/machines" className={({ isActive }) => (isActive ? 'active' : '')}>
-                Machines
-              </NavLink>
-            </li>
-            <li>
-              <NavLink to="/users" className={({ isActive }) => (isActive ? 'active' : '')}>
-                Users
-              </NavLink>
-            </li>
-            <li>
-              <NavLink
-                to="/access-control"
-                className={({ isActive }) => (isActive ? 'active' : '')}
-              >
-                Access Control
-              </NavLink>
-            </li>
-            <li>
-              <NavLink
-                to="/auth-restrictions"
-                className={({ isActive }) => (isActive ? 'active' : '')}
-              >
-                Auth Restrictions
-              </NavLink>
-            </li>
-            <li>
-              <NavLink to="/dns" className={({ isActive }) => (isActive ? 'active' : '')}>
-                DNS
-              </NavLink>
-            </li>
-            <li>
-              <NavLink to="/funnel" className={({ isActive }) => (isActive ? 'active' : '')}>
-                Funnel
-              </NavLink>
-            </li>
-            <li>
-              <NavLink to="/settings" className={({ isActive }) => (isActive ? 'active' : '')}>
-                Settings
-              </NavLink>
-            </li>
+            {navLinks.map(([to, label]) => (
+              <li key={to}>
+                <NavLink to={to}>{label}</NavLink>
+              </li>
+            ))}
           </ul>
           <div className="mt-auto border-t border-base-200">
             <ul className="menu p-4 w-full" onClick={closeDrawer}>
               <li>
-                <NavLink
-                  to="/user-settings"
-                  className={({ isActive }) => (isActive ? 'active' : '')}
-                >
-                  User settings
-                </NavLink>
+                <NavLink to="/user-settings">User settings</NavLink>
               </li>
             </ul>
             {user && (

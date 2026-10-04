@@ -9,6 +9,7 @@ import {
   type DNSSettingsResponse,
 } from '../api'
 import { usePageTitle } from '../hooks/usePageTitle'
+import { EmptyRow, ErrorAlert, PageHeader, PageSpinner } from '../components/ui'
 
 const RECORD_TYPES = ['A', 'AAAA', 'CNAME']
 
@@ -110,17 +111,10 @@ export default function DNS() {
   const error = failure ? errorMessage(failure) : null
 
   if (!dns) {
-    if (query.error) {
-      return (
-        <div role="alert" className="alert alert-error">
-          <span>{errorMessage(query.error)}</span>
-        </div>
-      )
-    }
-    return (
-      <div className="flex items-center justify-center h-64">
-        <span className="loading loading-spinner loading-lg"></span>
-      </div>
+    return query.error ? (
+      <ErrorAlert error={errorMessage(query.error)} className="" />
+    ) : (
+      <PageSpinner />
     )
   }
 
@@ -145,18 +139,14 @@ export default function DNS() {
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-4">DNS</h1>
+      <PageHeader title="DNS" />
 
       {!canManage && (
         <div className="alert alert-warning mb-4">
           <span>Only owners and admins can edit DNS settings for this tailnet.</span>
         </div>
       )}
-      {error && (
-        <div role="alert" className="alert alert-error mb-4">
-          <span>{error}</span>
-        </div>
-      )}
+      <ErrorAlert error={error} />
       {success && (
         <div role="alert" className="alert alert-success mb-4">
           <span>DNS settings saved. Headscale is restarting to apply them.</span>
@@ -201,11 +191,7 @@ export default function DNS() {
                 </thead>
                 <tbody>
                   {dns.extraRecords.length === 0 && (
-                    <tr>
-                      <td colSpan={4} className="text-sm text-base-content/60">
-                        No records configured
-                      </td>
-                    </tr>
+                    <EmptyRow colSpan={4}>No records configured</EmptyRow>
                   )}
                   {dns.extraRecords.map((r) => (
                     <tr key={`${r.name}-${r.type}-${r.value}`}>
@@ -358,11 +344,7 @@ function SplitDNS({
             </thead>
             <tbody>
               {entries.length === 0 && (
-                <tr>
-                  <td colSpan={3} className="text-sm text-base-content/60">
-                    No split DNS domains configured
-                  </td>
-                </tr>
+                <EmptyRow colSpan={3}>No split DNS domains configured</EmptyRow>
               )}
               {entries.map(([d, ns]) => (
                 <tr key={d}>

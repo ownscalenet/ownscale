@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../auth'
 import { errorMessage, getInvitePreview } from '../api'
 import { usePageTitle } from '../hooks/usePageTitle'
+import { ErrorAlert, PageSpinner } from '../components/ui'
 
 // AcceptInvite is the /invite/:token landing page. An unauthenticated
 // visitor is sent through /login?next=/invite/:token, so they come back here
@@ -21,11 +22,7 @@ export default function AcceptInvite() {
   const error = query.error ? errorMessage(query.error) : null
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <span className="loading loading-spinner loading-lg"></span>
-      </div>
-    )
+    return <PageSpinner fullScreen />
   }
 
   if (!user) {
@@ -47,11 +44,7 @@ export default function AcceptInvite() {
         <div className="max-w-md">
           <h1 className="text-3xl font-bold mb-2">Join organization</h1>
 
-          {error && (
-            <div className="alert alert-error mb-4">
-              <span>{error}</span>
-            </div>
-          )}
+          <ErrorAlert error={error} />
 
           {preview ? (
             <p className="text-base-content/70">

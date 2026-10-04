@@ -12,17 +12,14 @@ import Funnel from './pages/Funnel'
 import Settings from './pages/Settings'
 import UserSettings from './pages/UserSettings'
 import AcceptInvite from './pages/AcceptInvite'
+import { PageSpinner } from './components/ui'
 import NotFound from './pages/NotFound'
 
 function RequireAuth({ children }: { children: React.ReactElement }) {
   const { user, loading } = useAuth()
   const location = useLocation()
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center">
-        <span className="loading loading-spinner loading-lg"></span>
-      </div>
-    )
+    return <PageSpinner fullScreen />
   }
   if (!user) {
     const next = encodeURIComponent(location.pathname + location.search)

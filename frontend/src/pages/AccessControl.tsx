@@ -11,6 +11,7 @@ import {
 import DiffModal from '../components/DiffModal'
 import LineNumberedTextarea from '../components/LineNumberedTextarea'
 import { usePageTitle } from '../hooks/usePageTitle'
+import { ErrorAlert, PageHeader, PageSpinner } from '../components/ui'
 
 // Cheatsheet is a static reference for headscale's HuJSON ACL policy syntax
 // (https://headscale.net/stable/ref/acls/), shown next to the editor.
@@ -183,16 +184,12 @@ export default function AccessControl() {
   const dirty = content !== savedContent
 
   if (query.isPending) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <span className="loading loading-spinner loading-lg"></span>
-      </div>
-    )
+    return <PageSpinner />
   }
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-4">Access Control</h1>
+      <PageHeader title="Access Control" />
 
       {notConfigured && (
         <div className="alert alert-warning mb-4">
@@ -202,11 +199,7 @@ export default function AccessControl() {
         </div>
       )}
 
-      {error && (
-        <div role="alert" className="alert alert-error mb-4">
-          <span>{error}</span>
-        </div>
-      )}
+      <ErrorAlert error={error} />
       {success && (
         <div role="alert" className="alert alert-success mb-4">
           <span>Policy saved. Headscale is restarting to apply it.</span>

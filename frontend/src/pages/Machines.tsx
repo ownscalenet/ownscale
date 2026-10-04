@@ -21,6 +21,7 @@ import {
   type HeadscaleUser,
   type Machine,
 } from '../api'
+import { ErrorAlert, PageHeader } from '../components/ui'
 
 // refreshIntervalMs is how often the Machines page reloads the list, so online
 // status, last seen and expiry stay current.
@@ -141,8 +142,7 @@ export default function Machines() {
 
   return (
     <>
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">Machines</h1>
+      <PageHeader title="Machines">
         {!notConfigured && (
           <button
             type="button"
@@ -152,7 +152,7 @@ export default function Machines() {
             Register machine
           </button>
         )}
-      </div>
+      </PageHeader>
 
       {dialog?.kind === 'register' && (
         <RegisterMachineDialog users={assignableUsers} onClose={closeDialog} onDone={reload} />
@@ -170,11 +170,7 @@ export default function Machines() {
         <RemoveInternalDialog machine={dialog.machine} onClose={closeDialog} onDone={reload} />
       )}
 
-      {error && (
-        <div className="alert alert-error mb-4">
-          <span>{error}</span>
-        </div>
-      )}
+      <ErrorAlert error={error} />
 
       {notConfigured ? (
         <div className="alert alert-warning">
@@ -304,15 +300,6 @@ function useDialogAction(onClose: () => void, onDone: () => void) {
     error: mutation.error ? errorMessage(mutation.error) : null,
     run: (action: () => Promise<unknown>) => mutation.mutate(action),
   }
-}
-
-function ErrorAlert({ error }: { error: string | null }) {
-  if (!error) return null
-  return (
-    <div role="alert" className="alert alert-error mb-4">
-      <span>{error}</span>
-    </div>
-  )
 }
 
 function RegisterMachineDialog({

@@ -10,15 +10,14 @@ import {
 import { createPasskey, browserSupportsWebAuthn } from '../lib/webauthn'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { useConfirm } from '../lib/confirm'
+import { ErrorAlert, PageHeader } from '../components/ui'
 
 export default function UserSettings() {
   usePageTitle('User settings')
 
   return (
     <>
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">User settings</h1>
-      </div>
+      <PageHeader title="User settings" />
 
       <PasskeysCard />
     </>
@@ -86,11 +85,7 @@ function PasskeysCard() {
           )}
         </div>
 
-        {error && (
-          <div className="alert alert-error mt-2">
-            <span>{error}</span>
-          </div>
-        )}
+        <ErrorAlert error={error} className="mt-2" />
 
         {!supported && (
           <div className="alert alert-warning mt-2">

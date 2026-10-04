@@ -10,6 +10,7 @@ import {
 } from '../api'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { useConfirm } from '../lib/confirm'
+import { EmptyRow, ErrorAlert, PageHeader, PageSpinner } from '../components/ui'
 
 export default function Funnel() {
   usePageTitle('Funnel')
@@ -70,16 +71,12 @@ export default function Funnel() {
   }
 
   if (loading) {
-    return (
-      <div className="flex items-center justify-center h-64">
-        <span className="loading loading-spinner loading-lg"></span>
-      </div>
-    )
+    return <PageSpinner />
   }
 
   return (
     <div>
-      <h1 className="text-2xl font-bold mb-4">Funnel</h1>
+      <PageHeader title="Funnel" />
 
       <div role="alert" className="alert alert-warning mb-4">
         <div>
@@ -98,11 +95,7 @@ export default function Funnel() {
           <span>Only owners and admins can create or delete funnel routes.</span>
         </div>
       )}
-      {error && (
-        <div role="alert" className="alert alert-error mb-4">
-          <span>{error}</span>
-        </div>
-      )}
+      <ErrorAlert error={error} />
 
       <div className="card bg-base-100 shadow mb-6">
         <div className="card-body">
@@ -119,11 +112,7 @@ export default function Funnel() {
               </thead>
               <tbody>
                 {routes.length === 0 && (
-                  <tr>
-                    <td colSpan={4} className="text-sm text-base-content/60">
-                      No funnel routes configured
-                    </td>
-                  </tr>
+                  <EmptyRow colSpan={4}>No funnel routes configured</EmptyRow>
                 )}
                 {routes.map((r) => (
                   <tr key={r.id}>
@@ -164,11 +153,7 @@ export default function Funnel() {
         <div className="card bg-base-100 shadow">
           <div className="card-body">
             <h2 className="card-title">Create funnel route</h2>
-            {createError && (
-              <div role="alert" className="alert alert-error mb-2">
-                <span>{createError}</span>
-              </div>
-            )}
+            <ErrorAlert error={createError} className="mb-2" />
             <form className="flex flex-wrap gap-2 items-end" onSubmit={handleCreate}>
               <fieldset className="fieldset">
                 <legend className="fieldset-legend">Label</legend>
