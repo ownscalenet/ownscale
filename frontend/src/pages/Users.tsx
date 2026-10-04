@@ -1,22 +1,24 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../auth'
 import { usePageTitle } from '../hooks/usePageTitle'
 import {
-  ApiError,
   ROLES,
   createInvite,
   deleteInvite,
-  isAbortError,
+  errorMessage,
   listInvites,
   listMembers,
   removeMember,
   transferOwnership,
   updateMemberRole,
-  type Invite,
   type Member,
   type Role,
 } from '../api'
 import { useConfirm } from '../lib/confirm'
+import Modal from '../components/Modal'
+import CopyButton from '../components/CopyButton'
+import { ErrorAlert, PageHeader } from '../components/ui'
 
 function roleLabel(role: string): string {
   return role
@@ -28,87 +30,57 @@ function roleLabel(role: string): string {
 export default function Users() {
   usePageTitle('Users')
   const { user } = useAuth()
-  const [members, setMembers] = useState<Member[]>([])
-  const [canManage, setCanManage] = useState(false)
-  const [callerRole, setCallerRole] = useState<Role>('member')
-  const [invites, setInvites] = useState<Invite[]>([])
-  const [error, setError] = useState<string | null>(null)
+  const queryClient = useQueryClient()
+  const membersQuery = useQuery({
+    queryKey: ['members'],
+    queryFn: ({ signal }) => listMembers(signal),
+  })
+  const members = membersQuery.data?.members ?? []
+  const canManage = membersQuery.data?.canManage ?? false
+  const callerRole = membersQuery.data?.callerRole ?? 'member'
+  // Only managers may list invites.
+  const invitesQuery = useQuery({
+    queryKey: ['invites'],
+    queryFn: ({ signal }) => listInvites(signal),
+    enabled: canManage,
+  })
+  const invites = invitesQuery.data?.invites ?? []
 
-  const inviteRef = useRef<HTMLDialogElement>(null)
-  const [inviteEmail, setInviteEmail] = useState('')
-  const [inviteRole, setInviteRole] = useState<Role>('member')
-  const [inviteLink, setInviteLink] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const [inviting, setInviting] = useState(false)
 
-  const loadMembers = async (signal?: AbortSignal) => {
-    try {
-      const res = await listMembers(signal)
-      setMembers(res.members)
-      setCanManage(res.canManage)
-      setCallerRole(res.callerRole)
-      setError(null)
-    } catch (err) {
-      if (isAbortError(err)) return
-      setError(err instanceof Error ? err.message : String(err))
-    }
-  }
-
-  const loadInvites = async (signal?: AbortSignal) => {
-    try {
-      const res = await listInvites(signal)
-      setInvites(res.invites ?? [])
-    } catch (err) {
-      if (isAbortError(err)) return
-      // Non-managers get a 403 here; just leave the list empty.
-      if (err instanceof ApiError && err.status === 403) return
-      setError(err instanceof Error ? err.message : String(err))
-    }
-  }
-
-  useEffect(() => {
-    const controller = new AbortController()
-    void loadMembers(controller.signal)
-    void loadInvites(controller.signal)
-    return () => controller.abort()
-  }, [])
-
-  const run = async (fn: () => Promise<unknown>) => {
-    setBusy(true)
-    try {
-      await fn()
-      await Promise.all([loadMembers(), loadInvites()])
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(false)
-    }
-  }
+  // action runs a member or invite change, then reloads both lists.
+  const action = useMutation({
+    mutationFn: (fn: () => Promise<unknown>) => fn(),
+    onSuccess: () =>
+      Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['members'] }),
+        queryClient.invalidateQueries({ queryKey: ['invites'] }),
+      ]),
+  })
+  const run = (fn: () => Promise<unknown>) => action.mutate(fn)
+  const busy = action.isPending
+  const queryError = membersQuery.error ?? invitesQuery.error
+  const error = action.error
+    ? errorMessage(action.error)
+    : queryError
+      ? errorMessage(queryError)
+      : null
 
   return (
     <>
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">Users</h1>
+      <PageHeader title="Users">
         {canManage && (
           <button
             type="button"
             className="btn btn-primary btn-sm"
-            onClick={() => {
-              setInviteEmail('')
-              setInviteRole('member')
-              setInviteLink(null)
-              inviteRef.current?.showModal()
-            }}
+            onClick={() => setInviting(true)}
           >
             Invite member
           </button>
         )}
-      </div>
+      </PageHeader>
 
-      {error && (
-        <div className="alert alert-error mb-4">
-          <span>{error}</span>
-        </div>
-      )}
+      <ErrorAlert error={error} />
 
       <h2 className="text-lg font-semibold mb-2">Members</h2>
       <div className="card bg-base-100 shadow mb-8">
@@ -163,21 +135,17 @@ export default function Users() {
                         <td>{roleLabel(i.role)}</td>
                         <td>{new Date(i.expiresAt).toLocaleString()}</td>
                         <td className="text-right">
-                          <button
-                            type="button"
+                          <CopyButton
+                            text={`${window.location.origin}/invite/${i.token}`}
                             className="btn btn-xs btn-outline mr-2"
-                            onClick={() => {
-                              const url = `${window.location.origin}/invite/${i.token}`
-                              void navigator.clipboard.writeText(url)
-                            }}
                           >
                             Copy link
-                          </button>
+                          </CopyButton>
                           <button
                             type="button"
                             className="btn btn-xs btn-outline btn-error"
                             disabled={busy}
-                            onClick={() => void run(() => deleteInvite(i.id))}
+                            onClick={() => run(() => deleteInvite(i.id))}
                           >
                             Revoke
                           </button>
@@ -192,96 +160,12 @@ export default function Users() {
         </>
       )}
 
-      <dialog ref={inviteRef} className="modal">
-        <div className="modal-box text-left">
-          <h3 className="text-lg font-bold mb-4">Invite a member</h3>
-          {inviteLink ? (
-            <div className="space-y-4">
-              <p className="text-sm opacity-70">
-                Share this link with the person you&rsquo;re inviting. It expires in 7 days.
-              </p>
-              <div className="join w-full">
-                <input
-                  type="text"
-                  readOnly
-                  className="input input-bordered join-item w-full"
-                  value={inviteLink}
-                />
-                <button
-                  type="button"
-                  className="btn join-item"
-                  onClick={() => void navigator.clipboard.writeText(inviteLink)}
-                >
-                  Copy
-                </button>
-              </div>
-              <div className="modal-action">
-                <button type="button" className="btn" onClick={() => inviteRef.current?.close()}>
-                  Done
-                </button>
-              </div>
-            </div>
-          ) : (
-            <form
-              className="space-y-4"
-              onSubmit={(e) => {
-                e.preventDefault()
-                void run(async () => {
-                  const res = await createInvite(inviteEmail, inviteRole)
-                  setInviteLink(`${window.location.origin}/invite/${res.invite.token}`)
-                })
-              }}
-            >
-              <fieldset className="fieldset">
-                <legend className="fieldset-legend">
-                  Email (optional, for your reference only)
-                </legend>
-                <input
-                  type="email"
-                  className="input input-bordered w-full"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  autoComplete="off"
-                  data-1p-ignore
-                  data-lpignore="true"
-                  data-bwignore
-                  data-form-type="other"
-                  data-protonpass-ignore
-                />
-              </fieldset>
-              <fieldset className="fieldset">
-                <legend className="fieldset-legend">Role</legend>
-                <select
-                  className="select select-bordered w-full"
-                  value={inviteRole}
-                  onChange={(e) => setInviteRole(e.target.value as Role)}
-                >
-                  {ROLES.filter((r) => r !== 'owner').map((r) => (
-                    <option key={r} value={r}>
-                      {roleLabel(r)}
-                    </option>
-                  ))}
-                </select>
-              </fieldset>
-              <div className="modal-action">
-                <button type="submit" className="btn btn-primary" disabled={busy}>
-                  Create invite link
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-ghost"
-                  onClick={() => inviteRef.current?.close()}
-                >
-                  Cancel
-                </button>
-              </div>
-            </form>
-          )}
-        </div>
-        <form method="dialog" className="modal-backdrop">
-          <button>close</button>
-        </form>
-      </dialog>
+      {inviting && (
+        <InviteDialog
+          onClose={() => setInviting(false)}
+          onCreated={() => queryClient.invalidateQueries({ queryKey: ['invites'] })}
+        />
+      )}
     </>
   )
 }
@@ -299,7 +183,7 @@ function MemberRow({
   canManage: boolean
   isOwner: boolean
   busy: boolean
-  run: (fn: () => Promise<unknown>) => Promise<void>
+  run: (fn: () => Promise<unknown>) => void
 }) {
   const confirm = useConfirm()
   const canRemove = canManage && m.role !== 'owner' && !caller
@@ -317,7 +201,11 @@ function MemberRow({
             className="select select-bordered select-sm"
             value={m.role}
             disabled={busy}
-            onChange={(e) => void run(() => updateMemberRole(m.id, e.target.value as Role))}
+            onChange={(e) => {
+              // Read now: the action runs later, after React resets the select.
+              const role = e.target.value as Role
+              run(() => updateMemberRole(m.id, role))
+            }}
           >
             {ROLES.filter((r) => r !== 'owner').map((r) => (
               <option key={r} value={r}>
@@ -342,7 +230,7 @@ function MemberRow({
                   message: 'You will become an admin.',
                   confirmLabel: 'Transfer ownership',
                 })
-                if (ok) void run(() => transferOwnership(m.id))
+                if (ok) run(() => transferOwnership(m.id))
               }}
             >
               Make owner
@@ -360,7 +248,7 @@ function MemberRow({
                   confirmLabel: 'Remove member',
                   danger: true,
                 })
-                if (ok) void run(() => removeMember(m.id))
+                if (ok) run(() => removeMember(m.id))
               }}
             >
               Remove
@@ -369,5 +257,91 @@ function MemberRow({
         </td>
       )}
     </tr>
+  )
+}
+
+// InviteDialog creates an invite link and shows it for sharing.
+function InviteDialog({ onClose, onCreated }: { onClose: () => void; onCreated: () => void }) {
+  const [email, setEmail] = useState('')
+  const [role, setRole] = useState<Role>('member')
+  const create = useMutation({
+    mutationFn: () => createInvite(email, role),
+    onSuccess: onCreated,
+  })
+  const link = create.data ? `${window.location.origin}/invite/${create.data.invite.token}` : null
+
+  return (
+    <Modal open onClose={onClose} title="Invite a member">
+      {link ? (
+        <div className="space-y-4">
+          <p className="text-sm opacity-70">
+            Share this link with the person you&rsquo;re inviting. It expires in 7 days.
+          </p>
+          <div className="join w-full">
+            <input
+              type="text"
+              readOnly
+              className="input input-bordered join-item w-full"
+              value={link}
+            />
+            <CopyButton text={link} className="btn join-item">
+              Copy
+            </CopyButton>
+          </div>
+          <div className="modal-action">
+            <button type="button" className="btn" onClick={onClose}>
+              Done
+            </button>
+          </div>
+        </div>
+      ) : (
+        <form
+          className="space-y-4"
+          onSubmit={(e) => {
+            e.preventDefault()
+            create.mutate()
+          }}
+        >
+          <ErrorAlert error={create.error ? errorMessage(create.error) : null} />
+          <fieldset className="fieldset">
+            <legend className="fieldset-legend">Email (optional, for your reference only)</legend>
+            <input
+              type="email"
+              className="input input-bordered w-full"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="off"
+              data-1p-ignore
+              data-lpignore="true"
+              data-bwignore
+              data-form-type="other"
+              data-protonpass-ignore
+            />
+          </fieldset>
+          <fieldset className="fieldset">
+            <legend className="fieldset-legend">Role</legend>
+            <select
+              className="select select-bordered w-full"
+              value={role}
+              onChange={(e) => setRole(e.target.value as Role)}
+            >
+              {ROLES.filter((r) => r !== 'owner').map((r) => (
+                <option key={r} value={r}>
+                  {roleLabel(r)}
+                </option>
+              ))}
+            </select>
+          </fieldset>
+          <div className="modal-action">
+            <button type="submit" className="btn btn-primary" disabled={create.isPending}>
+              Create invite link
+            </button>
+            <button type="button" className="btn btn-ghost" onClick={onClose}>
+              Cancel
+            </button>
+          </div>
+        </form>
+      )}
+    </Modal>
   )
 }

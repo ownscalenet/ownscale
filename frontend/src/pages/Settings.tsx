@@ -1,18 +1,22 @@
-import { useEffect, useRef, useState } from 'react'
+import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../auth'
 import {
   createAuthKey,
   deleteAuthKey,
   expireAuthKey,
+  errorMessage,
+  isNotConfigured,
   listAuthKeys,
-  ApiError,
-  isAbortError,
   type HeadscaleUser,
   type PreAuthKey,
 } from '../api'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { useConfirm } from '../lib/confirm'
+import Modal from '../components/Modal'
+import CopyButton from '../components/CopyButton'
+import { ErrorAlert, PageHeader } from '../components/ui'
 
 const TAG_ONLY = '__tag_only__'
 
@@ -58,39 +62,20 @@ export default function Settings() {
   const status = searchParams.get('status') ?? ''
   const filtered = userFilter !== '' || status !== ''
 
-  const [authKeys, setAuthKeys] = useState<PreAuthKey[]>([])
-  const [users, setUsers] = useState<HeadscaleUser[]>([])
-  const [assignableUsers, setAssignableUsers] = useState<HeadscaleUser[]>([])
-  const [canManage, setCanManage] = useState(false)
-  const [notConfigured, setNotConfigured] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const createRef = useRef<HTMLDialogElement>(null)
-
-  const load = async (signal?: AbortSignal) => {
-    try {
-      const res = await listAuthKeys(signal)
-      setAuthKeys(res.authKeys ?? [])
-      setUsers(res.users ?? [])
-      setAssignableUsers(res.assignableUsers ?? [])
-      setCanManage(res.canManage)
-      setNotConfigured(false)
-      setError(null)
-    } catch (err) {
-      if (isAbortError(err)) return
-      if (err instanceof ApiError && err.status === 409) {
-        setNotConfigured(true)
-        setError(null)
-        return
-      }
-      setError(err instanceof Error ? err.message : String(err))
-    }
+  const queryClient = useQueryClient()
+  const query = useQuery({ queryKey: ['authKeys'], queryFn: ({ signal }) => listAuthKeys(signal) })
+  const authKeys = query.data?.authKeys ?? []
+  const users = query.data?.users ?? []
+  const assignableUsers = query.data?.assignableUsers ?? []
+  const canManage = query.data?.canManage ?? false
+  const notConfigured = isNotConfigured(query.error)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const error = actionError ?? (query.error && !notConfigured ? errorMessage(query.error) : null)
+  const reload = () => {
+    setActionError(null)
+    void queryClient.invalidateQueries({ queryKey: ['authKeys'] })
   }
-
-  useEffect(() => {
-    const controller = new AbortController()
-    void load(controller.signal)
-    return () => controller.abort()
-  }, [])
+  const [creating, setCreating] = useState(false)
 
   const updateFilter = (key: string, value: string) => {
     const next = new URLSearchParams(searchParams)
@@ -103,15 +88,9 @@ export default function Settings() {
 
   return (
     <>
-      <div className="flex items-center justify-between mb-4">
-        <h1 className="text-2xl font-bold">Settings</h1>
-      </div>
+      <PageHeader title="Settings" />
 
-      {error && (
-        <div className="alert alert-error mb-4">
-          <span>{error}</span>
-        </div>
-      )}
+      <ErrorAlert error={error} />
 
       {notConfigured ? (
         <div className="alert alert-warning">
@@ -166,7 +145,7 @@ export default function Settings() {
               <button
                 type="button"
                 className="btn btn-sm btn-primary ml-auto"
-                onClick={() => createRef.current?.showModal()}
+                onClick={() => setCreating(true)}
               >
                 Create pre-auth key
               </button>
@@ -188,7 +167,12 @@ export default function Settings() {
                   </thead>
                   <tbody>
                     {visible.map((k) => (
-                      <AuthKeyRow key={k.id} authKey={k} onChange={load} onError={setError} />
+                      <AuthKeyRow
+                        key={k.id}
+                        authKey={k}
+                        onChange={reload}
+                        onError={setActionError}
+                      />
                     ))}
                   </tbody>
                 </table>
@@ -202,12 +186,14 @@ export default function Settings() {
         </div>
       )}
 
-      <CreateAuthKeyDialog
-        dialogRef={createRef}
-        users={assignableUsers}
-        canManage={canManage}
-        onCreated={load}
-      />
+      {creating && (
+        <CreateAuthKeyDialog
+          onClose={() => setCreating(false)}
+          users={assignableUsers}
+          canManage={canManage}
+          onCreated={reload}
+        />
+      )}
     </>
   )
 }
@@ -215,14 +201,25 @@ export default function Settings() {
 function AuthKeyRow({
   authKey: k,
   onChange,
-  onError,
+  onError: reportError,
 }: {
   authKey: PreAuthKey
   onChange: () => void
   onError: (message: string) => void
 }) {
   const confirm = useConfirm()
-  const [busy, setBusy] = useState(false)
+  const onError = (err: unknown) => reportError(errorMessage(err))
+  const expire = useMutation({
+    mutationFn: () => expireAuthKey(k.id),
+    onSuccess: onChange,
+    onError,
+  })
+  const remove = useMutation({
+    mutationFn: () => deleteAuthKey(k.id),
+    onSuccess: onChange,
+    onError,
+  })
+  const busy = expire.isPending || remove.isPending
   const expired = isExpired(k)
 
   const handleExpire = async () => {
@@ -232,16 +229,7 @@ function AuthKeyRow({
       confirmLabel: 'Expire key',
       danger: true,
     })
-    if (!ok) return
-    setBusy(true)
-    try {
-      await expireAuthKey(k.id)
-      onChange()
-    } catch (err) {
-      onError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(false)
-    }
+    if (ok) expire.mutate()
   }
 
   const handleDelete = async () => {
@@ -251,16 +239,7 @@ function AuthKeyRow({
       confirmLabel: 'Delete key',
       danger: true,
     })
-    if (!ok) return
-    setBusy(true)
-    try {
-      await deleteAuthKey(k.id)
-      onChange()
-    } catch (err) {
-      onError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(false)
-    }
+    if (ok) remove.mutate()
   }
 
   return (
@@ -314,12 +293,12 @@ function AuthKeyRow({
 // CreateAuthKeyDialog creates a pre-auth key. Without canManage, keys can
 // only be untagged ones for the caller.
 function CreateAuthKeyDialog({
-  dialogRef,
+  onClose,
   users,
   canManage,
   onCreated,
 }: {
-  dialogRef: React.RefObject<HTMLDialogElement | null>
+  onClose: () => void
   users: HeadscaleUser[]
   canManage: boolean
   onCreated: () => void
@@ -332,25 +311,17 @@ function CreateAuthKeyDialog({
   const [ephemeral, setEphemeral] = useState(false)
   const { organization } = useAuth()
   const loginServer = `${window.location.protocol}//${organization?.Domain}`
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [validationError, setValidationError] = useState<string | null>(null)
   const [createdKey, setCreatedKey] = useState<string | null>(null)
-
-  const reset = () => {
-    setTagOnly(false)
-    setUserId('')
-    setTagsInput('')
-    setExpiryDays(90)
-    setReusable(false)
-    setEphemeral(false)
-    setError(null)
-    setCreatedKey(null)
-  }
-
-  const close = () => {
-    dialogRef.current?.close()
-    reset()
-  }
+  const create = useMutation({
+    mutationFn: createAuthKey,
+    onSuccess: (res) => {
+      setCreatedKey(res.authKey.key)
+      onCreated()
+    },
+  })
+  const busy = create.isPending
+  const error = validationError ?? (create.error ? errorMessage(create.error) : null)
 
   const parsedTags = tagsInput
     .split(',')
@@ -358,172 +329,150 @@ function CreateAuthKeyDialog({
     .filter(Boolean)
     .map((t) => (t.startsWith('tag:') ? t : `tag:${t}`))
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    setError(null)
+    setValidationError(null)
     if (!tagOnly && !userId) {
-      setError('Choose a user, or toggle "Tag only" and provide ACL tags.')
+      setValidationError('Choose a user, or toggle "Tag only" and provide ACL tags.')
       return
     }
     if (tagOnly && parsedTags.length === 0) {
-      setError('At least one ACL tag is required for a tag-only key.')
+      setValidationError('At least one ACL tag is required for a tag-only key.')
       return
     }
-    setBusy(true)
-    try {
-      const res = await createAuthKey({
-        userId: tagOnly ? undefined : userId,
-        aclTags: parsedTags,
-        expiryDays,
-        reusable,
-        ephemeral,
-      })
-      setCreatedKey(res.authKey.key)
-      onCreated()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(false)
-    }
+    create.mutate({
+      userId: tagOnly ? undefined : userId,
+      aclTags: parsedTags,
+      expiryDays,
+      reusable,
+      ephemeral,
+    })
   }
 
   return (
-    <dialog ref={dialogRef} className="modal">
-      <div className="modal-box text-left">
-        {createdKey ? (
-          <>
-            <h3 className="text-lg font-bold mb-4">Pre-auth key created</h3>
-            <p className="text-sm opacity-60 mb-2">
-              Copy this key now &mdash; it won&rsquo;t be shown again.
-            </p>
-            <div className="mockup-code text-sm mb-4">
-              <pre data-prefix="$">
-                <code>{createdKey}</code>
-              </pre>
-            </div>
-            <p className="text-sm opacity-60 mb-2">Use it to register a new machine:</p>
-            <div className="mockup-code text-xs mb-4 overflow-x-auto">
-              <pre data-prefix="$">
-                <code>
-                  tailscale up --login-server={loginServer} --authkey {createdKey}
-                </code>
-              </pre>
-            </div>
-            <div className="modal-action">
-              <button
-                type="button"
-                className="btn"
-                onClick={() => void navigator.clipboard.writeText(createdKey)}
-              >
-                Copy key
-              </button>
-              <button type="button" className="btn btn-primary" onClick={close}>
-                Done
-              </button>
-            </div>
-          </>
-        ) : (
-          <>
-            <h3 className="text-lg font-bold mb-4">Create pre-auth key</h3>
-            {error && (
-              <div className="alert alert-error mb-4">
-                <span>{error}</span>
-              </div>
+    <Modal
+      open
+      onClose={onClose}
+      title={createdKey ? 'Pre-auth key created' : 'Create pre-auth key'}
+    >
+      {createdKey ? (
+        <>
+          <p className="text-sm opacity-60 mb-2">
+            Copy this key now &mdash; it won&rsquo;t be shown again.
+          </p>
+          <div className="mockup-code text-sm mb-4">
+            <pre data-prefix="$">
+              <code>{createdKey}</code>
+            </pre>
+          </div>
+          <p className="text-sm opacity-60 mb-2">Use it to register a new machine:</p>
+          <div className="mockup-code text-xs mb-4 overflow-x-auto">
+            <pre data-prefix="$">
+              <code>
+                tailscale up --login-server={loginServer} --authkey {createdKey}
+              </code>
+            </pre>
+          </div>
+          <div className="modal-action">
+            <CopyButton text={createdKey}>Copy key</CopyButton>
+            <button type="button" className="btn btn-primary" onClick={onClose}>
+              Done
+            </button>
+          </div>
+        </>
+      ) : (
+        <>
+          <ErrorAlert error={error} />
+          <form className="space-y-4" onSubmit={handleSubmit}>
+            {canManage && (
+              <label className="fieldset-label cursor-pointer gap-3">
+                <input
+                  type="checkbox"
+                  className="checkbox checkbox-sm"
+                  checked={tagOnly}
+                  onChange={(e) => setTagOnly(e.target.checked)}
+                />
+                <span>Tag only (no owning user)</span>
+              </label>
             )}
-            <form className="space-y-4" onSubmit={(e) => void handleSubmit(e)}>
-              {canManage && (
-                <label className="fieldset-label cursor-pointer gap-3">
-                  <input
-                    type="checkbox"
-                    className="checkbox checkbox-sm"
-                    checked={tagOnly}
-                    onChange={(e) => setTagOnly(e.target.checked)}
-                  />
-                  <span>Tag only (no owning user)</span>
-                </label>
-              )}
 
-              {!tagOnly && (
-                <fieldset className="fieldset">
-                  <legend className="fieldset-legend">User</legend>
-                  <select
-                    className="select select-bordered w-full"
-                    value={userId}
-                    onChange={(e) => setUserId(e.target.value)}
-                    required={!tagOnly}
-                  >
-                    <option value="">Select a user…</option>
-                    {users.map((u) => (
-                      <option key={u.id} value={u.id}>
-                        {u.name}
-                      </option>
-                    ))}
-                  </select>
-                </fieldset>
-              )}
-
-              {canManage && (
-                <fieldset className="fieldset">
-                  <legend className="fieldset-legend">ACL tags{tagOnly && ' (required)'}</legend>
-                  <input
-                    type="text"
-                    className="input input-bordered w-full font-mono"
-                    placeholder="tag:server, tag:prod"
-                    value={tagsInput}
-                    onChange={(e) => setTagsInput(e.target.value)}
-                  />
-                  <p className="text-sm opacity-60 mt-1">
-                    Comma-separated. The <code>tag:</code> prefix is added automatically.
-                  </p>
-                </fieldset>
-              )}
-
+            {!tagOnly && (
               <fieldset className="fieldset">
-                <legend className="fieldset-legend">Expires in (days)</legend>
-                <input
-                  type="number"
-                  min={1}
-                  className="input input-bordered w-full"
-                  value={expiryDays}
-                  onChange={(e) => setExpiryDays(Number(e.target.value))}
-                  required
-                />
+                <legend className="fieldset-legend">User</legend>
+                <select
+                  className="select select-bordered w-full"
+                  value={userId}
+                  onChange={(e) => setUserId(e.target.value)}
+                  required={!tagOnly}
+                >
+                  <option value="">Select a user…</option>
+                  {users.map((u) => (
+                    <option key={u.id} value={u.id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
               </fieldset>
+            )}
 
-              <label className="fieldset-label cursor-pointer gap-3">
+            {canManage && (
+              <fieldset className="fieldset">
+                <legend className="fieldset-legend">ACL tags{tagOnly && ' (required)'}</legend>
                 <input
-                  type="checkbox"
-                  className="checkbox checkbox-sm"
-                  checked={reusable}
-                  onChange={(e) => setReusable(e.target.checked)}
+                  type="text"
+                  className="input input-bordered w-full font-mono"
+                  placeholder="tag:server, tag:prod"
+                  value={tagsInput}
+                  onChange={(e) => setTagsInput(e.target.value)}
                 />
-                <span>Reusable</span>
-              </label>
-              <label className="fieldset-label cursor-pointer gap-3">
-                <input
-                  type="checkbox"
-                  className="checkbox checkbox-sm"
-                  checked={ephemeral}
-                  onChange={(e) => setEphemeral(e.target.checked)}
-                />
-                <span>Ephemeral</span>
-              </label>
+                <p className="text-sm opacity-60 mt-1">
+                  Comma-separated. The <code>tag:</code> prefix is added automatically.
+                </p>
+              </fieldset>
+            )}
 
-              <div className="modal-action">
-                <button type="submit" className="btn btn-primary" disabled={busy}>
-                  Create
-                </button>
-                <button type="button" className="btn btn-ghost" onClick={close}>
-                  Cancel
-                </button>
-              </div>
-            </form>
-          </>
-        )}
-      </div>
-      <form method="dialog" className="modal-backdrop">
-        <button>close</button>
-      </form>
-    </dialog>
+            <fieldset className="fieldset">
+              <legend className="fieldset-legend">Expires in (days)</legend>
+              <input
+                type="number"
+                min={1}
+                className="input input-bordered w-full"
+                value={expiryDays}
+                onChange={(e) => setExpiryDays(Number(e.target.value))}
+                required
+              />
+            </fieldset>
+
+            <label className="fieldset-label cursor-pointer gap-3">
+              <input
+                type="checkbox"
+                className="checkbox checkbox-sm"
+                checked={reusable}
+                onChange={(e) => setReusable(e.target.checked)}
+              />
+              <span>Reusable</span>
+            </label>
+            <label className="fieldset-label cursor-pointer gap-3">
+              <input
+                type="checkbox"
+                className="checkbox checkbox-sm"
+                checked={ephemeral}
+                onChange={(e) => setEphemeral(e.target.checked)}
+              />
+              <span>Ephemeral</span>
+            </label>
+
+            <div className="modal-action">
+              <button type="submit" className="btn btn-primary" disabled={busy}>
+                Create
+              </button>
+              <button type="button" className="btn btn-ghost" onClick={onClose}>
+                Cancel
+              </button>
+            </div>
+          </form>
+        </>
+      )}
+    </Modal>
   )
 }
