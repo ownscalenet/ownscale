@@ -73,11 +73,15 @@ export class ApiError extends Error {
 // leaving the current page stuck showing a raw "unauthorized" error.
 export const UNAUTHORIZED_EVENT = 'ownscale:unauthorized'
 
-// True for the error fetch() throws when an in-flight request is aborted via
-// AbortController. Callers use this to skip setError() on an intentional
-// cancellation (e.g. unmount, or a newer request superseding an older one).
-export function isAbortError(err: unknown): boolean {
-  return err instanceof DOMException && err.name === 'AbortError'
+// errorMessage returns the message to show for err.
+export function errorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+// isNotConfigured reports whether err means the organization's headscale
+// isn't reachable yet, e.g. while it restarts to apply settings.
+export function isNotConfigured(err: unknown): boolean {
+  return err instanceof ApiError && err.status === 409
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

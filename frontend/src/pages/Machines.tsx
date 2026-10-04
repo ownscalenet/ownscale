@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
+import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth'
 import { usePageTitle } from '../hooks/usePageTitle'
@@ -7,17 +8,16 @@ import { faqURL } from '../lib/faq'
 import { useConfirm } from '../lib/confirm'
 import Modal from '../components/Modal'
 import {
-  ApiError,
   deleteMachine,
+  errorMessage,
   expireMachine,
-  isAbortError,
+  isNotConfigured,
   listFunnelRoutes,
   listMachines,
   registerMachine,
   renameMachine,
   setMachineRoutes,
   setMachineTags,
-  type FunnelRoute,
   type HeadscaleUser,
   type Machine,
 } from '../api'
@@ -89,74 +89,31 @@ export default function Machines() {
   const status = searchParams.get('status') ?? ''
   const filtered = q !== '' || userFilter !== '' || status !== ''
 
-  const [machines, setMachines] = useState<Machine[]>([])
-  const [users, setUsers] = useState<HeadscaleUser[]>([])
-  const [assignableUsers, setAssignableUsers] = useState<HeadscaleUser[]>([])
-  const [total, setTotal] = useState(0)
-  const [canManage, setCanManage] = useState(false)
-  const [notConfigured, setNotConfigured] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const queryClient = useQueryClient()
+  const filters = { q, user: userFilter, status }
+  // Polling pauses while the tab is hidden. Dialogs keep their own copy of the
+  // machine, so a refresh can't reset what's being edited.
+  const query = useQuery({
+    queryKey: ['machines', filters],
+    queryFn: ({ signal }) => listMachines(filters, signal),
+    placeholderData: keepPreviousData,
+    refetchInterval: refreshIntervalMs,
+    refetchOnWindowFocus: true,
+  })
+  const machines = query.data?.machines ?? []
+  const users = query.data?.users ?? []
+  const assignableUsers = query.data?.assignableUsers ?? []
+  const total = query.data?.total ?? 0
+  const canManage = query.data?.canManage ?? false
+  const notConfigured = isNotConfigured(query.error)
+  const [actionError, setActionError] = useState<string | null>(null)
+  const error = actionError ?? (query.error && !notConfigured ? errorMessage(query.error) : null)
+  const reload = () => {
+    setActionError(null)
+    void queryClient.invalidateQueries({ queryKey: ['machines'] })
+  }
   const [dialog, setDialog] = useState<MachineDialog | null>(null)
   const closeDialog = () => setDialog(null)
-
-  const load = async (signal?: AbortSignal) => {
-    try {
-      const res = await listMachines({ q, user: userFilter, status }, signal)
-      setMachines(res.machines ?? [])
-      setUsers(res.users ?? [])
-      setAssignableUsers(res.assignableUsers ?? [])
-      setTotal(res.total)
-      setCanManage(res.canManage)
-      setNotConfigured(false)
-      setError(null)
-    } catch (err) {
-      if (isAbortError(err)) return
-      if (err instanceof ApiError && err.status === 409) {
-        setNotConfigured(true)
-        setError(null)
-        return
-      }
-      setError(err instanceof Error ? err.message : String(err))
-    }
-  }
-
-  // Reloads with the current filters every refreshIntervalMs. A filter change
-  // aborts the in-flight load and restarts polling with the new filters.
-  useEffect(() => {
-    const controller = new AbortController()
-    let timer: ReturnType<typeof setTimeout> | undefined
-    let running = false
-
-    const tick = async (force: boolean) => {
-      if (running) return
-      clearTimeout(timer)
-      // Skip a hidden tab, and an open dialog or row menu: a refresh could
-      // reset what the user is editing, or unmount its row if it stops
-      // matching the filters.
-      if (
-        force ||
-        (document.visibilityState === 'visible' &&
-          !document.querySelector('[role="dialog"], [role="menu"]'))
-      ) {
-        running = true
-        await load(controller.signal)
-        running = false
-      }
-      if (!controller.signal.aborted) timer = setTimeout(() => void tick(false), refreshIntervalMs)
-    }
-    const onVisibilityChange = () => {
-      if (document.visibilityState === 'visible') void tick(false)
-    }
-
-    void tick(true)
-    document.addEventListener('visibilitychange', onVisibilityChange)
-    return () => {
-      controller.abort()
-      clearTimeout(timer)
-      document.removeEventListener('visibilitychange', onVisibilityChange)
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [q, userFilter, status])
 
   // Filters replace the history entry, so Back leaves the page instead of
   // stepping through every filter change.
@@ -198,19 +155,19 @@ export default function Machines() {
       </div>
 
       {dialog?.kind === 'register' && (
-        <RegisterMachineDialog users={assignableUsers} onClose={closeDialog} onDone={load} />
+        <RegisterMachineDialog users={assignableUsers} onClose={closeDialog} onDone={reload} />
       )}
       {dialog?.kind === 'rename' && (
-        <RenameDialog machine={dialog.machine} onClose={closeDialog} onDone={load} />
+        <RenameDialog machine={dialog.machine} onClose={closeDialog} onDone={reload} />
       )}
       {dialog?.kind === 'tags' && (
-        <TagsDialog machine={dialog.machine} onClose={closeDialog} onDone={load} />
+        <TagsDialog machine={dialog.machine} onClose={closeDialog} onDone={reload} />
       )}
       {dialog?.kind === 'routes' && (
-        <RoutesDialog machine={dialog.machine} onClose={closeDialog} onDone={load} />
+        <RoutesDialog machine={dialog.machine} onClose={closeDialog} onDone={reload} />
       )}
       {dialog?.kind === 'removeInternal' && (
-        <RemoveInternalDialog machine={dialog.machine} onClose={closeDialog} onDone={load} />
+        <RemoveInternalDialog machine={dialog.machine} onClose={closeDialog} onDone={reload} />
       )}
 
       {error && (
@@ -303,7 +260,8 @@ export default function Machines() {
                           machine={m}
                           canManage={canManage}
                           canEdit={canManage || assignableUsers.some((u) => u.id === m.user?.id)}
-                          onChange={load}
+                          onChange={reload}
+                          onError={setActionError}
                           onOpen={(kind) => setDialog({ kind, machine: m })}
                         />
                       ))}
@@ -334,22 +292,18 @@ type MachineDialogKind = Exclude<MachineDialog['kind'], 'register'>
 // useDialogAction runs a dialog's action: busy while it runs, its error shown
 // in the dialog, and on success onDone (reload the list) and onClose.
 function useDialogAction(onClose: () => void, onDone: () => void) {
-  const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const run = async (action: () => Promise<unknown>) => {
-    setBusy(true)
-    setError(null)
-    try {
-      await action()
+  const mutation = useMutation({
+    mutationFn: (action: () => Promise<unknown>) => action(),
+    onSuccess: () => {
       onDone()
       onClose()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(false)
-    }
+    },
+  })
+  return {
+    busy: mutation.isPending,
+    error: mutation.error ? errorMessage(mutation.error) : null,
+    run: (action: () => Promise<unknown>) => mutation.mutate(action),
   }
-  return { busy, error, run }
 }
 
 function ErrorAlert({ error }: { error: string | null }) {
@@ -388,7 +342,7 @@ function RegisterMachineDialog({
       setValidation('Paste the registration key or URL shown by `tailscale up`.')
       return
     }
-    void run(() => registerMachine(userId, key.trim()))
+    run(() => registerMachine(userId, key.trim()))
   }
 
   return (
@@ -466,7 +420,7 @@ function RenameDialog({
         className="space-y-4"
         onSubmit={(e) => {
           e.preventDefault()
-          void run(() => renameMachine(m.id, name))
+          run(() => renameMachine(m.id, name))
         }}
       >
         <input
@@ -512,7 +466,7 @@ function TagsDialog({
             .map((t) => t.trim())
             .filter(Boolean)
             .map((t) => (t.startsWith('tag:') ? t : `tag:${t}`))
-          void run(() => setMachineTags(m.id, parsed))
+          run(() => setMachineTags(m.id, parsed))
         }}
       >
         <input
@@ -557,7 +511,7 @@ function RoutesDialog({
         className="space-y-4"
         onSubmit={(e) => {
           e.preventDefault()
-          void run(() => setMachineRoutes(m.id, selectedRoutes))
+          run(() => setMachineRoutes(m.id, selectedRoutes))
         }}
       >
         {availableRoutes.length > 0 ? (
@@ -611,20 +565,13 @@ function RemoveInternalDialog({
   onClose: () => void
   onDone: () => void
 }) {
-  const [funnels, setFunnels] = useState<FunnelRoute[] | null>(null)
-  const [funnelsError, setFunnelsError] = useState<string | null>(null)
+  const funnelsQuery = useQuery({
+    queryKey: ['funnel'],
+    queryFn: ({ signal }) => listFunnelRoutes(signal),
+  })
+  const funnels = funnelsQuery.data?.funnelRoutes ?? null
+  const funnelsError = funnelsQuery.error ? errorMessage(funnelsQuery.error) : null
   const { busy, error, run } = useDialogAction(onClose, onDone)
-
-  useEffect(() => {
-    const controller = new AbortController()
-    listFunnelRoutes(controller.signal)
-      .then((res) => setFunnels(res.funnelRoutes))
-      .catch((err) => {
-        if (isAbortError(err)) return
-        setFunnelsError(err instanceof Error ? err.message : String(err))
-      })
-    return () => controller.abort()
-  }, [])
 
   return (
     <Modal open onClose={onClose} title={`Remove ${m.givenName}`} className="whitespace-normal">
@@ -657,7 +604,7 @@ function RemoveInternalDialog({
           type="button"
           className="btn btn-error"
           disabled={busy || (funnels === null && !funnelsError)}
-          onClick={() => void run(() => deleteMachine(m.id))}
+          onClick={() => run(() => deleteMachine(m.id))}
         >
           Delete machine and funnels
         </button>
@@ -677,27 +624,25 @@ function MachineRow({
   canManage,
   canEdit,
   onChange,
+  onError,
   onOpen,
 }: {
   machine: Machine
   canManage: boolean
   canEdit: boolean
   onChange: () => void
+  onError: (message: string) => void
   onOpen: (kind: MachineDialogKind) => void
 }) {
   const confirm = useConfirm()
-  const [busy, setBusy] = useState(false)
+  const action = useMutation({
+    mutationFn: (fn: () => Promise<unknown>) => fn(),
+    onSuccess: onChange,
+    onError: (err) => onError(errorMessage(err)),
+  })
+  const busy = action.isPending
+  const run = (fn: () => Promise<unknown>) => action.mutate(fn)
   const expired = isExpired(m)
-
-  const run = async (fn: () => Promise<unknown>) => {
-    setBusy(true)
-    try {
-      await fn()
-      onChange()
-    } finally {
-      setBusy(false)
-    }
-  }
 
   return (
     <tr>
@@ -802,7 +747,7 @@ function MachineRow({
                       confirmLabel: 'Expire session',
                       danger: true,
                     })
-                    if (ok) void run(() => expireMachine(m.id))
+                    if (ok) run(() => expireMachine(m.id))
                   }}
                 >
                   Expire session
@@ -826,7 +771,7 @@ function MachineRow({
                       confirmLabel: 'Remove',
                       danger: true,
                     })
-                    if (ok) void run(() => deleteMachine(m.id))
+                    if (ok) run(() => deleteMachine(m.id))
                   }}
                 >
                   Remove

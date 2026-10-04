@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react'
 import { Navigate, useParams } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../auth'
-import { getInvitePreview, isAbortError, type InvitePreview } from '../api'
+import { errorMessage, getInvitePreview } from '../api'
 import { usePageTitle } from '../hooks/usePageTitle'
 
 // AcceptInvite is the /invite/:token landing page. An unauthenticated
@@ -12,20 +12,13 @@ export default function AcceptInvite() {
   const { token } = useParams<{ token: string }>()
   const { user, organization, loading } = useAuth()
 
-  const [preview, setPreview] = useState<InvitePreview | null>(null)
-  const [error, setError] = useState<string | null>(null)
-
-  useEffect(() => {
-    if (!token) return
-    const controller = new AbortController()
-    getInvitePreview(token, controller.signal)
-      .then(setPreview)
-      .catch((err) => {
-        if (isAbortError(err)) return
-        setError(err instanceof Error ? err.message : String(err))
-      })
-    return () => controller.abort()
-  }, [token])
+  const query = useQuery({
+    queryKey: ['invite', token],
+    queryFn: ({ signal }) => getInvitePreview(token!, signal),
+    enabled: !!token,
+  })
+  const preview = query.data ?? null
+  const error = query.error ? errorMessage(query.error) : null
 
   if (loading) {
     return (

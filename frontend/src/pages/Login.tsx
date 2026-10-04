@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Navigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../auth'
 import {
-  ApiError,
+  errorMessage,
   getAuthProviders,
   passkeyLoginBegin,
   passkeyLoginFinish,
@@ -87,21 +88,14 @@ export default function Login() {
   const [passkeyError, setPasskeyError] = useState<string | null>(null)
   const [showRegister, setShowRegister] = useState(false)
   const [email, setEmail] = useState('')
-  const [authProviders, setAuthProviders] = useState<AuthProviders | null>(null)
 
   // Unconfigured providers get disabled buttons rather than broken links; a
   // failed fetch counts as nothing configured.
-  useEffect(() => {
-    let cancelled = false
-    getAuthProviders()
-      .then((providers) => {
-        if (!cancelled) setAuthProviders(providers)
-      })
-      .catch(() => {})
-    return () => {
-      cancelled = true
-    }
-  }, [])
+  const { data: authProviders } = useQuery({
+    queryKey: ['authProviders'],
+    queryFn: getAuthProviders,
+    retry: false,
+  })
 
   // `next` may be a backend-only route such as /authorize/callback, which the
   // SPA router doesn't know, so it needs a full navigation, not <Navigate>.
@@ -127,7 +121,7 @@ export default function Login() {
       await passkeyLoginFinish(response)
       goToNext(next)
     } catch (err) {
-      setPasskeyError(err instanceof Error ? err.message : String(err))
+      setPasskeyError(errorMessage(err))
       setPasskeyBusy(false)
     }
   }
@@ -142,9 +136,7 @@ export default function Login() {
       await passkeyRegisterFinish(response)
       goToNext(next)
     } catch (err) {
-      setPasskeyError(
-        err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err),
-      )
+      setPasskeyError(errorMessage(err))
       setPasskeyBusy(false)
     }
   }

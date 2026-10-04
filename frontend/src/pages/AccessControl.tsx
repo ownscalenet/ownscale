@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getAccessControlPolicy,
   updateAccessControlPolicy,
+  errorMessage,
   formatHuJSON,
-  ApiError,
-  isAbortError,
+  isNotConfigured,
+  type AccessControlResponse,
 } from '../api'
 import DiffModal from '../components/DiffModal'
 import LineNumberedTextarea from '../components/LineNumberedTextarea'
@@ -135,76 +137,52 @@ function Cheatsheet() {
 
 export default function AccessControl() {
   usePageTitle('Access Control')
-  const [content, setContent] = useState('')
-  const [savedContent, setSavedContent] = useState('')
-  const [canManage, setCanManage] = useState(false)
-  const [notConfigured, setNotConfigured] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [formatting, setFormatting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState(false)
+  const queryClient = useQueryClient()
+  const query = useQuery({
+    queryKey: ['acl'],
+    queryFn: ({ signal }) => getAccessControlPolicy(signal),
+  })
+  const savedContent = query.data?.content ?? ''
+  const canManage = query.data?.canManage ?? false
+  const notConfigured = isNotConfigured(query.error)
+  // draft holds unsaved edits, so a refetch never overwrites them.
+  const [draft, setDraft] = useState<string | null>(null)
+  const content = draft ?? savedContent
   const diffRef = useRef<HTMLDialogElement>(null)
 
-  useEffect(() => {
-    const controller = new AbortController()
-    void (async () => {
-      try {
-        const res = await getAccessControlPolicy(controller.signal)
-        setContent(res.content)
-        setSavedContent(res.content)
-        setCanManage(res.canManage)
-        setNotConfigured(false)
-      } catch (err) {
-        if (isAbortError(err)) return
-        if (err instanceof ApiError && err.status === 409) {
-          setNotConfigured(true)
-        } else {
-          setError(err instanceof Error ? err.message : String(err))
-        }
-      } finally {
-        if (!controller.signal.aborted) setLoading(false)
-      }
-    })()
-    return () => controller.abort()
-  }, [])
-
-  const handleSave = async () => {
-    setSaving(true)
-    setError(null)
-    setSuccess(false)
-    try {
-      await updateAccessControlPolicy(content)
-      setSavedContent(content)
-      setSuccess(true)
-    } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err),
+  const save = useMutation({
+    mutationFn: updateAccessControlPolicy,
+    onSuccess: (_, saved) => {
+      queryClient.setQueryData<AccessControlResponse>(
+        ['acl'],
+        (old) => old && { ...old, content: saved },
       )
-    } finally {
-      setSaving(false)
-    }
+      setDraft(null)
+    },
+  })
+  const format = useMutation({
+    mutationFn: formatHuJSON,
+    onSuccess: (res) => setDraft(res.content),
+  })
+  const saving = save.isPending
+  const formatting = format.isPending
+  const success = save.isSuccess
+  const failure = save.error ?? format.error ?? (notConfigured ? null : query.error)
+  const error = failure ? errorMessage(failure) : null
+
+  const handleSave = () => {
+    format.reset()
+    save.mutate(content)
   }
 
-  const handleFormat = async () => {
-    setFormatting(true)
-    setError(null)
-    setSuccess(false)
-    try {
-      const res = await formatHuJSON(content)
-      setContent(res.content)
-    } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err),
-      )
-    } finally {
-      setFormatting(false)
-    }
+  const handleFormat = () => {
+    save.reset()
+    format.mutate(content)
   }
 
   const dirty = content !== savedContent
 
-  if (loading) {
+  if (query.isPending) {
     return (
       <div className="flex items-center justify-center h-64">
         <span className="loading loading-spinner loading-lg"></span>
@@ -257,7 +235,7 @@ export default function AccessControl() {
                       type="button"
                       className="btn btn-ghost btn-sm"
                       disabled={formatting || notConfigured}
-                      onClick={() => void handleFormat()}
+                      onClick={handleFormat}
                     >
                       {formatting ? (
                         <span className="loading loading-spinner loading-xs"></span>
@@ -270,7 +248,7 @@ export default function AccessControl() {
                       type="button"
                       className="btn btn-primary btn-sm"
                       disabled={saving || notConfigured || !dirty}
-                      onClick={() => void handleSave()}
+                      onClick={handleSave}
                     >
                       {saving ? <span className="loading loading-spinner loading-xs"></span> : null}
                       Save
@@ -278,7 +256,7 @@ export default function AccessControl() {
                   )}
                 </div>
               </div>
-              <LineNumberedTextarea value={content} readOnly={!canManage} onChange={setContent} />
+              <LineNumberedTextarea value={content} readOnly={!canManage} onChange={setDraft} />
               {!canManage && (
                 <p className="text-sm text-base-content/60 mt-2">
                   Only owners and admins can edit the access control policy.

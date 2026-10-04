@@ -1,13 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   listFunnelRoutes,
   createFunnelRoute,
   deleteFunnelRoute,
+  errorMessage,
   listMachines,
-  ApiError,
-  isAbortError,
   type FunnelRoute,
-  type Machine,
 } from '../api'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { useConfirm } from '../lib/confirm'
@@ -15,61 +14,49 @@ import { useConfirm } from '../lib/confirm'
 export default function Funnel() {
   usePageTitle('Funnel')
   const confirm = useConfirm()
-  const [routes, setRoutes] = useState<FunnelRoute[]>([])
-  const [machines, setMachines] = useState<Machine[]>([])
-  const [canManage, setCanManage] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState<string | null>(null)
+  const queryClient = useQueryClient()
+  const routesQuery = useQuery({
+    queryKey: ['funnel'],
+    queryFn: ({ signal }) => listFunnelRoutes(signal),
+  })
+  const machinesQuery = useQuery({
+    queryKey: ['machines', {}],
+    queryFn: ({ signal }) => listMachines({}, signal),
+  })
+  const routes = routesQuery.data?.funnelRoutes ?? []
+  const canManage = routesQuery.data?.canManage ?? false
+  const machines = machinesQuery.data?.machines ?? []
+  const loading = routesQuery.isPending || machinesQuery.isPending
+  const reload = () => queryClient.invalidateQueries({ queryKey: ['funnel'] })
 
   const [label, setLabel] = useState('')
   const [targetNodeId, setTargetNodeId] = useState('')
   const [targetPort, setTargetPort] = useState('')
-  const [creating, setCreating] = useState(false)
-  const [createError, setCreateError] = useState<string | null>(null)
-  const [deletingId, setDeletingId] = useState<string | null>(null)
 
-  const load = async (signal?: AbortSignal) => {
-    try {
-      const [funnelRes, machinesRes] = await Promise.all([
-        listFunnelRoutes(signal),
-        listMachines({}, signal),
-      ])
-      setRoutes(funnelRes.funnelRoutes)
-      setCanManage(funnelRes.canManage)
-      setMachines(machinesRes.machines)
-    } catch (err) {
-      if (isAbortError(err)) return
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      if (!signal?.aborted) setLoading(false)
-    }
-  }
-
-  useEffect(() => {
-    const controller = new AbortController()
-    void load(controller.signal)
-    return () => controller.abort()
-  }, [])
-
-  const handleCreate = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setCreateError(null)
-    const port = Number(targetPort)
-    if (!label.trim() || !targetNodeId || !port) return
-    setCreating(true)
-    try {
-      await createFunnelRoute({ label: label.trim(), targetNodeId, targetPort: port })
+  const create = useMutation({
+    mutationFn: createFunnelRoute,
+    onSuccess: () => {
       setLabel('')
       setTargetNodeId('')
       setTargetPort('')
-      await load()
-    } catch (err) {
-      setCreateError(
-        err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err),
-      )
-    } finally {
-      setCreating(false)
-    }
+      return reload()
+    },
+  })
+  const remove = useMutation({
+    mutationFn: (r: FunnelRoute) => deleteFunnelRoute(r.id),
+    onSuccess: reload,
+  })
+  const creating = create.isPending
+  const createError = create.error ? errorMessage(create.error) : null
+  const deletingId = remove.isPending ? remove.variables.id : null
+  const failure = remove.error ?? routesQuery.error ?? machinesQuery.error
+  const error = failure ? errorMessage(failure) : null
+
+  const handleCreate = (e: React.FormEvent) => {
+    e.preventDefault()
+    const port = Number(targetPort)
+    if (!label.trim() || !targetNodeId || !port) return
+    create.mutate({ label: label.trim(), targetNodeId, targetPort: port })
   }
 
   const handleDelete = async (r: FunnelRoute) => {
@@ -79,16 +66,7 @@ export default function Funnel() {
       confirmLabel: 'Remove route',
       danger: true,
     })
-    if (!ok) return
-    setDeletingId(r.id)
-    try {
-      await deleteFunnelRoute(r.id)
-      await load()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setDeletingId(null)
-    }
+    if (ok) remove.mutate(r)
   }
 
   if (loading) {
@@ -191,7 +169,7 @@ export default function Funnel() {
                 <span>{createError}</span>
               </div>
             )}
-            <form className="flex flex-wrap gap-2 items-end" onSubmit={(e) => void handleCreate(e)}>
+            <form className="flex flex-wrap gap-2 items-end" onSubmit={handleCreate}>
               <fieldset className="fieldset">
                 <legend className="fieldset-legend">Label</legend>
                 <input

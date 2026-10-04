@@ -1,10 +1,11 @@
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getAuthRestrictions,
   updateAuthRestrictions,
+  errorMessage,
   formatHuJSON,
-  ApiError,
-  isAbortError,
+  type AuthRestrictionsResponse,
 } from '../api'
 import DiffModal from '../components/DiffModal'
 import LineNumberedTextarea from '../components/LineNumberedTextarea'
@@ -77,70 +78,51 @@ function Cheatsheet() {
 
 export default function AuthRestrictions() {
   usePageTitle('Auth Restrictions')
-  const [content, setContent] = useState('')
-  const [savedContent, setSavedContent] = useState('')
-  const [canManage, setCanManage] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [formatting, setFormatting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState(false)
+  const queryClient = useQueryClient()
+  const query = useQuery({
+    queryKey: ['authRestrictions'],
+    queryFn: ({ signal }) => getAuthRestrictions(signal),
+  })
+  const savedContent = query.data?.content ?? ''
+  const canManage = query.data?.canManage ?? false
+  // draft holds unsaved edits, so a refetch never overwrites them.
+  const [draft, setDraft] = useState<string | null>(null)
+  const content = draft ?? savedContent
   const diffRef = useRef<HTMLDialogElement>(null)
 
-  useEffect(() => {
-    const controller = new AbortController()
-    void (async () => {
-      try {
-        const res = await getAuthRestrictions(controller.signal)
-        setContent(res.content)
-        setSavedContent(res.content)
-        setCanManage(res.canManage)
-      } catch (err) {
-        if (isAbortError(err)) return
-        setError(err instanceof Error ? err.message : String(err))
-      } finally {
-        if (!controller.signal.aborted) setLoading(false)
-      }
-    })()
-    return () => controller.abort()
-  }, [])
-
-  const handleSave = async () => {
-    setSaving(true)
-    setError(null)
-    setSuccess(false)
-    try {
-      await updateAuthRestrictions(content)
-      setSavedContent(content)
-      setSuccess(true)
-    } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err),
+  const save = useMutation({
+    mutationFn: updateAuthRestrictions,
+    onSuccess: (_, saved) => {
+      queryClient.setQueryData<AuthRestrictionsResponse>(
+        ['authRestrictions'],
+        (old) => old && { ...old, content: saved },
       )
-    } finally {
-      setSaving(false)
-    }
+      setDraft(null)
+    },
+  })
+  const format = useMutation({
+    mutationFn: formatHuJSON,
+    onSuccess: (res) => setDraft(res.content),
+  })
+  const saving = save.isPending
+  const formatting = format.isPending
+  const success = save.isSuccess
+  const failure = save.error ?? format.error ?? query.error
+  const error = failure ? errorMessage(failure) : null
+
+  const handleSave = () => {
+    format.reset()
+    save.mutate(content)
   }
 
-  const handleFormat = async () => {
-    setFormatting(true)
-    setError(null)
-    setSuccess(false)
-    try {
-      const res = await formatHuJSON(content)
-      setContent(res.content)
-    } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err),
-      )
-    } finally {
-      setFormatting(false)
-    }
+  const handleFormat = () => {
+    save.reset()
+    format.mutate(content)
   }
 
   const dirty = content !== savedContent
 
-  if (loading) {
+  if (query.isPending) {
     return (
       <div className="flex items-center justify-center h-64">
         <span className="loading loading-spinner loading-lg"></span>
@@ -185,7 +167,7 @@ export default function AuthRestrictions() {
                       type="button"
                       className="btn btn-ghost btn-sm"
                       disabled={formatting}
-                      onClick={() => void handleFormat()}
+                      onClick={handleFormat}
                     >
                       {formatting ? (
                         <span className="loading loading-spinner loading-xs"></span>
@@ -198,7 +180,7 @@ export default function AuthRestrictions() {
                       type="button"
                       className="btn btn-primary btn-sm"
                       disabled={saving || !dirty}
-                      onClick={() => void handleSave()}
+                      onClick={handleSave}
                     >
                       {saving ? <span className="loading loading-spinner loading-xs"></span> : null}
                       Save
@@ -206,7 +188,7 @@ export default function AuthRestrictions() {
                   )}
                 </div>
               </div>
-              <LineNumberedTextarea value={content} readOnly={!canManage} onChange={setContent} />
+              <LineNumberedTextarea value={content} readOnly={!canManage} onChange={setDraft} />
               {!canManage && (
                 <p className="text-sm text-base-content/60 mt-2">
                   Only owners and admins can edit authentication restrictions.

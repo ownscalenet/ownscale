@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getDNSSettings,
   updateDNSSettings,
-  ApiError,
-  isAbortError,
+  errorMessage,
   type DNSConfig,
   type DNSRecord,
+  type DNSSettingsResponse,
 } from '../api'
 import { usePageTitle } from '../hooks/usePageTitle'
 
@@ -82,56 +83,40 @@ function ListEditor({
 
 export default function DNS() {
   usePageTitle('DNS')
-  const [dns, setDns] = useState<DNSConfig | null>(null)
-  const [savedDns, setSavedDns] = useState<DNSConfig | null>(null)
-  const [canManage, setCanManage] = useState(false)
-  const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [success, setSuccess] = useState(false)
+  const queryClient = useQueryClient()
+  const query = useQuery({ queryKey: ['dns'], queryFn: ({ signal }) => getDNSSettings(signal) })
+  const dns = query.data?.dns
+  const canManage = query.data?.canManage ?? false
 
   const [newRecordName, setNewRecordName] = useState('')
   const [newRecordType, setNewRecordType] = useState(RECORD_TYPES[0])
   const [newRecordValue, setNewRecordValue] = useState('')
 
-  useEffect(() => {
-    const controller = new AbortController()
-    void (async () => {
-      try {
-        const res = await getDNSSettings(controller.signal)
-        setDns(res.dns)
-        setSavedDns(res.dns)
-        setCanManage(res.canManage)
-      } catch (err) {
-        if (isAbortError(err)) return
-        setError(err instanceof Error ? err.message : String(err))
-      } finally {
-        if (!controller.signal.aborted) setLoading(false)
-      }
-    })()
-    return () => controller.abort()
-  }, [])
+  // Every edit saves straight away: it shows at once and is rolled back if
+  // the save fails.
+  const mutation = useMutation({
+    mutationFn: updateDNSSettings,
+    onMutate: (next) => {
+      const previous = queryClient.getQueryData<DNSSettingsResponse>(['dns'])
+      queryClient.setQueryData<DNSSettingsResponse>(['dns'], (old) => old && { ...old, dns: next })
+      return { previous }
+    },
+    onError: (_err, _next, context) => queryClient.setQueryData(['dns'], context?.previous),
+  })
+  const save = (next: DNSConfig) => mutation.mutate(next)
+  const saving = mutation.isPending
+  const success = mutation.isSuccess
+  const failure = mutation.error ?? query.error
+  const error = failure ? errorMessage(failure) : null
 
-  const save = async (next: DNSConfig) => {
-    setDns(next)
-    setSaving(true)
-    setError(null)
-    setSuccess(false)
-    try {
-      await updateDNSSettings(next)
-      setSavedDns(next)
-      setSuccess(true)
-    } catch (err) {
-      setDns(savedDns)
-      setError(
-        err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err),
+  if (!dns) {
+    if (query.error) {
+      return (
+        <div role="alert" className="alert alert-error">
+          <span>{errorMessage(query.error)}</span>
+        </div>
       )
-    } finally {
-      setSaving(false)
     }
-  }
-
-  if (loading || !dns) {
     return (
       <div className="flex items-center justify-center h-64">
         <span className="loading loading-spinner loading-lg"></span>
@@ -144,13 +129,13 @@ export default function DNS() {
     const value = newRecordValue.trim()
     if (!name || !value) return
     const record: DNSRecord = { name, type: newRecordType, value }
-    void save({ ...dns, extraRecords: [...dns.extraRecords, record] })
+    save({ ...dns, extraRecords: [...dns.extraRecords, record] })
     setNewRecordName('')
     setNewRecordValue('')
   }
 
   const removeRecord = (target: DNSRecord) => {
-    void save({
+    save({
       ...dns,
       extraRecords: dns.extraRecords.filter(
         (r) => !(r.name === target.name && r.type === target.type && r.value === target.value),
@@ -191,9 +176,7 @@ export default function DNS() {
               items={dns.nameservers.global}
               placeholder="1.1.1.1"
               disabled={!canManage || saving}
-              onChange={(global) =>
-                void save({ ...dns, nameservers: { ...dns.nameservers, global } })
-              }
+              onChange={(global) => save({ ...dns, nameservers: { ...dns.nameservers, global } })}
             />
           </div>
         </div>
@@ -291,7 +274,7 @@ export default function DNS() {
               items={dns.searchDomains}
               placeholder="internal.example.com"
               disabled={!canManage || saving}
-              onChange={(searchDomains) => void save({ ...dns, searchDomains })}
+              onChange={(searchDomains) => save({ ...dns, searchDomains })}
             />
           </div>
         </div>
@@ -309,7 +292,7 @@ export default function DNS() {
                 className="toggle toggle-primary"
                 checked={dns.magicDns}
                 disabled={!canManage || saving}
-                onChange={(e) => void save({ ...dns, magicDns: e.target.checked })}
+                onChange={(e) => save({ ...dns, magicDns: e.target.checked })}
               />
               <span>{dns.magicDns ? 'Enabled' : 'Disabled'}</span>
             </label>

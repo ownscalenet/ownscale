@@ -1,11 +1,10 @@
-import { useEffect, useState } from 'react'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   listPasskeys,
   deletePasskey,
+  errorMessage,
   passkeyAddBegin,
   passkeyAddFinish,
-  ApiError,
-  isAbortError,
   type Passkey,
 } from '../api'
 import { createPasskey, browserSupportsWebAuthn } from '../lib/webauthn'
@@ -29,43 +28,27 @@ export default function UserSettings() {
 function PasskeysCard() {
   const confirm = useConfirm()
   const supported = browserSupportsWebAuthn()
-  const [passkeys, setPasskeys] = useState<Passkey[]>([])
-  const [error, setError] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
+  const queryClient = useQueryClient()
+  const query = useQuery({ queryKey: ['passkeys'], queryFn: ({ signal }) => listPasskeys(signal) })
+  const passkeys = query.data?.passkeys ?? []
+  const reload = () => queryClient.invalidateQueries({ queryKey: ['passkeys'] })
 
-  const load = async (signal?: AbortSignal) => {
-    try {
-      const res = await listPasskeys(signal)
-      setPasskeys(res.passkeys ?? [])
-      setError(null)
-    } catch (err) {
-      if (isAbortError(err)) return
-      setError(err instanceof Error ? err.message : String(err))
-    }
-  }
+  const add = useMutation({
+    mutationFn: async (name: string) => {
+      const options = await passkeyAddBegin(name)
+      await passkeyAddFinish(await createPasskey(options))
+    },
+    onSuccess: reload,
+  })
+  const remove = useMutation({ mutationFn: (p: Passkey) => deletePasskey(p.id), onSuccess: reload })
+  const busy = add.isPending || remove.isPending
+  const failure = add.error ?? remove.error ?? query.error
+  const error = failure ? errorMessage(failure) : null
 
-  useEffect(() => {
-    const controller = new AbortController()
-    void load(controller.signal)
-    return () => controller.abort()
-  }, [])
-
-  const handleAdd = async () => {
-    setError(null)
-    setBusy(true)
-    try {
-      const name = window.prompt('Name this passkey (e.g. "MacBook Touch ID")', 'Passkey') ?? ''
-      const options = await passkeyAddBegin(name.trim())
-      const response = await createPasskey(options)
-      await passkeyAddFinish(response)
-      await load()
-    } catch (err) {
-      setError(
-        err instanceof ApiError ? err.message : err instanceof Error ? err.message : String(err),
-      )
-    } finally {
-      setBusy(false)
-    }
+  const handleAdd = () => {
+    const name = window.prompt('Name this passkey (e.g. "MacBook Touch ID")', 'Passkey') ?? ''
+    remove.reset()
+    add.mutate(name.trim())
   }
 
   const handleDelete = async (p: Passkey) => {
@@ -76,15 +59,8 @@ function PasskeysCard() {
       danger: true,
     })
     if (!ok) return
-    setBusy(true)
-    try {
-      await deletePasskey(p.id)
-      await load()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-    } finally {
-      setBusy(false)
-    }
+    add.reset()
+    remove.mutate(p)
   }
 
   return (
@@ -103,7 +79,7 @@ function PasskeysCard() {
               type="button"
               className="btn btn-sm btn-primary"
               disabled={busy}
-              onClick={() => void handleAdd()}
+              onClick={handleAdd}
             >
               Add a passkey
             </button>
