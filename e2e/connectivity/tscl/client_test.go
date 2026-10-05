@@ -171,6 +171,7 @@ func TestClose(t *testing.T) {
 	}
 	for name, operation := range map[string]func() error{
 		"status": func() error { _, err := c.Status(t.Context()); return err },
+		"logout": func() error { return c.Logout(t.Context()) },
 		"dial":   func() error { _, err := c.DialContext(t.Context(), "tcp", "100.64.0.1:80"); return err },
 		"listen": func() error { _, err := c.Listen("tcp", ":80"); return err },
 		"serve":  func() error { _, err := c.ServeHTTP(0); return err },

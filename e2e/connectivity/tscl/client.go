@@ -157,6 +157,24 @@ func (c *Client) Status(ctx context.Context) (_ *ipnstate.Status, err error) {
 	return lc.Status(ctx)
 }
 
+// Logout logs the machine out, so control deletes the ephemeral node now
+// rather than after its inactivity timeout.
+func (c *Client) Logout(ctx context.Context) (err error) {
+	defer derrors.Wrap(&err, "c.Logout()")
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.closed {
+		return net.ErrClosed
+	}
+	ctx, cancel := c.operationContext(ctx)
+	defer cancel()
+	lc, err := c.server.LocalClient()
+	if err != nil {
+		return err
+	}
+	return lc.Logout(ctx)
+}
+
 // DNS returns the DNS configuration the control server currently sends to
 // this machine (from its netmap).
 func (c *Client) DNS(ctx context.Context) (_ tailcfg.DNSConfig, err error) {

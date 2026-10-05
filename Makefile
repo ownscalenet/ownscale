@@ -2,7 +2,11 @@
 # app that builds directly into webui/dist, which is embedded into
 # the Go binary via go:embed.
 
-.PHONY: build frontend frontend-check backend osa restore test coverage archive docker-image caddy-image purge ci docs load-cert dev-up devbox e2e e2e-deps e2e-setup e2e-frontend e2e-frontend-run e2e-connectivity e2e-ssh e2e-remote e2e-remote-frontend e2e-remote-connectivity
+.PHONY: build frontend frontend-check backend osa restore test coverage archive
+.PHONY: docker-image caddy-image purge ci docs load-cert dev-up devbox stress
+.PHONY: e2e e2e-deps e2e-setup e2e-ssh
+.PHONY: e2e-frontend e2e-frontend-run e2e-connectivity
+.PHONY: e2e-remote e2e-remote-frontend e2e-remote-connectivity
 
 DOCKER_IMAGE := ownscale:latest
 CADDY_IMAGE := ownscale-caddy:latest
@@ -82,6 +86,14 @@ devbox:
 			echo '<html><body><h1>$$name</h1></body></html>' > /var/www/index.html; \
 			python3 -m http.server 80 --directory /var/www >/var/log/httpserver.log 2>&1 & \
 			exec bash"
+
+# stress joins many ephemeral tsnet clients to $(ORG) with a reusable
+# pre-auth key: make stress ORG=aaaa KEY=... STRESS_ARGS="-n 100 -duration 10m".
+# KEY can also be passed as the STRESS_AUTHKEY env var.
+stress:
+	@test -f $(CERT) || { echo "$(CERT) not found -- start docker compose (local-ca-init) first"; exit 1; }
+	@SSL_CERT_FILE=$(abspath $(CERT)) STRESS_AUTHKEY="$${STRESS_AUTHKEY:-$(KEY)}" \
+		go run ./e2e/stress -subdomain $(ORG) -base-domain $(BASE_DOMAIN) $(STRESS_ARGS)
 
 # Requires `make dev-up` already running. The suites use disjoint
 # organizations to perfoorm concurrent tests. ssh runs alone afterwards:

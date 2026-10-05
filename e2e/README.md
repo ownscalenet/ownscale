@@ -238,3 +238,19 @@ These use the existing Playwright runner and build the Go adapter once.
 They exercise actual binary negotiation/invalid commands, partial and
 malformed IPC, runtime validation, deadlines, process exits, secret-safe
 diagnostics, forced cleanup, and exclusive guard ownership.
+
+## Stress test
+
+`e2e/stress` joins many ephemeral tsnet clients to one organization with a
+reusable pre-auth key and keeps them connected, loading its headscale's
+control plane. Every 5s it prints counts of connected, failed and pending
+clients plus join latency p50/p95/max. On exit (after `-duration`, or on
+Ctrl-C with `-duration 0`) it logs every client out so headscale deletes
+the nodes right away.
+
+```sh
+make stress ORG=aaaa KEY=hskey-auth-... STRESS_ARGS="-n 100 -ramp 50ms -duration 10m"
+# or directly:
+SSL_CERT_FILE=$PWD/data/local-ca/root.crt STRESS_AUTHKEY=hskey-auth-... \
+  go run ./e2e/stress -subdomain aaaa -n 100
+```
