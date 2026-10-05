@@ -7,9 +7,11 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -285,8 +287,8 @@ func TestEvict(t *testing.T) {
 	}
 
 	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup())
-	pool.servers["aaaa"] = newServer()
-	pool.servers["bbbb"] = newServer()
+	pool.servers["aaaa"] = newTunnel(newServer())
+	pool.servers["bbbb"] = newTunnel(newServer())
 
 	pool.Evict("aaaa")
 	pool.Evict("unknown")
@@ -296,5 +298,43 @@ func TestEvict(t *testing.T) {
 	}
 	if _, ok := pool.servers["bbbb"]; !ok {
 		t.Error("bbbb was evicted, want it left alone")
+	}
+}
+
+func TestServeHTTPReusesConnections(t *testing.T) {
+	var newConns atomic.Int32
+	backend := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		fmt.Fprint(w, "ok")
+	}))
+	backend.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+		if state == http.StateNew {
+			newConns.Add(1)
+		}
+	}
+	backend.Start()
+	t.Cleanup(backend.Close)
+
+	queries := &fakeQueries{routes: map[string]sqlcgen.FunnelRoute{
+		"acme/web": {ID: "1", Label: "web", TargetNodeID: "1", TargetPort: 8080},
+	}}
+	client := newFakeNodeServer(t, `{"nodes":[{"id":"1","name":"node1","ipAddresses":["100.64.0.1"]}]}`)
+	pool := NewPool(queries, &fakeHeadscaleClients{client: client}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup())
+	// Stand in for tsnet: dial the local backend whatever the tailnet address.
+	pool.servers["acme"] = &tunnel{transport: &http.Transport{
+		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+			return (&net.Dialer{}).DialContext(ctx, network, backend.Listener.Addr().String())
+		},
+	}}
+	t.Cleanup(pool.Close)
+
+	for i := range 3 {
+		rec := httptest.NewRecorder()
+		pool.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/", nil), "web", "acme")
+		if rec.Code != http.StatusOK || rec.Body.String() != "ok" {
+			t.Fatalf("request %d: status = %d, body = %q", i, rec.Code, rec.Body.String())
+		}
+	}
+	if n := newConns.Load(); n != 1 {
+		t.Errorf("backend saw %d connections, want 1 reused", n)
 	}
 }

@@ -54,7 +54,7 @@ type Pool struct {
 	logger  *slog.Logger
 
 	mu      sync.Mutex
-	servers map[string]*tsnet.Server // keyed by organization subdomain
+	servers map[string]*tunnel // keyed by organization subdomain
 
 	// sf de-duplicates concurrent getOrCreateServer calls for the same
 	// subdomain, so a burst of near-simultaneous requests for a
@@ -65,6 +65,36 @@ type Pool struct {
 	// controlURL builds the tsnet ControlURL for a subdomain: the org's
 	// in-process headscale on loopback. Overridden in tests.
 	controlURL func(subdomain string) (string, error)
+}
+
+// tunnel is an org's tsnet node and the transport proxying through it,
+// shared by all requests so connections to funnel targets are reused.
+type tunnel struct {
+	srv       *tsnet.Server
+	transport *http.Transport
+}
+
+func newTunnel(srv *tsnet.Server) *tunnel {
+	return &tunnel{
+		srv: srv,
+		transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
+				ctx, cancel := context.WithTimeout(ctx, funnelDialTimeout)
+				defer cancel()
+				return srv.Dial(ctx, network, addr)
+			},
+			IdleConnTimeout:     90 * time.Second,
+			MaxIdleConnsPerHost: 16,
+		},
+	}
+}
+
+func (t *tunnel) close() error {
+	t.transport.CloseIdleConnections()
+	if t.srv == nil {
+		return nil
+	}
+	return t.srv.Close()
 }
 
 // PortLookup returns the TCP port for subdomain's headscale instance, or
@@ -88,7 +118,7 @@ func NewPool(queries Queries, hs HeadscaleClients, dataDir string, logger *slog.
 		hs:        hs,
 		dataDir:   dataDir,
 		logger:    logger,
-		servers:   make(map[string]*tsnet.Server),
+		servers:   make(map[string]*tunnel),
 		upTimeout: funnelUpTimeout,
 		controlURL: func(subdomain string) (string, error) {
 			port, ok := portLookup.LookupPort(subdomain)
@@ -105,12 +135,12 @@ func NewPool(queries Queries, hs HeadscaleClients, dataDir string, logger *slog.
 func (p *Pool) Close() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	for subdomain, srv := range p.servers {
-		if err := srv.Close(); err != nil {
+	for subdomain, tun := range p.servers {
+		if err := tun.close(); err != nil {
 			p.logger.Warn("close funnel tsnet server", "subdomain", subdomain, "error", err)
 		}
 	}
-	p.servers = make(map[string]*tsnet.Server)
+	p.servers = make(map[string]*tunnel)
 }
 
 // Evict drops subdomain's cached tsnet.Server, so the next request builds a
@@ -118,11 +148,11 @@ func (p *Pool) Close() {
 // control connection stays attached to the stopped instance.
 func (p *Pool) Evict(subdomain string) {
 	p.mu.Lock()
-	srv := p.servers[subdomain]
+	tun := p.servers[subdomain]
 	delete(p.servers, subdomain)
 	p.mu.Unlock()
-	if srv != nil {
-		go func() { _ = srv.Close() }() // can be slow; don't block the caller
+	if tun != nil {
+		go func() { _ = tun.close() }() // can be slow; don't block the caller
 	}
 }
 
@@ -184,7 +214,7 @@ func (p *Pool) ServeHTTP(w http.ResponseWriter, r *http.Request, label, subdomai
 		return
 	}
 
-	srv, err := p.getOrCreateServer(ctx, subdomain, client)
+	tun, err := p.getOrCreateServer(ctx, subdomain, client)
 	if err != nil {
 		p.logger.Error("funnel: start tsnet server", "subdomain", subdomain, "error", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
@@ -203,13 +233,7 @@ func (p *Pool) ServeHTTP(w http.ResponseWriter, r *http.Request, label, subdomai
 			// expect anything else.
 			pr.Out.Host = pr.In.Host
 		},
-		Transport: &http.Transport{
-			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
-				ctx, cancel := context.WithTimeout(ctx, funnelDialTimeout)
-				defer cancel()
-				return srv.Dial(ctx, network, addr)
-			},
-		},
+		Transport: tun.transport,
 		// Same as the default ErrorHandler, except it uses our logger.
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			p.logger.Warn("funnel: proxy to target failed", "subdomain", subdomain, "label", label, "target", targetAddr, "error", err)
@@ -278,16 +302,16 @@ func (p *Pool) EnsureServer(ctx context.Context, subdomain string, client *hscl.
 	return err
 }
 
-// getOrCreateServer returns the cached tsnet.Server for subdomain,
+// getOrCreateServer returns the cached tunnel for subdomain,
 // starting (and registering, via a freshly minted pre-auth key) one on
 // first use.
-func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *hscl.Client) (_ *tsnet.Server, err error) {
+func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *hscl.Client) (_ *tunnel, err error) {
 	defer derrors.Wrap(&err, "p.getOrCreateServer(%q)", subdomain)
 
 	p.mu.Lock()
-	if srv, ok := p.servers[subdomain]; ok {
+	if tun, ok := p.servers[subdomain]; ok {
 		p.mu.Unlock()
-		return srv, nil
+		return tun, nil
 	}
 	p.mu.Unlock()
 
@@ -298,9 +322,9 @@ func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *
 	// the same state on disk.
 	v, err, _ := p.sf.Do(subdomain, func() (any, error) {
 		p.mu.Lock()
-		if srv, ok := p.servers[subdomain]; ok {
+		if tun, ok := p.servers[subdomain]; ok {
 			p.mu.Unlock()
-			return srv, nil
+			return tun, nil
 		}
 		p.mu.Unlock()
 
@@ -345,15 +369,16 @@ func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *
 			p.logger.Warn("funnel: delete pre-auth key after use", "subdomain", subdomain, "error", err)
 		}
 
+		tun := newTunnel(srv)
 		p.mu.Lock()
-		p.servers[subdomain] = srv
+		p.servers[subdomain] = tun
 		p.mu.Unlock()
-		return srv, nil
+		return tun, nil
 	})
 	if err != nil {
 		return nil, err
 	}
-	return v.(*tsnet.Server), nil
+	return v.(*tunnel), nil
 }
 
 const funnelAuthKeyValidity = 100 * 365 * 24 * time.Hour
