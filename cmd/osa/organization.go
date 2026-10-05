@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -110,7 +111,7 @@ func newOrganizationListCommand(parent *ff.FlagSet) *ff.Command {
 			if err != nil {
 				return err
 			}
-			probe := func(ctx context.Context, subdomain string) string {
+			probe := func(ctx context.Context, subdomain string) probeResult {
 				return probeHeadscale(ctx, hscl.NewUnix(orgs.SocketPath(res.cfg.DataDir, subdomain)))
 			}
 			return listOrganizations(ctx, os.Stdout, res.queries, probe)
@@ -121,21 +122,35 @@ func newOrganizationListCommand(parent *ff.FlagSet) *ff.Command {
 // probeTimeout bounds how long probeHeadscale waits for an answer.
 const probeTimeout = 2 * time.Second
 
-// probeHeadscale reports whether the headscale behind client answers. The
-// status lives in the running ownscale process, so this only works where
-// cfg.DataDir is shared with it.
-func probeHeadscale(ctx context.Context, client *hscl.Client) string {
+// probeResult is what probeHeadscale learns about an organization's headscale.
+type probeResult struct {
+	status   string
+	machines int
+	online   int
+}
+
+// probeHeadscale reports whether the headscale behind client answers and how
+// many machines it has. The status lives in the running ownscale process, so
+// this only works where cfg.DataDir is shared with it.
+func probeHeadscale(ctx context.Context, client *hscl.Client) probeResult {
 	ctx, cancel := context.WithTimeout(ctx, probeTimeout)
 	defer cancel()
-	if _, err := client.ListUsers(ctx); err != nil {
-		return "unreachable"
+	nodes, err := client.ListNodes(ctx)
+	if err != nil {
+		return probeResult{status: "unreachable"}
 	}
-	return "running"
+	res := probeResult{status: "running", machines: len(nodes)}
+	for _, n := range nodes {
+		if n.Online {
+			res.online++
+		}
+	}
+	return res
 }
 
 // listOrganizations prints every organization recorded in queries to out,
-// with the status probe reports for its subdomain.
-func listOrganizations(ctx context.Context, out io.Writer, queries *db.TxQueries, probe func(ctx context.Context, subdomain string) string) (err error) {
+// with the status and machine counts probe reports for its subdomain.
+func listOrganizations(ctx context.Context, out io.Writer, queries *db.TxQueries, probe func(ctx context.Context, subdomain string) probeResult) (err error) {
 	defer derrors.Wrap(&err, "listOrganizations()")
 	organizations, err := queries.ListOrganizations(ctx)
 	if err != nil {
@@ -146,15 +161,20 @@ func listOrganizations(ctx context.Context, out io.Writer, queries *db.TxQueries
 		return nil
 	}
 
-	_, _ = fmt.Fprintf(out, "%-20s %-6s %-12s %-20s\n", "SUBDOMAIN", "USERS", "STATUS", "CREATED")
+	_, _ = fmt.Fprintf(out, "%-20s %-6s %-9s %-8s %-12s %-20s\n", "SUBDOMAIN", "USERS", "MACHINES", "ONLINEM", "STATUS", "CREATED")
 	for _, org := range organizations {
 		ucount, err := queries.CountOrgUsers(ctx, org.ID)
 		if err != nil {
 			return err
 		}
 
-		_, _ = fmt.Fprintf(out, "%-20s %-6d %-12s %-20s\n",
-			org.Subdomain, ucount, probe(ctx, org.Subdomain),
+		res := probe(ctx, org.Subdomain)
+		machines, online := "-", "-"
+		if res.status == "running" {
+			machines, online = strconv.Itoa(res.machines), strconv.Itoa(res.online)
+		}
+		_, _ = fmt.Fprintf(out, "%-20s %-6d %-9s %-8s %-12s %-20s\n",
+			org.Subdomain, ucount, machines, online, res.status,
 			org.CreatedAt.Format("2006-01-02 15:04:05"))
 	}
 	return nil
