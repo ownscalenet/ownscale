@@ -64,11 +64,12 @@ type authProvidersStatus struct {
 // configured.
 func New(
 	queries *db.TxQueries,
-	baseDomain, funnelDomain, dataDir string,
+	baseDomain, dataDir string,
 	oidc *oidcprovider.Storage,
 	logger *slog.Logger,
 	derpCfg config.DerpConfig,
-	authCfg config.AuthConfig) (_ *Handlers, err error) {
+	authCfg config.AuthConfig,
+	funnelCfg config.FunnelConfig) (_ *Handlers, err error) {
 	defer derrors.Wrap(&err, "handlers.New(%q)", baseDomain)
 
 	issuer := ""
@@ -97,12 +98,12 @@ func New(
 	h := &Handlers{
 		queries:         queries,
 		baseDomain:      baseDomain,
-		funnelDomain:    funnelDomain,
+		funnelDomain:    funnelCfg.Domain,
 		oidc:            oidc,
 		logger:          logger,
 		orgs:            orgSvc,
 		hs:              orgSvc,
-		funnel:          funnelproxy.NewPool(queries, orgSvc, dataDir, logger, orgSvc),
+		funnel:          funnelproxy.NewPool(queries, orgSvc, dataDir, logger, orgSvc, funnelCfg.MaxBodyBytes),
 		webauthn:        wa,
 		passkeySessions: newPasskeyCeremonyStore(),
 		authProviders: authProvidersStatus{

@@ -128,6 +128,13 @@ for 5 providers (see `etc/caddy/providers/`); pick one with `DNS_PROVIDER` in
 `.env` and set that provider's credential vars: `azure` (default), `cloudflare`,
 `route53`, `hetzner`, `digitalocean`.
 
+### Funnel limits
+
+Funnels never wake a sleeping organization; requests get 503 until the
+target machine reconnects. Each organization's funnels are limited to
+100 req/s (burst 200) and 256 concurrent requests; bodies are capped by
+`FUNNEL_MAX_BODY_BYTES` (32 MiB by default).
+
 ## Trust Caddy local dev certs
 
 The pre-generated root CA cert lives at `${OWNSCALE_DATA_DIR}/local-ca/root.crt`

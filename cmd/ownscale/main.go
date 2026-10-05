@@ -66,7 +66,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	h, err := handlers.New(queries, cfg.BaseDomain, cfg.FunnelDomain, cfg.DataDir, oidcStorage, logger, cfg.Derp, cfg.Auth)
+	h, err := handlers.New(queries, cfg.BaseDomain, cfg.DataDir, oidcStorage, logger, cfg.Derp, cfg.Auth, cfg.Funnel)
 	if err != nil {
 		return err
 	}
@@ -78,7 +78,13 @@ func run() error {
 	consoleMux := server.NewMux(h, requireAuthAPI, logger, webui.Handler(cfg.Development), provider)
 	handler := server.NewSubdomainProxy(consoleMux, cfg.BaseDomain, h.DialOrg, logger)
 
-	srv := &http.Server{Addr: cfg.Addr, Handler: handler}
+	// No Read/WriteTimeout: headscale long-polls and funnel WebSockets stay open.
+	srv := &http.Server{
+		Addr:              cfg.Addr,
+		Handler:           handler,
+		ReadHeaderTimeout: 10 * time.Second,
+		IdleTimeout:       120 * time.Second,
+	}
 
 	if cfg.DebugAddr != "" {
 		dln, err := net.Listen("tcp", cfg.DebugAddr)

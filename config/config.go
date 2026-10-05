@@ -20,16 +20,23 @@ type Config struct {
 	Development bool   `env:"OWNSCALE_DEVELOPMENT"`
 	Addr        string `env:"OWNSCALE_ADDR"`
 	BaseDomain  string `env:"OWNSCALE_BASE_DOMAIN"`
-	// FunnelDomain defaults to BaseDomain.
-	FunnelDomain string `env:"OWNSCALE_FUNNEL_DOMAIN"`
-	DataDir      string `env:"OWNSCALE_DATA_DIR"`
-	LocalCADir   string `env:"OWNSCALE_LOCAL_CA_DIR"`
+	DataDir     string `env:"OWNSCALE_DATA_DIR"`
+	LocalCADir  string `env:"OWNSCALE_LOCAL_CA_DIR"`
 	// DebugAddr enables a pprof/runtime-metrics server; must be loopback.
 	DebugAddr string `env:"OWNSCALE_DEBUG_ADDR"`
 
-	Auth AuthConfig
-	Log  LogConfig
-	Derp DerpConfig
+	Auth   AuthConfig
+	Log    LogConfig
+	Derp   DerpConfig
+	Funnel FunnelConfig
+}
+
+// FunnelConfig configures public funnels.
+type FunnelConfig struct {
+	// Domain defaults to BaseDomain.
+	Domain string `env:"OWNSCALE_FUNNEL_DOMAIN"`
+	// MaxBodyBytes limits the size of funnel request bodies.
+	MaxBodyBytes int64 `env:"OWNSCALE_FUNNEL_MAX_BODY_BYTES"`
 }
 
 // LogConfig configures the application's structured (slog) logger.
@@ -104,6 +111,9 @@ func defaults() *Config {
 		Addr:       ":8080",
 		DataDir:    "data",
 		LocalCADir: "local-ca",
+		Funnel: FunnelConfig{
+			MaxBodyBytes: 32 << 20,
+		},
 		Log: LogConfig{
 			Level:  "info",
 			Format: "json",
@@ -137,8 +147,8 @@ func Load() (_ *Config, err error) {
 		cfg.DataDir = abs
 	}
 
-	if cfg.FunnelDomain == "" {
-		cfg.FunnelDomain = cfg.BaseDomain
+	if cfg.Funnel.Domain == "" {
+		cfg.Funnel.Domain = cfg.BaseDomain
 	}
 	// The OIDC provider issuer defaults to "https://console.<base_domain>"
 	// (ownscale itself is bound to the "console" subdomain by
@@ -187,6 +197,9 @@ func (c *Config) Validate() (err error) {
 	}
 	if c.DebugAddr != "" && !isLoopbackAddr(c.DebugAddr) {
 		return fmt.Errorf("OWNSCALE_DEBUG_ADDR %q must bind a loopback IP", c.DebugAddr)
+	}
+	if c.Funnel.MaxBodyBytes <= 0 {
+		return fmt.Errorf("OWNSCALE_FUNNEL_MAX_BODY_BYTES must be positive, got %d", c.Funnel.MaxBodyBytes)
 	}
 	if strings.EqualFold(c.BaseDomain, "localhost") {
 		return fmt.Errorf(`OWNSCALE_BASE_DOMAIN must not be "localhost": for local testing use ownscale.test` +

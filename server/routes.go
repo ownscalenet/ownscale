@@ -11,6 +11,9 @@ import (
 	"github.com/ownscalenet/ownscale/handlers"
 )
 
+// maxConsoleBodyBytes limits request bodies to the console API and OIDC endpoints.
+const maxConsoleBodyBytes = 1 << 20
+
 // NewMux builds the admin panel's http.ServeMux. requireAuthAPI wraps an
 // http.HandlerFunc so it only runs for an authenticated session (see
 // auth.RequireAuthAPI), responding 401 JSON otherwise. static serves the
@@ -105,6 +108,9 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	dispatch := func(w http.ResponseWriter, r *http.Request) {
 		if h.ServeFunnelIfMatched(w, r) {
 			return
+		}
+		if r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, maxConsoleBodyBytes)
 		}
 		mux.ServeHTTP(w, r)
 	}

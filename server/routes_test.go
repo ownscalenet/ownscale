@@ -19,7 +19,7 @@ import (
 func newTestMux(t *testing.T) http.Handler {
 	t.Helper()
 	_, queries := dbtest.New(t)
-	h, err := handlers.New(queries, "", "", "", nil, slog.New(slog.DiscardHandler), config.DerpConfig{}, config.AuthConfig{})
+	h, err := handlers.New(queries, "", "", nil, slog.New(slog.DiscardHandler), config.DerpConfig{}, config.AuthConfig{}, config.FunnelConfig{})
 	if err != nil {
 		t.Fatalf("handlers.New: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestNewMuxProtectedRoutesRequireAuth(t *testing.T) {
 
 func TestNewMuxUnmatchedPathFallsBackToStatic(t *testing.T) {
 	_, queries := dbtest.New(t)
-	h, err := handlers.New(queries, "", "", "", nil, slog.New(slog.DiscardHandler), config.DerpConfig{}, config.AuthConfig{})
+	h, err := handlers.New(queries, "", "", nil, slog.New(slog.DiscardHandler), config.DerpConfig{}, config.AuthConfig{}, config.FunnelConfig{})
 	if err != nil {
 		t.Fatalf("handlers.New: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestNewMuxUnmatchedPathFallsBackToStatic(t *testing.T) {
 
 func TestNewMuxAuthenticatedSession(t *testing.T) {
 	_, queries := dbtest.New(t)
-	h, err := handlers.New(queries, "", "", "", nil, slog.New(slog.DiscardHandler), config.DerpConfig{}, config.AuthConfig{})
+	h, err := handlers.New(queries, "", "", nil, slog.New(slog.DiscardHandler), config.DerpConfig{}, config.AuthConfig{}, config.FunnelConfig{})
 	if err != nil {
 		t.Fatalf("handlers.New: %v", err)
 	}
@@ -108,6 +108,49 @@ func TestNewMuxAuthenticatedSession(t *testing.T) {
 	}
 }
 
+func TestNewMuxBodyLimit(t *testing.T) {
+	_, queries := dbtest.New(t)
+	h, err := handlers.New(queries, "", "", nil, slog.New(slog.DiscardHandler), config.DerpConfig{}, config.AuthConfig{}, config.FunnelConfig{})
+	if err != nil {
+		t.Fatalf("handlers.New: %v", err)
+	}
+	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
+		return auth.RequireAuthAPI(queries.Queries, next)
+	}
+	mux := NewMux(h, requireAuthAPI, slog.New(slog.DiscardHandler), http.NotFoundHandler(), nil)
+
+	auth.Setup("test-session-secret-at-least-32-bytes-long")
+	org := dbtest.CreateOrg(t, queries.Queries, "acme")
+	user := dbtest.CreateUser(t, queries.Queries, org.ID, handlers.RoleOwner)
+	storeRec := httptest.NewRecorder()
+	if err := auth.StoreUserSession(storeRec, httptest.NewRequest(http.MethodGet, "/", nil), user.ID); err != nil {
+		t.Fatalf("StoreUserSession: %v", err)
+	}
+
+	tests := []struct {
+		name    string
+		content int
+		want    int
+	}{
+		{"under limit", 1024, http.StatusOK},
+		{"over limit", maxConsoleBodyBytes, http.StatusRequestEntityTooLarge},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			body, _ := json.Marshal(map[string]string{"content": "\"" + string(bytes.Repeat([]byte("a"), tt.content)) + "\""})
+			req := httptest.NewRequest(http.MethodPost, "/api/hujson/format", bytes.NewReader(body))
+			for _, c := range storeRec.Result().Cookies() {
+				req.AddCookie(c)
+			}
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+			if rec.Code != tt.want {
+				t.Errorf("status = %d, want %d", rec.Code, tt.want)
+			}
+		})
+	}
+}
+
 // TestNewMuxOverHTTP builds the same mux cmd/ownscale/main.go does, backed
 // by a real database, and drives it via httptest.NewServer over real HTTP
 // (not the httptest.NewRecorder used by the other tests here). It bypasses real Google OAuth (not practical to
@@ -119,7 +162,7 @@ func TestNewMuxOverHTTP(t *testing.T) {
 
 	const baseDomain = "srvit.test"
 
-	h, err := handlers.New(queries, baseDomain, baseDomain, t.TempDir(), nil, logger, config.DerpConfig{}, config.AuthConfig{})
+	h, err := handlers.New(queries, baseDomain, t.TempDir(), nil, logger, config.DerpConfig{}, config.AuthConfig{}, config.FunnelConfig{Domain: baseDomain, MaxBodyBytes: 1 << 20})
 	if err != nil {
 		t.Fatalf("handlers.New: %v", err)
 	}

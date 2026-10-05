@@ -20,6 +20,7 @@ require (
 	github.com/zitadel/oidc/v3 v3.49.2
 	golang.org/x/crypto v0.57.0
 	golang.org/x/sync v0.23.0
+	golang.org/x/time v0.15.0
 	gopkg.in/yaml.v3 v3.0.1
 	tailscale.com v1.103.0-pre.0.20260819232550-0e84b4a3a0a0
 )
@@ -170,7 +171,6 @@ require (
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/term v0.46.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
-	golang.org/x/time v0.15.0 // indirect
 	golang.zx2c4.com/wintun v0.0.0-20230126152724-0fa3db229ce2 // indirect
 	golang.zx2c4.com/wireguard/windows v0.5.3 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260803160001-6ac0973c030d // indirect

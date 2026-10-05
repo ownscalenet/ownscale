@@ -294,6 +294,14 @@ func TestValidate(t *testing.T) {
 		})
 	}
 
+	t.Run("non-positive funnel max body rejected", func(t *testing.T) {
+		cfg := fullyPopulatedConfig()
+		cfg.Funnel.MaxBodyBytes = 0
+		if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "OWNSCALE_FUNNEL_MAX_BODY_BYTES") {
+			t.Errorf("Validate() error = %v, want it to mention OWNSCALE_FUNNEL_MAX_BODY_BYTES", err)
+		}
+	})
+
 	fields := []struct {
 		name   string
 		breakF func(*Config)

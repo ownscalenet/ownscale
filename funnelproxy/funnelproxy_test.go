@@ -6,10 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -18,7 +21,10 @@ import (
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/hscl"
 	"github.com/ownscalenet/ownscale/hscl/hstest"
+	"golang.org/x/time/rate"
+	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/tsnet"
+	"tailscale.com/types/key"
 )
 
 // fakePortLookup satisfies PortLookup for tests; returns a fixed port for
@@ -83,27 +89,15 @@ type fakeHeadscaleClients struct {
 	err    error
 }
 
-func (f *fakeHeadscaleClients) Wake(context.Context, string) (*hscl.Client, error) {
+func (f *fakeHeadscaleClients) Client(string) (*hscl.Client, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
 	return f.client, nil
 }
 
-// newFakeNodeServer builds a fake implementing headscale's
-// GET /api/v1/node endpoint, returning nodes.
-func newFakeNodeServer(t *testing.T, nodesJSON string) *hscl.Client {
-	t.Helper()
-	mux := http.NewServeMux()
-	mux.HandleFunc("/api/v1/node", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, nodesJSON)
-	})
-	return hscl.NewUnix(hstest.Socket(t, mux))
-}
-
 func TestServeHTTPRouteNotFound(t *testing.T) {
-	pool := NewPool(&fakeQueries{routes: map[string]sqlcgen.FunnelRoute{}}, &fakeHeadscaleClients{}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup())
+	pool := NewPool(&fakeQueries{routes: map[string]sqlcgen.FunnelRoute{}}, &fakeHeadscaleClients{}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup(), 1<<20)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -115,7 +109,7 @@ func TestServeHTTPRouteNotFound(t *testing.T) {
 }
 
 func TestServeHTTPQueriesError(t *testing.T) {
-	pool := NewPool(&fakeQueries{err: errors.New("boom")}, &fakeHeadscaleClients{}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup())
+	pool := NewPool(&fakeQueries{err: errors.New("boom")}, &fakeHeadscaleClients{}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup(), 1<<20)
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -126,62 +120,111 @@ func TestServeHTTPQueriesError(t *testing.T) {
 	}
 }
 
-func TestServeHTTPHeadscaleClientError(t *testing.T) {
-	queries := &fakeQueries{routes: map[string]sqlcgen.FunnelRoute{
-		"acme/web": {ID: "1", Label: "web", TargetNodeID: "1", TargetPort: 8080},
+func TestPeerIP(t *testing.T) {
+	st := &ipnstate.Status{Peer: map[key.NodePublic]*ipnstate.PeerStatus{
+		key.NewNode().Public(): {ID: "1", TailscaleIPs: []netip.Addr{netip.MustParseAddr("100.64.0.1")}},
+		key.NewNode().Public(): {ID: "2", TailscaleIPs: []netip.Addr{netip.MustParseAddr("fd7a:115c::1"), netip.MustParseAddr("100.64.0.2")}},
+		key.NewNode().Public(): {ID: "3"},
 	}}
-	pool := NewPool(queries, &fakeHeadscaleClients{err: errors.New("not running")}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup())
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	pool.ServeHTTP(rec, req, "web", "acme")
-
-	if rec.Code != http.StatusInternalServerError {
-		t.Errorf("status = %d, want %d", rec.Code, http.StatusInternalServerError)
-	}
-}
-
-func TestServeHTTPTargetNodeMissing(t *testing.T) {
-	queries := &fakeQueries{routes: map[string]sqlcgen.FunnelRoute{
-		"acme/web": {ID: "1", Label: "web", TargetNodeID: "does-not-exist", TargetPort: 8080},
-	}}
-	client := newFakeNodeServer(t, `{"nodes":[{"id":"1","name":"node1","ipAddresses":["100.64.0.1"]}]}`)
-	pool := NewPool(queries, &fakeHeadscaleClients{client: client}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup())
-
-	req := httptest.NewRequest(http.MethodGet, "/", nil)
-	rec := httptest.NewRecorder()
-	pool.ServeHTTP(rec, req, "web", "acme")
-
-	if rec.Code != http.StatusBadGateway {
-		t.Errorf("status = %d, want %d, body=%s", rec.Code, http.StatusBadGateway, rec.Body.String())
-	}
-}
-
-func TestTargetNodeIP(t *testing.T) {
-	client := newFakeNodeServer(t, `{"nodes":[
-		{"id":"1","name":"ipv4-only","ipAddresses":["100.64.0.1"]},
-		{"id":"2","name":"ipv6-and-4","ipAddresses":["fd7a:115c::1","100.64.0.2"]},
-		{"id":"3","name":"no-ips","ipAddresses":[]}
-	]}`)
-
 	tests := []struct {
 		nodeID  string
 		wantIP  string
 		wantErr bool
 	}{
 		{"1", "100.64.0.1", false},
-		{"2", "100.64.0.2", false}, // prefers the IPv4 address even when listed second
+		{"2", "100.64.0.2", false}, // prefers IPv4 even when listed second
 		{"3", "", true},
 		{"ghost", "", true},
 	}
 	for _, tt := range tests {
-		ip, err := targetNodeIP(t.Context(), client, tt.nodeID)
+		ip, err := peerIP(st, tt.nodeID)
 		if (err != nil) != tt.wantErr {
-			t.Errorf("targetNodeIP(%q): err = %v, wantErr %v", tt.nodeID, err, tt.wantErr)
+			t.Errorf("peerIP(%q): err = %v, wantErr %v", tt.nodeID, err, tt.wantErr)
 		}
 		if ip != tt.wantIP {
-			t.Errorf("targetNodeIP(%q) = %q, want %q", tt.nodeID, ip, tt.wantIP)
+			t.Errorf("peerIP(%q) = %q, want %q", tt.nodeID, ip, tt.wantIP)
 		}
+	}
+}
+
+// fakeTunnel stands in for tsnet: node "1" is in the netmap and every dial
+// reaches backend.
+func fakeTunnel(backend *httptest.Server) *tunnel {
+	return &tunnel{
+		transport: &http.Transport{
+			DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, network, backend.Listener.Addr().String())
+			},
+		},
+		status: func(context.Context) (*ipnstate.Status, error) {
+			return &ipnstate.Status{Peer: map[key.NodePublic]*ipnstate.PeerStatus{
+				key.NewNode().Public(): {ID: "1", TailscaleIPs: []netip.Addr{netip.MustParseAddr("100.64.0.1")}},
+			}}, nil
+		},
+	}
+}
+
+func TestServeHTTP(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if _, err := io.Copy(io.Discard, r.Body); err != nil {
+			return
+		}
+		fmt.Fprint(w, "ok")
+	}))
+	t.Cleanup(backend.Close)
+
+	const maxBody = 1024
+	tests := []struct {
+		name     string
+		targetID string
+		asleep   bool
+		limits   *orgLimits
+		body     io.Reader
+		chunked  bool
+		want     int
+	}{
+		{name: "ok", targetID: "1", want: http.StatusOK},
+		{name: "body at limit", targetID: "1", body: strings.NewReader(strings.Repeat("a", maxBody)), want: http.StatusOK},
+		{name: "asleep org not woken", targetID: "1", asleep: true, want: http.StatusServiceUnavailable},
+		{name: "target not in netmap", targetID: "2", want: http.StatusBadGateway},
+		{name: "body over limit", targetID: "1", body: strings.NewReader(strings.Repeat("a", maxBody+1)), want: http.StatusRequestEntityTooLarge},
+		{name: "chunked body over limit", targetID: "1", body: strings.NewReader(strings.Repeat("a", maxBody+1)), chunked: true, want: http.StatusRequestEntityTooLarge},
+		{
+			name: "rate limited", targetID: "1",
+			limits: &orgLimits{rate: rate.NewLimiter(0, 0), inFlight: make(chan struct{}, 1)},
+			want:   http.StatusTooManyRequests,
+		},
+		{
+			name: "too many in flight", targetID: "1",
+			limits: &orgLimits{rate: rate.NewLimiter(rate.Inf, 0), inFlight: make(chan struct{})},
+			want:   http.StatusServiceUnavailable,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			queries := &fakeQueries{routes: map[string]sqlcgen.FunnelRoute{
+				"acme/web": {ID: "1", Label: "web", TargetNodeID: tt.targetID, TargetPort: 8080},
+			}}
+			hs := &fakeHeadscaleClients{}
+			if tt.asleep {
+				hs.err = errors.New("organization not running")
+			}
+			pool := NewPool(queries, hs, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup(), maxBody)
+			pool.servers["acme"] = fakeTunnel(backend)
+			if tt.limits != nil {
+				pool.limits["acme"] = tt.limits
+			}
+
+			req := httptest.NewRequest(http.MethodPost, "/", tt.body)
+			if tt.chunked {
+				req.ContentLength = -1
+			}
+			rec := httptest.NewRecorder()
+			pool.ServeHTTP(rec, req, "web", "acme")
+			if rec.Code != tt.want {
+				t.Errorf("status = %d, want %d, body=%q", rec.Code, tt.want, rec.Body.String())
+			}
+		})
 	}
 }
 
@@ -287,7 +330,7 @@ func TestEnsureFunnelAuthKey(t *testing.T) {
 // same on-disk state directory.
 func TestGetOrCreateServerConcurrentDedup(t *testing.T) {
 	client, f := newFakeUserPreAuthKeyServer(t, `{"users":[]}`)
-	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{client: client}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup())
+	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{client: client}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup(), 1<<20)
 	pool.upTimeout = 2 * time.Second
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -325,7 +368,7 @@ func TestGetOrCreateServerUpTimeout(t *testing.T) {
 	t.Cleanup(blockServer.Close)
 
 	client, f := newFakeUserPreAuthKeyServer(t, `{"users":[]}`)
-	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{client: client}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup())
+	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{client: client}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup(), 1<<20)
 	pool.upTimeout = 200 * time.Millisecond
 	pool.controlURL = func(string) (string, error) { return blockServer.URL, nil }
 
@@ -361,7 +404,7 @@ func TestEvict(t *testing.T) {
 		return srv
 	}
 
-	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup())
+	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup(), 1<<20)
 	pool.servers["aaaa"] = newTunnel(newServer())
 	pool.servers["bbbb"] = newTunnel(newServer())
 
@@ -392,14 +435,8 @@ func TestServeHTTPReusesConnections(t *testing.T) {
 	queries := &fakeQueries{routes: map[string]sqlcgen.FunnelRoute{
 		"acme/web": {ID: "1", Label: "web", TargetNodeID: "1", TargetPort: 8080},
 	}}
-	client := newFakeNodeServer(t, `{"nodes":[{"id":"1","name":"node1","ipAddresses":["100.64.0.1"]}]}`)
-	pool := NewPool(queries, &fakeHeadscaleClients{client: client}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup())
-	// Stand in for tsnet: dial the local backend whatever the tailnet address.
-	pool.servers["acme"] = &tunnel{transport: &http.Transport{
-		DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
-			return (&net.Dialer{}).DialContext(ctx, network, backend.Listener.Addr().String())
-		},
-	}}
+	pool := NewPool(queries, &fakeHeadscaleClients{}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup(), 1<<20)
+	pool.servers["acme"] = fakeTunnel(backend)
 	t.Cleanup(pool.Close)
 
 	for i := range 3 {

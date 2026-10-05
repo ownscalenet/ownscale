@@ -22,7 +22,10 @@ import (
 	"time"
 
 	"golang.org/x/sync/singleflight"
+	"golang.org/x/time/rate"
+	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/net/netns"
+	"tailscale.com/tailcfg"
 	"tailscale.com/tsnet"
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
@@ -43,10 +46,10 @@ type Queries interface {
 	GetFunnelRouteBySubdomainAndLabel(ctx context.Context, arg sqlcgen.GetFunnelRouteBySubdomainAndLabelParams) (sqlcgen.FunnelRoute, error)
 }
 
-// HeadscaleClients returns an organization's headscale client, starting
-// its headscale if it's asleep. Implemented by *orgs.Service.
+// HeadscaleClients returns a running organization's headscale client,
+// without waking it. Implemented by *orgs.Service.
 type HeadscaleClients interface {
-	Wake(ctx context.Context, subdomain string) (*hscl.Client, error)
+	Client(subdomain string) (*hscl.Client, error)
 }
 
 // Pool proxies incoming funnel HTTP requests into the target
@@ -59,8 +62,11 @@ type Pool struct {
 	dataDir string
 	logger  *slog.Logger
 
+	maxBody int64
+
 	mu      sync.Mutex
-	servers map[string]*tunnel // keyed by organization subdomain
+	servers map[string]*tunnel    // keyed by organization subdomain
+	limits  map[string]*orgLimits // keyed by organization subdomain
 
 	// sf de-duplicates concurrent getOrCreateServer calls for the same
 	// subdomain, so a burst of near-simultaneous requests for a
@@ -78,19 +84,29 @@ type Pool struct {
 type tunnel struct {
 	srv       *tsnet.Server
 	transport *http.Transport
+	// status returns srv's netmap; replaced in tests.
+	status func(context.Context) (*ipnstate.Status, error)
 }
 
 func newTunnel(srv *tsnet.Server) *tunnel {
 	return &tunnel{
 		srv: srv,
+		status: func(ctx context.Context) (*ipnstate.Status, error) {
+			lc, err := srv.LocalClient()
+			if err != nil {
+				return nil, err
+			}
+			return lc.Status(ctx)
+		},
 		transport: &http.Transport{
 			DialContext: func(ctx context.Context, network, addr string) (net.Conn, error) {
 				ctx, cancel := context.WithTimeout(ctx, funnelDialTimeout)
 				defer cancel()
 				return srv.Dial(ctx, network, addr)
 			},
-			IdleConnTimeout:     90 * time.Second,
-			MaxIdleConnsPerHost: 16,
+			IdleConnTimeout:       90 * time.Second,
+			MaxIdleConnsPerHost:   16,
+			ResponseHeaderTimeout: 60 * time.Second,
 		},
 	}
 }
@@ -113,8 +129,9 @@ type PortLookup interface {
 // a stable on-disk state directory (funnel-tsnet/<subdomain>) so it
 // registers as a stable tailnet node across process restarts instead of
 // re-registering on every request. portLookup maps subdomains to the TCP
-// port where their in-process headscale instance is listening.
-func NewPool(queries Queries, hs HeadscaleClients, dataDir string, logger *slog.Logger, portLookup PortLookup) *Pool {
+// port where their in-process headscale instance is listening. maxBody
+// limits request body sizes.
+func NewPool(queries Queries, hs HeadscaleClients, dataDir string, logger *slog.Logger, portLookup PortLookup, maxBody int64) *Pool {
 	// The symptoms of having this enabled: only funnels from one org work,
 	// all others timeout.
 	netns.SetEnabled(false)
@@ -124,7 +141,9 @@ func NewPool(queries Queries, hs HeadscaleClients, dataDir string, logger *slog.
 		hs:        hs,
 		dataDir:   dataDir,
 		logger:    logger,
+		maxBody:   maxBody,
 		servers:   make(map[string]*tunnel),
+		limits:    make(map[string]*orgLimits),
 		upTimeout: funnelUpTimeout,
 		controlURL: func(subdomain string) (string, error) {
 			port, ok := portLookup.LookupPort(subdomain)
@@ -206,17 +225,33 @@ func (p *Pool) ServeHTTP(w http.ResponseWriter, r *http.Request, label, subdomai
 		return
 	}
 
-	client, err := p.hs.Wake(ctx, subdomain)
-	if err != nil {
-		p.logger.Error("funnel: resolve headscale client", "subdomain", subdomain, "error", err)
-		http.Error(w, "internal server error", http.StatusInternalServerError)
+	lim := p.limitsFor(subdomain)
+	if !lim.rate.Allow() {
+		w.Header().Set("Retry-After", "1")
+		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		return
+	}
+	select {
+	case lim.inFlight <- struct{}{}:
+		defer func() { <-lim.inFlight }()
+	default:
+		http.Error(w, "too many concurrent requests", http.StatusServiceUnavailable)
 		return
 	}
 
-	targetIP, err := targetNodeIP(ctx, client, route.TargetNodeID)
+	if r.ContentLength > p.maxBody {
+		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+		return
+	}
+	if r.Body != nil {
+		r.Body = http.MaxBytesReader(w, r.Body, p.maxBody)
+	}
+
+	// A sleeping org has no online machines, so its funnel target is offline
+	// too. Waking it would only let anyone keep orgs awake.
+	client, err := p.hs.Client(subdomain)
 	if err != nil {
-		p.logger.Warn("funnel: target node unreachable", "subdomain", subdomain, "target_node_id", route.TargetNodeID, "error", err)
-		http.Error(w, "target machine not found", http.StatusBadGateway)
+		http.Error(w, "funnel target offline", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -224,6 +259,13 @@ func (p *Pool) ServeHTTP(w http.ResponseWriter, r *http.Request, label, subdomai
 	if err != nil {
 		p.logger.Error("funnel: start tsnet server", "subdomain", subdomain, "error", err)
 		http.Error(w, "internal server error", http.StatusInternalServerError)
+		return
+	}
+
+	targetIP, err := tun.peerIP(ctx, route.TargetNodeID)
+	if err != nil {
+		p.logger.Warn("funnel: target node unreachable", "subdomain", subdomain, "target_node_id", route.TargetNodeID, "error", err)
+		http.Error(w, "target machine not found", http.StatusBadGateway)
 		return
 	}
 
@@ -242,6 +284,10 @@ func (p *Pool) ServeHTTP(w http.ResponseWriter, r *http.Request, label, subdomai
 		Transport: tun.transport,
 		// Same as the default ErrorHandler, except it uses our logger.
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
+			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+				w.WriteHeader(http.StatusRequestEntityTooLarge)
+				return
+			}
 			p.logger.Warn("funnel: proxy to target failed", "subdomain", subdomain, "label", label, "target", targetAddr, "error", err)
 			w.WriteHeader(http.StatusBadGateway)
 		},
@@ -276,26 +322,33 @@ func waitForDERP(ctx context.Context, srv *tsnet.Server, timeout time.Duration) 
 	}
 }
 
-func targetNodeIP(ctx context.Context, client *hscl.Client, nodeID string) (string, error) {
-	nodes, err := client.ListNodes(ctx)
+// peerIP returns the Tailscale IP of the peer with headscale node ID
+// nodeID, from the tsnet node's netmap, so requests don't query headscale.
+func (t *tunnel) peerIP(ctx context.Context, nodeID string) (string, error) {
+	st, err := t.status(ctx)
 	if err != nil {
 		return "", err
 	}
-	for _, n := range nodes {
-		if n.ID != nodeID {
+	return peerIP(st, nodeID)
+}
+
+// peerIP prefers IPv4. headscale's StableNodeID is the decimal node ID.
+func peerIP(st *ipnstate.Status, nodeID string) (string, error) {
+	for _, ps := range st.Peer {
+		if ps.ID != tailcfg.StableNodeID(nodeID) {
 			continue
 		}
-		for _, addr := range n.IPAddresses {
-			if !strings.Contains(addr, ":") { // prefer the IPv4 address
-				return addr, nil
+		for _, ip := range ps.TailscaleIPs {
+			if ip.Is4() {
+				return ip.String(), nil
 			}
 		}
-		if len(n.IPAddresses) > 0 {
-			return n.IPAddresses[0], nil
+		if len(ps.TailscaleIPs) > 0 {
+			return ps.TailscaleIPs[0].String(), nil
 		}
 		return "", fmt.Errorf("node %q has no IP addresses", nodeID)
 	}
-	return "", fmt.Errorf("node %q not found", nodeID)
+	return "", fmt.Errorf("node %q not in netmap", nodeID)
 }
 
 // funnelUpTimeout is how long a tsnet.Server may take to register and
@@ -416,4 +469,32 @@ func ensureFunnelAuthKey(ctx context.Context, client *hscl.Client) (hscl.PreAuth
 		UserID:     userID,
 		Expiration: time.Now().Add(funnelAuthKeyValidity),
 	})
+}
+
+// Per-org funnel limits, so one org's funnel can't exhaust ownscale.
+const (
+	funnelRatePerSecond = 100
+	funnelRateBurst     = 200
+	funnelMaxInFlight   = 256
+)
+
+type orgLimits struct {
+	rate     *rate.Limiter
+	inFlight chan struct{}
+}
+
+// limitsFor returns subdomain's limits. Only called for existing routes, so
+// the map is bounded by the number of orgs.
+func (p *Pool) limitsFor(subdomain string) *orgLimits {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	lim, ok := p.limits[subdomain]
+	if !ok {
+		lim = &orgLimits{
+			rate:     rate.NewLimiter(funnelRatePerSecond, funnelRateBurst),
+			inFlight: make(chan struct{}, funnelMaxInFlight),
+		}
+		p.limits[subdomain] = lim
+	}
+	return lim
 }

@@ -223,10 +223,14 @@ func (h *Handlers) machineIDAndClient(r *http.Request) (client *hscl.Client, id 
 	return client, r.PathValue("id")
 }
 
-// decodeJSONBody decodes r's JSON body into v, writing a 400 response and
-// returning false on failure.
+// decodeJSONBody decodes r's JSON body into v, writing a 400 (or 413 for an
+// oversized body) response and returning false on failure.
 func (h *Handlers) decodeJSONBody(w http.ResponseWriter, r *http.Request, v any) bool {
 	if err := json.NewDecoder(r.Body).Decode(v); err != nil {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+			h.writeError(w, http.StatusRequestEntityTooLarge, "request body too large")
+			return false
+		}
 		h.writeError(w, http.StatusBadRequest, "invalid request body")
 		return false
 	}

@@ -36,6 +36,15 @@
 	log {
 		level {$CADDY_LOG_LEVEL:INFO}
 	}
+
+	# Drop slow-header and idle clients. No read/write timeouts: tailnet
+	# long-polls and funnel WebSockets stay open.
+	servers {
+		timeouts {
+			read_header 10s
+			idle 2m
+		}
+	}
 }
 
 # The documentation site lives at the bare base domain; the Ownscale
