@@ -108,15 +108,10 @@ type machineResponse struct {
 func toMachineResponse(n hscl.Node, caller *sqlcgen.User) machineResponse {
 	return machineResponse{
 		Node:     n,
-		Internal: isFunnelNode(n),
+		Internal: funnelproxy.IsFunnelUser(n.User),
 		CanEdit: caller != nil &&
 			(isManager(caller.Role) || n.User != nil && ownsHeadscaleUser(caller, n.User.ID)),
 	}
-}
-
-// isFunnelNode reports whether n belongs to funnelproxy.FunnelHeadscaleUserName.
-func isFunnelNode(n hscl.Node) bool {
-	return n.User != nil && n.User.Name == funnelproxy.FunnelHeadscaleUserName
 }
 
 // ListMachines handles GET /api/machines. It returns every machine

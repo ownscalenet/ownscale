@@ -84,7 +84,7 @@ func TestUsers(t *testing.T) {
 		t.Fatalf("CreateUser: %v", err)
 	}
 	if created.ID == "" || created.Name != "bob" || created.Email != "bob@example.com" ||
-		created.DisplayName != "Bob" || created.CreatedAt == "" {
+		created.DisplayName != "Bob" || created.CreatedAt == "" || created.ProviderID != "" {
 		t.Errorf("CreateUser = %+v", created)
 	}
 	if got, ok := userByName(t, c, "bob"); !ok || got != created {

@@ -6,6 +6,7 @@ import (
 
 	dbpkg "github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/funnelproxy"
 	"github.com/ownscalenet/ownscale/hscl"
 )
 
@@ -47,15 +48,23 @@ func TestClaimedHeadscaleUserIDs(t *testing.T) {
 
 func TestUniqueHeadscaleName(t *testing.T) {
 	existing := []hscl.User{{ID: "1", Name: "alice"}, {ID: "2", Name: "alice-google"}}
-
-	if got := uniqueHeadscaleName("bob", "google", "user-id", existing); got != "bob" {
-		t.Errorf("no collision: got %q, want %q", got, "bob")
+	tests := []struct {
+		name                        string
+		candidate, provider, userID string
+		existing                    []hscl.User
+		want                        string
+	}{
+		{"no collision", "bob", "google", "user-id", existing, "bob"},
+		{"candidate collides", "alice", "microsoft", "user-id", existing, "alice-microsoft"},
+		{"provider-qualified collides too", "alice", "google", "12345678-abcd", existing, "alice-google-12345678"},
+		{"funnel name reserved", funnelproxy.FunnelHeadscaleUserName, "google", "user-id", nil, funnelproxy.FunnelHeadscaleUserName + "-google"},
 	}
-	if got := uniqueHeadscaleName("alice", "microsoft", "user-id", existing); got != "alice-microsoft" {
-		t.Errorf("candidate collides: got %q, want provider-qualified %q", got, "alice-microsoft")
-	}
-	if got := uniqueHeadscaleName("alice", "google", "12345678-abcd", existing); got != "alice-google-12345678" {
-		t.Errorf("candidate and provider-qualified both collide: got %q, want id-qualified %q", got, "alice-google-12345678")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := uniqueHeadscaleName(tt.candidate, tt.provider, tt.userID, tt.existing); got != tt.want {
+				t.Errorf("uniqueHeadscaleName(%q) = %q, want %q", tt.candidate, got, tt.want)
+			}
+		})
 	}
 }
 

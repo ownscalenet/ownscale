@@ -25,6 +25,8 @@ type User struct {
 	DisplayName string `json:"displayName"`
 	Email       string `json:"email"`
 	CreatedAt   string `json:"createdAt"`
+	// ProviderID is the user's OIDC identity, empty for users created via the API.
+	ProviderID string `json:"-"`
 }
 
 // Node is a headscale node/machine.
@@ -416,6 +418,7 @@ func toUser(u clientv1.User) User {
 		DisplayName: u.DisplayName,
 		Email:       u.Email,
 		CreatedAt:   timeString(u.CreatedAt),
+		ProviderID:  u.ProviderId,
 	}
 }
 

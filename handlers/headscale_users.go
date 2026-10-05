@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/funnelproxy"
 	"github.com/ownscalenet/ownscale/hscl"
 )
 
@@ -55,9 +56,9 @@ func shortID(id string) string {
 // it's obvious in headscale's own user list which ownscale login produced
 // which headscale identity -- headscale has no field of its own to record
 // our auth provider), then "<candidate>-<provider>-<8 chars of userID>"
-// as a last resort.
+// as a last resort. The funnel's user name is always treated as taken.
 func uniqueHeadscaleName(candidate, provider, userID string, existing []hscl.User) string {
-	taken := make(map[string]bool, len(existing))
+	taken := map[string]bool{funnelproxy.FunnelHeadscaleUserName: true}
 	for _, u := range existing {
 		taken[u.Name] = true
 	}

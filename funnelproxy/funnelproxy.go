@@ -30,7 +30,13 @@ import (
 	"github.com/ownscalenet/ownscale/hscl"
 )
 
+// FunnelHeadscaleUserName is the headscale user owning each org's funnel node.
+// It's reserved: members are never given this name.
 const FunnelHeadscaleUserName = "ownscale-funnel"
+
+func IsFunnelUser(u *hscl.User) bool {
+	return u != nil && u.Name == FunnelHeadscaleUserName && u.ProviderID == ""
+}
 
 // Queries is the narrow subset of *db.TxQueries the proxy needs.
 type Queries interface {
@@ -332,6 +338,11 @@ func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *
 		if err != nil {
 			return nil, fmt.Errorf("mint pre-auth key: %w", err)
 		}
+		defer func() {
+			if err := client.DeletePreAuthKey(context.WithoutCancel(ctx), authKey.ID); err != nil {
+				p.logger.Warn("funnel: delete pre-auth key", "subdomain", subdomain, "error", err)
+			}
+		}()
 
 		controlURL, err := p.controlURL(subdomain)
 		if err != nil {
@@ -365,10 +376,6 @@ func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *
 			p.logger.Warn("funnel: DERP not ready after wait; first dials may fail", "subdomain", subdomain, "error", err)
 		}
 
-		if err := client.DeletePreAuthKey(context.WithoutCancel(ctx), authKey.ID); err != nil {
-			p.logger.Warn("funnel: delete pre-auth key after use", "subdomain", subdomain, "error", err)
-		}
-
 		tun := newTunnel(srv)
 		p.mu.Lock()
 		p.servers[subdomain] = tun
@@ -381,7 +388,8 @@ func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *
 	return v.(*tunnel), nil
 }
 
-const funnelAuthKeyValidity = 100 * 365 * 24 * time.Hour
+// funnelAuthKeyValidity only needs to outlast srv.Up; the key is deleted right after.
+const funnelAuthKeyValidity = 5 * time.Minute
 
 func ensureFunnelAuthKey(ctx context.Context, client *hscl.Client) (hscl.PreAuthKey, error) {
 	// TODO: This listing might be inefficient.
@@ -391,7 +399,7 @@ func ensureFunnelAuthKey(ctx context.Context, client *hscl.Client) (hscl.PreAuth
 	}
 	var userID string
 	for _, u := range users {
-		if u.Name == FunnelHeadscaleUserName {
+		if IsFunnelUser(&u) {
 			userID = u.ID
 			break
 		}
@@ -406,8 +414,6 @@ func ensureFunnelAuthKey(ctx context.Context, client *hscl.Client) (hscl.PreAuth
 
 	return client.CreatePreAuthKey(ctx, hscl.CreatePreAuthKeyParams{
 		UserID:     userID,
-		Reusable:   true,
-		Ephemeral:  false,
 		Expiration: time.Now().Add(funnelAuthKeyValidity),
 	})
 }

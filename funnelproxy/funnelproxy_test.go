@@ -3,9 +3,9 @@ package funnelproxy
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -185,28 +185,100 @@ func TestTargetNodeIP(t *testing.T) {
 	}
 }
 
-// newFakeUserPreAuthKeyServer builds a fake implementing
-// headscale's GET/POST /api/v1/user and POST /api/v1/preauthkey endpoints,
-// recording every /api/v1/preauthkey request body for assertions.
-func newFakeUserPreAuthKeyServer(t *testing.T, existingUsers string) (*hscl.Client, *[]string) {
+// fakeHeadscale records the headscale user and pre-auth key calls the funnel makes.
+type fakeHeadscale struct {
+	mu          sync.Mutex
+	createdUser bool
+	keyBodies   []createKeyBody
+	deletedKeys []string
+}
+
+type createKeyBody struct {
+	User       string    `json:"user"`
+	Reusable   bool      `json:"reusable"`
+	Expiration time.Time `json:"expiration"`
+}
+
+// newFakeUserPreAuthKeyServer builds a fake implementing headscale's user
+// and pre-auth key endpoints. existingUsers is the GET /api/v1/user response.
+func newFakeUserPreAuthKeyServer(t *testing.T, existingUsers string) (*hscl.Client, *fakeHeadscale) {
 	t.Helper()
-	var preAuthKeyBodies []string
+	f := &fakeHeadscale{}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/user", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.Method == http.MethodPost {
+			f.mu.Lock()
+			f.createdUser = true
+			f.mu.Unlock()
 			fmt.Fprint(w, `{"user":{"id":"99","name":"ownscale-funnel"}}`)
 			return
 		}
 		fmt.Fprint(w, existingUsers)
 	})
 	mux.HandleFunc("/api/v1/preauthkey", func(w http.ResponseWriter, r *http.Request) {
-		body, _ := io.ReadAll(r.Body)
-		preAuthKeyBodies = append(preAuthKeyBodies, string(body))
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{"preAuthKey":{"id":"1","key":"fake-key","reusable":true,"ephemeral":false}}`)
+		f.mu.Lock()
+		defer f.mu.Unlock()
+		if r.Method == http.MethodDelete {
+			f.deletedKeys = append(f.deletedKeys, r.URL.Query().Get("id"))
+			fmt.Fprint(w, `{}`)
+			return
+		}
+		var body createKeyBody
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Errorf("decode pre-auth key body: %v", err)
+		}
+		f.keyBodies = append(f.keyBodies, body)
+		fmt.Fprint(w, `{"preAuthKey":{"id":"1","key":"fake-key"}}`)
 	})
-	return hscl.NewUnix(hstest.Socket(t, mux)), &preAuthKeyBodies
+	return hscl.NewUnix(hstest.Socket(t, mux)), f
+}
+
+func TestEnsureFunnelAuthKey(t *testing.T) {
+	tests := []struct {
+		name          string
+		users         string
+		wantUser      string
+		wantNewCreate bool
+	}{
+		{"no users", `{"users":[]}`, "99", true},
+		{"existing funnel user", `{"users":[{"id":"5","name":"ownscale-funnel"}]}`, "5", false},
+		{
+			"only an OIDC member with the funnel name",
+			`{"users":[{"id":"7","name":"ownscale-funnel","providerId":"https://ownscale.test/abc"}]}`,
+			"99", true,
+		},
+		{
+			"OIDC member listed before the funnel user",
+			`{"users":[{"id":"7","name":"ownscale-funnel","providerId":"https://ownscale.test/abc"},{"id":"5","name":"ownscale-funnel"}]}`,
+			"5", false,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, f := newFakeUserPreAuthKeyServer(t, tt.users)
+			if _, err := ensureFunnelAuthKey(t.Context(), client); err != nil {
+				t.Fatalf("ensureFunnelAuthKey: %v", err)
+			}
+			if f.createdUser != tt.wantNewCreate {
+				t.Errorf("created user = %v, want %v", f.createdUser, tt.wantNewCreate)
+			}
+			if len(f.keyBodies) != 1 {
+				t.Fatalf("minted %d keys, want 1", len(f.keyBodies))
+			}
+			key := f.keyBodies[0]
+			if key.User != tt.wantUser {
+				t.Errorf("key user = %q, want %q", key.User, tt.wantUser)
+			}
+			if key.Reusable {
+				t.Error("key is reusable, want single-use")
+			}
+			if until := time.Until(key.Expiration); until <= 0 || until > funnelAuthKeyValidity {
+				t.Errorf("key expires in %s, want within %s", until, funnelAuthKeyValidity)
+			}
+		})
+	}
 }
 
 // TestGetOrCreateServerConcurrentDedup guards against the race where a
@@ -214,7 +286,7 @@ func newFakeUserPreAuthKeyServer(t *testing.T, existingUsers string) (*hscl.Clie
 // mint their own preauth key and start their own tsnet.Server against the
 // same on-disk state directory.
 func TestGetOrCreateServerConcurrentDedup(t *testing.T) {
-	client, preAuthKeyBodies := newFakeUserPreAuthKeyServer(t, `{"users":[]}`)
+	client, f := newFakeUserPreAuthKeyServer(t, `{"users":[]}`)
 	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{client: client}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup())
 	pool.upTimeout = 2 * time.Second
 
@@ -239,7 +311,7 @@ func TestGetOrCreateServerConcurrentDedup(t *testing.T) {
 			t.Errorf("getOrCreateServer[%d]: got nil error, want a dial/lookup failure (ControlURL is unreachable in this test)", i)
 		}
 	}
-	if got := len(*preAuthKeyBodies); got != 1 {
+	if got := len(f.keyBodies); got != 1 {
 		t.Errorf("preauthkey minted %d times across %d concurrent callers, want exactly 1 (dedup failed)", got, concurrency)
 	}
 }
@@ -252,7 +324,7 @@ func TestGetOrCreateServerUpTimeout(t *testing.T) {
 	}))
 	t.Cleanup(blockServer.Close)
 
-	client, _ := newFakeUserPreAuthKeyServer(t, `{"users":[]}`)
+	client, f := newFakeUserPreAuthKeyServer(t, `{"users":[]}`)
 	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{client: client}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup())
 	pool.upTimeout = 200 * time.Millisecond
 	pool.controlURL = func(string) (string, error) { return blockServer.URL, nil }
@@ -269,6 +341,9 @@ func TestGetOrCreateServerUpTimeout(t *testing.T) {
 	}
 	if elapsed > 5*time.Second {
 		t.Errorf("getOrCreateServer took %s to return, want well under upTimeout=%s plus overhead (it should not hang indefinitely)", elapsed, pool.upTimeout)
+	}
+	if len(f.deletedKeys) != 1 || f.deletedKeys[0] != "1" {
+		t.Errorf("deleted pre-auth keys = %v, want [1] even though Up failed", f.deletedKeys)
 	}
 }
 
