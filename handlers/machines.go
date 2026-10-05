@@ -472,7 +472,7 @@ func (h *Handlers) isFunnelMachine(ctx context.Context, client *hscl.Client, nod
 	}
 	for _, n := range nodes {
 		if n.ID == nodeID {
-			return isFunnelNode(n), nil
+			return funnelproxy.IsFunnelUser(n.User), nil
 		}
 	}
 	return false, nil
