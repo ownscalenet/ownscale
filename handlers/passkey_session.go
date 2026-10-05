@@ -10,7 +10,7 @@ import (
 )
 
 const passkeyCeremonyTTL = 5 * time.Minute
-const passkeyCeremonyCookie = "ownscale_webauthn_session"
+const passkeyCeremonyCookie = "__Host-ownscale_webauthn_session"
 
 // passkeyCeremony holds everything a register/login "begin" step needs to
 // pass along to its matching "finish" step. Email is set only for

@@ -105,6 +105,9 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 
 	// Requests whose Host header is a funnel hostname
 	// ("<label>--<sub>.{base}", forwarded here by Caddy's map block.
+	// Org subdomains, dex and funnels are same-site with the console, so
+	// SameSite cookies alone don't stop CSRF.
+	console := http.NewCrossOriginProtection().Handler(mux)
 	dispatch := func(w http.ResponseWriter, r *http.Request) {
 		if h.ServeFunnelIfMatched(w, r) {
 			return
@@ -112,7 +115,7 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 		if r.Body != nil {
 			r.Body = http.MaxBytesReader(w, r.Body, maxConsoleBodyBytes)
 		}
-		mux.ServeHTTP(w, r)
+		console.ServeHTTP(w, r)
 	}
 
 	return loggingMiddleware(logger, securityHeadersMiddleware(http.HandlerFunc(dispatch)))

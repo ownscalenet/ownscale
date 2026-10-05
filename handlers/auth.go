@@ -27,7 +27,7 @@ import (
 // same session by BeginAuth just beforehand, since the incoming request
 // object never reflects Set-Cookie headers written earlier in the same
 // response.
-const nextCookieName = "ownscale_next"
+const nextCookieName = "__Host-ownscale_next"
 
 // nextCookieMaxAge is deliberately short: the cookie only needs to survive
 // the redirect to the upstream IdP and back.

@@ -5,7 +5,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/gorilla/sessions"
 	"github.com/markbates/goth"
 	"github.com/markbates/goth/gothic"
 
@@ -178,18 +177,20 @@ func TestClearUserSessionInvalidatesSession(t *testing.T) {
 func TestSetupCookieOptions(t *testing.T) {
 	setupSessions()
 
-	store, ok := gothic.Store.(*sessions.CookieStore)
-	if !ok {
-		t.Fatalf("gothic.Store = %T, want *sessions.CookieStore", gothic.Store)
+	rec := httptest.NewRecorder()
+	if err := StoreUserSession(rec, httptest.NewRequest(http.MethodGet, "/", nil), "user-1"); err != nil {
+		t.Fatalf("StoreUserSession: %v", err)
 	}
-	if !store.Options.HttpOnly {
-		t.Error("Options.HttpOnly = false, want true")
+	cookies := rec.Result().Cookies()
+	if len(cookies) != 1 {
+		t.Fatalf("got %d cookies, want 1", len(cookies))
 	}
-	if !store.Options.Secure {
-		t.Error("Options.Secure = false, want true")
+	c := cookies[0]
+	if c.Name != "__Host-"+gothic.SessionName {
+		t.Errorf("Name = %q, want %q", c.Name, "__Host-"+gothic.SessionName)
 	}
-	if store.Options.SameSite != http.SameSiteLaxMode {
-		t.Errorf("Options.SameSite = %v, want http.SameSiteLaxMode", store.Options.SameSite)
+	if !c.HttpOnly || !c.Secure || c.Path != "/" || c.Domain != "" || c.SameSite != http.SameSiteLaxMode {
+		t.Errorf("cookie = %+v, want HttpOnly, Secure, Path=/, no Domain, SameSite=Lax", c)
 	}
 }
 

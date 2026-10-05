@@ -37,7 +37,21 @@ func Setup(sessionSecret string) {
 	store.Options.SameSite = http.SameSiteLaxMode
 	store.Options.Path = "/"
 	store.MaxAge(SessionMaxAge)
-	gothic.Store = store
+	gothic.Store = hostPrefixStore{store}
+}
+
+// hostPrefixStore names cookies with the __Host- prefix so sibling
+// subdomains can't overwrite them with Domain=<base> cookies.
+type hostPrefixStore struct {
+	*sessions.CookieStore
+}
+
+func (s hostPrefixStore) Get(r *http.Request, name string) (*sessions.Session, error) {
+	return s.CookieStore.Get(r, "__Host-"+name)
+}
+
+func (s hostPrefixStore) New(r *http.Request, name string) (*sessions.Session, error) {
+	return s.CookieStore.New(r, "__Host-"+name)
 }
 
 func RegisterUpstreamOIDC(issuer, clientID, clientSecret, callbackURL string) (err error) {

@@ -151,6 +151,37 @@ func TestNewMuxBodyLimit(t *testing.T) {
 	}
 }
 
+func TestNewMuxCrossOriginProtection(t *testing.T) {
+	mux := newTestMux(t)
+
+	tests := []struct {
+		name    string
+		method  string
+		headers map[string]string
+		forbid  bool
+	}{
+		{"same-site post", http.MethodPost, map[string]string{"Sec-Fetch-Site": "same-site"}, true},
+		{"cross-site post", http.MethodPost, map[string]string{"Sec-Fetch-Site": "cross-site"}, true},
+		{"sibling origin post", http.MethodPost, map[string]string{"Origin": "https://acme.example.com"}, true},
+		{"same-origin post", http.MethodPost, map[string]string{"Sec-Fetch-Site": "same-origin"}, false},
+		{"non-browser post", http.MethodPost, nil, false},
+		{"same-site get", http.MethodGet, map[string]string{"Sec-Fetch-Site": "same-site"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, "https://example.com/api/logout", nil)
+			for k, v := range tt.headers {
+				req.Header.Set(k, v)
+			}
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+			if got := rec.Code == http.StatusForbidden; got != tt.forbid {
+				t.Errorf("status = %d, forbidden = %v, want %v", rec.Code, got, tt.forbid)
+			}
+		})
+	}
+}
+
 // TestNewMuxOverHTTP builds the same mux cmd/ownscale/main.go does, backed
 // by a real database, and drives it via httptest.NewServer over real HTTP
 // (not the httptest.NewRecorder used by the other tests here). It bypasses real Google OAuth (not practical to
