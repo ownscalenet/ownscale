@@ -38,6 +38,7 @@ type Handlers struct {
 	orgs            *orgs.Service
 	hs              headscaleClients
 	baseDomain      string
+	funnelDomain    string
 	oidc            *oidcprovider.Storage
 	logger          *slog.Logger
 	funnel          *funnelproxy.Pool
@@ -63,7 +64,7 @@ type authProvidersStatus struct {
 // configured.
 func New(
 	queries *db.TxQueries,
-	baseDomain, dataDir string,
+	baseDomain, funnelDomain, dataDir string,
 	oidc *oidcprovider.Storage,
 	logger *slog.Logger,
 	derpCfg config.DerpConfig,
@@ -96,6 +97,7 @@ func New(
 	h := &Handlers{
 		queries:         queries,
 		baseDomain:      baseDomain,
+		funnelDomain:    funnelDomain,
 		oidc:            oidc,
 		logger:          logger,
 		orgs:            orgSvc,
@@ -121,16 +123,16 @@ func (h *Handlers) Close() {
 }
 
 // ServeFunnelIfMatched serves r via the funnel proxy and returns true if
-// r.Host is shaped like a funnel hostname ("<label>-<subdomain>.{base}",
-// see etc/caddy/Caddyfile's "*.{$BASE_DOMAIN}" site block that routes
+// r.Host is shaped like a funnel hostname ("<label>-<subdomain>.<funnelDomain>",
+// see etc/caddy/Caddyfile's "*.{$FUNNEL_DOMAIN}" site address that routes
 // these to ownscale, and funnelproxy.ParseHost); otherwise
 // it does nothing and returns false, so the caller (server.NewMux) can
 // fall through to the normal API/SPA mux.
 func (h *Handlers) ServeFunnelIfMatched(w http.ResponseWriter, r *http.Request) bool {
-	if h.baseDomain == "" {
+	if h.funnelDomain == "" {
 		return false
 	}
-	label, subdomain, ok := funnelproxy.ParseHost(r.Host, h.baseDomain)
+	label, subdomain, ok := funnelproxy.ParseHost(r.Host, h.funnelDomain)
 	if !ok {
 		return false
 	}

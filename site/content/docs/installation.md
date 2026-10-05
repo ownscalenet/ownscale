@@ -51,6 +51,10 @@ minimum, set:
   (e.g. `example.com`). The console lives at `console.<BASE_DOMAIN>`,
   this documentation site at the bare `<BASE_DOMAIN>`, and each
   organization at `<subdomain>.<BASE_DOMAIN>`.
+- `FUNNEL_DOMAIN` (optional) -- domain for Funnels, served at
+  `<label>-<subdomain>.<FUNNEL_DOMAIN>`. Defaults to `BASE_DOMAIN`. Use a
+  separate registrable domain (e.g. `example-funnel.net`) with its own
+  wildcard DNS record, so public Funnel content is isolated from the console.
 - `OWNSCALE_AUTH_SESSION_SECRET` -- a random string used to sign login
   session cookies. Required to start the server.
 - `OWNSCALE_AUTH_UPSTREAM_OIDC_ISSUER`,

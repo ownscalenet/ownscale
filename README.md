@@ -121,7 +121,9 @@ reachable public domain and Caddy should get publicly-trusted certificates.
 ### Wildcard TLS certificate (production, via DNS-01)
 
 For organizations names and funnels we use separate subdomains. TLS is done with
-a wildcard certificate, which needs a DNS-01 challenge. Caddy ships with plugins
+a wildcard certificate, which needs a DNS-01 challenge. Funnels can live on a
+separate domain (`FUNNEL_DOMAIN`, see `.env.example`), which gets its own
+wildcard certificate from the same DNS provider. Caddy ships with plugins
 for 5 providers (see `etc/caddy/providers/`); pick one with `DNS_PROVIDER` in
 `.env` and set that provider's credential vars: `azure` (default), `cloudflare`,
 `route53`, `hetzner`, `digitalocean`.

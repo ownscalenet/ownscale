@@ -17,7 +17,7 @@ import (
 
 // funnelLabelRe matches a valid funnel-route label: alphanumeric only, no
 // hyphens or dots. The label and org subdomain are joined by "-" into the
-// single-DNS-label public funnel hostname "<label>-<org-subdomain>.{base}".
+// single-DNS-label public funnel hostname "<label>-<org-subdomain>.<funnel domain>".
 var funnelLabelRe = regexp.MustCompile(`^[a-z0-9]{1,63}$`)
 
 func validateFunnelLabel(label string) string {
@@ -42,7 +42,7 @@ func (h *Handlers) toFunnelRouteResponse(route sqlcgen.FunnelRoute, subdomain st
 	resp := funnelRouteResponse{
 		ID:           route.ID,
 		Label:        route.Label,
-		Hostname:     route.Label + "-" + subdomain + "." + h.baseDomain,
+		Hostname:     route.Label + "-" + subdomain + "." + h.funnelDomain,
 		TargetNodeID: route.TargetNodeID,
 		TargetPort:   route.TargetPort,
 		CreatedAt:    route.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),

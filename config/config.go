@@ -20,8 +20,10 @@ type Config struct {
 	Development bool   `env:"OWNSCALE_DEVELOPMENT"`
 	Addr        string `env:"OWNSCALE_ADDR"`
 	BaseDomain  string `env:"OWNSCALE_BASE_DOMAIN"`
-	DataDir     string `env:"OWNSCALE_DATA_DIR"`
-	LocalCADir  string `env:"OWNSCALE_LOCAL_CA_DIR"`
+	// FunnelDomain defaults to BaseDomain.
+	FunnelDomain string `env:"OWNSCALE_FUNNEL_DOMAIN"`
+	DataDir      string `env:"OWNSCALE_DATA_DIR"`
+	LocalCADir   string `env:"OWNSCALE_LOCAL_CA_DIR"`
 	// DebugAddr enables a pprof/runtime-metrics server; must be loopback.
 	DebugAddr string `env:"OWNSCALE_DEBUG_ADDR"`
 
@@ -135,6 +137,9 @@ func Load() (_ *Config, err error) {
 		cfg.DataDir = abs
 	}
 
+	if cfg.FunnelDomain == "" {
+		cfg.FunnelDomain = cfg.BaseDomain
+	}
 	// The OIDC provider issuer defaults to "https://console.<base_domain>"
 	// (ownscale itself is bound to the "console" subdomain by
 	// etc/caddy/Caddyfile), which can only be computed once base_domain is

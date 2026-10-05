@@ -66,7 +66,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	h, err := handlers.New(queries, cfg.BaseDomain, cfg.DataDir, oidcStorage, logger, cfg.Derp, cfg.Auth)
+	h, err := handlers.New(queries, cfg.BaseDomain, cfg.FunnelDomain, cfg.DataDir, oidcStorage, logger, cfg.Derp, cfg.Auth)
 	if err != nil {
 		return err
 	}

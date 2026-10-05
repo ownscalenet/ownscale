@@ -31,6 +31,7 @@ services:
     environment:
       OWNSCALE_ADDR: ${OWNSCALE_ADDR:-:8080}
       OWNSCALE_BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
+      OWNSCALE_FUNNEL_DOMAIN: ${FUNNEL_DOMAIN:-${BASE_DOMAIN:-ownscale.test}}
       OWNSCALE_DATA_DIR: ${OWNSCALE_DATA_DIR:?set OWNSCALE_DATA_DIR to an absolute host path in .env}
       OWNSCALE_LOCAL_CA_DIR: ${OWNSCALE_LOCAL_CA_DIR:-local-ca}
       OWNSCALE_DEVELOPMENT: ${OWNSCALE_DEVELOPMENT:-}
@@ -134,6 +135,7 @@ services:
         condition: service_completed_successfully
     environment:
       BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
+      FUNNEL_DOMAIN: ${FUNNEL_DOMAIN:-${BASE_DOMAIN:-ownscale.test}}
       CADDY_LOG_LEVEL: ${CADDY_LOG_LEVEL:-debug}
       CADDY_LOCAL_CERTS: ${CADDY_LOCAL_CERTS:-}
       OWNSCALE_DEVELOPMENT: ${OWNSCALE_DEVELOPMENT:-}

@@ -7,20 +7,24 @@ import (
 )
 
 func TestServeFunnelIfMatched(t *testing.T) {
-	h, _ := newTestHandlers(t)
-	h.baseDomain = testBaseDomain
-
+	const funnelDomain = "example-funnel.net"
 	tests := []struct {
-		name        string
-		host        string
-		wantHandled bool
+		name         string
+		funnelDomain string
+		host         string
+		wantHandled  bool
 	}{
-		{"funnel host", "web-acme." + testBaseDomain, true},
-		{"plain org subdomain", "acme." + testBaseDomain, false},
-		{"unrelated host", "evil.com", false},
+		{"funnel host", testBaseDomain, "web-acme." + testBaseDomain, true},
+		{"plain org subdomain", testBaseDomain, "acme." + testBaseDomain, false},
+		{"unrelated host", testBaseDomain, "evil.com", false},
+		{"separate domain funnel host", funnelDomain, "web-acme." + funnelDomain, true},
+		{"separate domain ignores base domain", funnelDomain, "web-acme." + testBaseDomain, false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			h, _ := newTestHandlers(t)
+			h.baseDomain = testBaseDomain
+			h.funnelDomain = tt.funnelDomain
 			req := httptest.NewRequest(http.MethodGet, "/", nil)
 			req.Host = tt.host
 			rec := httptest.NewRecorder()
@@ -32,14 +36,14 @@ func TestServeFunnelIfMatched(t *testing.T) {
 	}
 }
 
-func TestServeFunnelIfMatchedNoBaseDomainConfigured(t *testing.T) {
+func TestServeFunnelIfMatchedNoFunnelDomainConfigured(t *testing.T) {
 	h, _ := newTestHandlers(t)
-	// baseDomain left empty, as in tests without a base domain.
+	// funnelDomain left empty, as in tests without a base domain.
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	req.Host = "web-acme.example.com"
 	rec := httptest.NewRecorder()
 	if h.ServeFunnelIfMatched(rec, req) {
-		t.Error("ServeFunnelIfMatched = true with no baseDomain configured, want false")
+		t.Error("ServeFunnelIfMatched = true with no funnelDomain configured, want false")
 	}
 }

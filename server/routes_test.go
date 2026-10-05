@@ -19,7 +19,7 @@ import (
 func newTestMux(t *testing.T) http.Handler {
 	t.Helper()
 	_, queries := dbtest.New(t)
-	h, err := handlers.New(queries, "", "", nil, slog.New(slog.DiscardHandler), config.DerpConfig{}, config.AuthConfig{})
+	h, err := handlers.New(queries, "", "", "", nil, slog.New(slog.DiscardHandler), config.DerpConfig{}, config.AuthConfig{})
 	if err != nil {
 		t.Fatalf("handlers.New: %v", err)
 	}
@@ -50,7 +50,7 @@ func TestNewMuxProtectedRoutesRequireAuth(t *testing.T) {
 
 func TestNewMuxUnmatchedPathFallsBackToStatic(t *testing.T) {
 	_, queries := dbtest.New(t)
-	h, err := handlers.New(queries, "", "", nil, slog.New(slog.DiscardHandler), config.DerpConfig{}, config.AuthConfig{})
+	h, err := handlers.New(queries, "", "", "", nil, slog.New(slog.DiscardHandler), config.DerpConfig{}, config.AuthConfig{})
 	if err != nil {
 		t.Fatalf("handlers.New: %v", err)
 	}
@@ -79,7 +79,7 @@ func TestNewMuxUnmatchedPathFallsBackToStatic(t *testing.T) {
 
 func TestNewMuxAuthenticatedSession(t *testing.T) {
 	_, queries := dbtest.New(t)
-	h, err := handlers.New(queries, "", "", nil, slog.New(slog.DiscardHandler), config.DerpConfig{}, config.AuthConfig{})
+	h, err := handlers.New(queries, "", "", "", nil, slog.New(slog.DiscardHandler), config.DerpConfig{}, config.AuthConfig{})
 	if err != nil {
 		t.Fatalf("handlers.New: %v", err)
 	}
@@ -119,7 +119,7 @@ func TestNewMuxOverHTTP(t *testing.T) {
 
 	const baseDomain = "srvit.test"
 
-	h, err := handlers.New(queries, baseDomain, t.TempDir(), nil, logger, config.DerpConfig{}, config.AuthConfig{})
+	h, err := handlers.New(queries, baseDomain, baseDomain, t.TempDir(), nil, logger, config.DerpConfig{}, config.AuthConfig{})
 	if err != nil {
 		t.Fatalf("handlers.New: %v", err)
 	}

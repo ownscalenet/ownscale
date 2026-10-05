@@ -84,6 +84,7 @@ func TestCreateFunnelRouteRejectsDuplicateLabel(t *testing.T) {
 func TestListFunnelRoutesFlagsMissingTargetNode(t *testing.T) {
 	h, org, users := newOrgTestHandlers(t, RoleOwner)
 	owner := users[0]
+	h.funnelDomain = "example-funnel.net"
 	client, _, _, _ := newFakeHeadscaleServer(t)
 
 	if _, err := h.queries.CreateFunnelRoute(t.Context(), sqlcgen.CreateFunnelRouteParams{
@@ -107,6 +108,7 @@ func TestListFunnelRoutesFlagsMissingTargetNode(t *testing.T) {
 	var resp struct {
 		FunnelRoutes []struct {
 			Label             string `json:"label"`
+			Hostname          string `json:"hostname"`
 			TargetNodeMissing bool   `json:"targetNodeMissing"`
 		} `json:"funnelRoutes"`
 		CanManage bool `json:"canManage"`
@@ -116,6 +118,9 @@ func TestListFunnelRoutesFlagsMissingTargetNode(t *testing.T) {
 	}
 	if len(resp.FunnelRoutes) != 1 || !resp.FunnelRoutes[0].TargetNodeMissing {
 		t.Errorf("funnelRoutes = %+v, want one route flagged targetNodeMissing=true", resp.FunnelRoutes)
+	}
+	if want := "ghost-" + org.Subdomain + ".example-funnel.net"; len(resp.FunnelRoutes) == 1 && resp.FunnelRoutes[0].Hostname != want {
+		t.Errorf("hostname = %q, want %q", resp.FunnelRoutes[0].Hostname, want)
 	}
 	if !resp.CanManage {
 		t.Error("canManage = false for an owner, want true")
