@@ -35,7 +35,12 @@ func newTestHandlersWithBaseDomain(t *testing.T, baseDomain string) (*Handlers, 
 	t.Helper()
 	_, queries := dbtest.New(t)
 
-	h, err := New(queries, baseDomain, t.TempDir(), nil, slog.New(slog.DiscardHandler), config.DerpConfig{}, config.AuthConfig{})
+	derpMap := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte(`{"Regions":{"900":{"RegionID":900,"RegionCode":"test","Nodes":[{"Name":"900a","RegionID":900,"HostName":"derp.example.com"}]}}}`))
+	}))
+	t.Cleanup(derpMap.Close)
+	derpCfg := config.DerpConfig{MapURL: derpMap.URL}
+	h, err := New(queries, baseDomain, t.TempDir(), nil, slog.New(slog.DiscardHandler), derpCfg, config.AuthConfig{})
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

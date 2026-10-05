@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net"
 	"os"
@@ -18,6 +19,7 @@ import (
 	"github.com/juanfont/headscale/hscontrol"
 	"github.com/juanfont/headscale/hscontrol/types"
 	"golang.org/x/crypto/bcrypt"
+	"tailscale.com/tailcfg"
 
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/db/dbtest"
@@ -30,7 +32,19 @@ import (
 func newRealService(t *testing.T) *Service {
 	t.Helper()
 	_, queries := dbtest.New(t)
-	return NewService(queries, "example.com", "https://auth.example.com", config.DerpConfig{}, slog.New(slog.DiscardHandler), t.TempDir())
+	svc := NewService(queries, "example.com", "https://auth.example.com", config.DerpConfig{}, slog.New(slog.DiscardHandler), t.TempDir())
+	svc.derpMap.Store(testDERPMap(1))
+	return svc
+}
+
+// testDERPMap returns a DERP map with one region, regionID.
+func testDERPMap(regionID int) *tailcfg.DERPMap {
+	id := tailcfg.DERPRegionID(regionID)
+	return &tailcfg.DERPMap{Regions: map[tailcfg.DERPRegionID]*tailcfg.DERPRegion{
+		id: {RegionID: id, RegionCode: fmt.Sprintf("r%d", regionID), Nodes: []*tailcfg.DERPNode{
+			{Name: fmt.Sprintf("%da", regionID), RegionID: id, HostName: "derp.example.com"},
+		}},
+	}}
 }
 
 // newTestService is newRealService, but never starts headscale.
@@ -41,7 +55,7 @@ func newTestService(t *testing.T) *Service {
 	return svc
 }
 
-func noopCreateFn(string, string, string, int, *HeadscaleConfig, config.DerpConfig) (*hscontrol.Headscale, error) {
+func noopCreateFn(string, string, string, int, *HeadscaleConfig, *tailcfg.DERPMap) (*hscontrol.Headscale, error) {
 	return nil, nil
 }
 
@@ -83,8 +97,8 @@ func markProvisioned(t *testing.T, svc *Service, subdomain string) {
 }
 
 // failingCreateFn returns a createFn that fails, counting its calls in n.
-func failingCreateFn(n *int) func(string, string, string, int, *HeadscaleConfig, config.DerpConfig) (*hscontrol.Headscale, error) {
-	return func(string, string, string, int, *HeadscaleConfig, config.DerpConfig) (*hscontrol.Headscale, error) {
+func failingCreateFn(n *int) func(string, string, string, int, *HeadscaleConfig, *tailcfg.DERPMap) (*hscontrol.Headscale, error) {
+	return func(string, string, string, int, *HeadscaleConfig, *tailcfg.DERPMap) (*hscontrol.Headscale, error) {
 		*n++
 		return nil, errors.New("headscale failed (injected)")
 	}
@@ -194,9 +208,9 @@ func TestEnsureStartsOnce(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	var starts, hooks atomic.Int32
-	svc.createFn = func(dataDir, subdomain, baseDomain string, port int, hsCfg *HeadscaleConfig, derpCfg config.DerpConfig) (*hscontrol.Headscale, error) {
+	svc.createFn = func(dataDir, subdomain, baseDomain string, port int, hsCfg *HeadscaleConfig, derpMap *tailcfg.DERPMap) (*hscontrol.Headscale, error) {
 		starts.Add(1)
-		return createHeadscale(dataDir, subdomain, baseDomain, port, hsCfg, derpCfg)
+		return createHeadscale(dataDir, subdomain, baseDomain, port, hsCfg, derpMap)
 	}
 	svc.OnStart(func(context.Context, string, *hscl.Client) { hooks.Add(1) })
 	t.Cleanup(func() {
@@ -278,7 +292,7 @@ func TestCreateRejectsDuplicateSubdomain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Create: %v", err)
 	}
-	svc.createFn = func(string, string, string, int, *HeadscaleConfig, config.DerpConfig) (*hscontrol.Headscale, error) {
+	svc.createFn = func(string, string, string, int, *HeadscaleConfig, *tailcfg.DERPMap) (*hscontrol.Headscale, error) {
 		t.Error("headscale started for a duplicate organization")
 		return nil, nil
 	}
@@ -333,8 +347,8 @@ func TestNextSubdomain(t *testing.T) {
 
 // blockingCreateFn returns a createFn that signals entered and then blocks
 // until release is closed, building no instance.
-func blockingCreateFn(entered chan<- struct{}, release <-chan struct{}) func(string, string, string, int, *HeadscaleConfig, config.DerpConfig) (*hscontrol.Headscale, error) {
-	return func(string, string, string, int, *HeadscaleConfig, config.DerpConfig) (*hscontrol.Headscale, error) {
+func blockingCreateFn(entered chan<- struct{}, release <-chan struct{}) func(string, string, string, int, *HeadscaleConfig, *tailcfg.DERPMap) (*hscontrol.Headscale, error) {
+	return func(string, string, string, int, *HeadscaleConfig, *tailcfg.DERPMap) (*hscontrol.Headscale, error) {
 		entered <- struct{}{}
 		<-release
 		return nil, nil
@@ -544,42 +558,19 @@ func TestStartRetriesTakenPort(t *testing.T) {
 }
 
 func TestCreateHeadscaleDERP(t *testing.T) {
-	custom := config.DerpConfig{
-		Hostname: "derp.example.com", IPv4: "203.0.113.5", STUNPort: 3478,
-		RegionID: 900, RegionCode: "custom", RegionName: "Custom",
+	hsCfg := newHeadscaleConfig("acme", OIDCConfig{Issuer: "https://auth.example.com"})
+	app, err := createHeadscale(t.TempDir(), "acme", "example.com", 0, hsCfg, testDERPMap(7))
+	if err != nil {
+		t.Fatalf("createHeadscale: %v", err)
 	}
-	tests := []struct {
-		name       string
-		derp       config.DerpConfig
-		wantRegion bool
-	}{
-		{"no custom relay", config.DerpConfig{}, false},
-		{"custom relay", custom, true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			hsCfg := newHeadscaleConfig("acme", OIDCConfig{Issuer: "https://auth.example.com"})
-			app, err := createHeadscale(t.TempDir(), "acme", "example.com", 0, hsCfg, tt.derp)
-			if err != nil {
-				t.Fatalf("createHeadscale: %v", err)
-			}
-			t.Cleanup(func() { _ = app.GetState().Close() })
+	t.Cleanup(func() { _ = app.GetState().Close() })
 
-			dm := app.GetState().DebugConfig().DERP.DERPMap
-			if !tt.wantRegion {
-				if dm != nil {
-					t.Fatalf("DERPMap = %+v, want nil", dm)
-				}
-				return
-			}
-			region := dm.Regions[900]
-			if region == nil || region.RegionCode != "custom" || len(region.Nodes) != 1 {
-				t.Fatalf("region 900 = %+v", region)
-			}
-			if n := region.Nodes[0]; n.Name != "customa" || n.HostName != "derp.example.com" || n.IPv4 != "203.0.113.5" || n.STUNPort != 3478 || n.DERPPort != 0 {
-				t.Errorf("node = %+v", n)
-			}
-		})
+	derpCfg := app.GetState().DebugConfig().DERP
+	if derpCfg.AutoUpdate || len(derpCfg.URLs) != 0 {
+		t.Errorf("DERP config fetches by itself: %+v", derpCfg)
+	}
+	if derpCfg.DERPMap == nil || derpCfg.DERPMap.Regions[7] == nil {
+		t.Errorf("DERPMap = %+v, want region 7", derpCfg.DERPMap)
 	}
 }
 

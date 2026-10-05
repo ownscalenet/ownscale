@@ -8,8 +8,8 @@ import (
 	"testing"
 
 	"github.com/juanfont/headscale/hscontrol"
+	"tailscale.com/tailcfg"
 
-	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
 
@@ -196,7 +196,7 @@ func withSplit(split map[string][]string) DNSConfig {
 // reported and leaves the org unavailable.
 func TestSettingsRestartFailureLeavesUnavailable(t *testing.T) {
 	svc, o := newTestOrgService(t)
-	svc.createFn = func(string, string, string, int, *HeadscaleConfig, config.DerpConfig) (*hscontrol.Headscale, error) {
+	svc.createFn = func(string, string, string, int, *HeadscaleConfig, *tailcfg.DERPMap) (*hscontrol.Headscale, error) {
 		return nil, errors.New("headscale failed (injected)")
 	}
 

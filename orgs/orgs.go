@@ -72,6 +72,8 @@ type Service struct {
 	dataDir    string
 
 	orgs utils.Map[string, *orgRuntime]
+	// derpMap is the last DERP map RunDERPMapUpdater fetched.
+	derpMap atomic.Pointer[tailcfg.DERPMap]
 	// restarts counts each org's in-flight restarts, including those still
 	// waiting on startMu; a counter as two settings saves can overlap.
 	restarts utils.Map[string, *atomic.Int32]
@@ -87,16 +89,13 @@ type Service struct {
 	idleTimeout   time.Duration
 	sweepInterval time.Duration
 
-	// startMu serializes headscale startup (headscale's DERP map shuffling
-	// shares one non-thread-safe rand.Rand across instances). This is not
-	// enough to prevent races, there's still a race because the derp worker
-	// (usually at 3h interval) calls GetDERPMap, which again touches the
-	// global rand.Rand.
+	// startMu serializes headscale startup and DERP map pushes, as
+	// headscale's DERP map shuffling shares one non-thread-safe rand.Rand.
 	startMu sync.Mutex
 
 	// createFn defaults to createHeadscale; override in tests to skip
 	// real headscale startup.
-	createFn func(dataDir, subdomain, baseDomain string, port int, hsCfg *HeadscaleConfig, derpCfg config.DerpConfig) (*hscontrol.Headscale, error)
+	createFn func(dataDir, subdomain, baseDomain string, port int, hsCfg *HeadscaleConfig, derpMap *tailcfg.DERPMap) (*hscontrol.Headscale, error)
 }
 
 // orgRuntime is an organization's in-memory headscale state. It exists
@@ -605,7 +604,11 @@ func (s *Service) startLocked(ctx context.Context, orgID, subdomain string, hsCf
 // and returns why, e.g. a *types.ListenerBindError when port is taken. A
 // nil instance means createFn built none (tests).
 func (s *Service) launch(ctx context.Context, subdomain string, port int, hsCfg *HeadscaleConfig) (*instance, error) {
-	app, err := s.createFn(s.dataDir, subdomain, s.baseDomain, port, hsCfg, s.derpCfg)
+	derpMap, err := s.currentDERPMap(ctx)
+	if err != nil {
+		return nil, err
+	}
+	app, err := s.createFn(s.dataDir, subdomain, s.baseDomain, port, hsCfg, derpMap)
 	if err != nil {
 		return nil, fmt.Errorf("create headscale instance for %q: %w", subdomain, err)
 	}

@@ -182,9 +182,7 @@ func TestLoadMicrosoftConfig(t *testing.T) {
 	}
 }
 
-// TestLoadDerpConfig covers derp.* (OWNSCALE_DERP_*), which is a no-op when
-// unset, fills in defaults for optional fields when only hostname is set,
-// and preserves any explicitly-set fields.
+// TestLoadDerpConfig covers OWNSCALE_DERP_MAP_URL and its default.
 func TestLoadDerpConfig(t *testing.T) {
 	cases := []struct {
 		name string
@@ -192,41 +190,13 @@ func TestLoadDerpConfig(t *testing.T) {
 		want DerpConfig
 	}{
 		{
-			name: "unset is a no-op",
+			name: "default map URL",
+			want: DerpConfig{MapURL: DefaultDERPMapURL},
 		},
 		{
-			name: "fills defaults when hostname set",
-			env: map[string]string{
-				"OWNSCALE_DERP_HOSTNAME": "derp.example.com",
-			},
-			want: DerpConfig{
-				Hostname:   "derp.example.com",
-				STUNPort:   3478,
-				RegionID:   900,
-				RegionCode: "custom",
-				RegionName: "Self-hosted DERP",
-			},
-		},
-		{
-			name: "explicit overrides preserved",
-			env: map[string]string{
-				"OWNSCALE_DERP_HOSTNAME":    "derp.example.com",
-				"OWNSCALE_DERP_IPV4":        "198.51.100.1",
-				"OWNSCALE_DERP_IPV6":        "2001:db8::1",
-				"OWNSCALE_DERP_STUN_PORT":   "4000",
-				"OWNSCALE_DERP_REGION_ID":   "901",
-				"OWNSCALE_DERP_REGION_CODE": "myderp",
-				"OWNSCALE_DERP_REGION_NAME": "My DERP",
-			},
-			want: DerpConfig{
-				Hostname:   "derp.example.com",
-				IPv4:       "198.51.100.1",
-				IPv6:       "2001:db8::1",
-				STUNPort:   4000,
-				RegionID:   901,
-				RegionCode: "myderp",
-				RegionName: "My DERP",
-			},
+			name: "custom map URL",
+			env:  map[string]string{"OWNSCALE_DERP_MAP_URL": "https://derp.example.com/map"},
+			want: DerpConfig{MapURL: "https://derp.example.com/map"},
 		},
 	}
 	for _, tc := range cases {
@@ -238,10 +208,6 @@ func TestLoadDerpConfig(t *testing.T) {
 			cfg, err := Load()
 			if err != nil {
 				t.Fatalf("Load: %v", err)
-			}
-			wantEnabled := tc.want != DerpConfig{}
-			if got := cfg.Derp.Enabled(); got != wantEnabled {
-				t.Errorf("Derp.Enabled() = %v, want %v", got, wantEnabled)
 			}
 			if cfg.Derp != tc.want {
 				t.Errorf("Derp = %+v, want %+v", cfg.Derp, tc.want)
@@ -359,21 +325,5 @@ func TestDatabase(t *testing.T) {
 	want := filepath.Join("/tmp/ownscale-data", "ownscale.sqlite")
 	if got := cfg.Database(); got != want {
 		t.Errorf("Database() = %q, want %q", got, want)
-	}
-}
-
-func TestDerpRegion(t *testing.T) {
-	d := DerpConfig{
-		Hostname: "derp.example.com", IPv4: "203.0.113.5", IPv6: "2001:db8::1",
-		STUNPort: 3478, RegionID: 900, RegionCode: "custom", RegionName: "Custom",
-	}
-	r := d.Region()
-	if r.RegionID != 900 || r.RegionCode != "custom" || r.RegionName != "Custom" || len(r.Nodes) != 1 {
-		t.Fatalf("region = %+v", r)
-	}
-	n := r.Nodes[0]
-	if n.Name != "customa" || n.RegionID != 900 || n.HostName != "derp.example.com" ||
-		n.IPv4 != "203.0.113.5" || n.IPv6 != "2001:db8::1" || n.STUNPort != 3478 || n.STUNOnly || n.DERPPort != 0 {
-		t.Errorf("node = %+v", n)
 	}
 }

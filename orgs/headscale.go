@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"net/netip"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,7 +20,6 @@ import (
 	"tailscale.com/types/dnstype"
 	"tailscale.com/types/key"
 
-	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/derrors"
 )
@@ -132,7 +130,7 @@ func createHeadscale(
 	dataDir, subdomain, baseDomain string,
 	port int,
 	hsCfg *HeadscaleConfig,
-	derpCfg config.DerpConfig,
+	derpMap *tailcfg.DERPMap,
 ) (_ *hscontrol.Headscale, err error) {
 	defer derrors.Wrap(&err, "createHeadscale(%q)", subdomain)
 
@@ -144,22 +142,6 @@ func createHeadscale(
 		return nil, err
 	}
 
-	ts, err := url.Parse("https://controlplane.tailscale.com/derpmap/default")
-	if err != nil {
-		return nil, err
-	}
-	// Always include Tailscale's default DERP servers so nodes can relay
-	// even when a custom DERP server is temporarily unreachable.
-	derp := types.DERPConfig{
-		URLs:            []url.URL{*ts},
-		AutoUpdate:      true,
-		UpdateFrequency: time.Hour * 3,
-	}
-	if derpCfg.Enabled() {
-		region := derpCfg.Region()
-		derp.DERPMap = &tailcfg.DERPMap{Regions: map[tailcfg.DERPRegionID]*tailcfg.DERPRegion{region.RegionID: region}}
-	}
-
 	dns := ownscaleDNSToTypes(hsCfg.DNS)
 	cfg := &types.Config{
 		ServerURL:           fmt.Sprintf("https://%s.%s", subdomain, baseDomain),
@@ -168,7 +150,8 @@ func createHeadscale(
 		PrefixV4:            &pv4,
 		PrefixV6:            &pv6,
 		IPAllocation:        types.IPAllocationStrategy("sequential"),
-		DERP:                derp,
+		// ownscale fetches the DERP map and pushes updates (see RunDERPMapUpdater).
+		DERP: types.DERPConfig{DERPMap: derpMap},
 		Database: types.DatabaseConfig{
 			Type: "sqlite3",
 			Sqlite: types.SqliteConfig{

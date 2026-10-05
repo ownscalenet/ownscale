@@ -148,6 +148,7 @@ func (h *Handlers) DialOrg(ctx context.Context, subdomain string) (net.Conn, err
 // until ctx is done. It is non-blocking.
 func (h *Handlers) Start(ctx context.Context) {
 	go h.orgs.RunSleeper(ctx)
+	go h.orgs.RunDERPMapUpdater(ctx)
 }
 
 // writeJSON encodes v as the JSON response body with the given status code.

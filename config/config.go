@@ -12,7 +12,6 @@ import (
 	"github.com/ownscalenet/ownscale/derrors"
 
 	"github.com/caarlos0/env/v11"
-	"tailscale.com/tailcfg"
 )
 
 // Config is the admin panel's runtime configuration.
@@ -88,56 +87,15 @@ type OIDCProviderConfig struct {
 	IDTokenLifetime     string `env:"OWNSCALE_AUTH_OIDC_PROVIDER_ID_TOKEN_LIFETIME"`
 }
 
-// DerpConfig points every organization's headscale instance at a
-// self-hosted DERP relay (see deploy/derper) instead of Tailscale's public
-// one. Entirely optional: when Hostname is unset, headscale falls back to
-// Tailscale's default public DERP map, unchanged from before this config
-// section existed.
+// DerpConfig configures the DERP map every organization's headscale uses.
 type DerpConfig struct {
-	// Hostname is the DERP relay's public DNS name (e.g. "derp.example.com",
-	// matching deploy/derper's DERP_HOSTNAME). Required to enable a custom
-	// DERP map; leave empty to keep using Tailscale's public DERP servers.
-	Hostname string `env:"OWNSCALE_DERP_HOSTNAME"`
-	// IPv4 is the DERP relay's public IPv4 address, recommended so clients
-	// don't need to rely on DNS to reach it.
-	IPv4 string `env:"OWNSCALE_DERP_IPV4"`
-	// IPv6 is the DERP relay's public IPv6 address (optional).
-	IPv6 string `env:"OWNSCALE_DERP_IPV6"`
-	// STUNPort is the UDP port the relay's STUN server listens on. Defaults
-	// to 3478 (matching deploy/derper's default) if unset.
-	STUNPort int `env:"OWNSCALE_DERP_STUN_PORT"`
-	// RegionID is an arbitrary, positive ID identifying this custom DERP
-	// region in headscale's DERP map. Defaults to 900 if unset (headscale's
-	// own derp-example.yaml convention for a first custom region).
-	RegionID int `env:"OWNSCALE_DERP_REGION_ID"`
-	// RegionCode is a short, lowercase identifier for this region. Defaults
-	// to "custom" if unset.
-	RegionCode string `env:"OWNSCALE_DERP_REGION_CODE"`
-	// RegionName is a human-readable label for this region. Defaults to
-	// "Self-hosted DERP" if unset.
-	RegionName string `env:"OWNSCALE_DERP_REGION_NAME"`
+	// MapURL is where ownscale fetches the DERP map. Defaults to
+	// DefaultDERPMapURL; to use a self-hosted relay, serve a map listing it.
+	MapURL string `env:"OWNSCALE_DERP_MAP_URL"`
 }
 
-// Enabled reports whether a self-hosted DERP relay is configured.
-func (d DerpConfig) Enabled() bool { return d.Hostname != "" }
-
-// Region returns the DERP region describing the self-hosted relay, for
-// adding to headscale's DERP map. Only meaningful when Enabled.
-func (d DerpConfig) Region() *tailcfg.DERPRegion {
-	return &tailcfg.DERPRegion{
-		RegionID:   tailcfg.DERPRegionID(d.RegionID),
-		RegionCode: d.RegionCode,
-		RegionName: d.RegionName,
-		Nodes: []*tailcfg.DERPNode{{
-			Name:     d.RegionCode + "a",
-			RegionID: tailcfg.DERPRegionID(d.RegionID),
-			HostName: d.Hostname,
-			IPv4:     d.IPv4,
-			IPv6:     d.IPv6,
-			STUNPort: d.STUNPort,
-		}},
-	}
-}
+// DefaultDERPMapURL is Tailscale's public DERP map.
+const DefaultDERPMapURL = "https://controlplane.tailscale.com/derpmap/default"
 
 func defaults() *Config {
 	return &Config{
@@ -192,21 +150,8 @@ func Load() (_ *Config, err error) {
 	if cfg.LocalCADir != "" && cfg.DataDir != "" && !filepath.IsAbs(cfg.LocalCADir) {
 		cfg.LocalCADir = filepath.Join(cfg.DataDir, cfg.LocalCADir)
 	}
-	// Fill in DerpConfig defaults only when a custom relay is actually
-	// configured; an unset Hostname must stay a no-op (see DerpConfig.Enabled).
-	if cfg.Derp.Enabled() {
-		if cfg.Derp.STUNPort == 0 {
-			cfg.Derp.STUNPort = 3478
-		}
-		if cfg.Derp.RegionID == 0 {
-			cfg.Derp.RegionID = 900
-		}
-		if cfg.Derp.RegionCode == "" {
-			cfg.Derp.RegionCode = "custom"
-		}
-		if cfg.Derp.RegionName == "" {
-			cfg.Derp.RegionName = "Self-hosted DERP"
-		}
+	if cfg.Derp.MapURL == "" {
+		cfg.Derp.MapURL = DefaultDERPMapURL
 	}
 
 	return cfg, nil
