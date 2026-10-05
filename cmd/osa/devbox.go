@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"time"
 
@@ -47,6 +48,11 @@ func devboxKey(ctx context.Context, out io.Writer, c *hscl.Client) (err error) {
 	defer derrors.Wrap(&err, "devboxKey()")
 
 	users, err := c.ListUsers(ctx)
+	if errors.Is(err, fs.ErrNotExist) {
+		return fmt.Errorf("it's possible the org is sleeping, "+
+			"try waking it up by logging in the console "+
+			"or connecting a machine on the tailnet: %v", err)
+	}
 	if err != nil {
 		return err
 	}
