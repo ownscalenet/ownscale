@@ -16,7 +16,9 @@ Additionally, restoring is done manually. At startup, ownscale will
 check the health of existing databases against the backup and fail when something
 is off.
 
-### 3. TODO: remember why derper server is separate and not using headscale's embedded one
+### 3. why derper server is separate and not using headscale's embedded one?
+Because derper needs to bind on a port on the machine. We can't have all
+organizations bind on the same port.
 
 ### 4. Funnels create their own subdomains
 To keep routing simple, organization subdomains can only be alphanumeric. When a
