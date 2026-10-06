@@ -7,11 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/netip"
+	"os"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -416,6 +418,41 @@ func TestEvict(t *testing.T) {
 	}
 	if _, ok := pool.servers["bbbb"]; !ok {
 		t.Error("bbbb was evicted, want it left alone")
+	}
+}
+
+func TestForget(t *testing.T) {
+	control := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
+	t.Cleanup(control.Close)
+
+	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup(), 1<<20)
+	for _, sub := range []string{"aaaa", "bbbb"} {
+		srv := &tsnet.Server{Dir: pool.stateDir(sub), ControlURL: control.URL, AuthKey: "tskey-test", Hostname: "forget-test"}
+		if err := srv.Start(); err != nil {
+			t.Fatalf("Start: %v", err)
+		}
+		t.Cleanup(func() { _ = srv.Close() })
+		pool.servers[sub] = newTunnel(srv)
+	}
+
+	if err := pool.Forget("aaaa"); err != nil {
+		t.Fatalf("Forget(aaaa): %v", err)
+	}
+	if err := pool.Forget("unknown"); err != nil {
+		t.Errorf("Forget(unknown): %v", err)
+	}
+
+	if _, ok := pool.servers["aaaa"]; ok {
+		t.Error("aaaa still cached after Forget")
+	}
+	if _, err := os.Stat(pool.stateDir("aaaa")); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("aaaa state dir still exists after Forget: %v", err)
+	}
+	if _, ok := pool.servers["bbbb"]; !ok {
+		t.Error("bbbb was forgotten, want it left alone")
+	}
+	if _, err := os.Stat(pool.stateDir("bbbb")); err != nil {
+		t.Errorf("bbbb state dir: %v", err)
 	}
 }
 

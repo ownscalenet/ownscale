@@ -15,6 +15,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httputil"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -179,6 +180,35 @@ func (p *Pool) Evict(subdomain string) {
 	if tun != nil {
 		go func() { _ = tun.close() }() // can be slow; don't block the caller
 	}
+}
+
+// Forget drops subdomain's cached tsnet.Server and deletes its on-disk
+// state. Call it after the org's funnel node is deleted from headscale, so
+// the next funnel registers a new node instead of resuming as the deleted
+// one. Closing the server can take seconds.
+func (p *Pool) Forget(subdomain string) (err error) {
+	defer derrors.Wrap(&err, "p.Forget(%q)", subdomain)
+	// Shares getOrCreateServer's singleflight key, so no server is started
+	// on the directory while it's removed.
+	_, err, _ = p.sf.Do(subdomain, func() (any, error) {
+		p.mu.Lock()
+		tun := p.servers[subdomain]
+		delete(p.servers, subdomain)
+		p.mu.Unlock()
+		// Closed first: the server writes its state by path until then.
+		if tun != nil {
+			if err := tun.close(); err != nil {
+				p.logger.Warn("funnel: close tsnet server", "subdomain", subdomain, "error", err)
+			}
+		}
+		return nil, os.RemoveAll(p.stateDir(subdomain))
+	})
+	return err
+}
+
+// stateDir is subdomain's tsnet.Server state directory.
+func (p *Pool) stateDir(subdomain string) string {
+	return filepath.Join(p.dataDir, "funnel-tsnet", subdomain)
 }
 
 // tsnetLogf adapts a tsnet.Server's Logf to the app's structured logger.
@@ -379,66 +409,71 @@ func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *
 	// tsnet.Server, and the rest wait for and share its result.
 	// Without this, concurrent tsnet.Servers would work with and corrupt
 	// the same state on disk.
-	v, err, _ := p.sf.Do(subdomain, func() (any, error) {
-		p.mu.Lock()
-		if tun, ok := p.servers[subdomain]; ok {
+	for {
+		v, err, _ := p.sf.Do(subdomain, func() (any, error) {
+			p.mu.Lock()
+			if tun, ok := p.servers[subdomain]; ok {
+				p.mu.Unlock()
+				return tun, nil
+			}
+			p.mu.Unlock()
+
+			authKey, err := ensureFunnelAuthKey(ctx, client)
+			if err != nil {
+				return nil, fmt.Errorf("mint pre-auth key: %w", err)
+			}
+			defer func() {
+				if err := client.DeletePreAuthKey(context.WithoutCancel(ctx), authKey.ID); err != nil {
+					p.logger.Warn("funnel: delete pre-auth key", "subdomain", subdomain, "error", err)
+				}
+			}()
+
+			controlURL, err := p.controlURL(subdomain)
+			if err != nil {
+				return nil, fmt.Errorf("resolve control URL: %w", err)
+			}
+
+			srv := &tsnet.Server{
+				Dir:        p.stateDir(subdomain),
+				Hostname:   "funnel-" + subdomain,
+				AuthKey:    authKey.Key,
+				ControlURL: controlURL,
+				Logf:       tsnetLogf(p.logger, subdomain),
+				UserLogf:   tsnetLogf(p.logger, subdomain),
+			}
+
+			upCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.upTimeout)
+			defer cancel()
+			if _, err := srv.Up(upCtx); err != nil {
+				_ = srv.Close()
+				if errors.Is(upCtx.Err(), context.DeadlineExceeded) {
+					return nil, fmt.Errorf("tsnet server up: timed out after %s: %w", p.upTimeout, err)
+				}
+				return nil, fmt.Errorf("tsnet server up: %w", err)
+			}
+
+			// Wait for DERP to be established before declaring the server
+			// ready. srv.Up only waits for the control-plane connection, not
+			// for DERP relay probing to complete; a custom DERP region that
+			// is temporarily down can delay convergence by its probe timeout.
+			if err := waitForDERP(context.Background(), srv, p.upTimeout); err != nil {
+				p.logger.Warn("funnel: DERP not ready after wait; first dials may fail", "subdomain", subdomain, "error", err)
+			}
+
+			tun := newTunnel(srv)
+			p.mu.Lock()
+			p.servers[subdomain] = tun
 			p.mu.Unlock()
 			return tun, nil
-		}
-		p.mu.Unlock()
-
-		authKey, err := ensureFunnelAuthKey(ctx, client)
+		})
 		if err != nil {
-			return nil, fmt.Errorf("mint pre-auth key: %w", err)
+			return nil, err
 		}
-		defer func() {
-			if err := client.DeletePreAuthKey(context.WithoutCancel(ctx), authKey.ID); err != nil {
-				p.logger.Warn("funnel: delete pre-auth key", "subdomain", subdomain, "error", err)
-			}
-		}()
-
-		controlURL, err := p.controlURL(subdomain)
-		if err != nil {
-			return nil, fmt.Errorf("resolve control URL: %w", err)
+		// v isn't a tunnel when this call joined a concurrent Forget.
+		if tun, ok := v.(*tunnel); ok {
+			return tun, nil
 		}
-
-		srv := &tsnet.Server{
-			Dir:        filepath.Join(p.dataDir, "funnel-tsnet", subdomain),
-			Hostname:   "funnel-" + subdomain,
-			AuthKey:    authKey.Key,
-			ControlURL: controlURL,
-			Logf:       tsnetLogf(p.logger, subdomain),
-			UserLogf:   tsnetLogf(p.logger, subdomain),
-		}
-
-		upCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.upTimeout)
-		defer cancel()
-		if _, err := srv.Up(upCtx); err != nil {
-			_ = srv.Close()
-			if errors.Is(upCtx.Err(), context.DeadlineExceeded) {
-				return nil, fmt.Errorf("tsnet server up: timed out after %s: %w", p.upTimeout, err)
-			}
-			return nil, fmt.Errorf("tsnet server up: %w", err)
-		}
-
-		// Wait for DERP to be established before declaring the server
-		// ready. srv.Up only waits for the control-plane connection, not
-		// for DERP relay probing to complete; a custom DERP region that
-		// is temporarily down can delay convergence by its probe timeout.
-		if err := waitForDERP(context.Background(), srv, p.upTimeout); err != nil {
-			p.logger.Warn("funnel: DERP not ready after wait; first dials may fail", "subdomain", subdomain, "error", err)
-		}
-
-		tun := newTunnel(srv)
-		p.mu.Lock()
-		p.servers[subdomain] = tun
-		p.mu.Unlock()
-		return tun, nil
-	})
-	if err != nil {
-		return nil, err
 	}
-	return v.(*tunnel), nil
 }
 
 // funnelAuthKeyValidity only needs to outlast srv.Up; the key is deleted right after.

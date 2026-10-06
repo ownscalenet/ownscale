@@ -447,16 +447,18 @@ func (h *Handlers) DeleteMachine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if isFunnelMachine, err := h.isFunnelMachine(r.Context(), client, id); err != nil {
+	isFunnelMachine, err := h.isFunnelMachine(r.Context(), client, id)
+	if err != nil {
 		h.serverError(w, r, err)
 		return
-	} else if isFunnelMachine {
-		user, ok := auth.UserFromContext(r.Context())
-		if !ok {
-			h.writeError(w, http.StatusUnauthorized, "unauthorized")
+	}
+	var org sqlcgen.Organization
+	if isFunnelMachine {
+		var ok bool
+		if _, org, r, ok = h.callerAndOrg(w, r); !ok {
 			return
 		}
-		if err := h.queries.DeleteFunnelRoutesByOrg(r.Context(), user.OrganizationID); err != nil {
+		if err := h.queries.DeleteFunnelRoutesByOrg(r.Context(), org.ID); err != nil {
 			h.serverError(w, r, err)
 			return
 		}
@@ -465,6 +467,12 @@ func (h *Handlers) DeleteMachine(w http.ResponseWriter, r *http.Request) {
 	if err := client.DeleteNode(r.Context(), id); err != nil {
 		h.serverError(w, r, err)
 		return
+	}
+	if isFunnelMachine {
+		if err := h.funnel.Forget(org.Subdomain); err != nil {
+			h.serverError(w, r, err)
+			return
+		}
 	}
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
