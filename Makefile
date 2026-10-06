@@ -35,6 +35,11 @@ frontend-check:
 	npm --prefix frontend run format:check
 	cd frontend && npx tsc -b
 
+ifneq ($(filter osa restore,$(MAKECMDGOALS)),)
+%:
+	@:
+endif
+
 osa:
 	docker compose exec ownscale ./osa $(filter-out osa,$(MAKECMDGOALS))
 
