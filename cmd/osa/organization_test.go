@@ -88,3 +88,29 @@ func TestProbeHeadscale(t *testing.T) {
 		})
 	}
 }
+
+func TestListOrganizationSubdomains(t *testing.T) {
+	tests := []struct {
+		name string
+		orgs []string
+		want string
+	}{
+		{"empty", nil, ""},
+		{"sorted by subdomain", []string{"beta", "acme"}, "acme\nbeta\n"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, queries := dbtest.New(t)
+			for _, sub := range tt.orgs {
+				dbtest.CreateOrg(t, queries.Queries, sub)
+			}
+			var out strings.Builder
+			if err := listOrganizationSubdomains(t.Context(), &out, queries); err != nil {
+				t.Fatalf("listOrganizationSubdomains: %v", err)
+			}
+			if out.String() != tt.want {
+				t.Errorf("output = %q, want %q", out.String(), tt.want)
+			}
+		})
+	}
+}

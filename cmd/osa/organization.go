@@ -97,6 +97,7 @@ func newOrganizationCommand(rootFlags *ff.FlagSet) *ff.Command {
 
 func newOrganizationListCommand(parent *ff.FlagSet) *ff.Command {
 	flags := ff.NewFlagSet("organization list").SetParent(parent)
+	short := flags.Bool('s', "short", "print only subdomains, one per line, for use in shell loops")
 	return &ff.Command{
 		Name:      "list",
 		Usage:     "osa organization list [FLAGS]",
@@ -110,6 +111,9 @@ func newOrganizationListCommand(parent *ff.FlagSet) *ff.Command {
 			defer cleanup()
 			if err != nil {
 				return err
+			}
+			if *short {
+				return listOrganizationSubdomains(ctx, os.Stdout, res.queries)
 			}
 			probe := func(ctx context.Context, subdomain string) probeResult {
 				return probeHeadscale(ctx, hscl.NewUnix(orgs.SocketPath(res.cfg.DataDir, subdomain)))
@@ -146,6 +150,20 @@ func probeHeadscale(ctx context.Context, client *hscl.Client) probeResult {
 		}
 	}
 	return res
+}
+
+// listOrganizationSubdomains prints one subdomain per line and nothing else,
+// so the output is safe to iterate over in a shell loop.
+func listOrganizationSubdomains(ctx context.Context, out io.Writer, queries *db.TxQueries) (err error) {
+	defer derrors.Wrap(&err, "listOrganizationSubdomains()")
+	organizations, err := queries.ListOrganizations(ctx)
+	if err != nil {
+		return err
+	}
+	for _, org := range organizations {
+		_, _ = fmt.Fprintln(out, org.Subdomain)
+	}
+	return nil
 }
 
 // listOrganizations prints every organization recorded in queries to out,
