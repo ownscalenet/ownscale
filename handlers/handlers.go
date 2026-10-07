@@ -13,6 +13,7 @@ import (
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/auth/oidcprovider"
 	"github.com/ownscalenet/ownscale/auth/passkey"
+	"github.com/ownscalenet/ownscale/backup"
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
@@ -60,8 +61,8 @@ type authProvidersStatus struct {
 // orgs.Service that manages in-process headscale instances. dataDir is
 // also used by the funnel proxy's per-organization tsnet.Server instances
 // (see funnelproxy.NewPool); pass "" in tests that never exercise funnel
-// routing. Returns an error if the WebAuthn relying party cannot be
-// configured.
+// routing. backups replicates organizations' headscale databases and may be
+// nil. Returns an error if the WebAuthn relying party cannot be configured.
 func New(
 	queries *db.TxQueries,
 	baseDomain, dataDir string,
@@ -69,14 +70,15 @@ func New(
 	logger *slog.Logger,
 	derpCfg config.DerpConfig,
 	authCfg config.AuthConfig,
-	funnelCfg config.FunnelConfig) (_ *Handlers, err error) {
+	funnelCfg config.FunnelConfig,
+	backups *backup.Replicator) (_ *Handlers, err error) {
 	defer derrors.Wrap(&err, "handlers.New(%q)", baseDomain)
 
 	issuer := ""
 	if oidc != nil {
 		issuer = oidc.Issuer()
 	}
-	orgSvc := orgs.NewService(queries, baseDomain, issuer, derpCfg, logger, dataDir)
+	orgSvc := orgs.NewService(queries, baseDomain, issuer, derpCfg, logger, dataDir, backups)
 
 	// The console is served on console.baseDomain (per-org subdomains are
 	// only used for headscale/tailnet traffic, not this admin UI), so one
@@ -118,9 +120,11 @@ func New(
 }
 
 // Close releases resources held by Handlers across the process's
-// lifetime. Intended to be called once, at process shutdown.
-func (h *Handlers) Close() {
+// lifetime, stopping every organization's headscale. Intended to be called
+// once, at process shutdown.
+func (h *Handlers) Close(ctx context.Context) error {
 	h.funnel.Close()
+	return h.orgs.Close(ctx)
 }
 
 // ServeFunnelIfMatched serves r via the funnel proxy and returns true if
@@ -147,9 +151,13 @@ func (h *Handlers) DialOrg(ctx context.Context, subdomain string) (net.Conn, err
 	return h.orgs.DialOrg(ctx, subdomain)
 }
 
-// Start runs background work, such as putting idle organizations to sleep,
-// until ctx is done. It is non-blocking.
+// Start backs up provisioned organizations' databases, then runs
+// background work, such as putting idle organizations to sleep, until ctx
+// is done. It doesn't wait for the background work.
 func (h *Handlers) Start(ctx context.Context) {
+	if err := h.orgs.BackUpProvisioned(ctx); err != nil {
+		h.logger.Error("back up organization databases", "error", err)
+	}
 	go h.orgs.RunSleeper(ctx)
 	go h.orgs.RunDERPMapUpdater(ctx)
 }

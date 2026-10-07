@@ -14,6 +14,7 @@ import (
 
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/auth/oidcprovider"
+	"github.com/ownscalenet/ownscale/backup"
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/debugserver"
@@ -23,9 +24,15 @@ import (
 	"github.com/ownscalenet/ownscale/webui"
 )
 
-// shutdownTimeout bounds how long we wait for in-flight requests to finish
-// before forcing the process to exit.
-const shutdownTimeout = 10 * time.Second
+const (
+	// shutdownTimeout bounds how long we wait for in-flight requests to finish
+	// before forcing the process to exit.
+	shutdownTimeout = 30 * time.Second
+	// orgsCloseTimeout bounds stopping every organization's headscale.
+	orgsCloseTimeout = 30 * time.Second
+	// backupCloseTimeout bounds the final sync to the backup replica.
+	backupCloseTimeout = 30 * time.Second
+)
 
 func main() {
 	if err := run(); err != nil {
@@ -52,13 +59,31 @@ func run() error {
 		return err
 	}
 
+	ctx := context.Background()
+
+	// Litestream must outlive every connection to the databases it
+	// replicates, so it's closed last.
+	backups, err := backup.New(ctx, cfg.Backup, cfg.DataDir, logger)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), backupCloseTimeout)
+		defer cancel()
+		if err := backups.Close(ctx); err != nil {
+			logger.Error("close backups", "error", err)
+		}
+	}()
+
 	pool, err := db.Connect(cfg.Database())
 	if err != nil {
 		return err
 	}
 	defer pool.Close()
+	if err := backups.Add(config.DatabaseFile); err != nil {
+		return err
+	}
 
-	ctx := context.Background()
 	queries := db.New(pool, logger)
 
 	auth.Setup(cfg.Auth.SessionSecret)
@@ -66,11 +91,17 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	h, err := handlers.New(queries, cfg.BaseDomain, cfg.DataDir, oidcStorage, logger, cfg.Derp, cfg.Auth, cfg.Funnel)
+	h, err := handlers.New(queries, cfg.BaseDomain, cfg.DataDir, oidcStorage, logger, cfg.Derp, cfg.Auth, cfg.Funnel, backups)
 	if err != nil {
 		return err
 	}
-	defer h.Close()
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), orgsCloseTimeout)
+		defer cancel()
+		if err := h.Close(ctx); err != nil {
+			logger.Error("stop organizations", "error", err)
+		}
+	}()
 
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
 		return auth.RequireAuthAPI(queries.Queries, next)

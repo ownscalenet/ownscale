@@ -86,8 +86,14 @@ func (s *Service) ensureNoiseKey(ctx context.Context, orgID, subdomain string) (
 	return nil
 }
 
+// DBFile returns subdomain's headscale database, relative to the data
+// directory.
+func DBFile(subdomain string) string {
+	return filepath.Join(subdomain, "db.sqlite")
+}
+
 func sqlitePath(dataDir, subdomain string) string {
-	return filepath.Join(dataDir, subdomain, "db.sqlite")
+	return filepath.Join(dataDir, DBFile(subdomain))
 }
 
 // SocketPath returns the unix socket subdomain's headscale instance serves
@@ -157,6 +163,9 @@ func createHeadscale(
 			Sqlite: types.SqliteConfig{
 				Path:          sqlitePath(dataDir, subdomain),
 				WriteAheadLog: true,
+				// SQLite's default. Backups checkpoint on their own, but with
+				// them disabled nothing else would.
+				WALAutoCheckPoint: 1000,
 			},
 		},
 		Log:       types.LogConfig{Format: "json", Level: zerolog.InfoLevel},

@@ -18,8 +18,6 @@ RUN apk add --no-cache ca-certificates
 WORKDIR /app
 
 COPY --from=build /out/ownscale /out/osa /app/
-# We need to verify database status against remote replication destinations.
-COPY --from=litestream/litestream:0.5.16 /usr/local/bin/litestream /usr/local/bin/litestream
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 

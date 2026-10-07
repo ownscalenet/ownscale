@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoadDefaultsOnly(t *testing.T) {
@@ -211,6 +212,75 @@ func TestLoadDerpConfig(t *testing.T) {
 			}
 			if cfg.Derp != tc.want {
 				t.Errorf("Derp = %+v, want %+v", cfg.Derp, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadBackupConfig(t *testing.T) {
+	cases := []struct {
+		name string
+		env  map[string]string
+		want BackupConfig
+	}{
+		{
+			name: "disabled by default",
+			want: BackupConfig{SyncInterval: 10 * time.Second},
+		},
+		{
+			name: "s3 replica",
+			env: map[string]string{
+				"OWNSCALE_BACKUP_REPLICA_URL":       "s3://bucket/ownscale",
+				"OWNSCALE_BACKUP_ACCESS_KEY_ID":     "key",
+				"OWNSCALE_BACKUP_SECRET_ACCESS_KEY": "secret",
+				"OWNSCALE_BACKUP_REGION":            "eu-central-1",
+				"OWNSCALE_BACKUP_ENDPOINT":          "https://s3.example.com",
+				"OWNSCALE_BACKUP_SYNC_INTERVAL":     "1m",
+			},
+			want: BackupConfig{
+				ReplicaURL:      "s3://bucket/ownscale",
+				AccessKeyID:     "key",
+				SecretAccessKey: "secret",
+				Region:          "eu-central-1",
+				Endpoint:        "https://s3.example.com",
+				SyncInterval:    time.Minute,
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.Backup != tc.want {
+				t.Errorf("Backup = %+v, want %+v", cfg.Backup, tc.want)
+			}
+			if got, want := cfg.Backup.Enabled(), tc.want.ReplicaURL != ""; got != want {
+				t.Errorf("Enabled() = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+func TestBackupConfigValidate(t *testing.T) {
+	cases := []struct {
+		name    string
+		cfg     BackupConfig
+		wantErr bool
+	}{
+		{name: "disabled", cfg: BackupConfig{}},
+		{name: "enabled", cfg: BackupConfig{ReplicaURL: "file:///backups", SyncInterval: time.Second}},
+		{name: "zero sync interval", cfg: BackupConfig{ReplicaURL: "file:///backups"}, wantErr: true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if err := tc.cfg.Validate(); (err != nil) != tc.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tc.wantErr)
 			}
 		})
 	}

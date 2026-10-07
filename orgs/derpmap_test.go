@@ -81,7 +81,7 @@ func TestCurrentDERPMap(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, queries := dbtest.New(t)
 			derpCfg := config.DerpConfig{MapURL: derpMapServer(t, tt.status, mustJSON(t, testDERPMap(2)))}
-			svc := NewService(queries, "example.com", "https://auth.example.com", derpCfg, slog.New(slog.DiscardHandler), t.TempDir())
+			svc := NewService(queries, "example.com", "https://auth.example.com", derpCfg, slog.New(slog.DiscardHandler), t.TempDir(), nil)
 			if tt.stored != nil {
 				svc.derpMap.Store(tt.stored)
 			}

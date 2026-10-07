@@ -7,7 +7,8 @@ import (
 	"path/filepath"
 
 	// Register the "sqlite" database/sql driver used by sql.Open in Connect.
-	_ "github.com/glebarez/go-sqlite"
+	// DECISIONS#7
+	_ "modernc.org/sqlite"
 
 	"github.com/ownscalenet/ownscale/derrors"
 )

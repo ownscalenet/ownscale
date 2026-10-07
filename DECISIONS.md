@@ -38,3 +38,19 @@ inside the ownscale process, listening on a loopback port that ownscale's
 SubdomainProxy forwards `<org>.<base_domain>` traffic to. ownscale itself talks
 to each instance's API over its unix socket, so no API keys are needed.
 Changing an organization's settings restarts its instance.
+
+### 7. Litestream runs in-process, not as a separate container
+Backups used to run as a separate litestream container watching the data
+directory. Now ownscale embeds Litestream (the `backup` package) and adds each
+database when it's created, so there's no extra container and no directory
+watching. This decision creates trouble because headscale is already troublesome
+with the way it imports [gorm+modernc/sqlite](https://github.com/juanfont/headscale/blob/2dcd5c876ee7d37508aca52f86baefc7147ecd02/go.mod#L55).
+Ownsclae adds more trouble on top because litestream comes with its own
+requirements for modernc/sqlite.
+Reasons why I chose to go this way:
+- it simplifies the deployment steps for the user and the docker compose handling
+- if backups are golang code, it's easier to test them
+Reasons why it is bad:
+- above trouble with the modernc import
+- if backups panic, they bring the whole program down
+I'm not convinced it's a good decision, but I'm willing to try it.

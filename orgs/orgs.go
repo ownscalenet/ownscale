@@ -27,6 +27,7 @@ import (
 	"tailscale.com/tailcfg"
 	"tailscale.com/types/key"
 
+	"github.com/ownscalenet/ownscale/backup"
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
@@ -70,6 +71,7 @@ type Service struct {
 	derpCfg    config.DerpConfig
 	logger     *slog.Logger
 	dataDir    string
+	backups    *backup.Replicator
 
 	orgs utils.Map[string, *orgRuntime]
 	// derpMap is the last DERP map RunDERPMapUpdater fetched.
@@ -160,7 +162,11 @@ type instance struct {
 }
 
 // NewService builds a Service that manages organizations under baseDomain.
-func NewService(queries *db.TxQueries, baseDomain, issuer string, derpCfg config.DerpConfig, logger *slog.Logger, dataDir string) *Service {
+// Each organization's headscale database is added to backups once it
+// exists; backups may be nil.
+func NewService(queries *db.TxQueries, baseDomain, issuer string,
+	derpCfg config.DerpConfig, logger *slog.Logger,
+	dataDir string, backups *backup.Replicator) *Service {
 	return &Service{
 		queries:       queries,
 		baseDomain:    baseDomain,
@@ -168,6 +174,7 @@ func NewService(queries *db.TxQueries, baseDomain, issuer string, derpCfg config
 		derpCfg:       derpCfg,
 		logger:        logger,
 		dataDir:       dataDir,
+		backups:       backups,
 		createFn:      createHeadscale,
 		idleTimeout:   idleTimeout,
 		sweepInterval: sweepInterval,
@@ -593,6 +600,10 @@ func (s *Service) startLocked(ctx context.Context, orgID, subdomain string, hsCf
 			rt.inst.Store(inst)
 		}
 		rt.touch()
+		// headscale created its database by now.
+		if err := s.backups.Add(DBFile(subdomain)); err != nil {
+			s.logger.Error("back up organization database", "subdomain", subdomain, "error", err)
+		}
 		return nil
 	}
 }
@@ -774,6 +785,37 @@ func (s *Service) sleepHeadscale(ctx context.Context, subdomain string) (err err
 		s.onSleep(subdomain)
 	}
 	return nil
+}
+
+// BackUpProvisioned adds the database of every organization whose
+// headscale ever started to backups.
+func (s *Service) BackUpProvisioned(ctx context.Context) (err error) {
+	defer derrors.Wrap(&err, "s.BackUpProvisioned()")
+
+	orgs, err := s.queries.ListOrganizations(ctx)
+	if err != nil {
+		return err
+	}
+	var errs []error
+	for _, org := range orgs {
+		if s.provisioned(org.Subdomain) {
+			errs = append(errs, s.backups.Add(DBFile(org.Subdomain)))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// Close stops every running headscale instance, closing their databases.
+func (s *Service) Close(ctx context.Context) (err error) {
+	defer derrors.Wrap(&err, "s.Close()")
+
+	s.startMu.Lock()
+	defer s.startMu.Unlock()
+	var errs []error
+	for _, rt := range s.orgs.Range {
+		errs = append(errs, stopLocked(ctx, rt))
+	}
+	return errors.Join(errs...)
 }
 
 // RunSleeper puts organizations whose headscale went unused for

@@ -5,8 +5,8 @@
 # ownscale server.
 set -e
 
-# Fail fast (before the app ever starts) if ownscale's own database looks
-# unhealthy despite an existing litestream backup.
+# Fail fast (before the app ever starts) if ownscale's own database is
+# missing although it has a backup.
 /app/osa verify db
 
 # TODO: is this automatic migration ok? Should it be manual?

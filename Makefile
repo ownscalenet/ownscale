@@ -16,10 +16,11 @@ DEVBOX_IMAGE := ownscale-devbox:latest
 export HOST_UID := $(shell id -u)
 export HOST_GID := $(shell id -g)
 
-# Resolved the same way BASE_DOMAIN is below, so dev-up works without
-# requiring OWNSCALE_DATA_DIR to already be exported into the shell.
+# read env
 DATA_DIR := $(shell grep -m1 '^OWNSCALE_DATA_DIR=' .env 2>/dev/null | cut -d= -f2)
 DATA_DIR := $(if $(DATA_DIR),$(DATA_DIR),$(CURDIR)/data)
+BASE_DOMAIN := $(shell grep -m1 '^BASE_DOMAIN=' .env 2>/dev/null | cut -d= -f2)
+BASE_DOMAIN := $(if $(BASE_DOMAIN),$(BASE_DOMAIN),ownscale.test)
 
 build: frontend backend
 
@@ -46,9 +47,6 @@ osa:
 # Build the images, start the full stack, then stream logs from all
 # containers. Organizations are created on each new user's first login.
 #
-# Pre-creates .litestream-backups as the host user before compose runs, so it's
-# not created later as root.
-#
 # Also upserts HOST_UID/HOST_GID into .env: docker-compose.yml's
 # user: "${HOST_UID:-0}:${HOST_GID:-0}" only sees these if they're in the shell
 # env or in .env
@@ -56,7 +54,6 @@ osa:
 # Pass `make dev-up BUILD=1` to forward --build to `docker compose up`.
 BUILD ?=
 dev-up:
-	mkdir -p "$(DATA_DIR)/.litestream-backups"
 	@touch .env
 	@for kv in HOST_UID=$(HOST_UID) HOST_GID=$(HOST_GID); do \
 		key=$${kv%%=*}; \
@@ -67,8 +64,6 @@ dev-up:
 # devbox opens up a shell in a container that has joined a tailnet.
 # It's useful for debugging, but requires make dev-up to already run.
 ORG ?= aaaa
-BASE_DOMAIN := $(shell grep -m1 '^BASE_DOMAIN=' .env 2>/dev/null | cut -d= -f2)
-BASE_DOMAIN := $(if $(BASE_DOMAIN),$(BASE_DOMAIN),ownscale.test)
 
 devbox:
 	@docker compose ps --status running --services | grep -qx ownscale || { echo "ownscale is not running -- run 'make dev-up' first"; exit 1; }

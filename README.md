@@ -36,26 +36,30 @@ environment variable (e.g. `OWNSCALE_ADDR`, `OWNSCALE_BASE_DOMAIN`). See
 
 ### Data directory (`OWNSCALE_DATA_DIR`)
 
-All SQLite dbs are gathered under a single directory, `OWNSCALE_DATA_DIR`. This allows us
-to have all dbs replicated with a litestream directory watcher.
+All SQLite dbs are gathered under a single directory, `OWNSCALE_DATA_DIR`.
 
+### Backups
 
-Configure it via `.env` (see `.env.example`): `LITESTREAM_REPLICA_URL` is
-required (e.g. `s3://my-backup-bucket/ownscale`); `LITESTREAM_ACCESS_KEY_ID`/
-`LITESTREAM_SECRET_ACCESS_KEY` (or an IAM role), `LITESTREAM_REGION`, and
-`LITESTREAM_ENDPOINT` (for S3-compatible backends) are optional. The
-actual litestream config lives in `etc/litestream/litestream.yml`, which
-follows the same "static file + env var expansion" pattern as
-`etc/caddy/Caddyfile` — it's not generated from ownscale's own config.
+ownscale continuously replicates its own database and every organization's
+headscale database with [Litestream](https://litestream.io), embedded as a
+library (see the `backup` package). Configure it via `.env` (see
+`.env.example`): `OWNSCALE_BACKUP_REPLICA_URL` enables backups (e.g.
+`s3://my-backup-bucket/ownscale`); `OWNSCALE_BACKUP_ACCESS_KEY_ID`/
+`OWNSCALE_BACKUP_SECRET_ACCESS_KEY` (or an IAM role), `OWNSCALE_BACKUP_REGION`,
+and `OWNSCALE_BACKUP_ENDPOINT` (for S3-compatible backends) are optional.
+Leave `OWNSCALE_BACKUP_REPLICA_URL` empty to disable backups completely.
 
-For local-only backups (no S3), set `LITESTREAM_REPLICA_URL` to
-`file:///var/lib/litestream/backups` — the only `file://` path docker-compose.yml
-persistently mounts for the litestream service (to
-`${OWNSCALE_DATA_DIR}/.litestream-backups` on the host). Any other `file://`
-destination only lives in the container's writable layer, gets wiped on every
-container recreation, and desyncs litestream's local retention from the
-(now-empty) destination, causing a permanent "shutdown sync failed" retry loop
-on restart.
+For local-only backups (no S3), point `OWNSCALE_BACKUP_REPLICA_URL` inside the
+data directory, e.g. `file://<OWNSCALE_DATA_DIR>/.backups`: it's the only
+persistent path the ownscale container mounts. Any other `file://` destination
+only lives in the container's writable layer and gets wiped on every container
+recreation. Such backups share a disk with the databases, so use S3 or Azure
+in production.
+
+On startup, `osa verify` fails if a database is missing although it has a
+backup. Recover with `osa restore db` and `osa restore organizations`, run
+while ownscale is stopped, e.g.
+`docker compose run --rm ownscale /app/osa restore db`.
 
 
 ## Single sign-on (via ownscale's own OIDC provider)

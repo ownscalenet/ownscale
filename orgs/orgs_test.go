@@ -32,7 +32,7 @@ import (
 func newRealService(t *testing.T) *Service {
 	t.Helper()
 	_, queries := dbtest.New(t)
-	svc := NewService(queries, "example.com", "https://auth.example.com", config.DerpConfig{}, slog.New(slog.DiscardHandler), t.TempDir())
+	svc := NewService(queries, "example.com", "https://auth.example.com", config.DerpConfig{}, slog.New(slog.DiscardHandler), t.TempDir(), nil)
 	svc.derpMap.Store(testDERPMap(1))
 	return svc
 }

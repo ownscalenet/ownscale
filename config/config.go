@@ -29,6 +29,33 @@ type Config struct {
 	Log    LogConfig
 	Derp   DerpConfig
 	Funnel FunnelConfig
+	Backup BackupConfig
+}
+
+// BackupConfig configures continuous replication of every SQLite database
+// under DataDir. Leave ReplicaURL empty to disable backups.
+type BackupConfig struct {
+	ReplicaURL      string        `env:"OWNSCALE_BACKUP_REPLICA_URL"`
+	AccessKeyID     string        `env:"OWNSCALE_BACKUP_ACCESS_KEY_ID"`
+	SecretAccessKey string        `env:"OWNSCALE_BACKUP_SECRET_ACCESS_KEY"`
+	Region          string        `env:"OWNSCALE_BACKUP_REGION"`
+	Endpoint        string        `env:"OWNSCALE_BACKUP_ENDPOINT"`
+	AzureAccountKey string        `env:"OWNSCALE_BACKUP_AZURE_ACCOUNT_KEY"`
+	SyncInterval    time.Duration `env:"OWNSCALE_BACKUP_SYNC_INTERVAL"`
+}
+
+// Enabled reports whether backups are configured.
+func (b BackupConfig) Enabled() bool { return b.ReplicaURL != "" }
+
+// Validate checks that b is either fully disabled or usable.
+func (b BackupConfig) Validate() error {
+	if !b.Enabled() {
+		return nil
+	}
+	if b.SyncInterval <= 0 {
+		return fmt.Errorf("OWNSCALE_BACKUP_SYNC_INTERVAL must be positive, got %s", b.SyncInterval)
+	}
+	return nil
 }
 
 // FunnelConfig configures public funnels.
@@ -113,6 +140,9 @@ func defaults() *Config {
 		LocalCADir: "local-ca",
 		Funnel: FunnelConfig{
 			MaxBodyBytes: 32 << 20,
+		},
+		Backup: BackupConfig{
+			SyncInterval: 10 * time.Second,
 		},
 		Log: LogConfig{
 			Level:  "info",
@@ -215,6 +245,9 @@ EOF`)
 	if c.DataDir != "" && !filepath.IsAbs(c.DataDir) {
 		return fmt.Errorf("OWNSCALE_DATA_DIR must resolve to an absolute path, got %q", c.DataDir)
 	}
+	if err := c.Backup.Validate(); err != nil {
+		return err
+	}
 	if _, err := time.ParseDuration(c.Auth.OIDCProvider.AccessTokenLifetime); err != nil {
 		return fmt.Errorf("OWNSCALE_AUTH_OIDC_PROVIDER_ACCESS_TOKEN_LIFETIME: %w", err)
 	}
@@ -224,8 +257,12 @@ EOF`)
 	return nil
 }
 
+// DatabaseFile is ownscale's own database, relative to Config.DataDir.
+const DatabaseFile = "ownscale.sqlite"
+
+// Database returns the path of ownscale's own database.
 func (c Config) Database() string {
-	return filepath.Join(c.DataDir, "ownscale.sqlite")
+	return filepath.Join(c.DataDir, DatabaseFile)
 }
 
 func isLoopbackAddr(addr string) bool {
