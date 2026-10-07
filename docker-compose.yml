@@ -9,7 +9,7 @@ services:
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >
-        /app/osa gen-local-ca --caddy-data-dir /caddy-data &&
+        osa gen-local-ca --caddy-data-dir /caddy-data &&
         chown -R "${HOST_UID:-0}:${HOST_GID:-0}" "$$OWNSCALE_DATA_DIR/local-ca"
     environment:
       OWNSCALE_DATA_DIR: ${OWNSCALE_DATA_DIR:?set OWNSCALE_DATA_DIR to an absolute host path in .env}

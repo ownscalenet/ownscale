@@ -17,7 +17,7 @@ FROM alpine:3
 RUN apk add --no-cache ca-certificates
 WORKDIR /app
 
-COPY --from=build /out/ownscale /out/osa /app/
+COPY --from=build /out/ownscale /out/osa /bin/
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 

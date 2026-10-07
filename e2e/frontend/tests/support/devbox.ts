@@ -34,7 +34,7 @@ export async function startDevbox(name: string, org: string, hostname: string, u
     '-v', `${caFile}:/usr/local/share/ca-certificates/ownscale-local-ca.crt:ro`,
     devboxImage, 'sleep', 'infinity',
   ])
-  const authKey = await docker(['compose', 'exec', '-T', 'ownscale', './osa', 'devbox-key', org])
+  const authKey = await docker(['compose', 'exec', '-T', 'ownscale', 'osa', 'devbox-key', org])
   await docker(['exec', name, 'devbox-up', `https://${org}.${baseDomain}`, authKey, hostname, ...upFlags], 60_000)
 }
 

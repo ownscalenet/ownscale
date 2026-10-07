@@ -7,11 +7,11 @@ set -e
 
 # Fail fast (before the app ever starts) if ownscale's own database is
 # missing although it has a backup.
-/app/osa verify db
+osa verify db
 
 # TODO: is this automatic migration ok? Should it be manual?
 while true; do
-	output=$(/app/osa migrate up)
+	output=$(osa migrate up)
 	echo "$output"
 	if [ "$output" = "no pending migrations" ]; then
 		break
@@ -21,6 +21,6 @@ done
 # Now that ownscale.sqlite is present+migrated, verify every
 # organization's headscale database the same way (manual
 # `osa restore organizations` to recover).
-/app/osa verify organizations
+osa verify organizations
 
-exec /app/ownscale
+exec ownscale

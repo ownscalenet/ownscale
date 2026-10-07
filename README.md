@@ -12,7 +12,7 @@ set -a; source .env; set +a
 ```sh
 cp .env.example .env   # edit BASE_DOMAIN, OWNSCALE_AUTH_*, etc.
 docker compose up -d --build   # builds and starts ownscale + caddy
-docker compose exec ownscale /app/osa organization list
+docker compose exec ownscale osa organization list
 ```
 
 ### Frontend end-to-end tests
@@ -59,7 +59,7 @@ in production.
 On startup, `osa verify` fails if a database is missing although it has a
 backup. Recover with `osa restore db` and `osa restore organizations`, run
 while ownscale is stopped, e.g.
-`docker compose run --rm ownscale /app/osa restore db`.
+`docker compose run --rm ownscale osa restore db`.
 
 
 ## Single sign-on (via ownscale's own OIDC provider)

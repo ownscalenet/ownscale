@@ -42,7 +42,7 @@ ifneq ($(filter osa restore,$(MAKECMDGOALS)),)
 endif
 
 osa:
-	docker compose exec ownscale ./osa $(filter-out osa,$(MAKECMDGOALS))
+	docker compose exec ownscale osa $(filter-out osa,$(MAKECMDGOALS))
 
 # Build the images, start the full stack, then stream logs from all
 # containers. Organizations are created on each new user's first login.
@@ -72,7 +72,7 @@ devbox:
 	@echo "minting a pre-auth key for $(ORG)..."
 	@n=1; while docker ps -a --format '{{.Names}}' | grep -qx "devbox$(ORG)$$n"; do n=$$((n+1)); done; \
 	name=devbox$(ORG)$$n; \
-	authkey=$$(docker compose exec -T ownscale ./osa devbox-key $(ORG)); \
+	authkey=$$(docker compose exec -T ownscale osa devbox-key $(ORG)); \
 	test -n "$$authkey" || { echo "failed to mint a pre-auth key"; exit 1; }; \
 	echo "connecting to https://$(ORG).$(BASE_DOMAIN) as $$name..."; \
 	docker run --rm -it --name=$$name --hostname=$$name \
@@ -136,7 +136,7 @@ e2e-remote-connectivity:
 		TMPDIR="$(CURDIR)/bin/connectivity-work" npm --prefix e2e/frontend run test:connectivity
 
 restore:
-	docker compose run --rm --entrypoint /app/osa ownscale restore $(filter-out restore,$(MAKECMDGOALS))
+	docker compose run --rm --entrypoint osa ownscale restore $(filter-out restore,$(MAKECMDGOALS))
 
 BROWSER := firefox
 coverage:
