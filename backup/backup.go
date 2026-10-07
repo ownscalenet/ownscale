@@ -65,7 +65,7 @@ func New(ctx context.Context, cfg config.BackupConfig, dataDir string, logger *s
 func (r *Replicator) Add(relPath string) (err error) {
 	defer derrors.Wrap(&err, "r.Add(%q)", relPath)
 
-	if r.store == nil {
+	if r == nil || r.store == nil {
 		return nil
 	}
 	path := filepath.Join(r.dataDir, relPath)
@@ -92,7 +92,7 @@ func (r *Replicator) Add(relPath string) (err error) {
 func (r *Replicator) Close(ctx context.Context) (err error) {
 	defer derrors.Wrap(&err, "r.Close()")
 
-	if r.store == nil {
+	if r == nil || r.store == nil {
 		return nil
 	}
 	stop := context.AfterFunc(ctx, func() { close(r.done) })
