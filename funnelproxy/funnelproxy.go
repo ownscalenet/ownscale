@@ -208,7 +208,7 @@ func (p *Pool) Forget(subdomain string) (err error) {
 
 // stateDir is subdomain's tsnet.Server state directory.
 func (p *Pool) stateDir(subdomain string) string {
-	return filepath.Join(p.dataDir, "funnel-tsnet", subdomain)
+	return filepath.Join(p.dataDir, subdomain, "funnel-tsnet")
 }
 
 // tsnetLogf adapts a tsnet.Server's Logf to the app's structured logger.
