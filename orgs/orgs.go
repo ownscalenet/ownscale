@@ -45,9 +45,9 @@ const (
 
 	// idleTimeout is how long an organization's headscale runs unused
 	// before RunSleeper stops it.
-	idleTimeout = time.Minute
+	idleTimeout = 30 * time.Minute
 	// sweepInterval is how often RunSleeper looks for idle organizations.
-	sweepInterval = time.Second
+	sweepInterval = 2 * time.Minute
 	// sleepTimeout bounds waiting for a headscale instance to stop.
 	sleepTimeout = 30 * time.Second
 	// startTimeout bounds starting a headscale instance.
