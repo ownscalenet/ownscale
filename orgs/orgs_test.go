@@ -638,3 +638,52 @@ func mustParseUint(t *testing.T, s string) uint {
 	}
 	return uint(n)
 }
+
+// TestCloseStopsStarts verifies that after Close no operation starts an
+// organization's headscale again, so its database stays closed.
+func TestCloseStopsStarts(t *testing.T) {
+	cases := []struct {
+		name  string
+		start func(ctx context.Context, svc *Service) error
+	}{
+		{"Ensure", func(ctx context.Context, svc *Service) error {
+			_, err := svc.Ensure(ctx, "acme")
+			return err
+		}},
+		{"Wake", func(ctx context.Context, svc *Service) error {
+			_, err := svc.Wake(ctx, "acme")
+			return err
+		}},
+		{"DialOrg", func(ctx context.Context, svc *Service) error {
+			conn, err := svc.DialOrg(ctx, "acme")
+			if err == nil {
+				conn.Close()
+			}
+			return err
+		}},
+		{"restart", func(ctx context.Context, svc *Service) error {
+			return svc.restartHeadscale(ctx, "acme")
+		}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			svc := newRealService(t)
+			if _, err := svc.Create(t.Context(), "acme"); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := svc.Ensure(t.Context(), "acme"); err != nil {
+				t.Fatal(err)
+			}
+			if err := svc.Close(t.Context()); err != nil {
+				t.Fatalf("Close: %v", err)
+			}
+
+			if err := tc.start(t.Context(), svc); !errors.Is(err, ErrNotRunning) {
+				t.Errorf("%s after Close: error = %v, want ErrNotRunning", tc.name, err)
+			}
+			if _, ok := svc.running("acme"); ok {
+				t.Errorf("acme's headscale is running after Close")
+			}
+		})
+	}
+}

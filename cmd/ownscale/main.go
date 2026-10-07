@@ -62,12 +62,18 @@ func run() error {
 	ctx := context.Background()
 
 	// Litestream must outlive every connection to the databases it
-	// replicates, so it's closed last.
+	// replicates, so it's closed last, and not at all while a headscale
+	// failed to stop: its changes stay in the WAL and sync on next start.
+	orgsStopped := true
 	backups, err := backup.New(ctx, cfg.Backup, cfg.DataDir, logger)
 	if err != nil {
 		return err
 	}
 	defer func() {
+		if !orgsStopped {
+			logger.Error("skipping final backup sync, some organizations didn't stop")
+			return
+		}
 		ctx, cancel := context.WithTimeout(context.Background(), backupCloseTimeout)
 		defer cancel()
 		if err := backups.Close(ctx); err != nil {
@@ -99,6 +105,7 @@ func run() error {
 		ctx, cancel := context.WithTimeout(context.Background(), orgsCloseTimeout)
 		defer cancel()
 		if err := h.Close(ctx); err != nil {
+			orgsStopped = false
 			logger.Error("stop organizations", "error", err)
 		}
 	}()

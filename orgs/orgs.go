@@ -94,6 +94,9 @@ type Service struct {
 	// startMu serializes headscale startup and DERP map pushes, as
 	// headscale's DERP map shuffling shares one non-thread-safe rand.Rand.
 	startMu sync.Mutex
+	// closed is set by Close, under startMu, so no headscale (and its
+	// database) starts while backups shut down.
+	closed bool
 
 	// createFn defaults to createHeadscale; override in tests to skip
 	// real headscale startup.
@@ -302,6 +305,8 @@ var (
 	// ErrNotProvisioned is returned for an organization whose headscale
 	// instance never started.
 	ErrNotProvisioned = errors.New("organization not provisioned")
+
+	errClosed = fmt.Errorf("%w: shutting down", ErrNotRunning)
 )
 
 // startRetryDelay is how long Ensure fails fast after it failed to start
@@ -567,6 +572,9 @@ func (s *Service) insertProvisioned(ctx context.Context, subdomain, clientID, cl
 //
 // It returns once the instance serves, or with the reason it doesn't.
 func (s *Service) startLocked(ctx context.Context, orgID, subdomain string, hsCfg *HeadscaleConfig) error {
+	if s.closed {
+		return errClosed
+	}
 	if err := s.ensureNoiseKey(ctx, orgID, subdomain); err != nil {
 		return err
 	}
@@ -806,11 +814,13 @@ func (s *Service) BackUpProvisioned(ctx context.Context) (err error) {
 }
 
 // Close stops every running headscale instance, closing their databases.
+// Afterwards no instance starts again: starting one returns ErrNotRunning.
 func (s *Service) Close(ctx context.Context) (err error) {
 	defer derrors.Wrap(&err, "s.Close()")
 
 	s.startMu.Lock()
 	defer s.startMu.Unlock()
+	s.closed = true
 	var errs []error
 	for _, rt := range s.orgs.Range {
 		errs = append(errs, stopLocked(ctx, rt))
