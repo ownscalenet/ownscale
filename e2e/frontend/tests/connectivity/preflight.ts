@@ -4,7 +4,7 @@ import { chmod, lstat, mkdir, readFile, rename } from 'node:fs/promises'
 import { request } from 'node:https'
 import { promisify } from 'node:util'
 import { acquireRunGuard, guardPath } from '../../run-guard'
-import { baseDomain, baseURL, bridgeBinary, caFile, dexURL, privateDir, root, scratchDir } from './environment'
+import { baseDomain, baseURL, bridgeBinary, caFile, dexURL, funnelDomain, privateDir, root, scratchDir } from './environment'
 
 export async function buildBridge(): Promise<void> {
   await mkdir(scratchDir, { recursive: true, mode: 0o700 })
@@ -53,7 +53,7 @@ async function resolvesViaPublicDNS(host: string): Promise<boolean> {
 export async function checkPrerequisites(): Promise<void> {
   const hosts = [new URL(baseURL).hostname, new URL(dexURL).hostname,
     ...['aaaa', 'bbbb', 'cccc'].flatMap(org =>
-      [`${org}.${baseDomain}`, `web1-${org}.${baseDomain}`, `web2-${org}.${baseDomain}`])]
+      [`${org}.${baseDomain}`, `web1-${org}.${funnelDomain}`, `web2-${org}.${funnelDomain}`])]
   const entries = (await readFile('/etc/hosts', 'utf8')).split('\n')
     .flatMap(line => line.split('#')[0].trim().split(/\s+/).slice(1))
   for (const host of hosts) {

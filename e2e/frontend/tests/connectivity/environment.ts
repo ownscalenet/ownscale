@@ -3,6 +3,8 @@ import { dirname, resolve } from 'node:path'
 
 export const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../../..')
 export const baseDomain = process.env.E2E_BASE_DOMAIN ?? 'ownscale.test'
+// Funnels are served under OWNSCALE_FUNNEL_DOMAIN, which defaults to the base domain.
+export const funnelDomain = process.env.E2E_FUNNEL_DOMAIN ?? baseDomain
 // The console (and its WebAuthn Relying Party ID) is bound to the "console" subdomain, not the
 // bare base domain.
 export const consoleDomain = `console.${baseDomain}`
