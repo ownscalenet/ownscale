@@ -18,6 +18,9 @@ RUN apk add --no-cache ca-certificates
 WORKDIR /app
 
 COPY --from=build /out/ownscale /out/osa /bin/
+# Operator tool for point-in-time restores and inspecting replicas;
+# replication itself runs inside ownscale. Keep in sync with go.mod.
+COPY --from=litestream/litestream:0.5.16 /usr/local/bin/litestream /bin/litestream
 COPY entrypoint.sh /app/entrypoint.sh
 RUN chmod +x /app/entrypoint.sh
 
