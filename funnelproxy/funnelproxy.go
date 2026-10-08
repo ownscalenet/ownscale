@@ -435,7 +435,7 @@ func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *
 
 			srv := &tsnet.Server{
 				Dir:        p.stateDir(subdomain),
-				Hostname:   "funnel-" + subdomain,
+				Hostname:   funnelHostname(subdomain),
 				AuthKey:    authKey.Key,
 				ControlURL: controlURL,
 				Logf:       tsnetLogf(p.logger, subdomain),
@@ -444,12 +444,17 @@ func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *
 
 			upCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), p.upTimeout)
 			defer cancel()
-			if _, err := srv.Up(upCtx); err != nil {
+			st, err := srv.Up(upCtx)
+			if err != nil {
 				_ = srv.Close()
 				if errors.Is(upCtx.Err(), context.DeadlineExceeded) {
 					return nil, fmt.Errorf("tsnet server up: timed out after %s: %w", p.upTimeout, err)
 				}
 				return nil, fmt.Errorf("tsnet server up: %w", err)
+			}
+
+			if err := removeStaleFunnelNodes(upCtx, client, subdomain, string(st.Self.ID)); err != nil {
+				p.logger.Warn("funnel: remove stale funnel machines", "subdomain", subdomain, "error", err)
 			}
 
 			// Wait for DERP to be established before declaring the server
@@ -474,6 +479,42 @@ func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *
 			return tun, nil
 		}
 	}
+}
+
+func funnelHostname(subdomain string) string {
+	return "funnel-" + subdomain
+}
+
+// removeStaleFunnelNodes deletes subdomain's funnel machines other than
+// selfID, then names selfID after the funnel again. Those machines are left
+// behind when a funnel server lost its state, e.g. after restoring an org
+// from backup, and nothing can reconnect as them.
+func removeStaleFunnelNodes(ctx context.Context, client *hscl.Client, subdomain, selfID string) (err error) {
+	defer derrors.Wrap(&err, "removeStaleFunnelNodes(%q, %q)", subdomain, selfID)
+
+	nodes, err := client.ListNodes(ctx)
+	if err != nil {
+		return err
+	}
+	name := funnelHostname(subdomain)
+	var errs []error
+	var self *hscl.Node
+	nameTaken := false
+	for _, n := range nodes {
+		switch {
+		case n.ID == selfID:
+			self = &n
+		case IsFunnelUser(n.User):
+			errs = append(errs, client.DeleteNode(ctx, n.ID))
+		case n.GivenName == name:
+			nameTaken = true // by a member's machine
+		}
+	}
+	// Renamed last: a deleted machine may have held the name.
+	if self != nil && self.GivenName != name && !nameTaken {
+		errs = append(errs, client.RenameNode(ctx, selfID, name))
+	}
+	return errors.Join(errs...)
 }
 
 // funnelAuthKeyValidity only needs to outlast srv.Up; the key is deleted right after.

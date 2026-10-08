@@ -14,6 +14,8 @@ import (
 	"net/http/httptest"
 	"net/netip"
 	"os"
+	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -485,5 +487,89 @@ func TestServeHTTPReusesConnections(t *testing.T) {
 	}
 	if n := newConns.Load(); n != 1 {
 		t.Errorf("backend saw %d connections, want 1 reused", n)
+	}
+}
+
+// TestRemoveStaleFunnelNodes runs against a real headscale: after cleanup,
+// the org's only funnel machine is the running one, named after the funnel.
+func TestRemoveStaleFunnelNodes(t *testing.T) {
+	type node struct {
+		user, name string
+		self       bool
+	}
+	tests := []struct {
+		name  string
+		nodes []node
+		want  []string // remaining machines, as "user/givenName"
+	}{
+		{
+			name:  "only the running funnel",
+			nodes: []node{{FunnelHeadscaleUserName, "funnel-aaaa", true}},
+			want:  []string{"ownscale-funnel/funnel-aaaa"},
+		},
+		{
+			name: "orphans from lost state",
+			nodes: []node{
+				{FunnelHeadscaleUserName, "funnel-aaaa", false},
+				{FunnelHeadscaleUserName, "funnel-aaaa-1", false},
+				{FunnelHeadscaleUserName, "funnel-aaaa-2", true},
+			},
+			want: []string{"ownscale-funnel/funnel-aaaa"},
+		},
+		{
+			name: "members' machines are kept",
+			nodes: []node{
+				{"alice", "funnel-aaaa", false},
+				{"alice", "laptop", false},
+				{FunnelHeadscaleUserName, "funnel-aaaa-1", true},
+			},
+			want: []string{"alice/funnel-aaaa", "alice/laptop", "ownscale-funnel/funnel-aaaa-1"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := t.Context()
+			sock := hstest.Headscale(t)
+			client := hscl.NewUnix(sock)
+			for _, user := range []string{FunnelHeadscaleUserName, "alice"} {
+				if _, err := client.CreateUser(ctx, hscl.CreateUserParams{Name: user}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			var selfID string
+			for _, n := range tt.nodes {
+				registered, err := client.RegisterNode(ctx, n.user, hstest.PendingNode(t, sock, n.user, n.name))
+				if err != nil {
+					t.Fatalf("RegisterNode(%q): %v", n.name, err)
+				}
+				if n.self {
+					selfID = registered.ID
+				}
+			}
+
+			if err := removeStaleFunnelNodes(ctx, client, "aaaa", selfID); err != nil {
+				t.Fatalf("removeStaleFunnelNodes: %v", err)
+			}
+
+			nodes, err := client.ListNodes(ctx)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var got []string
+			for _, n := range nodes {
+				got = append(got, n.User.Name+"/"+n.GivenName)
+			}
+			slices.Sort(got)
+			if !slices.Equal(got, tt.want) {
+				t.Errorf("machines = %v, want %v", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRemoveStaleFunnelNodesListError(t *testing.T) {
+	client := hscl.NewUnix(filepath.Join(t.TempDir(), "missing.sock"))
+	if err := removeStaleFunnelNodes(t.Context(), client, "aaaa", "1"); err == nil {
+		t.Error("removeStaleFunnelNodes with an unreachable headscale: want error")
 	}
 }
