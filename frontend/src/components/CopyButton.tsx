@@ -1,17 +1,11 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type MouseEvent, type ReactNode } from 'react'
 
-// CopyButton copies text to the clipboard and briefly says whether it worked.
+type CopyResult = 'copied' | 'failed' | null
+
+// useCopy copies text to the clipboard and remembers the outcome for 2s.
 // Copying fails on plain-HTTP origins, where the clipboard isn't available.
-export default function CopyButton({
-  text,
-  className = 'btn',
-  children,
-}: {
-  text: string
-  className?: string
-  children: ReactNode
-}) {
-  const [result, setResult] = useState<'copied' | 'failed' | null>(null)
+function useCopy(text: string) {
+  const [result, setResult] = useState<CopyResult>(null)
 
   useEffect(() => {
     if (!result) return
@@ -29,9 +23,83 @@ export default function CopyButton({
       )
   }
 
+  return { result, copy }
+}
+
+// CopyButton copies text to the clipboard and briefly says whether it worked.
+export default function CopyButton({
+  text,
+  className = 'btn',
+  children,
+}: {
+  text: string
+  className?: string
+  children: ReactNode
+}) {
+  const { result, copy } = useCopy(text)
+
   return (
     <button type="button" className={className} onClick={copy}>
       {result === 'copied' ? 'Copied!' : result === 'failed' ? 'Copy failed' : children}
     </button>
+  )
+}
+
+// CopyIcon is a small icon button for copying a table value. Its tooltip
+// stays on top because tables sit in overflow containers that clip sideways.
+export function CopyIcon({ text, label }: { text: string; label: string }) {
+  const { result, copy } = useCopy(text)
+  const tip = result === 'copied' ? 'Copied!' : result === 'failed' ? 'Copy failed' : 'Copy'
+  const tooltipState =
+    result === 'copied'
+      ? 'tooltip-open tooltip-success'
+      : result === 'failed'
+        ? 'tooltip-open tooltip-error'
+        : ''
+
+  const onClick = (e: MouseEvent) => {
+    e.stopPropagation()
+    copy()
+  }
+
+  return (
+    <span className={`tooltip tooltip-top ${tooltipState}`} data-tip={tip}>
+      <button
+        type="button"
+        className="btn btn-ghost btn-xs btn-square"
+        aria-label={`Copy ${label}`}
+        onClick={onClick}
+      >
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          className={`h-3.5 w-3.5 ${
+            result === 'copied'
+              ? 'text-success'
+              : result === 'failed'
+                ? 'text-error'
+                : 'opacity-60 hover:opacity-100'
+          }`}
+          fill="none"
+          viewBox="0 0 24 24"
+          stroke="currentColor"
+          strokeWidth={2}
+          aria-hidden="true"
+        >
+          {result === 'copied' ? (
+            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
+          ) : result === 'failed' ? (
+            <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6L6 18" />
+          ) : (
+            <>
+              <rect x="9" y="9" width="11" height="11" rx="2" />
+              <path strokeLinecap="round" strokeLinejoin="round" d="M5 15V5a2 2 0 0 1 2-2h8" />
+            </>
+          )}
+        </svg>
+      </button>
+      <span className="sr-only" aria-live="polite">
+        {result ? tip : ''}
+      </span>
+    </span>
   )
 }

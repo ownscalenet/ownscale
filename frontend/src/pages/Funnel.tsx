@@ -11,6 +11,7 @@ import {
 import { usePageTitle } from '../hooks/usePageTitle'
 import { useConfirm } from '../lib/confirm'
 import { EmptyRow, ErrorAlert, PageHeader, PageSpinner } from '../components/ui'
+import { CopyIcon } from '../components/CopyButton'
 
 export default function Funnel() {
   usePageTitle('Funnel')
@@ -117,9 +118,12 @@ export default function Funnel() {
                 {routes.map((r) => (
                   <tr key={r.id}>
                     <td className="font-mono">
-                      <a href={`https://${r.hostname}`} target="_blank" rel="noreferrer">
-                        https://{r.hostname}
-                      </a>
+                      <span className="inline-flex items-center gap-1">
+                        <a href={`https://${r.hostname}`} target="_blank" rel="noreferrer">
+                          https://{r.hostname}
+                        </a>
+                        <CopyIcon text={`https://${r.hostname}`} label="public URL" />
+                      </span>
                     </td>
                     <td>
                       {r.targetNodeMissing ? (

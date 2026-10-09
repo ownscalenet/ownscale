@@ -7,6 +7,7 @@ import { usePageTitle } from '../hooks/usePageTitle'
 import { faqURL } from '../lib/faq'
 import { useConfirm } from '../lib/confirm'
 import Modal from '../components/Modal'
+import { CopyIcon } from '../components/CopyButton'
 import {
   deleteMachine,
   errorMessage,
@@ -638,8 +639,22 @@ function MachineRow({
   return (
     <tr>
       <td className="whitespace-nowrap">
-        <div className="font-bold">{m.givenName}</div>
-        <div className="text-sm opacity-60">{m.user?.name ?? '—'}</div>
+        <div className="font-bold">
+          <span className="inline-flex items-center gap-1">
+            {m.givenName}
+            <CopyIcon text={m.givenName} label="machine name" />
+          </span>
+        </div>
+        <div className="text-sm opacity-60">
+          {m.user?.name ? (
+            <span className="inline-flex items-center gap-1">
+              {m.user.name}
+              <CopyIcon text={m.user.name} label="user name" />
+            </span>
+          ) : (
+            '—'
+          )}
+        </div>
         <div className="flex flex-wrap gap-1 mt-1">
           {expired && <span className="badge badge-error badge-sm">Expired</span>}
           {!m.expiry && <span className="badge badge-ghost badge-sm">No expiry</span>}
@@ -664,7 +679,10 @@ function MachineRow({
       <td className="whitespace-nowrap">
         <div className="font-mono text-sm">
           {m.ipAddresses.map((ip) => (
-            <div key={ip}>{ip}</div>
+            <div key={ip} className="flex items-center gap-1">
+              {ip}
+              <CopyIcon text={ip} label="IP address" />
+            </div>
           ))}
         </div>
       </td>

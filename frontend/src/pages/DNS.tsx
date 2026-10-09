@@ -10,6 +10,7 @@ import {
 } from '../api'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { EmptyRow, ErrorAlert, PageHeader, PageSpinner } from '../components/ui'
+import { CopyIcon } from '../components/CopyButton'
 
 const RECORD_TYPES = ['A', 'AAAA', 'CNAME']
 
@@ -195,9 +196,19 @@ export default function DNS() {
                   )}
                   {dns.extraRecords.map((r) => (
                     <tr key={`${r.name}-${r.type}-${r.value}`}>
-                      <td className="font-mono">{r.name}</td>
+                      <td className="font-mono">
+                        <span className="inline-flex items-center gap-1">
+                          {r.name}
+                          <CopyIcon text={r.name} label="record name" />
+                        </span>
+                      </td>
                       <td>{r.type}</td>
-                      <td className="font-mono">{r.value}</td>
+                      <td className="font-mono">
+                        <span className="inline-flex items-center gap-1">
+                          {r.value}
+                          <CopyIcon text={r.value} label="record value" />
+                        </span>
+                      </td>
                       {canManage && (
                         <td>
                           <button

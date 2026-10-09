@@ -17,7 +17,7 @@ import {
 } from '../api'
 import { useConfirm } from '../lib/confirm'
 import Modal from '../components/Modal'
-import CopyButton from '../components/CopyButton'
+import CopyButton, { CopyIcon } from '../components/CopyButton'
 import { ErrorAlert, PageHeader } from '../components/ui'
 
 function roleLabel(role: string): string {
@@ -131,7 +131,16 @@ export default function Users() {
                   <tbody>
                     {invites.map((i) => (
                       <tr key={i.id}>
-                        <td>{i.email ?? <span className="opacity-60">(link only)</span>}</td>
+                        <td>
+                          {i.email ? (
+                            <span className="inline-flex items-center gap-1">
+                              {i.email}
+                              <CopyIcon text={i.email} label="email" />
+                            </span>
+                          ) : (
+                            <span className="opacity-60">(link only)</span>
+                          )}
+                        </td>
                         <td>{roleLabel(i.role)}</td>
                         <td>{new Date(i.expiresAt).toLocaleString()}</td>
                         <td className="text-right">
@@ -191,10 +200,18 @@ function MemberRow({
   return (
     <tr>
       <td className="font-medium">
-        {m.name}
+        <span className="inline-flex items-center gap-1">
+          {m.name}
+          <CopyIcon text={m.name} label="name" />
+        </span>
         {caller && <span className="badge badge-ghost badge-sm ml-2">You</span>}
       </td>
-      <td>{m.email}</td>
+      <td>
+        <span className="inline-flex items-center gap-1">
+          {m.email}
+          <CopyIcon text={m.email} label="email" />
+        </span>
+      </td>
       <td>
         {canManage && m.role !== 'owner' ? (
           <select
