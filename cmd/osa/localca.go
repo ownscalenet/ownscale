@@ -14,7 +14,7 @@ import (
 func newGenLocalCACommand(rootFlags *ff.FlagSet) *ff.Command {
 	flags := ff.NewFlagSet("gen-local-ca").SetParent(rootFlags)
 	var caddyDataDir string
-	flags.StringVar(&caddyDataDir, 0, "caddy-data-dir", "", "path to Caddy's data volume (see docker-compose.yml's caddy-data); if set and a new CA was just generated, wipes Caddy's own cached PKI state under it so it doesn't keep signing certs from a now-orphaned intermediate CA tied to the old root")
+	flags.StringVar(&caddyDataDir, 0, "caddy-data-dir", "", "path to Caddy's data volume (see compose.dev.yaml's caddy-data); if set and a new CA was just generated, wipes Caddy's own cached PKI state under it so it doesn't keep signing certs from a now-orphaned intermediate CA tied to the old root")
 	return &ff.Command{
 		Name:      "gen-local-ca",
 		Usage:     "osa gen-local-ca [FLAGS]",

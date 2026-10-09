@@ -38,6 +38,9 @@ cp .env.example .env   # edit BASE_DOMAIN, OWNSCALE_AUTH_*, etc. -- see below
 docker compose up -d --build
 ```
 
+`compose.yaml` runs only `ownscale` and `caddy`; Caddy's configuration and
+this documentation site are built into its image.
+
 Once the stack is up, sign in at `https://console.<base_domain>/login`
 and create your first organization from the console.
 
@@ -72,15 +75,14 @@ For local dev, use a reserved-TLD placeholder domain like
 `ownscale.test` instead of a real one. Since it has no real wildcard
 DNS, add an `/etc/hosts` entry per subdomain you actually use
 (`ownscale.test`, `console.ownscale.test`, `dex.ownscale.test`, and one
-per organization created). Also set `CADDY_LOCAL_CERTS=local_certs` so
-Caddy issues certificates from its own internal CA instead of
-attempting real ACME issuance, which always fails for non-public
-domains.
+per organization created).
 
-The repository bundles a [Dex](https://dexidp.io/) instance for local
-dev as a zero-setup upstream OIDC provider, with one seeded test login
-(`admin@ownscale.test` / `ownscale`) -- `.env.example`'s
-`OWNSCALE_AUTH_UPSTREAM_OIDC_*` defaults already point at it.
+Uncomment the "Local development" block at the end of `.env.example` in
+your `.env`. It sets `COMPOSE_FILE=compose.yaml:compose.dev.yaml`, which
+adds a local root CA that Caddy issues every certificate from (real ACME
+issuance always fails for non-public domains) and a
+[Dex](https://dexidp.io/) instance as a zero-setup upstream OIDC provider,
+with one seeded test login (`admin@ownscale.test` / `ownscale`).
 
 See the repository's `README.md` for full details on local development
 (`make build`, `make dev-up`), production TLS (wildcard certificates

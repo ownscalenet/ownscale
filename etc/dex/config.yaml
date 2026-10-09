@@ -1,5 +1,5 @@
-# dexidp/dex configuration for local development only (see docker-compose.yml's
-# "dex" service and etc/caddy/Caddyfile's "dex.{$BASE_DOMAIN}" site block).
+# dexidp/dex configuration for local development only (see compose.dev.yaml's
+# "dex" service and etc/caddy/dev/sites.caddyfile).
 #
 # If you change BASE_DOMAIN away from the "ownscale.test" default in .env,
 # update "issuer" and "redirectURIs" below to match.

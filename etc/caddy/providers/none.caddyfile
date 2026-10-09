@@ -1,2 +1,2 @@
-# No DNS-01 provider: for local dev, where CADDY_LOCAL_CERTS issues every
-# certificate from the internal CA instead of ACME.
+# No DNS-01 provider: for local dev, where etc/caddy/dev/global.caddyfile
+# issues every certificate from the local CA instead of ACME.

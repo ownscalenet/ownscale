@@ -4,34 +4,11 @@
 	# credential env vars. "none" is for local dev.
 	import /etc/caddy/providers/{$DNS_PROVIDER:none}.caddyfile
 
-	# Set CADDY_LOCAL_CERTS=local_certs in .env whenever BASE_DOMAIN isn't a
-	# publicly-resolvable domain (e.g. "os.test", or any local dev domain
-	# under a reserved/non-public TLD -- see RFC 2606). This makes Caddy
-	# issue every certificate (including on-demand ones) from its own
-	# internal CA instead of attempting real ACME issuance via Let's
-	# Encrypt, which always fails for such domains ("Domain name does not
-	# end with a valid public suffix (TLD)"). Leave unset in production, so
-	# Caddy gets real, publicly-trusted certificates via ACME as usual.
-	{$CADDY_LOCAL_CERTS:}
+	# Local-dev options (local_certs, local CA). Only present when
+	# compose.dev.yaml mounts etc/caddy/dev; an unmatched glob is a no-op.
+	import /etc/caddy/dev/global*.caddyfile
 
-	# Sign every "internal"/local cert (i.e. whatever CADDY_LOCAL_CERTS
-	# above actually triggers) from a pre-generated root CA instead of one
-	# Caddy generates itself on first use -- see docker-compose.yml's
-	# "local-ca-init" service and localca, which idempotently
-	# generate this exact cert/key pair ahead of time, in every
-	# environment. That lets ownscale (and the headscale instances
-	# inside it) trust a single, always-already-existing file
-	# via a plain static mount.
-	pki {
-		ca local {
-			root {
-				cert /etc/ownscale-local-ca/root.crt
-				key /etc/ownscale-local-ca/root.key
-			}
-		}
-	}
-
-	# Set CADDY_LOG_LEVEL=debug in docker-compose.yaml to get verbose
+	# Set CADDY_LOG_LEVEL=debug in .env to get verbose
 	# debug-level logs from Caddy.
 	log {
 		level {$CADDY_LOG_LEVEL:INFO}
@@ -63,23 +40,14 @@ console.{$BASE_DOMAIN} {
 	reverse_proxy ownscale:8080
 }
 
-# Local-dev OIDC provider (dexidp/dex, see docker-compose.yml) that
-# ownscale federates its own login to (see auth,
-# auth.upstream_oidc.issuer in config.yaml). Exposing it through Caddy
-# under its own subdomain means the browser-facing authorization endpoint
-# and ownscale's server-to-server discovery/token/userinfo calls all hit
-# the same HTTPS origin, so no split browser-vs-backend endpoint config is
-# needed -- and it reuses the same local-CA trust story as every other
-# subdomain here.
-dex.{$BASE_DOMAIN} {
-	reverse_proxy dex:5556
-}
+# Local-dev sites (Dex), see the global import above.
+import /etc/caddy/dev/sites*.caddyfile
 
 # Route https://<sub>.{$BASE_DOMAIN} and https://<label>-<sub>.{$FUNNEL_DOMAIN}
 # (funnel) to the ownscale container. ownscale's SubdomainProxy dispatches
 # org-subdomain traffic to the right in-process headscale port, and its
 # funnelproxy routes funnel traffic into the org's tailnet. FUNNEL_DOMAIN
-# defaults to BASE_DOMAIN (see docker-compose.yml); a repeated address is fine.
+# defaults to BASE_DOMAIN (see compose.yaml); a repeated address is fine.
 *.{$BASE_DOMAIN}, *.{$FUNNEL_DOMAIN} {
 	handle {
 		reverse_proxy ownscale:8080 {

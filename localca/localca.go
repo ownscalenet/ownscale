@@ -1,7 +1,7 @@
 // Package localca generates and loads a self-signed root CA used only for
 // local development, when BASE_DOMAIN isn't a real, publicly resolvable
 // domain and Caddy therefore can't get publicly-trusted ACME certificates
-// (see docker-compose.yml's CADDY_LOCAL_CERTS env var).
+// (see compose.dev.yaml and etc/caddy/dev/global.caddyfile).
 package localca
 
 import (

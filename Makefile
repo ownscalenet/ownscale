@@ -2,7 +2,7 @@
 # app that builds directly into webui/dist, which is embedded into
 # the Go binary via go:embed.
 
-.PHONY: build frontend frontend-check backend osa restore test coverage archive
+.PHONY: build frontend site frontend-check backend osa restore test coverage archive
 .PHONY: docker-image caddy-image purge ci docs load-cert dev-up devbox stress
 .PHONY: e2e e2e-deps e2e-setup e2e-ssh
 .PHONY: e2e-frontend e2e-frontend-run e2e-connectivity
@@ -24,9 +24,13 @@ BASE_DOMAIN := $(if $(BASE_DOMAIN),$(BASE_DOMAIN),ownscale.test)
 
 build: frontend backend
 
-frontend:
+frontend: site
 	npm --prefix frontend ci
 	npm --prefix frontend run build
+
+# Docs site for the dev stack, which bind-mounts it over the copy that
+# etc/caddy/Dockerfile renders into the Caddy image.
+site:
 	rm -rf etc/caddy/site
 	hugo --source site --destination ../etc/caddy/site --minify
 
@@ -47,14 +51,17 @@ osa:
 # Build the images, start the full stack, then stream logs from all
 # containers. Organizations are created on each new user's first login.
 #
-# Also upserts HOST_UID/HOST_GID into .env: docker-compose.yml's
+# Requires the local development block of .env.example to be uncommented in
+# .env, so COMPOSE_FILE layers compose.dev.yaml on top of compose.yaml.
+#
+# Also upserts HOST_UID/HOST_GID into .env: compose.yaml's
 # user: "${HOST_UID:-0}:${HOST_GID:-0}" only sees these if they're in the shell
 # env or in .env
 #
 # Pass `make dev-up BUILD=1` to forward --build to `docker compose up`.
 BUILD ?=
 dev-up:
-	@touch .env
+	@grep -q '^COMPOSE_FILE=.*compose.dev.yaml' .env 2>/dev/null || { echo ".env has no COMPOSE_FILE with compose.dev.yaml -- uncomment the local development block from .env.example"; exit 1; }
 	@for kv in HOST_UID=$(HOST_UID) HOST_GID=$(HOST_GID); do \
 		key=$${kv%%=*}; \
 		grep -q "^$$key=" .env && sed -i "s|^$$key=.*|$$kv|" .env || echo "$$kv" >> .env; \
@@ -145,27 +152,20 @@ coverage:
 	BROWSER=$(BROWSER) go tool cover -html=coverage.out
 
 # Build the ownscale Docker image locally, tagged to match the "image:"
-# name docker-compose.yml expects for the ownscale service.
+# name compose.yaml expects for the ownscale service.
 docker-image:
 	docker build -t $(DOCKER_IMAGE) .
 
 caddy-image:
-	docker build -t $(CADDY_IMAGE) ./etc/caddy
+	docker build -t $(CADDY_IMAGE) -f etc/caddy/Dockerfile .
 
 # ghetto deploy script
-# Send the ownscale and caddy images and repo files to remote.
+# Send the ownscale and caddy images and compose.yaml to remote; the remote
+# only needs those plus its own .env.
 archive: docker-image caddy-image
 	docker save $(DOCKER_IMAGE) $(CADDY_IMAGE) | gzip | ssh az 'gzip -d | docker load'
 	ssh az mkdir -p ownscale
-	rsync -a --delete \
-		--exclude='.git' \
-		--exclude='.env' \
-		--exclude='data' \
-		--exclude='node_modules' \
-		--exclude='bin' \
-		--exclude='/etc/caddy/wildcard' \
-		--exclude='/etc/caddy/admin' \
-		./ az:ownscale/
+	scp compose.yaml az:ownscale/compose.yaml
 
 purge:
 	docker compose down

@@ -1,42 +1,16 @@
+# Production stack: ownscale behind Caddy. Local development layers
+# compose.dev.yaml on top (see COMPOSE_FILE in .env.example).
 services:
-  # One-shot: idempotently generates the local development root CA (see
-  # localca) that Caddy signs all its local certs from (see
-  # etc/caddy/Caddyfile's "pki" block), under ${OWNSCALE_DATA_DIR}/local-ca.
-  # Present (and harmless/unused) when using a real domain.
-  local-ca-init:
-    image: ownscale:latest
-    build: .
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - >
-        osa gen-local-ca --caddy-data-dir /caddy-data &&
-        chown -R "${HOST_UID:-0}:${HOST_GID:-0}" "$$OWNSCALE_DATA_DIR/local-ca"
-    environment:
-      OWNSCALE_DATA_DIR: ${OWNSCALE_DATA_DIR:?set OWNSCALE_DATA_DIR to an absolute host path in .env}
-    volumes:
-      - ${OWNSCALE_DATA_DIR}:${OWNSCALE_DATA_DIR}
-      - caddy-data:/caddy-data
-    networks:
-      - os-net
-
   ownscale:
     image: ownscale:latest
     build: .
-    depends_on:
-      local-ca-init:
-        condition: service_completed_successfully
-      dex:
-        condition: service_healthy
     user: "${HOST_UID:-0}:${HOST_GID:-0}"
     environment:
-      OWNSCALE_ADDR: ${OWNSCALE_ADDR:-:8080}
       OWNSCALE_BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
       OWNSCALE_FUNNEL_DOMAIN: ${FUNNEL_DOMAIN:-${BASE_DOMAIN:-ownscale.test}}
       OWNSCALE_FUNNEL_MAX_BODY_BYTES: ${FUNNEL_MAX_BODY_BYTES:-33554432}
       OWNSCALE_DATA_DIR: ${OWNSCALE_DATA_DIR:?set OWNSCALE_DATA_DIR to an absolute host path in .env}
-      OWNSCALE_LOCAL_CA_DIR: ${OWNSCALE_LOCAL_CA_DIR:-local-ca}
       OWNSCALE_DEVELOPMENT: ${OWNSCALE_DEVELOPMENT:-}
-      SSL_CERT_DIR: /etc/ssl/certs:/etc/pki/tls/certs:${OWNSCALE_DATA_DIR}/local-ca
       OWNSCALE_AUTH_SESSION_SECRET: ${OWNSCALE_AUTH_SESSION_SECRET:?set OWNSCALE_AUTH_SESSION_SECRET in .env}
       OWNSCALE_AUTH_UPSTREAM_OIDC_ISSUER: ${OWNSCALE_AUTH_UPSTREAM_OIDC_ISSUER:-}
       OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_ID: ${OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_ID:-}
@@ -76,44 +50,15 @@ services:
       retries: 3
       start_period: 5s
 
-  dex:
-    image: dexidp/dex:v2.45.1
-    # dex's config loader has no env-var interpolation of its own (unlike
-    # Caddy's Caddyfile), so this sed-renders
-    # config.yaml's $BASE_DOMAIN placeholder into a real config file
-    # under /tmp before starting dex, using the stock dexidp/dex image
-    # unmodified (the image already ships sed).
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - >
-        sed "s/\$$BASE_DOMAIN/$$BASE_DOMAIN/g" /etc/dex/config.yaml > /tmp/dex-config.yaml &&
-        exec dex serve /tmp/dex-config.yaml
-    environment:
-      BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
-    volumes:
-      - ./etc/dex/config.yaml:/etc/dex/config.yaml:ro
-    networks:
-      - os-net
-    restart: unless-stopped
-    healthcheck:
-      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5556/healthz"]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-      start_period: 5s
-
   caddy:
     image: ownscale-caddy:latest
     build:
-      context: ./etc/caddy
-    depends_on:
-      local-ca-init:
-        condition: service_completed_successfully
+      context: .
+      dockerfile: etc/caddy/Dockerfile
     environment:
       BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
       FUNNEL_DOMAIN: ${FUNNEL_DOMAIN:-${BASE_DOMAIN:-ownscale.test}}
-      CADDY_LOG_LEVEL: ${CADDY_LOG_LEVEL:-debug}
-      CADDY_LOCAL_CERTS: ${CADDY_LOCAL_CERTS:-}
+      CADDY_LOG_LEVEL: ${CADDY_LOG_LEVEL:-info}
       OWNSCALE_DEVELOPMENT: ${OWNSCALE_DEVELOPMENT:-}
       DNS_PROVIDER: ${DNS_PROVIDER:-none}
       AZURE_SUBSCRIPTION_ID: ${AZURE_SUBSCRIPTION_ID:-}
@@ -131,22 +76,12 @@ services:
       - "${CADDY_LISTEN_IP:-0.0.0.0}:80:80"
       - "${CADDY_LISTEN_IP:-0.0.0.0}:443:443"
       - "${CADDY_LISTEN_IP:-0.0.0.0}:443:443/udp"
+    # Caddyfile, DNS providers and docs site are baked into the image.
     volumes:
-      - ./etc/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./etc/caddy/providers:/etc/caddy/providers:ro
-      - ./etc/caddy/site:/srv/site:ro
       - caddy-data:/data
       - caddy-config:/config
-      - ${OWNSCALE_DATA_DIR}/local-ca:/etc/ownscale-local-ca:ro
     networks:
-      os-net:
-        # Non-public BASE_DOMAINs (e.g. "ownscale.test") have no real DNS, so
-        # the ownscale service's outbound HTTPS calls must resolve these names
-        # to Caddy: Dex (auth.upstream_oidc.issuer) and the console itself
-        # (the OIDC issuer the in-process headscale instances discover).
-        aliases:
-          - dex.${BASE_DOMAIN:-ownscale.test}
-          - console.${BASE_DOMAIN:-ownscale.test}
+      - os-net
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:2019/config/"]
       interval: 10s

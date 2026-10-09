@@ -1,0 +1,77 @@
+# Local development overlay for compose.yaml: adds a local root CA and Dex
+# as the upstream OIDC provider. Enabled via COMPOSE_FILE in .env.
+services:
+  # One-shot: idempotently generates the local development root CA (see
+  # localca) that Caddy signs all its local certs from (see
+  # etc/caddy/dev/global.caddyfile), under ${OWNSCALE_DATA_DIR}/local-ca.
+  local-ca-init:
+    image: ownscale:latest
+    build: .
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        osa gen-local-ca --caddy-data-dir /caddy-data &&
+        chown -R "${HOST_UID:-0}:${HOST_GID:-0}" "$$OWNSCALE_DATA_DIR/local-ca"
+    environment:
+      OWNSCALE_DATA_DIR: ${OWNSCALE_DATA_DIR:?set OWNSCALE_DATA_DIR to an absolute host path in .env}
+    volumes:
+      - ${OWNSCALE_DATA_DIR}:${OWNSCALE_DATA_DIR}
+      - caddy-data:/caddy-data
+    networks:
+      - os-net
+
+  dex:
+    image: dexidp/dex:v2.45.1
+    # dex's config loader has no env-var interpolation of its own (unlike
+    # Caddy's Caddyfile), so this sed-renders
+    # config.yaml's $BASE_DOMAIN placeholder into a real config file
+    # under /tmp before starting dex, using the stock dexidp/dex image
+    # unmodified (the image already ships sed).
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >
+        sed "s/\$$BASE_DOMAIN/$$BASE_DOMAIN/g" /etc/dex/config.yaml > /tmp/dex-config.yaml &&
+        exec dex serve /tmp/dex-config.yaml
+    environment:
+      BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
+    volumes:
+      - ./etc/dex/config.yaml:/etc/dex/config.yaml:ro
+    networks:
+      - os-net
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5556/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  ownscale:
+    depends_on:
+      local-ca-init:
+        condition: service_completed_successfully
+      dex:
+        condition: service_healthy
+    environment:
+      SSL_CERT_DIR: /etc/ssl/certs:/etc/pki/tls/certs:${OWNSCALE_DATA_DIR}/local-ca
+
+  caddy:
+    depends_on:
+      local-ca-init:
+        condition: service_completed_successfully
+    # Bind mounts override the baked-in Caddyfile and docs site so edits only
+    # need a restart; dev/ holds the local_certs, PKI and Dex snippets.
+    volumes:
+      - ./etc/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./etc/caddy/site:/srv/site:ro
+      - ./etc/caddy/dev:/etc/caddy/dev:ro
+      - ${OWNSCALE_DATA_DIR}/local-ca:/etc/ownscale-local-ca:ro
+    networks:
+      os-net:
+        # Non-public BASE_DOMAINs (e.g. "ownscale.test") have no real DNS, so
+        # the ownscale service's outbound HTTPS calls must resolve these names
+        # to Caddy: Dex (auth.upstream_oidc.issuer) and the console itself
+        # (the OIDC issuer the in-process headscale instances discover).
+        aliases:
+          - dex.${BASE_DOMAIN:-ownscale.test}
+          - console.${BASE_DOMAIN:-ownscale.test}

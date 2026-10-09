@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test'
 
-// baseURL matches docker-compose.yml/.env.example's default BASE_DOMAIN
+// baseURL matches the dev BASE_DOMAIN in .env.example
 // ("ownscale.test"), with the console served at its "console." subdomain;
 // override with E2E_BASE_URL if your local .env uses a different domain.
 // Requires `make dev-up` already running (see README.md).

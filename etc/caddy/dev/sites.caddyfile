@@ -1,0 +1,5 @@
+# Local-dev OIDC provider (dexidp/dex, see compose.dev.yaml) that ownscale
+# federates its own login to.
+dex.{$BASE_DOMAIN} {
+	reverse_proxy dex:5556
+}
