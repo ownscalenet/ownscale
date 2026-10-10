@@ -12,7 +12,7 @@ Playwright and its browser binaries never weigh down the production
 
 1. `make dev-up` running (see the repository README's "Local development" /
    "Deployment" sections) with `BASE_DOMAIN=ownscale.test` (the default in
-   `.env.example`), including the `/etc/hosts` entries it documents.
+   `example.env`), including the `/etc/hosts` entries it documents.
 2. Node.js (matching `frontend/`'s toolchain).
 3. Go and the repository's Go dependencies, plus `/etc/hosts` entries for
    the e2e accounts' organizations, which tests that register real devices

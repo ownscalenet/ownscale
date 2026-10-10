@@ -32,14 +32,36 @@ organization's subdomain).
 ## Quick start
 
 ```sh
-git clone https://github.com/ownscalenet/ownscale.git
-cd ownscale
-cp .env.example .env   # edit BASE_DOMAIN, OWNSCALE_AUTH_*, etc. -- see below
-docker compose up -d --build
+gh auth login  # account with access to the private ownscale repository
+mkdir ownscale && cd ownscale
+TAG=v0.1.0  # select a release with successfully published deployment assets
+gh release download "$TAG" --repo ownscalenet/ownscale \
+  --pattern compose.yaml --pattern example.env
+cp example.env .env   # configure the settings below, including DNS_PROVIDER
+printf '%s' "$GHCR_READ_TOKEN" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+docker compose pull
+docker compose up -d
 ```
 
+Release images currently support **linux/amd64** only. Both GHCR packages are
+private: use a token with `read:packages` and access to `ownscale` and
+`ownscale-caddy`, authorized for organization SSO if required. Release downloads
+also require repository access. Do not put tokens in `.env` or shell command
+arguments.
+
 `compose.yaml` runs only `ownscale` and `caddy`; Caddy's configuration and
-this documentation site are built into its image.
+this documentation site are built into its image. Release files pin both images
+to the selected version and require no source checkout. Assets become available
+after the release deployment workflow succeeds; a newly published release may
+still be building. Latest-release shortcuts do not select prereleases.
+
+To upgrade, download both files for the desired tag using
+`gh release download --clobber`, review new example settings, then run
+`docker compose pull && docker compose up -d`. Keep your existing `.env` and data
+directory; do not overwrite configuration with the new example.
+
+For a source installation instead, clone the repository, copy `example.env`
+to `.env`, configure it, and run `docker compose up -d --build`.
 
 Once the stack is up, sign in at `https://console.<base_domain>/login`
 and create your first organization from the console.
@@ -47,7 +69,8 @@ and create your first organization from the console.
 ## Core configuration
 
 All configuration is via environment variables in `.env` (see
-`.env.example` in the repository for the full, documented list). At
+`example.env` in the release or repository for the full
+documented list). At
 minimum, set:
 
 - `BASE_DOMAIN` -- the wildcard domain covered by your DNS record
@@ -77,7 +100,7 @@ DNS, add an `/etc/hosts` entry per subdomain you actually use
 (`ownscale.test`, `console.ownscale.test`, `dex.ownscale.test`, and one
 per organization created).
 
-Uncomment the "Local development" block at the end of `.env.example` in
+Uncomment the "Local development" block at the end of `example.env` in
 your `.env`. It sets `COMPOSE_FILE=compose.yaml:compose.dev.yaml`, which
 adds a local root CA that Caddy issues every certificate from (real ACME
 issuance always fails for non-public domains) and a

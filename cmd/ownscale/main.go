@@ -20,7 +20,6 @@ import (
 	"github.com/ownscalenet/ownscale/debugserver"
 	"github.com/ownscalenet/ownscale/handlers"
 	"github.com/ownscalenet/ownscale/logging"
-	"github.com/ownscalenet/ownscale/proxycheck"
 	"github.com/ownscalenet/ownscale/server"
 	"github.com/ownscalenet/ownscale/tlsask"
 	"github.com/ownscalenet/ownscale/webui"
@@ -116,7 +115,7 @@ func run() error {
 		return auth.RequireAuthAPI(queries.Queries, next)
 	}
 	consoleMux := server.NewMux(h, requireAuthAPI, logger, webui.Handler(cfg.Development), provider)
-	handler := proxycheck.Wrap(server.NewSubdomainProxy(consoleMux, cfg.BaseDomain, h.DialOrg, logger), cfg.BaseDomain)
+	handler := server.NewSubdomainProxy(consoleMux, cfg.BaseDomain, h.DialOrg, logger)
 
 	// No Read/WriteTimeout: headscale long-polls and funnel WebSockets stay open.
 	srv := &http.Server{

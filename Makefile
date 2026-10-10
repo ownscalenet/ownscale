@@ -51,7 +51,7 @@ osa:
 # Build the images, start the full stack, then stream logs from all
 # containers. Organizations are created on each new user's first login.
 #
-# Requires the local development block of .env.example to be uncommented in
+# Requires the local development block of example.env to be uncommented in
 # .env, so COMPOSE_FILE layers compose.dev.yaml on top of compose.yaml.
 #
 # Also upserts HOST_UID/HOST_GID into .env: compose.yaml's
@@ -61,7 +61,7 @@ osa:
 # Pass `make dev-up BUILD=1` to forward --build to `docker compose up`.
 BUILD ?=
 dev-up:
-	@grep -q '^COMPOSE_FILE=.*compose.dev.yaml' .env 2>/dev/null || { echo ".env has no COMPOSE_FILE with compose.dev.yaml -- uncomment the local development block from .env.example"; exit 1; }
+	@grep -q '^COMPOSE_FILE=.*compose.dev.yaml' .env 2>/dev/null || { echo ".env has no COMPOSE_FILE with compose.dev.yaml -- uncomment the local development block from example.env"; exit 1; }
 	@for kv in HOST_UID=$(HOST_UID) HOST_GID=$(HOST_GID); do \
 		key=$${kv%%=*}; \
 		grep -q "^$$key=" .env && sed -i "s|^$$key=.*|$$kv|" .env || echo "$$kv" >> .env; \

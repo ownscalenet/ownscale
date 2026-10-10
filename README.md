@@ -1,7 +1,7 @@
 ### Local development
 
 ```sh
-cp .env.example .env   # edit BASE_DOMAIN, OWNSCALE_AUTH_*, etc.
+cp example.env .env   # edit BASE_DOMAIN, OWNSCALE_AUTH_*, etc.
 make build              # builds frontend/ into webui/dist, then `go build`
 set -a; source .env; set +a
 ./bin/ownscale   # start server on :8080
@@ -20,12 +20,12 @@ There are two stacks:
 
 ```sh
 # production
-cp .env.example .env   # edit BASE_DOMAIN, DNS_PROVIDER, OWNSCALE_AUTH_*, etc.
+cp example.env .env   # edit BASE_DOMAIN, DNS_PROVIDER, OWNSCALE_AUTH_*, etc.
 docker compose up -d
 docker compose exec ownscale osa organization list
 
 # local development
-cp .env.example .env   # uncomment the "Local development" block at the end
+cp example.env .env   # uncomment the "Local development" block at the end
 make dev-up BUILD=1
 ```
 
@@ -56,7 +56,7 @@ All SQLite dbs are gathered under a single directory, `OWNSCALE_DATA_DIR`.
 ownscale continuously replicates its own database and every organization's
 headscale database with [Litestream](https://litestream.io), embedded as a
 library (see the `backup` package). Configure it via `.env` (see
-`.env.example`): `OWNSCALE_BACKUP_REPLICA_URL` enables backups (e.g.
+`example.env`): `OWNSCALE_BACKUP_REPLICA_URL` enables backups (e.g.
 `s3://my-backup-bucket/ownscale`); `OWNSCALE_BACKUP_ACCESS_KEY_ID`/
 `OWNSCALE_BACKUP_SECRET_ACCESS_KEY` (or an IAM role), `OWNSCALE_BACKUP_REGION`,
 and `OWNSCALE_BACKUP_ENDPOINT` (for S3-compatible backends) are optional.
@@ -90,7 +90,7 @@ See
 For local dev, `compose.dev.yaml` bundles a
 [Dex](https://dexidp.io/) instance (see the `dex` service and
 `etc/dex/config.yaml`) as a lightweight, zero-external-account-setup
-upstream provider — the local development block of `.env.example` points
+upstream provider — the local development block of `example.env` points
 `OWNSCALE_AUTH_UPSTREAM_OIDC_*` at it. It seeds one test login: `admin@ownscale.test` /
 `ownscale`. Add more entries to `etc/dex/config.yaml`'s `staticPasswords`
 to test with additional users. In production, point `OWNSCALE_AUTH_UPSTREAM_OIDC_*`
@@ -118,7 +118,7 @@ relies on to reach Caddy for `console.` and `dex.` (`ownscale`/`osa` reject
 `OWNSCALE_BASE_DOMAIN=localhost` outright).
 
 For local dev, use a private, [RFC 2606](https://www.rfc-editor.org/rfc/rfc2606)-reserved
-TLD like **`ownscale.test`** (set by the local development block of `.env.example`). It has no
+TLD like **`ownscale.test`** (set by the local development block of `example.env`). It has no
 real wildcard DNS, so every
 subdomain you actually use locally needs an `/etc/hosts` entry pointing at
 `127.0.0.1`: `ownscale.test`, `console.ownscale.test`, `dex.ownscale.test`,
@@ -138,7 +138,7 @@ doesn't mount it, so Caddy gets publicly-trusted certificates.
 
 For organizations names and funnels we use separate subdomains. TLS is done with
 a wildcard certificate, which needs a DNS-01 challenge. Funnels can live on a
-separate domain (`FUNNEL_DOMAIN`, see `.env.example`), which gets its own
+separate domain (`FUNNEL_DOMAIN`, see `example.env`), which gets its own
 wildcard certificate from the same DNS provider. Caddy ships with plugins
 for 5 providers (see `etc/caddy/providers/`); pick one with `DNS_PROVIDER` in
 `.env` and set that provider's credential vars: `azure` (default), `cloudflare`,

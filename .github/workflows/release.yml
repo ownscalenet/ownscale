@@ -1,0 +1,184 @@
+name: Release deployment
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing published release tag (for example v0.1.0)
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: release-deployment-${{ github.event.release.tag_name || inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    env:
+      TAG: ${{ github.event.release.tag_name || inputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - name: Validate existing release
+        shell: bash
+        run: |
+          [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9][A-Za-z0-9.-]*)?$ && ${#TAG} -le 128 ]] || {
+            echo "::error::Invalid release tag"
+            exit 1
+          }
+          gh release view "$TAG" --json isDraft --jq '.isDraft' > "$RUNNER_TEMP/is-draft"
+          test "$(cat "$RUNNER_TEMP/is-draft")" = false
+
+      # Automation can be newer than the tag when backfilling old releases.
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          path: automation
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: refs/tags/${{ env.TAG }}
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: automation/go.mod
+          cache-dependency-path: automation/go.sum
+
+      - name: Generate deployment assets
+        working-directory: automation
+        run: |
+          go test ./tools/releaseassets
+          go run ./tools/releaseassets -tag "$TAG" -source ../source -output ../deployment
+
+      - name: Validate standalone Compose deployment
+        working-directory: deployment
+        run: |
+          cp example.env .env
+          docker compose config --format json > "$RUNNER_TEMP/compose.json"
+          jq -e --arg tag "$TAG" '
+            (.services | keys) == ["caddy", "ownscale"] and
+            .services.ownscale.image == ("ghcr.io/ownscalenet/ownscale:" + $tag) and
+            .services.caddy.image == ("ghcr.io/ownscalenet/ownscale-caddy:" + $tag) and
+            ([.services[] | has("build")] | any | not)
+          ' "$RUNNER_TEMP/compose.json"
+          rm .env
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: source/frontend/package-lock.json
+      - name: Build tagged frontend
+        working-directory: source/frontend
+        run: |
+          npm ci
+          npm run build
+          test -s ../webui/dist/assets/index.js
+
+      - name: Resolve source revision
+        id: revision
+        working-directory: source
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+
+      - name: Build ownscale image
+        uses: docker/build-push-action@v6
+        with:
+          context: source
+          file: source/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: ghcr.io/ownscalenet/ownscale:${{ env.TAG }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.revision.outputs.sha }}
+            org.opencontainers.image.version=${{ env.TAG }}
+          cache-from: type=gha,scope=ownscale
+          cache-to: type=gha,mode=max,scope=ownscale
+      - name: Build Caddy image
+        uses: docker/build-push-action@v6
+        with:
+          context: source
+          file: source/etc/caddy/Dockerfile
+          platforms: linux/amd64
+          load: true
+          tags: ghcr.io/ownscalenet/ownscale-caddy:${{ env.TAG }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ steps.revision.outputs.sha }}
+            org.opencontainers.image.version=${{ env.TAG }}
+          cache-from: type=gha,scope=caddy
+          cache-to: type=gha,mode=max,scope=caddy
+      - name: Smoke-test packaged images
+        run: |
+          docker run --rm --entrypoint osa "ghcr.io/ownscalenet/ownscale:$TAG" --help
+          docker run --rm --entrypoint sh "ghcr.io/ownscalenet/ownscale-caddy:$TAG" -ec '
+            test -s /srv/site/index.html
+            test -s /etc/caddy/Caddyfile
+            caddy list-modules | grep -q dns.providers.cloudflare
+          '
+      - name: Verify embedded frontend over HTTP
+        shell: bash
+        run: |
+          cleanup() {
+            result=$?
+            if [ "$result" -ne 0 ]; then docker logs ownscale-release-smoke; fi
+            docker rm -f ownscale-release-smoke
+            exit "$result"
+          }
+          docker run -d --name ownscale-release-smoke -p 127.0.0.1::8080 \
+            -e OWNSCALE_BASE_DOMAIN=example.com \
+            -e OWNSCALE_DATA_DIR=/tmp/ownscale-data \
+            -e OWNSCALE_AUTH_SESSION_SECRET=release-smoke-only \
+            "ghcr.io/ownscalenet/ownscale:$TAG"
+          trap cleanup EXIT
+          address=$(docker port ownscale-release-smoke 8080/tcp)
+          curl --fail --silent --show-error --retry 20 --retry-delay 1 \
+            --retry-all-errors -H 'Host: console.example.com' \
+            "http://$address/login" -o "$RUNNER_TEMP/login.html"
+          cmp source/webui/dist/index.html "$RUNNER_TEMP/login.html"
+          curl --fail --silent --show-error -H 'Host: console.example.com' \
+            "http://$address/assets/index.js" -o "$RUNNER_TEMP/index.js"
+          cmp source/webui/dist/assets/index.js "$RUNNER_TEMP/index.js"
+      - name: Publish exact release tags
+        run: |
+          docker push "ghcr.io/ownscalenet/ownscale:$TAG"
+          docker push "ghcr.io/ownscalenet/ownscale-caddy:$TAG"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deployment
+          path: |
+            deployment/compose.yaml
+            deployment/example.env
+          if-no-files-found: error
+
+  attach:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: deployment
+          path: deployment
+      - name: Attach deployment files
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event.release.tag_name || inputs.tag }}
+        run: gh release upload "$TAG" deployment/compose.yaml deployment/example.env --clobber

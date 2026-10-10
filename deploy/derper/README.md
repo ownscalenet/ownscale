@@ -4,7 +4,7 @@
 Tailscale/headscale nodes use when a direct peer-to-peer connection can't be
 established. By default, every organization's headscale instance uses Tailscale's public DERP map, which ownscale fetches every 3h from `OWNSCALE_DERP_MAP_URL`. This
 directory lets you run your own instead, and have every organization's
-headscale point at it (see `OWNSCALE_DERP_MAP_URL` in `.env.example`).
+headscale point at it (see `OWNSCALE_DERP_MAP_URL` in the root `example.env`).
 
 ## Why a separate server?
 

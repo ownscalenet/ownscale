@@ -1,6 +1,6 @@
 import { defineConfig, devices } from '@playwright/test'
 
-// baseURL matches the dev BASE_DOMAIN in .env.example
+// baseURL matches the dev BASE_DOMAIN in example.env
 // ("ownscale.test"), with the console served at its "console." subdomain;
 // override with E2E_BASE_URL if your local .env uses a different domain.
 // Requires `make dev-up` already running (see README.md).

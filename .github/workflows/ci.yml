@@ -27,6 +27,12 @@ jobs:
       - run: go vet ./...
       - run: go fix ./...
       - run: go test -race -shuffle=on -covermode=atomic -coverprofile=coverage.out ./...
+      - name: Validate release deployment files
+        run: |
+          go run ./tools/releaseassets -tag v0.0.0-ci -source . -output "$RUNNER_TEMP/deployment"
+          cp "$RUNNER_TEMP/deployment/example.env" "$RUNNER_TEMP/deployment/.env"
+          cd "$RUNNER_TEMP/deployment"
+          docker compose config --quiet
       - uses: actions/upload-artifact@v4
         with:
           name: coverage

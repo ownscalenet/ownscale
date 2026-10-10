@@ -15,7 +15,7 @@ import (
 )
 
 // Config is the admin panel's runtime configuration.
-// See .env.example for documentation about these fields.
+// See example.env for documentation about these fields.
 type Config struct {
 	Development bool   `env:"OWNSCALE_DEVELOPMENT"`
 	Addr        string `env:"OWNSCALE_ADDR"`

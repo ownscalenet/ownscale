@@ -1,5 +1,5 @@
-# Production stack: ownscale behind Caddy. Local development layers
-# compose.dev.yaml on top (see COMPOSE_FILE in .env.example).
+# Production stack: ownscale behind Caddy.
+# Local development layers compose.dev.yaml on top (see COMPOSE_FILE in example.env).
 name: ownscale
 
 services:
