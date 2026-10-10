@@ -1,12 +1,47 @@
 import type { ReactNode } from 'react'
 
-// PageHeader is a page's title, with the page's main actions next to it.
-export function PageHeader({ title, children }: { title: string; children?: ReactNode }) {
+// PageHeader is a page's title, with an optional subtitle and the page's
+// main actions next to it.
+export function PageHeader({
+  title,
+  subtitle,
+  children,
+}: {
+  title: string
+  subtitle?: ReactNode
+  children?: ReactNode
+}) {
   return (
-    <div className="flex items-center justify-between mb-4">
-      <h1 className="text-2xl font-bold">{title}</h1>
+    <div className="flex flex-wrap items-center justify-between gap-3 mb-5">
+      <div className="min-w-0">
+        <h1 className="text-[22px] font-semibold tracking-tight">{title}</h1>
+        {subtitle && <p className="text-sm text-base-content/60 mt-0.5">{subtitle}</p>}
+      </div>
       {children}
     </div>
+  )
+}
+
+const statusStyles = {
+  online: { badge: 'badge-success badge-soft', marker: 'size-1.5 rounded-full bg-current' },
+  offline: {
+    badge: 'badge-outline text-base-content/60',
+    marker: 'size-1.5 rounded-full border border-current',
+  },
+  expired: {
+    badge: 'badge-warning badge-soft',
+    marker: 'size-1.5 rotate-45 bg-current',
+  },
+}
+
+// StatusBadge shows a machine status by marker shape and label, not color alone.
+export function StatusBadge({ status }: { status: keyof typeof statusStyles }) {
+  const st = statusStyles[status]
+  return (
+    <span className={`badge badge-sm gap-1.5 ${st.badge}`}>
+      <span className={st.marker} aria-hidden="true" />
+      {status[0].toUpperCase() + status.slice(1)}
+    </span>
   )
 }
 

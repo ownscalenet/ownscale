@@ -22,7 +22,7 @@ import {
   type AssignableUser,
   type Machine,
 } from '../api'
-import { ErrorAlert, PageHeader } from '../components/ui'
+import { ErrorAlert, PageHeader, StatusBadge } from '../components/ui'
 
 // refreshIntervalMs is how often the Machines page reloads the list, so online
 // status, last seen and expiry stay current.
@@ -85,6 +85,7 @@ function downloadCsv(filename: string, csv: string) {
 
 export default function Machines() {
   usePageTitle('Machines')
+  const { organization } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const q = searchParams.get('q') ?? ''
   const userFilter = searchParams.get('user') ?? ''
@@ -143,7 +144,19 @@ export default function Machines() {
 
   return (
     <>
-      <PageHeader title="Machines">
+      <PageHeader
+        title="Machines"
+        subtitle={
+          organization && (
+            <>
+              Login server{' '}
+              <span className="font-mono text-base-content">
+                {window.location.protocol}//{organization.Domain}
+              </span>
+            </>
+          )
+        }
+      >
         {!notConfigured && (
           <button
             type="button"
@@ -656,7 +669,7 @@ function MachineRow({
           )}
         </div>
         <div className="flex flex-wrap gap-1 mt-1">
-          {expired && <span className="badge badge-error badge-sm">Expired</span>}
+          {expired && <StatusBadge status="expired" />}
           {!m.expiry && <span className="badge badge-ghost badge-sm">No expiry</span>}
           {m.internal && (
             <a
