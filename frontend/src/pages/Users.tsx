@@ -1,3 +1,4 @@
+import { Ban, Copy, Crown, Link, Trash2, UserPlus } from 'lucide-react'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../auth'
@@ -75,6 +76,7 @@ export default function Users() {
             className="btn btn-primary btn-sm"
             onClick={() => setInviting(true)}
           >
+            <UserPlus className="size-3.5" aria-hidden="true" />
             Invite member
           </button>
         )}
@@ -148,6 +150,7 @@ export default function Users() {
                             text={`${window.location.origin}/invite/${i.token}`}
                             className="btn btn-xs btn-outline mr-2"
                           >
+                            <Copy className="size-3.5" aria-hidden="true" />
                             Copy link
                           </CopyButton>
                           <button
@@ -156,6 +159,7 @@ export default function Users() {
                             disabled={busy}
                             onClick={() => run(() => deleteInvite(i.id))}
                           >
+                            <Ban className="size-3.5" aria-hidden="true" />
                             Revoke
                           </button>
                         </td>
@@ -244,12 +248,13 @@ function MemberRow({
               onClick={async () => {
                 const ok = await confirm({
                   title: `Transfer ownership to ${m.name}?`,
-                  message: 'You will become an admin.',
+                  consequences: ['You will become an admin.'],
                   confirmLabel: 'Transfer ownership',
                 })
                 if (ok) run(() => transferOwnership(m.id))
               }}
             >
+              <Crown className="size-3.5" aria-hidden="true" />
               Make owner
             </button>
           )}
@@ -261,13 +266,18 @@ function MemberRow({
               onClick={async () => {
                 const ok = await confirm({
                   title: `Remove ${m.name} from this organization?`,
-                  message: 'Their machines will be removed from the tailnet.',
+                  consequences: [
+                    'Their machines will be removed from the tailnet.',
+                    'They lose access to this organization.',
+                  ],
                   confirmLabel: 'Remove member',
-                  danger: true,
+                  tone: 'danger',
+                  typeToConfirm: m.email,
                 })
                 if (ok) run(() => removeMember(m.id))
               }}
             >
+              <Trash2 className="size-3.5" aria-hidden="true" />
               Remove
             </button>
           )}
@@ -302,6 +312,7 @@ function InviteDialog({ onClose, onCreated }: { onClose: () => void; onCreated: 
               value={link}
             />
             <CopyButton text={link} className="btn join-item">
+              <Copy className="size-3.5" aria-hidden="true" />
               Copy
             </CopyButton>
           </div>
@@ -351,6 +362,7 @@ function InviteDialog({ onClose, onCreated }: { onClose: () => void; onCreated: 
           </fieldset>
           <div className="modal-action">
             <button type="submit" className="btn btn-primary" disabled={create.isPending}>
+              <Link className="size-3.5" aria-hidden="true" />
               Create invite link
             </button>
             <button type="button" className="btn btn-ghost" onClick={onClose}>

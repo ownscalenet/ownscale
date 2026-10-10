@@ -1,3 +1,4 @@
+import { Ellipsis, LogOut, Pencil, Plus, Route, Tag, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -163,6 +164,7 @@ export default function Machines() {
             className="btn btn-sm btn-primary"
             onClick={() => setDialog({ kind: 'register' })}
           >
+            <Plus className="size-3.5" aria-hidden="true" />
             Register machine
           </button>
         )}
@@ -611,6 +613,7 @@ function RemoveInternalDialog({
           disabled={busy || (funnels === null && !funnelsError)}
           onClick={() => run(() => deleteMachine(m.id))}
         >
+          <Trash2 className="size-3.5" aria-hidden="true" />
           Delete machine and funnels
         </button>
         <button type="button" className="btn btn-ghost" onClick={onClose}>
@@ -714,7 +717,9 @@ function MachineRow({
         {/* Headless UI renders the items in a portal next to the button, so the
             table's scroll container can't clip them. */}
         <Menu>
-          <MenuButton className="btn btn-sm btn-ghost">⋯</MenuButton>
+          <MenuButton className="btn btn-sm btn-ghost btn-square" aria-label="Actions">
+            <Ellipsis className="size-4" aria-hidden="true" />
+          </MenuButton>
           <MenuItems
             as="ul"
             anchor="bottom end"
@@ -728,6 +733,7 @@ function MachineRow({
                   disabled={m.internal || !canEdit}
                   onClick={() => onOpen('rename')}
                 >
+                  <Pencil className="size-3.5" aria-hidden="true" />
                   Edit machine name
                 </button>
               </MenuItem>
@@ -740,6 +746,7 @@ function MachineRow({
                   disabled={m.internal || !canManage}
                   onClick={() => onOpen('tags')}
                 >
+                  <Tag className="size-3.5" aria-hidden="true" />
                   Edit ACL tags
                 </button>
               </MenuItem>
@@ -752,6 +759,7 @@ function MachineRow({
                   disabled={m.internal || !canManage}
                   onClick={() => onOpen('routes')}
                 >
+                  <Route className="size-3.5" aria-hidden="true" />
                   Edit route settings
                 </button>
               </MenuItem>
@@ -765,13 +773,17 @@ function MachineRow({
                   onClick={async () => {
                     const ok = await confirm({
                       title: `Expire the session of ${m.givenName}?`,
-                      message: 'It will have to log in again to reconnect.',
+                      consequences: [
+                        'It is disconnected now and has to log in again to reconnect.',
+                        'Nothing is deleted.',
+                      ],
                       confirmLabel: 'Expire session',
-                      danger: true,
+                      tone: 'danger',
                     })
                     if (ok) run(() => expireMachine(m.id))
                   }}
                 >
+                  <LogOut className="size-3.5" aria-hidden="true" />
                   Expire session
                 </button>
               </MenuItem>
@@ -789,13 +801,18 @@ function MachineRow({
                     }
                     const ok = await confirm({
                       title: `Permanently remove ${m.givenName}?`,
-                      message: 'It will be removed from the tailnet.',
+                      consequences: [
+                        'It is removed from the tailnet and disconnected.',
+                        "This can't be undone.",
+                      ],
                       confirmLabel: 'Remove',
-                      danger: true,
+                      tone: 'danger',
+                      typeToConfirm: m.givenName,
                     })
                     if (ok) run(() => deleteMachine(m.id))
                   }}
                 >
+                  <Trash2 className="size-3.5" aria-hidden="true" />
                   Remove
                 </button>
               </MenuItem>

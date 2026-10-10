@@ -108,7 +108,7 @@ test('a funnel works again after its internal funnel machine is deleted', async 
     // Deleting the internal machine deletes its funnels too.
     await page.goto('/machines')
     const funnelRow = page.getByRole('row').filter({ hasText: funnelMachine })
-    await funnelRow.getByRole('button', { name: '⋯', exact: true }).click()
+    await funnelRow.getByRole('button', { name: 'Actions', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Remove', exact: true }).click()
     await confirmDialog(page, 'Delete machine and funnels')
     // The deletion waits for the funnel's tsnet server to close.

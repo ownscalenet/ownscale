@@ -1,3 +1,4 @@
+import { AlignLeft, Save } from 'lucide-react'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -165,6 +166,7 @@ export default function AuthRestrictions() {
                       {formatting ? (
                         <span className="loading loading-spinner loading-xs"></span>
                       ) : null}
+                      <AlignLeft className="size-3.5" aria-hidden="true" />
                       Format
                     </button>
                   )}
@@ -176,6 +178,7 @@ export default function AuthRestrictions() {
                       onClick={handleSave}
                     >
                       {saving ? <span className="loading loading-spinner loading-xs"></span> : null}
+                      <Save className="size-3.5" aria-hidden="true" />
                       Save
                     </button>
                   )}

@@ -1,3 +1,4 @@
+import { Check, Copy, X } from 'lucide-react'
 import { useEffect, useState, type MouseEvent, type ReactNode } from 'react'
 
 type CopyResult = 'copied' | 'failed' | null
@@ -60,6 +61,7 @@ export default function CopyButton({
 export function CopyIcon({ text, label }: { text: string; label: string }) {
   const { result, open, copy } = useCopy(text)
   const tip = result === 'copied' ? 'Copied!' : result === 'failed' ? 'Copy failed' : 'Copy'
+  const Icon = result === 'copied' ? Check : result === 'failed' ? X : Copy
   const tooltipColor =
     result === 'copied' ? 'tooltip-success' : result === 'failed' ? 'tooltip-error' : ''
 
@@ -79,32 +81,16 @@ export function CopyIcon({ text, label }: { text: string; label: string }) {
         aria-label={`Copy ${label}`}
         onClick={onClick}
       >
-        <svg
-          xmlns="http://www.w3.org/2000/svg"
-          className={`h-3.5 w-3.5 ${
+        <Icon
+          className={`size-3.5 ${
             result === 'copied'
               ? 'text-success'
               : result === 'failed'
                 ? 'text-error'
                 : 'opacity-60 hover:opacity-100'
           }`}
-          fill="none"
-          viewBox="0 0 24 24"
-          stroke="currentColor"
-          strokeWidth={2}
           aria-hidden="true"
-        >
-          {result === 'copied' ? (
-            <path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" />
-          ) : result === 'failed' ? (
-            <path strokeLinecap="round" strokeLinejoin="round" d="M6 6l12 12M18 6L6 18" />
-          ) : (
-            <>
-              <rect x="9" y="9" width="11" height="11" rx="2" />
-              <path strokeLinecap="round" strokeLinejoin="round" d="M5 15V5a2 2 0 0 1 2-2h8" />
-            </>
-          )}
-        </svg>
+        />
       </button>
       <span className="sr-only" aria-live="polite">
         {result ? tip : ''}

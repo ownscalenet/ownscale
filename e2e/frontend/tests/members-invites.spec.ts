@@ -77,7 +77,7 @@ test('accepting an invite adds a member, whose role can be changed and who can b
   await expect(memberRow.getByRole('combobox')).toHaveValue('auditor')
 
   await memberRow.getByRole('button', { name: 'Remove' }).click()
-  await confirmDialog(page, 'Remove member')
+  await confirmDialog(page, 'Remove member', account.invitee)
   await expect(memberRow).toBeHidden()
 })
 

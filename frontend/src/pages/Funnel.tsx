@@ -1,3 +1,4 @@
+import { Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -64,9 +65,9 @@ export default function Funnel() {
   const handleDelete = async (r: FunnelRoute) => {
     const ok = await confirm({
       title: `Remove https://${r.hostname}?`,
-      message: 'It will stop being reachable from the internet.',
+      consequences: ['It will stop being reachable from the internet.'],
       confirmLabel: 'Remove route',
-      danger: true,
+      tone: 'danger',
     })
     if (ok) remove.mutate(r)
   }
@@ -141,6 +142,7 @@ export default function Funnel() {
                           disabled={deletingId === r.id}
                           onClick={() => void handleDelete(r)}
                         >
+                          <Trash2 className="size-3.5" aria-hidden="true" />
                           Remove
                         </button>
                       </td>
@@ -204,6 +206,7 @@ export default function Funnel() {
                 className="btn btn-primary btn-sm"
                 disabled={creating || !label.trim() || !targetNodeId || !targetPort}
               >
+                <Plus className="size-3.5" aria-hidden="true" />
                 Create
               </button>
             </form>

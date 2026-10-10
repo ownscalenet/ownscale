@@ -1,3 +1,4 @@
+import { KeyRound, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -225,9 +226,9 @@ function AuthKeyRow({
   const handleExpire = async () => {
     const ok = await confirm({
       title: 'Expire pre-auth key',
-      message: 'It will no longer be usable to register new machines.',
+      consequences: ['It will no longer be usable to register new machines.'],
       confirmLabel: 'Expire key',
-      danger: true,
+      tone: 'danger',
     })
     if (ok) expire.mutate()
   }
@@ -235,9 +236,9 @@ function AuthKeyRow({
   const handleDelete = async () => {
     const ok = await confirm({
       title: 'Delete pre-auth key',
-      message: "This can't be undone.",
+      consequences: ["This can't be undone."],
       confirmLabel: 'Delete key',
-      danger: true,
+      tone: 'danger',
     })
     if (ok) remove.mutate()
   }
@@ -283,6 +284,7 @@ function AuthKeyRow({
           disabled={busy}
           onClick={() => void handleDelete()}
         >
+          <Trash2 className="size-3.5" aria-hidden="true" />
           Delete
         </button>
       </td>
@@ -466,6 +468,7 @@ function CreateAuthKeyDialog({
 
             <div className="modal-action">
               <button type="submit" className="btn btn-primary" disabled={busy}>
+                <KeyRound className="size-3.5" aria-hidden="true" />
                 Create
               </button>
               <button type="button" className="btn btn-ghost" onClick={onClose}>

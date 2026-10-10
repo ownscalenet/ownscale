@@ -1,3 +1,4 @@
+import { Plus, Save, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -75,6 +76,7 @@ function ListEditor({
             }}
           />
           <button type="button" className="btn btn-sm" onClick={add}>
+            <Plus className="size-3.5" aria-hidden="true" />
             Add
           </button>
         </div>
@@ -217,6 +219,7 @@ export default function DNS() {
                             disabled={saving}
                             onClick={() => removeRecord(r)}
                           >
+                            <Trash2 className="size-3.5" aria-hidden="true" />
                             Remove
                           </button>
                         </td>
@@ -254,6 +257,7 @@ export default function DNS() {
                   onChange={(e) => setNewRecordValue(e.target.value)}
                 />
                 <button type="button" className="btn btn-sm" disabled={saving} onClick={addRecord}>
+                  <Plus className="size-3.5" aria-hidden="true" />
                   Add
                 </button>
               </div>
@@ -369,6 +373,7 @@ function SplitDNS({
                         disabled={saving}
                         onClick={() => remove(d)}
                       >
+                        <Trash2 className="size-3.5" aria-hidden="true" />
                         Remove
                       </button>
                     </td>
@@ -401,6 +406,7 @@ function SplitDNS({
               }}
             />
             <button type="button" className="btn btn-sm" disabled={saving} onClick={add}>
+              <Plus className="size-3.5" aria-hidden="true" />
               Add
             </button>
           </div>
@@ -444,6 +450,7 @@ function RenameTailnet({
             disabled={disabled || name.trim() === '' || name === dns.baseDomain}
             onClick={() => onSave({ ...dns, baseDomain: name.trim() })}
           >
+            <Save className="size-3.5" aria-hidden="true" />
             Save
           </button>
         </div>

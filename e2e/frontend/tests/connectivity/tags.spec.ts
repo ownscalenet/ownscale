@@ -12,7 +12,7 @@ test('setting a machine\'s ACL tags succeeds with or without the tag: prefix, ev
   const dialog = page.getByRole('dialog')
 
   await test.step('a tag typed without the tag: prefix is normalized and accepted', async () => {
-    await row.getByRole('button', { name: '⋯', exact: true }).click()
+    await row.getByRole('button', { name: 'Actions', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Edit ACL tags', exact: true }).click()
     await dialog.locator('input[type="text"]').fill('e2etagnoprefix')
     const responsePromise = page.waitForResponse(r => new URL(r.url()).pathname.endsWith('/tags') && r.request().method() === 'POST')
@@ -24,7 +24,7 @@ test('setting a machine\'s ACL tags succeeds with or without the tag: prefix, ev
   })
 
   await test.step('a brand-new tag with the tag: prefix, never declared in this org\'s ACL policy before, is auto-provisioned and accepted', async () => {
-    await row.getByRole('button', { name: '⋯', exact: true }).click()
+    await row.getByRole('button', { name: 'Actions', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Edit ACL tags', exact: true }).click()
     await dialog.locator('input[type="text"]').fill('tag:e2etagnoprefix, tag:e2etagwithprefix')
     const responsePromise = page.waitForResponse(r => new URL(r.url()).pathname.endsWith('/tags') && r.request().method() === 'POST')

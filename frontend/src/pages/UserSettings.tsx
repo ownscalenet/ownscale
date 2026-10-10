@@ -1,3 +1,4 @@
+import { KeyRound, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -57,9 +58,9 @@ function PasskeysCard() {
   const handleDelete = async (p: Passkey) => {
     const ok = await confirm({
       title: `Delete the passkey "${p.name}"?`,
-      message: "This can't be undone.",
+      consequences: ["You won't be able to sign in with it anymore.", "This can't be undone."],
       confirmLabel: 'Delete passkey',
-      danger: true,
+      tone: 'danger',
     })
     if (!ok) return
     add.reset()
@@ -85,6 +86,7 @@ function PasskeysCard() {
               disabled={busy}
               onClick={() => setNaming(true)}
             >
+              <KeyRound className="size-3.5" aria-hidden="true" />
               Add a passkey
             </button>
           )}
@@ -124,6 +126,7 @@ function PasskeysCard() {
                         disabled={busy}
                         onClick={() => void handleDelete(p)}
                       >
+                        <Trash2 className="size-3.5" aria-hidden="true" />
                         Delete
                       </button>
                     </td>
@@ -170,6 +173,7 @@ function PasskeyNameDialog({
         </fieldset>
         <div className="modal-action">
           <button type="submit" className="btn btn-primary">
+            <KeyRound className="size-3.5" aria-hidden="true" />
             Add passkey
           </button>
           <button type="button" className="btn btn-ghost" onClick={onClose}>

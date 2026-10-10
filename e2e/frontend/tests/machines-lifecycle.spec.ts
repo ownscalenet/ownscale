@@ -29,7 +29,7 @@ test('registering a real device and managing it from the Machines page', async (
 
     // Rename.
     const newName = `${hostname}-renamed`
-    await row.getByRole('button', { name: '⋯', exact: true }).click()
+    await row.getByRole('button', { name: 'Actions', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Edit machine name', exact: true }).click()
     const renameDialog = page.getByRole('dialog')
     await renameDialog.locator('input[type="text"]').fill(newName)
@@ -38,7 +38,7 @@ test('registering a real device and managing it from the Machines page', async (
     await expect(renamedRow).toBeVisible()
 
     // Edit ACL tags.
-    await renamedRow.getByRole('button', { name: '⋯', exact: true }).click()
+    await renamedRow.getByRole('button', { name: 'Actions', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Edit ACL tags', exact: true }).click()
     const tagsDialog = page.getByRole('dialog')
     await tagsDialog.locator('input[type="text"]').fill('e2e-lifecycle')
@@ -48,22 +48,22 @@ test('registering a real device and managing it from the Machines page', async (
     // Edit route settings: this tsnet-backed device never advertises a
     // subnet route, so the dialog is expected to show its empty state
     // (extending tscl-bridge to advertise routes is out of scope here).
-    await renamedRow.getByRole('button', { name: '⋯', exact: true }).click()
+    await renamedRow.getByRole('button', { name: 'Actions', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Edit route settings', exact: true }).click()
     const routesDialog = page.getByRole('dialog')
     await expect(routesDialog.getByText(/hasn.t advertised any routes/)).toBeVisible()
     await routesDialog.getByRole('button', { name: 'Cancel', exact: true }).click()
 
     // Expire the session.
-    await renamedRow.getByRole('button', { name: '⋯', exact: true }).click()
+    await renamedRow.getByRole('button', { name: 'Actions', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Expire session', exact: true }).click()
     await confirmDialog(page, 'Expire session')
     await expect(renamedRow.getByText('Expired', { exact: true })).toBeVisible()
 
     // Delete.
-    await renamedRow.getByRole('button', { name: '⋯', exact: true }).click()
+    await renamedRow.getByRole('button', { name: 'Actions', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Remove', exact: true }).click()
-    await confirmDialog(page, 'Remove')
+    await confirmDialog(page, 'Remove', newName)
     await expect(renamedRow).toBeHidden()
   } finally {
     await teardownRealMachine(machine)

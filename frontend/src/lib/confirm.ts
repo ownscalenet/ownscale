@@ -2,11 +2,16 @@ import { createContext, useContext, type ReactNode } from 'react'
 
 export interface ConfirmOptions {
   title: string
-  message: ReactNode
+  message?: ReactNode
+  // consequences lists what the action will do, in plain language.
+  consequences?: string[]
   // confirmLabel names the action, e.g. "Remove", on the confirm button.
   confirmLabel: string
-  // danger styles the confirm button for destructive actions.
-  danger?: boolean
+  // tone styles the dialog: "danger" for destructive actions, "public" for
+  // ones that expose something to the internet.
+  tone?: 'default' | 'danger' | 'public'
+  // typeToConfirm is text the user must type before the action is enabled.
+  typeToConfirm?: string
 }
 
 // Confirm asks the user to confirm an action and resolves to their answer.
