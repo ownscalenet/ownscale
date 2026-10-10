@@ -737,3 +737,15 @@ func TestRegisterMachine(t *testing.T) {
 		})
 	}
 }
+
+func TestWithoutFunnelUser(t *testing.T) {
+	users := []hscl.User{
+		{ID: "1", Name: "alice"},
+		{ID: "2", Name: funnelproxy.FunnelHeadscaleUserName},
+		{ID: "3", Name: funnelproxy.FunnelHeadscaleUserName, ProviderID: "https://ownscale.test/abc"},
+	}
+	got := withoutFunnelUser(users)
+	if len(got) != 2 || got[0].ID != "1" || got[1].ID != "3" {
+		t.Errorf("withoutFunnelUser() = %+v, want users 1 and 3", got)
+	}
+}

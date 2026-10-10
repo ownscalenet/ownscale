@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strings"
 
 	"github.com/ownscalenet/ownscale/auth"
@@ -98,6 +99,13 @@ func matchesFilters(m hscl.Node, q, userFilter, status string) bool {
 	return true
 }
 
+// withoutFunnelUser drops the reserved funnel user, which isn't a member.
+func withoutFunnelUser(users []hscl.User) []hscl.User {
+	return slices.DeleteFunc(users, func(u hscl.User) bool {
+		return funnelproxy.IsFunnelUser(&u)
+	})
+}
+
 type machineResponse struct {
 	hscl.Node
 	Internal bool `json:"internal"`
@@ -138,6 +146,7 @@ func (h *Handlers) ListMachines(w http.ResponseWriter, r *http.Request) {
 			h.serverError(w, r, err)
 			return
 		}
+		users = withoutFunnelUser(users)
 	}
 
 	q := r.URL.Query().Get("q")
