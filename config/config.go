@@ -24,6 +24,10 @@ type Config struct {
 	LocalCADir  string `env:"OWNSCALE_LOCAL_CA_DIR"`
 	// DebugAddr enables a pprof/runtime-metrics server; must be loopback.
 	DebugAddr string `env:"OWNSCALE_DEBUG_ADDR"`
+	// TLSAskAddr enables the on-demand TLS "ask" endpoint for an external
+	// Caddy; it reveals which organizations exist, better not to publish this
+	// but then again, orgs can already be queried at http://org.base_domain.
+	TLSAskAddr string `env:"OWNSCALE_TLS_ASK_ADDR"`
 
 	Auth   AuthConfig
 	Log    LogConfig
