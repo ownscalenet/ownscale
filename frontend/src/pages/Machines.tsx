@@ -656,7 +656,7 @@ function MachineRow({
   return (
     <tr>
       <td className="whitespace-nowrap">
-        <div className="font-bold">
+        <div className="font-bold font-mono">
           <span className="inline-flex items-center gap-1">
             {m.givenName}
             <CopyIcon text={m.givenName} label="machine name" />

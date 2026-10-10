@@ -70,7 +70,10 @@ export default function Users() {
 
   return (
     <>
-      <PageHeader title="Users">
+      <PageHeader
+        title="Users"
+        subtitle={`${members.length} ${members.length === 1 ? 'member' : 'members'}${canManage ? `, ${invites.length} pending ${invites.length === 1 ? 'invite' : 'invites'}` : ''}`}
+      >
         {canManage && (
           <button
             type="button"

@@ -78,7 +78,10 @@ export default function Funnel() {
 
   return (
     <div>
-      <PageHeader title="Funnel" />
+      <PageHeader
+        title="Funnel"
+        subtitle={`${routes.length} public ${routes.length === 1 ? 'route' : 'routes'}`}
+      />
 
       <div role="alert" className="alert alert-warning mb-4">
         <div>
@@ -126,7 +129,7 @@ export default function Funnel() {
                         <CopyIcon text={`https://${r.hostname}`} label="public URL" />
                       </span>
                     </td>
-                    <td>
+                    <td className="font-mono">
                       {r.targetNodeMissing ? (
                         <span className="badge badge-warning badge-sm">machine not found</span>
                       ) : (

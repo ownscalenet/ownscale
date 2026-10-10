@@ -90,7 +90,10 @@ export default function Settings() {
 
   return (
     <>
-      <PageHeader title="Settings" />
+      <PageHeader
+        title="Settings"
+        subtitle={`${authKeys.length} auth ${authKeys.length === 1 ? 'key' : 'keys'}`}
+      />
 
       <ErrorAlert error={error} />
 

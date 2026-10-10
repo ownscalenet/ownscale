@@ -126,7 +126,7 @@ export default function Layout() {
           </div>
         </div>
 
-        <main className="p-6 flex-1">
+        <main className="p-6 flex-1 w-full max-w-[1360px] mx-auto">
           <Outlet />
         </main>
       </div>

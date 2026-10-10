@@ -130,7 +130,10 @@ export default function AuthRestrictions() {
 
   return (
     <div>
-      <PageHeader title="Authentication Restrictions" />
+      <PageHeader
+        title="Authentication Restrictions"
+        subtitle="Limit who can sign in to this organization"
+      />
 
       <ErrorAlert error={error} />
       {success && (

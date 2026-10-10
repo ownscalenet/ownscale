@@ -21,7 +21,7 @@ export default function UserSettings() {
 
   return (
     <>
-      <PageHeader title="User settings" />
+      <PageHeader title="User settings" subtitle="Your account and passkeys" />
 
       <PasskeysCard />
     </>

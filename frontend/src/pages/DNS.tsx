@@ -142,7 +142,10 @@ export default function DNS() {
 
   return (
     <div>
-      <PageHeader title="DNS" />
+      <PageHeader
+        title="DNS"
+        subtitle={dns ? <span className="font-mono">{dns.baseDomain}</span> : undefined}
+      />
 
       {!canManage && (
         <div className="alert alert-warning mb-4">
