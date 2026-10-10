@@ -1,3 +1,4 @@
+import { RelativeTime } from '../components/RelativeTime'
 import { Ellipsis, LogOut, Pencil, Plus, Route, Tag, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
@@ -708,7 +709,7 @@ function MachineRow({
             <span className="w-2 h-2 rounded-full bg-success inline-block"></span> Connected
           </span>
         ) : m.lastSeen ? (
-          new Date(m.lastSeen).toLocaleString()
+          <RelativeTime value={m.lastSeen} />
         ) : (
           <span className="opacity-60">Never</span>
         )}

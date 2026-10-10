@@ -1,3 +1,4 @@
+import { RelativeTime } from '../components/RelativeTime'
 import { KeyRound, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -115,9 +116,11 @@ function PasskeysCard() {
                 {passkeys.map((p) => (
                   <tr key={p.id}>
                     <td>{p.name || 'Passkey'}</td>
-                    <td className="whitespace-nowrap">{new Date(p.createdAt).toLocaleString()}</td>
                     <td className="whitespace-nowrap">
-                      {p.lastUsedAt ? new Date(p.lastUsedAt).toLocaleString() : '—'}
+                      <RelativeTime value={p.createdAt} />
+                    </td>
+                    <td className="whitespace-nowrap">
+                      {p.lastUsedAt ? <RelativeTime value={p.lastUsedAt} /> : '—'}
                     </td>
                     <td className="text-right whitespace-nowrap">
                       <button

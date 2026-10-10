@@ -1,3 +1,4 @@
+import { RelativeTime } from '../components/RelativeTime'
 import { KeyRound, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
@@ -264,7 +265,7 @@ function AuthKeyRow({
         {expired ? (
           <span className="badge badge-error badge-sm">Expired</span>
         ) : k.expiration ? (
-          new Date(k.expiration).toLocaleString()
+          <RelativeTime value={k.expiration} />
         ) : (
           '—'
         )}

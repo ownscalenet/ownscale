@@ -1,3 +1,4 @@
+import { RelativeTime } from '../components/RelativeTime'
 import { Ban, Copy, Crown, Link, Trash2, UserPlus } from 'lucide-react'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -144,7 +145,9 @@ export default function Users() {
                           )}
                         </td>
                         <td>{roleLabel(i.role)}</td>
-                        <td>{new Date(i.expiresAt).toLocaleString()}</td>
+                        <td>
+                          <RelativeTime value={i.expiresAt} />
+                        </td>
                         <td className="text-right">
                           <CopyButton
                             text={`${window.location.origin}/invite/${i.token}`}
