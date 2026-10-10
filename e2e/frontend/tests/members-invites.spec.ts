@@ -80,3 +80,14 @@ test('accepting an invite adds a member, whose role can be changed and who can b
   await confirmDialog(page, 'Remove member')
   await expect(memberRow).toBeHidden()
 })
+
+test('copying a member email from the table', async ({ page, account }) => {
+  await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
+  await page.goto('/users')
+
+  const row = page.getByRole('row').filter({ hasText: account.email })
+  await row.getByRole('button', { name: 'Copy email' }).click()
+
+  await expect(row.locator('[data-tip="Copied!"]')).toBeVisible()
+  expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(account.email)
+})
