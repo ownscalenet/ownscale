@@ -17,8 +17,6 @@ services:
     volumes:
       - ${OWNSCALE_DATA_DIR}:${OWNSCALE_DATA_DIR}
       - caddy-data:/caddy-data
-    networks:
-      - os-net
 
   dex:
     image: dexidp/dex:v2.45.1
@@ -36,8 +34,6 @@ services:
       BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
     volumes:
       - ./etc/dex/config.yaml:/etc/dex/config.yaml:ro
-    networks:
-      - os-net
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:5556/healthz"]
@@ -67,7 +63,7 @@ services:
       - ./etc/caddy/dev:/etc/caddy/dev:ro
       - ${OWNSCALE_DATA_DIR}/local-ca:/etc/ownscale-local-ca:ro
     networks:
-      os-net:
+      default:
         # Non-public BASE_DOMAINs (e.g. "ownscale.test") have no real DNS, so
         # the ownscale service's outbound HTTPS calls must resolve these names
         # to Caddy: Dex (auth.upstream_oidc.issuer) and the console itself

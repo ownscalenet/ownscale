@@ -1,5 +1,7 @@
 # Production stack: ownscale behind Caddy. Local development layers
 # compose.dev.yaml on top (see COMPOSE_FILE in .env.example).
+name: ownscale
+
 services:
   ownscale:
     image: ownscale:latest
@@ -39,8 +41,6 @@ services:
       OWNSCALE_BACKUP_SYNC_INTERVAL: ${OWNSCALE_BACKUP_SYNC_INTERVAL:-10s}
     volumes:
       - ${OWNSCALE_DATA_DIR}:${OWNSCALE_DATA_DIR}
-    networks:
-      - os-net
     restart: unless-stopped
     stop_grace_period: 40s # close connections, close replication
     healthcheck:
@@ -80,8 +80,6 @@ services:
     volumes:
       - caddy-data:/data
       - caddy-config:/config
-    networks:
-      - os-net
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://127.0.0.1:2019/config/"]
       interval: 10s
@@ -94,7 +92,3 @@ volumes:
     name: caddy-data
   caddy-config:
     name: caddy-config
-
-networks:
-  os-net:
-    name: os-net
