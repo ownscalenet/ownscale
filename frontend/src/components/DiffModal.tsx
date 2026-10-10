@@ -28,9 +28,9 @@ export default function DiffModal({
                 key={i}
                 className={
                   part.added
-                    ? 'bg-success/20 text-success-content block'
+                    ? 'bg-success/20 text-base-content block'
                     : part.removed
-                      ? 'bg-error/20 text-error-content block'
+                      ? 'bg-error/20 text-base-content block'
                       : 'block'
                 }
               >
