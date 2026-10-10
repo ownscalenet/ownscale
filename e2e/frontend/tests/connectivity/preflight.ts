@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { lookup, Resolver } from 'node:dns/promises'
+import { lookup } from 'node:dns/promises'
 import { chmod, lstat, mkdir, readFile, rename } from 'node:fs/promises'
 import { request } from 'node:https'
 import { promisify } from 'node:util'
@@ -39,28 +39,12 @@ async function endpoint(url: string, ca: Buffer | undefined): Promise<void> {
   })
 }
 
-// Used to check whether a host resolves via real public DNS, independent
-// of the local resolver's own configuration.
-const publicResolver = new Resolver()
-publicResolver.setServers(['1.1.1.1', '8.8.8.8'])
-
-async function resolvesViaPublicDNS(host: string): Promise<boolean> {
-  try { await publicResolver.resolve4(host); return true } catch {}
-  try { await publicResolver.resolve6(host); return true } catch {}
-  return false
-}
-
 export async function checkPrerequisites(): Promise<void> {
   const hosts = [new URL(baseURL).hostname, new URL(dexURL).hostname,
     ...['aaaa', 'bbbb', 'cccc'].flatMap(org =>
       [`${org}.${baseDomain}`, `web1-${org}.${funnelDomain}`, `web2-${org}.${funnelDomain}`])]
-  const entries = (await readFile('/etc/hosts', 'utf8')).split('\n')
-    .flatMap(line => line.split('#')[0].trim().split(/\s+/).slice(1))
   for (const host of hosts) {
-    if (await resolvesViaPublicDNS(host)) continue
-    if (!entries.includes(host))
-      throw new Error(`Missing required /etc/hosts entry: ${host}; configure it manually before running`)
-    try { await lookup(host) } catch { throw new Error(`Required host does not resolve: ${host}`) }
+    try { await lookup(host) } catch { throw new Error(`Required host does not resolve: ${host}; add it to /etc/hosts or your local DNS (e.g. dnsmasq)`) }
   }
   let ca: Buffer | undefined
   if (caFile) {
