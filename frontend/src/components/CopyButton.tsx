@@ -2,16 +2,25 @@ import { useEffect, useState, type MouseEvent, type ReactNode } from 'react'
 
 type CopyResult = 'copied' | 'failed' | null
 
+const shownMs = 2000
+// daisyUI fades a tooltip out in 200ms after a 75ms delay.
+const fadeMs = 300
+
 // useCopy copies text to the clipboard and remembers the outcome for 2s.
+// open turns false first and result is kept while the tooltip fades out, so
+// the fading tooltip doesn't switch to its resting text and color.
 // Copying fails on plain-HTTP origins, where the clipboard isn't available.
 function useCopy(text: string) {
   const [result, setResult] = useState<CopyResult>(null)
+  const [open, setOpen] = useState(false)
 
   useEffect(() => {
     if (!result) return
-    const timer = setTimeout(() => setResult(null), 2000)
+    const timer = open
+      ? setTimeout(() => setOpen(false), shownMs)
+      : setTimeout(() => setResult(null), fadeMs)
     return () => clearTimeout(timer)
-  }, [result])
+  }, [result, open])
 
   const copy = () => {
     // navigator.clipboard is undefined on insecure origins.
@@ -21,9 +30,10 @@ function useCopy(text: string) {
         () => setResult('copied'),
         () => setResult('failed'),
       )
+      .then(() => setOpen(true))
   }
 
-  return { result, copy }
+  return { result, open, copy }
 }
 
 // CopyButton copies text to the clipboard and briefly says whether it worked.
@@ -48,14 +58,10 @@ export default function CopyButton({
 // CopyIcon is a small icon button for copying a table value. Its tooltip
 // stays on top because tables sit in overflow containers that clip sideways.
 export function CopyIcon({ text, label }: { text: string; label: string }) {
-  const { result, copy } = useCopy(text)
+  const { result, open, copy } = useCopy(text)
   const tip = result === 'copied' ? 'Copied!' : result === 'failed' ? 'Copy failed' : 'Copy'
-  const tooltipState =
-    result === 'copied'
-      ? 'tooltip-open tooltip-success'
-      : result === 'failed'
-        ? 'tooltip-open tooltip-error'
-        : ''
+  const tooltipColor =
+    result === 'copied' ? 'tooltip-success' : result === 'failed' ? 'tooltip-error' : ''
 
   const onClick = (e: MouseEvent) => {
     e.stopPropagation()
@@ -63,7 +69,10 @@ export function CopyIcon({ text, label }: { text: string; label: string }) {
   }
 
   return (
-    <span className={`tooltip tooltip-top ${tooltipState}`} data-tip={tip}>
+    <span
+      className={`tooltip tooltip-top ${tooltipColor} ${open ? 'tooltip-open' : ''}`}
+      data-tip={tip}
+    >
       <button
         type="button"
         className="btn btn-ghost btn-xs btn-square"
