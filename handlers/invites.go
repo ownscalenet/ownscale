@@ -160,7 +160,7 @@ func (h *Handlers) DeleteInvite(w http.ResponseWriter, r *http.Request) {
 
 // GetInvitePreview handles GET /api/invites/{token}. It's public
 // (unauthenticated) so the /invite/{token} accept page can show which
-// organization the invite is for, and whether it's still valid, before the
+// organization, inviter and role the invite is for, and whether it's still valid, before the
 // visitor logs in.
 func (h *Handlers) GetInvitePreview(w http.ResponseWriter, r *http.Request) {
 	token := r.PathValue("token")
@@ -174,10 +174,16 @@ func (h *Handlers) GetInvitePreview(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
+	invitedBy := ""
+	if inviter, err := h.queries.GetUserByID(r.Context(), inv.CreatedBy); err == nil {
+		invitedBy = inviter.Name
+	}
 	valid := !inv.AcceptedAt.Valid && inv.ExpiresAt.After(time.Now())
 	h.writeJSON(w, http.StatusOK, map[string]any{
-		"valid":            valid,
-		"organizationName": org.Subdomain,
-		"role":             inv.Role,
+		"valid":              valid,
+		"organizationName":   org.Subdomain,
+		"organizationDomain": org.Subdomain + "." + h.baseDomain,
+		"invitedBy":          invitedBy,
+		"role":               inv.Role,
 	})
 }

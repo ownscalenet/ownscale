@@ -263,6 +263,8 @@ export function deleteInvite(id: string) {
 export interface InvitePreview {
   valid: boolean
   organizationName: string
+  organizationDomain: string
+  invitedBy: string
   role: Role
 }
 

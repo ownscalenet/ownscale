@@ -100,13 +100,25 @@ func TestGetInvitePreview(t *testing.T) {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
 	}
 	var body struct {
-		Valid bool `json:"valid"`
+		Valid              bool   `json:"valid"`
+		InvitedBy          string `json:"invitedBy"`
+		OrganizationDomain string `json:"organizationDomain"`
+		Role               string `json:"role"`
 	}
 	if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
 		t.Fatalf("decode: %v", err)
 	}
 	if !body.Valid {
 		t.Error("expected valid=true")
+	}
+	if body.InvitedBy != owner.Name {
+		t.Errorf("invitedBy = %q, want %q", body.InvitedBy, owner.Name)
+	}
+	if !strings.HasSuffix(body.OrganizationDomain, "."+h.baseDomain) {
+		t.Errorf("organizationDomain = %q, want suffix %q", body.OrganizationDomain, "."+h.baseDomain)
+	}
+	if body.Role != RoleMember {
+		t.Errorf("role = %q, want %q", body.Role, RoleMember)
 	}
 }
 

@@ -9,3 +9,4 @@
 - it's bad how everything uses the same logger. Logs for backups are mixed with
 http request logs. Should logs have a "component" field to filter by?
 - acl diff is hard to read on dark theme
+- for the funnel machine, which has internal tag, add an icon (question mark, book)
