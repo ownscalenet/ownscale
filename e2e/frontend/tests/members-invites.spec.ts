@@ -52,6 +52,7 @@ test('accepting an invite adds a member, whose role can be changed and who can b
   try {
     const inviteePage = await inviteeContext.newPage()
     await inviteePage.goto(inviteLink)
+    await inviteePage.getByRole('link', { name: 'Sign in to join' }).click()
     await expect(inviteePage).toHaveURL(/\/login\?next=/)
 
     await inviteePage.getByRole('link', { name: 'Sign in with SSO' }).click()

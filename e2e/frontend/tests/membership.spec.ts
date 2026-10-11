@@ -11,6 +11,10 @@ async function signIn(browser: Browser, email: string, startURL: string): Promis
   const context = await browser.newContext({ storageState: { cookies: [], origins: [] }, ignoreHTTPSErrors: true })
   const page = await context.newPage()
   await page.goto(startURL)
+  const joinLink = page.getByRole('link', { name: 'Sign in to join' })
+  if (await joinLink.isVisible().catch(() => false)) {
+    await joinLink.click()
+  }
   await page.getByRole('link', { name: 'Sign in with SSO' }).click()
   await page.locator('#login').fill(email)
   await page.locator('#password').fill('ownscale')

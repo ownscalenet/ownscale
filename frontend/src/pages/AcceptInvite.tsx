@@ -6,8 +6,8 @@ import { usePageTitle } from '../hooks/usePageTitle'
 import { ErrorAlert, PageSpinner } from '../components/ui'
 
 // AcceptInvite is the /invite/:token landing page. An unauthenticated
-// visitor is sent through /login?next=/invite/:token, so they come back here
-// once signed in.
+// visitor sees a preview and a login link (next=/invite/:token), so they
+// come back here once signed in.
 export default function AcceptInvite() {
   usePageTitle('Accept Invite')
   const { token } = useParams<{ token: string }>()
