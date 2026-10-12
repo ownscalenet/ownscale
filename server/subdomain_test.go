@@ -165,3 +165,49 @@ func TestSubdomainProxyUpgrade(t *testing.T) {
 		t.Errorf("after upgrade got %q, %v, want %q", got, err, "echo hello\n")
 	}
 }
+
+// TestSubdomainProxyKeyCORS checks that the console origin may fetch
+// headscale's /key endpoint, which the in-browser Tailscale client needs.
+func TestSubdomainProxyKeyCORS(t *testing.T) {
+	backend := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = w.Write([]byte("pubkey"))
+	}))
+	t.Cleanup(backend.Close)
+	dial := func(ctx context.Context, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, "tcp", backend.Listener.Addr().String())
+	}
+	p := NewSubdomainProxy(http.NotFoundHandler(), "ownscale.test", dial, slog.New(slog.DiscardHandler))
+
+	const console = "https://console.ownscale.test"
+	tests := []struct {
+		name       string
+		method     string
+		path       string
+		origin     string
+		wantCode   int
+		wantOrigin string
+	}{
+		{"console fetch", http.MethodGet, "/key", console, http.StatusOK, console},
+		{"preflight", http.MethodOptions, "/key", console, http.StatusNoContent, console},
+		{"other origin", http.MethodGet, "/key", "https://evil.example", http.StatusOK, ""},
+		{"no origin", http.MethodGet, "/key", "", http.StatusOK, ""},
+		{"other path", http.MethodGet, "/ts2021", console, http.StatusOK, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(tt.method, "https://aaaa.ownscale.test"+tt.path, nil)
+			if tt.origin != "" {
+				req.Header.Set("Origin", tt.origin)
+			}
+			rr := httptest.NewRecorder()
+			p.ServeHTTP(rr, req)
+
+			if rr.Code != tt.wantCode {
+				t.Fatalf("status = %d, want %d", rr.Code, tt.wantCode)
+			}
+			if got := rr.Header().Get("Access-Control-Allow-Origin"); got != tt.wantOrigin {
+				t.Errorf("Access-Control-Allow-Origin = %q, want %q", got, tt.wantOrigin)
+			}
+		})
+	}
+}

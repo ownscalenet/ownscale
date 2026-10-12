@@ -11,13 +11,23 @@ title = "ownscale Documentation"
     [markup.goldmark.renderer]
       unsafe = true
 
+[outputFormats]
+  [outputFormats.search]
+    mediaType = "application/json"
+    baseName = "search-index"
+    isPlainText = true
+    notAlternative = true
+
+[outputs]
+  home = ["HTML", "search"]
+
 [params]
   BookTheme = "auto"
   BookToC = true
   BookSection = "docs"
   BookRepo = "https://github.com/ownscalenet/ownscale"
   BookEditPath = "edit/main/site/content"
-  BookSearch = true
+  BookSearch = false
   BookComments = false
   BookPortableLinks = true
 

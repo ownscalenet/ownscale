@@ -30,3 +30,31 @@ func TestSecurityHeadersMiddleware(t *testing.T) {
 		}
 	}
 }
+
+func TestSecurityHeadersSSHPath(t *testing.T) {
+	mw := securityHeadersMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	tests := []struct {
+		path string
+		want string
+	}{
+		{"/machines/5/ssh", sshCSP},
+		{"/machines", securityCSP},
+		{"/machines/5", securityCSP},
+		{"/machines//ssh", securityCSP},
+		{"/machines/5/ssh/more", securityCSP},
+		{"/api/machines/5/ssh-session", securityCSP},
+	}
+	for _, tt := range tests {
+		t.Run(tt.path, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			mw.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tt.path, nil))
+
+			if got := rec.Header().Get("Content-Security-Policy"); got != tt.want {
+				t.Errorf("Content-Security-Policy = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

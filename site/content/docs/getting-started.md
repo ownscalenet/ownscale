@@ -42,6 +42,5 @@ session for single sign-on.
 - See the [FAQs]({{< relref "docs/faqs.md" >}}) for answers to common
   questions.
 - Add more pages under `content/docs/`, and rebuild this site with
-  `make docs` from the repository root whenever you change content,
-  then commit the regenerated `etc/caddy/site/` output.
+  `make site` from the repository root whenever you change content.
 

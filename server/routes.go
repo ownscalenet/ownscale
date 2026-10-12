@@ -33,6 +33,7 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	mux.HandleFunc("POST /api/machines/{id}/routes", requireAuthAPI(h.RequireHeadscaleClient(h.SetMachineRoutes)))
 	mux.HandleFunc("POST /api/machines/{id}/expire", requireAuthAPI(h.RequireHeadscaleClient(h.ExpireMachine)))
 	mux.HandleFunc("DELETE /api/machines/{id}", requireAuthAPI(h.RequireHeadscaleClient(h.DeleteMachine)))
+	mux.HandleFunc("POST /api/machines/{id}/ssh-session", requireAuthAPI(h.RequireHeadscaleClient(h.CreateSSHSession)))
 
 	mux.HandleFunc("GET /api/auth-keys", requireAuthAPI(h.ReadHeadscale(h.ListAuthKeys)))
 	mux.HandleFunc("POST /api/auth-keys", requireAuthAPI(h.ProvisionHeadscale(h.CreateAuthKey)))

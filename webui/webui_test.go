@@ -89,3 +89,51 @@ func TestHandlerCacheControl(t *testing.T) {
 		})
 	}
 }
+
+// TestHandlerServesWasm covers the Tailscale WebAssembly module, which is
+// only shipped precompressed. It is copied into dist by the Makefile's
+// "frontend" target, so skip when the frontend hasn't been built.
+func TestHandlerServesWasm(t *testing.T) {
+	if _, err := distFS.ReadFile("dist/" + wasmPath + ".gz"); err != nil {
+		t.Skip("frontend not built: no embedded wasm module")
+	}
+	h := Handler(false)
+
+	tests := []struct {
+		name         string
+		accept       string
+		wantCode     int
+		wantEncoding string
+	}{
+		{"brotli preferred", "br, gzip", http.StatusOK, "br"},
+		{"gzip only", "gzip", http.StatusOK, "gzip"},
+		{"no supported encoding", "identity", http.StatusNotFound, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := httptest.NewRequest(http.MethodGet, "/"+wasmPath, nil)
+			req.Header.Set("Accept-Encoding", tt.accept)
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+
+			if rec.Code != tt.wantCode {
+				t.Fatalf("status = %d, want %d", rec.Code, tt.wantCode)
+			}
+			if got := rec.Header().Get("Content-Encoding"); got != tt.wantEncoding {
+				t.Errorf("Content-Encoding = %q, want %q", got, tt.wantEncoding)
+			}
+			if tt.wantCode != http.StatusOK {
+				return
+			}
+			if got := rec.Header().Get("Content-Type"); got != "application/wasm" {
+				t.Errorf("Content-Type = %q, want application/wasm", got)
+			}
+			if rec.Header().Get("ETag") == "" {
+				t.Error("ETag is empty")
+			}
+			if rec.Body.Len() == 0 {
+				t.Error("body is empty")
+			}
+		})
+	}
+}

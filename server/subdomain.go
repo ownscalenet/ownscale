@@ -61,6 +61,10 @@ func (s *SubdomainProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if s.handleKeyCORS(w, r) {
+		return
+	}
+
 	start := time.Now()
 	rec := &proxyRecorder{ResponseWriter: w, status: http.StatusOK}
 	proxy := httputil.NewSingleHostReverseProxy(&url.URL{Scheme: "http", Host: subdomain})
@@ -86,6 +90,32 @@ func (s *SubdomainProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"remote_addr", r.RemoteAddr,
 		"duration", time.Since(start),
 	)
+}
+
+// keyPath is headscale's machine key endpoint. The console's in-browser
+// Tailscale client (see handlers.CreateSSHSession) fetches it from the
+// console origin; every other control request it makes is a websocket,
+// which isn't subject to CORS.
+const keyPath = "/key"
+
+// handleKeyCORS allows the console origin to fetch GET /key, answering a
+// preflight itself. It reports whether the request is fully handled.
+func (s *SubdomainProxy) handleKeyCORS(w http.ResponseWriter, r *http.Request) bool {
+	if r.URL.Path != keyPath {
+		return false
+	}
+	console := "https://" + orgs.ConsoleDomain(s.baseDomain)
+	w.Header().Add("Vary", "Origin")
+	if r.Header.Get("Origin") != console {
+		return false
+	}
+	w.Header().Set("Access-Control-Allow-Origin", console)
+	if r.Method == http.MethodOptions {
+		w.Header().Set("Access-Control-Allow-Methods", "GET, OPTIONS")
+		w.WriteHeader(http.StatusNoContent)
+		return true
+	}
+	return false
 }
 
 // proxyRecorder records the status a proxied request got. ReverseProxy

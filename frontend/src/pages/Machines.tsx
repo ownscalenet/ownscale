@@ -1,5 +1,5 @@
 import { RelativeTime } from '../components/RelativeTime'
-import { Ellipsis, LogOut, Pencil, Plus, Route, Tag, Trash2 } from 'lucide-react'
+import { Ellipsis, LogOut, Pencil, Plus, Route, Tag, TerminalSquare, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -726,6 +726,24 @@ function MachineRow({
             anchor="bottom end"
             className="menu bg-base-100 rounded-box z-10 w-56 p-2 shadow [--anchor-gap:4px] focus:outline-none"
           >
+            <li>
+              <MenuItem disabled={m.internal || !m.online || expired}>
+                <button
+                  type="button"
+                  className="data-focus:bg-base-content/10"
+                  disabled={m.internal || !m.online || expired}
+                  // A full page load, not client-side routing: the SSH page
+                  // needs its own Content-Security-Policy to run the
+                  // Tailscale WebAssembly client (see server.sshCSP).
+                  onClick={() => {
+                    window.location.href = `/machines/${m.id}/ssh`
+                  }}
+                >
+                  <TerminalSquare className="size-3.5" aria-hidden="true" />
+                  SSH
+                </button>
+              </MenuItem>
+            </li>
             <li>
               <MenuItem disabled={m.internal || !canEdit}>
                 <button

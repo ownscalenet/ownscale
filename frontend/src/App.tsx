@@ -4,6 +4,7 @@ import Layout from './Layout'
 import ConfirmProvider from './components/ConfirmProvider'
 import Login from './pages/Login'
 import Machines from './pages/Machines'
+import SSH from './pages/SSH'
 import Users from './pages/Users'
 import AccessControl from './pages/AccessControl'
 import AuthRestrictions from './pages/AuthRestrictions'
@@ -43,6 +44,7 @@ function AppRoutes() {
       >
         <Route index element={<Navigate to="/machines" replace />} />
         <Route path="machines" element={<Machines />} />
+        <Route path="machines/:id/ssh" element={<SSH />} />
         <Route path="users" element={<Users />} />
         <Route path="access-control" element={<AccessControl />} />
         <Route path="auth-restrictions" element={<AuthRestrictions />} />

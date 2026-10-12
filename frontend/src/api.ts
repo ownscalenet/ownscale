@@ -195,6 +195,22 @@ export function deleteMachine(id: string) {
   return request<{ ok: boolean }>(`/api/machines/${id}`, { method: 'DELETE' })
 }
 
+// SSHSession is everything the in-browser Tailscale client needs to join
+// the tailnet and open a session to a machine (see handlers.CreateSSHSession).
+export interface SSHSession {
+  controlURL: string
+  // Single use, short lived, and only ever held in memory.
+  authKey: string
+  hostname: string
+  target: string
+  machineName: string
+  loginName: string
+}
+
+export function createSSHSession(id: string) {
+  return request<SSHSession>(`/api/machines/${id}/ssh-session`, { method: 'POST' })
+}
+
 // Roles mirror common tailnet-admin-tool conventions for UI parity; only
 // owner/admin are actually enforced server-side (see handlers/roles.go).
 export const ROLES = ['owner', 'admin', 'network_admin', 'it_admin', 'auditor', 'member'] as const
