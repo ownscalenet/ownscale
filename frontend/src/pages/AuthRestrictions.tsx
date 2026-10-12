@@ -138,7 +138,7 @@ export default function AuthRestrictions() {
       <ErrorAlert error={error} />
       {success && (
         <div role="alert" className="alert alert-success mb-4">
-          <span>Restrictions saved. Headscale is restarting to apply them.</span>
+          <span>Restrictions saved.</span>
         </div>
       )}
 

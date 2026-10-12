@@ -891,7 +891,7 @@ func randomAlphaNum(n int) (_ string, err error) {
 const (
 	// StatusActive means the organization's headscale is serving.
 	StatusActive = "active"
-	// StatusUpdatePending means its headscale is restarting to apply config.
+	// StatusUpdatePending means headscale is restarting to apply config.
 	StatusUpdatePending = "update_pending"
 	// StatusUnprovisioned means its headscale never started: it starts on
 	// first use.

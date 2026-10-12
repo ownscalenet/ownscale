@@ -14,7 +14,7 @@ test('editing and saving the ACL policy round-trips through Format and Save', as
   await page.getByRole('button', { name: 'Format' }).click()
   await expect(editor).toContainText(marker)
 
-  const savedBanner = page.getByText('Policy saved. Headscale is restarting to apply it.')
+  const savedBanner = page.getByText('Policy saved.')
   await page.getByRole('button', { name: 'Save' }).click()
   await expect(savedBanner).toBeVisible()
 

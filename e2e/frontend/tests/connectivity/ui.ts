@@ -157,7 +157,7 @@ export class OrgUI {
         phase = `save response HTTP ${response.status()}`
         if (!response.ok()) throw new Error('ACL save rejected')
         phase = 'save confirmation'
-        await expect(this.page.getByText('Policy saved. Headscale is restarting to apply it.')).toBeVisible({ timeout: stepTimeoutMs })
+        await expect(this.page.getByText('Policy saved.')).toBeVisible({ timeout: stepTimeoutMs })
       }
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err)

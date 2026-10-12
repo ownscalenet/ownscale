@@ -427,6 +427,7 @@ export interface FunnelRoute {
 
 export interface FunnelRoutesResponse {
   funnelRoutes: FunnelRoute[]
+  hostnameSuffix: string
   canManage: boolean
 }
 

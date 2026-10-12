@@ -30,11 +30,20 @@ export default function Funnel() {
   const canManage = routesQuery.data?.canManage ?? false
   const machines = machinesQuery.data?.machines ?? []
   const loading = routesQuery.isPending || machinesQuery.isPending
+  const hostnameSuffix = routesQuery.data?.hostnameSuffix ?? ''
   const reload = () => queryClient.invalidateQueries({ queryKey: ['funnel'] })
 
   const [label, setLabel] = useState('')
   const [targetNodeId, setTargetNodeId] = useState('')
   const [targetPort, setTargetPort] = useState('')
+
+  const selectedMachine = machines.find((m) => m.id === targetNodeId)
+  const taken = routes.some((r) => r.label === label)
+  const preview = taken
+    ? `“${label}” is already in use.`
+    : label && selectedMachine && targetPort
+      ? `https://${label}${hostnameSuffix} → ${selectedMachine.givenName || selectedMachine.name}:${targetPort}`
+      : 'Pick a subdomain, a machine and a port.'
 
   const create = useMutation({
     mutationFn: createFunnelRoute,
@@ -58,7 +67,7 @@ export default function Funnel() {
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault()
     const port = Number(targetPort)
-    if (!label.trim() || !targetNodeId || !port) return
+    if (!label.trim() || !targetNodeId || !port || taken) return
     create.mutate({ label: label.trim(), targetNodeId, targetPort: port })
   }
 
@@ -164,55 +173,64 @@ export default function Funnel() {
           <div className="card-body">
             <h2 className="card-title">Create funnel route</h2>
             <ErrorAlert error={createError} className="mb-2" />
-            <form className="flex flex-wrap gap-2 items-end" onSubmit={handleCreate}>
-              <fieldset className="fieldset">
-                <legend className="fieldset-legend">Label</legend>
-                <input
-                  id="funnel-label"
-                  type="text"
-                  className="input input-bordered input-sm"
-                  placeholder="web"
-                  value={label}
-                  onChange={(e) => setLabel(e.target.value)}
-                />
-              </fieldset>
-              <fieldset className="fieldset">
-                <legend className="fieldset-legend">Machine</legend>
-                <select
-                  id="funnel-machine"
-                  className="select select-bordered select-sm"
-                  value={targetNodeId}
-                  onChange={(e) => setTargetNodeId(e.target.value)}
+            <form onSubmit={handleCreate}>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <fieldset className="fieldset">
+                  <legend className="fieldset-legend">Subdomain</legend>
+                  <label className="input input-bordered input-sm w-full flex items-center gap-0 font-mono">
+                    <input
+                      id="funnel-label"
+                      type="text"
+                      className="grow min-w-0"
+                      placeholder="status"
+                      value={label}
+                      onChange={(e) =>
+                        setLabel(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))
+                      }
+                    />
+                    <span className="text-xs opacity-60 whitespace-nowrap">{hostnameSuffix}</span>
+                  </label>
+                </fieldset>
+                <fieldset className="fieldset">
+                  <legend className="fieldset-legend">Machine</legend>
+                  <select
+                    id="funnel-machine"
+                    className="select select-bordered select-sm w-full"
+                    value={targetNodeId}
+                    onChange={(e) => setTargetNodeId(e.target.value)}
+                  >
+                    <option value="">Select a machine</option>
+                    {machines.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.givenName || m.name}
+                      </option>
+                    ))}
+                  </select>
+                </fieldset>
+                <fieldset className="fieldset">
+                  <legend className="fieldset-legend">Port</legend>
+                  <input
+                    id="funnel-port"
+                    type="text"
+                    inputMode="numeric"
+                    className="input input-bordered input-sm w-full font-mono"
+                    placeholder="8080"
+                    value={targetPort}
+                    onChange={(e) => setTargetPort(e.target.value.replace(/\D/g, '').slice(0, 5))}
+                  />
+                </fieldset>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 mt-3">
+                <div className="grow min-w-56 text-sm opacity-70 break-all">{preview}</div>
+                <button
+                  type="submit"
+                  className="btn btn-primary btn-sm"
+                  disabled={creating || !label.trim() || !targetNodeId || !targetPort}
                 >
-                  <option value="">Select a machine</option>
-                  {machines.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.givenName || m.name}
-                    </option>
-                  ))}
-                </select>
-              </fieldset>
-              <fieldset className="fieldset">
-                <legend className="fieldset-legend">Port</legend>
-                <input
-                  id="funnel-port"
-                  type="number"
-                  min={1}
-                  max={65535}
-                  className="input input-bordered input-sm w-24"
-                  placeholder="8080"
-                  value={targetPort}
-                  onChange={(e) => setTargetPort(e.target.value)}
-                />
-              </fieldset>
-              <button
-                type="submit"
-                className="btn btn-primary btn-sm"
-                disabled={creating || !label.trim() || !targetNodeId || !targetPort}
-              >
-                <Plus className="size-3.5" aria-hidden="true" />
-                Create
-              </button>
+                  <Plus className="size-3.5" aria-hidden="true" />
+                  Create
+                </button>
+              </div>
             </form>
           </div>
         </div>

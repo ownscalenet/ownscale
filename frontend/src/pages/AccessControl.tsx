@@ -203,7 +203,7 @@ export default function AccessControl() {
       <ErrorAlert error={error} />
       {success && (
         <div role="alert" className="alert alert-success mb-4">
-          <span>Policy saved. Headscale is restarting to apply it.</span>
+          <span>Policy saved.</span>
         </div>
       )}
 

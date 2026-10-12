@@ -25,7 +25,7 @@ test('an ssh section can be saved in the policy, and invalid ssh rules are rejec
 
   const editor = page.locator('textarea')
   const save = page.getByRole('button', { name: 'Save' })
-  const saved = page.getByText('Policy saved. Headscale is restarting to apply it.')
+  const saved = page.getByText('Policy saved.')
   const original = await editor.inputValue()
 
   try {

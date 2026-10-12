@@ -112,10 +112,14 @@ func TestListFunnelRoutesFlagsMissingTargetNode(t *testing.T) {
 			TargetNodeMissing bool   `json:"targetNodeMissing"`
 			CreatedBy         string `json:"createdBy"`
 		} `json:"funnelRoutes"`
-		CanManage bool `json:"canManage"`
+		HostnameSuffix string `json:"hostnameSuffix"`
+		CanManage      bool   `json:"canManage"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
+	}
+	if want := "-" + org.Subdomain + ".example-funnel.net"; resp.HostnameSuffix != want {
+		t.Errorf("hostnameSuffix = %q, want %q", resp.HostnameSuffix, want)
 	}
 	if len(resp.FunnelRoutes) != 1 || !resp.FunnelRoutes[0].TargetNodeMissing {
 		t.Errorf("funnelRoutes = %+v, want one route flagged targetNodeMissing=true", resp.FunnelRoutes)

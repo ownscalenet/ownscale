@@ -155,7 +155,7 @@ export default function DNS() {
       <ErrorAlert error={error} />
       {success && (
         <div role="alert" className="alert alert-success mb-4">
-          <span>DNS settings saved. Headscale is restarting to apply them.</span>
+          <span>DNS settings saved.</span>
         </div>
       )}
 

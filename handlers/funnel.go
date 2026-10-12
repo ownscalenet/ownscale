@@ -111,8 +111,9 @@ func (h *Handlers) ListFunnelRoutes(w http.ResponseWriter, r *http.Request) {
 		resp = append(resp, h.toFunnelRouteResponse(route, org.Subdomain, nodesByID, namesByID[route.CreatedBy.String]))
 	}
 	h.writeJSON(w, http.StatusOK, map[string]any{
-		"funnelRoutes": resp,
-		"canManage":    isManager(caller.Role),
+		"funnelRoutes":   resp,
+		"hostnameSuffix": "-" + org.Subdomain + "." + h.funnelDomain,
+		"canManage":      isManager(caller.Role),
 	})
 }
 
