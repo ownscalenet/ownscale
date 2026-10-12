@@ -24,7 +24,7 @@ const navGroups: { title: string; links: { to: string; label: string; icon: Reac
     title: 'Network',
     links: [
       { to: '/machines', label: 'Machines', icon: <Monitor /> },
-      { to: '/funnel', label: 'Funnel', icon: <GlobeLock /> },
+      { to: '/funnels', label: 'Funnels', icon: <GlobeLock /> },
       { to: '/dns', label: 'DNS', icon: <Network /> },
     ],
   },

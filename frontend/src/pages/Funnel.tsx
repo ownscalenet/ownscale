@@ -15,7 +15,7 @@ import { EmptyRow, ErrorAlert, PageHeader, PageSpinner } from '../components/ui'
 import { CopyIcon } from '../components/CopyButton'
 
 export default function Funnel() {
-  usePageTitle('Funnel')
+  usePageTitle('Funnels')
   const confirm = useConfirm()
   const queryClient = useQueryClient()
   const routesQuery = useQuery({
@@ -88,7 +88,7 @@ export default function Funnel() {
   return (
     <div>
       <PageHeader
-        title="Funnel"
+        title="Funnels"
         subtitle={`${routes.length} public ${routes.length === 1 ? 'route' : 'routes'}`}
       />
 

@@ -228,7 +228,7 @@ export class OrgUI {
 
   async createFunnel(machineID: string, port: number, recovery: Recovery): Promise<FunnelRoute> {
     await this.assertFunnelUnused()
-    await this.page.goto('/funnel')
+    await this.page.goto('/funnels')
     await this.page.locator('#funnel-label').fill('web2')
     await this.page.locator('#funnel-machine').selectOption(machineID)
     await this.page.locator('#funnel-port').fill(String(port))
@@ -299,7 +299,7 @@ export class OrgUI {
       const route = (await this.read<FunnelRoutesResponse>('/api/funnel')).funnelRoutes.find(r => String(r.id) === resource.id)
       if (route) {
         if (`${route.label}:${route.targetNodeId}:${route.targetPort}` !== resource.reference) throw new Error(`${this.org}: refusing to remove changed route ID ${resource.id}`)
-        await this.page.goto('/funnel')
+        await this.page.goto('/funnels')
         const row = this.page.getByRole('row').filter({ has: this.page.getByRole('link', { name: `https://${route.hostname}`, exact: true }) })
         await row.getByRole('button', { name: 'Remove', exact: true }).click()
         await confirmDialog(this.page, 'Remove route')

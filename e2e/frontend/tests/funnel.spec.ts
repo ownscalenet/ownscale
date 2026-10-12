@@ -19,8 +19,8 @@ test('creating and deleting a funnel route', async ({ page, account }) => {
   try {
     const label = `e2e${Date.now()}`
 
-    await page.goto('/funnel')
-    await expect(page.getByRole('heading', { name: 'Funnel', exact: true })).toBeVisible()
+    await page.goto('/funnels')
+    await expect(page.getByRole('heading', { name: 'Funnels', exact: true })).toBeVisible()
 
     await page.locator('#funnel-label').fill(label)
     await page.locator('#funnel-machine').selectOption({ label: machine.hostname })
@@ -74,7 +74,7 @@ async function getFunnel(hostname: string): Promise<{ status: number; body: stri
 // createFunnel creates a funnel route through the Funnel page and returns
 // its public hostname.
 async function createFunnel(page: Page, label: string, machineHostname: string, port: number): Promise<string> {
-  await page.goto('/funnel')
+  await page.goto('/funnels')
   await page.locator('#funnel-label').fill(label)
   await page.locator('#funnel-machine').selectOption({ label: machineHostname })
   await page.locator('#funnel-port').fill(String(port))
@@ -121,7 +121,7 @@ test('a funnel works again after its internal funnel machine is deleted', async 
     await page.goto('/machines')
     await expect(page.getByRole('row').filter({ hasText: funnelMachine })).toBeVisible()
 
-    await page.goto('/funnel')
+    await page.goto('/funnels')
     const row = page.getByRole('row').filter({ hasText: second })
     await row.getByRole('button', { name: 'Remove' }).click()
     await confirmDialog(page, 'Remove route')

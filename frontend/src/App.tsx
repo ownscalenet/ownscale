@@ -52,7 +52,7 @@ function AppRoutes() {
         <Route path="access-control" element={<AccessControl />} />
         <Route path="auth-restrictions" element={<AuthRestrictions />} />
         <Route path="dns" element={<DNS />} />
-        <Route path="funnel" element={<Funnel />} />
+        <Route path="funnels" element={<Funnel />} />
 
         <Route path="settings" element={<Settings />} />
         <Route path="user-settings" element={<UserSettings />} />
