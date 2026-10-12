@@ -3,7 +3,7 @@ import { KeyRound, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useAuth } from '../auth'
+import { useAuth } from '../authContext'
 import {
   createAuthKey,
   deleteAuthKey,

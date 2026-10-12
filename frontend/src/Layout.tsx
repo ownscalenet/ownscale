@@ -12,9 +12,9 @@ import {
   UserCog,
   Users,
 } from 'lucide-react'
-import { useAuth } from './auth'
+import { useAuth } from './authContext'
 import { logout } from './api'
-import CopyButton from './components/CopyButton'
+import { CopyIcon } from './components/CopyButton'
 import Logo from './components/Logo'
 import ThemeToggle from './components/ThemeToggle'
 
@@ -34,11 +34,8 @@ const navGroups: { title: string; links: { to: string; label: string; icon: Reac
       { to: '/users', label: 'Users', icon: <Users /> },
       { to: '/access-control', label: 'Access Control', icon: <ListChecks /> },
       { to: '/auth-restrictions', label: 'Auth Restrictions', icon: <ShieldCheck /> },
+      { to: '/settings', label: 'Settings', icon: <SettingsIcon /> },
     ],
-  },
-  {
-    title: 'Tailnet',
-    links: [{ to: '/settings', label: 'Settings', icon: <SettingsIcon /> }],
   },
 ]
 
@@ -150,7 +147,7 @@ export default function Layout() {
                     className={`size-1.5 rounded-full ${statusDot[organization.Status] ?? 'bg-base-content/30'}`}
                     aria-hidden="true"
                   />
-                  Tailnet · {organization.Status.replace('_', ' ')}
+                  Tailnet
                 </div>
                 <div className="mt-1 flex items-center gap-1">
                   <span
@@ -159,9 +156,7 @@ export default function Layout() {
                   >
                     {organization.Domain}
                   </span>
-                  <CopyButton className="btn btn-ghost btn-xs" text={loginServer}>
-                    Copy
-                  </CopyButton>
+                  <CopyIcon text={loginServer} label="login server" />
                 </div>
               </div>
             )}

@@ -1,4 +1,5 @@
-import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
+import { AuthContext } from './authContext'
 import {
   ApiError,
   errorMessage,
@@ -7,16 +8,6 @@ import {
   type Organization,
   type User,
 } from './api'
-
-interface AuthState {
-  user: User | null
-  organization: Organization | null
-  loading: boolean
-  error: string | null
-  refresh: () => Promise<void>
-}
-
-const AuthContext = createContext<AuthState | null>(null)
 
 // pendingPollMs is how often the session is re-read while the organization
 // isn't active, so its status doesn't stay stale.
@@ -82,10 +73,4 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       {children}
     </AuthContext.Provider>
   )
-}
-
-export function useAuth(): AuthState {
-  const ctx = useContext(AuthContext)
-  if (!ctx) throw new Error('useAuth must be used within AuthProvider')
-  return ctx
 }

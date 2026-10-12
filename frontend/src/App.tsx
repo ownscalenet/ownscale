@@ -1,5 +1,6 @@
 import { Navigate, Route, Routes, useLocation } from 'react-router-dom'
-import { AuthProvider, useAuth } from './auth'
+import { AuthProvider } from './auth'
+import { useAuth } from './authContext'
 import Layout from './Layout'
 import ConfirmProvider from './components/ConfirmProvider'
 import Login from './pages/Login'

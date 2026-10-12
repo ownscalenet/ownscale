@@ -2,7 +2,7 @@ import { RelativeTime } from '../components/RelativeTime'
 import { Ban, Copy, Crown, Link, Trash2, UserPlus } from 'lucide-react'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useAuth } from '../auth'
+import { useAuth } from '../authContext'
 import { usePageTitle } from '../hooks/usePageTitle'
 import {
   ROLES,

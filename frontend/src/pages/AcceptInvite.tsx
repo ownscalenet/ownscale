@@ -1,6 +1,6 @@
 import { Navigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
-import { useAuth } from '../auth'
+import { useAuth } from '../authContext'
 import { errorMessage, getInvitePreview } from '../api'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { ErrorAlert, PageSpinner } from '../components/ui'

@@ -3,7 +3,7 @@ import type { IPN } from '@tailscale/connect'
 import { Link, useParams } from 'react-router-dom'
 import { TerminalSquare } from 'lucide-react'
 import { createSSHSession, errorMessage, type SSHSession } from '../api'
-import { useAuth } from '../auth'
+import { useAuth } from '../authContext'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { ErrorAlert, PageHeader } from '../components/ui'
 

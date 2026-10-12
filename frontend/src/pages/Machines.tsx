@@ -1,16 +1,12 @@
-import {
-  useDialogAction,
-  RenameDialog,
-  TagsDialog,
-  RoutesDialog,
-} from '../components/MachineDialogs'
+import { RenameDialog, TagsDialog, RoutesDialog } from '../components/MachineDialogs'
+import { useDialogAction } from '../hooks/useDialogAction'
 import { RelativeTime } from '../components/RelativeTime'
 import { Ellipsis, LogOut, Pencil, Plus, Route, Tag, TerminalSquare, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
-import { useAuth } from '../auth'
+import { useAuth } from '../authContext'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { faqURL } from '../lib/faq'
 import { useConfirm } from '../lib/confirm'
