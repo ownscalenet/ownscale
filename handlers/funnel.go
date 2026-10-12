@@ -132,19 +132,12 @@ func (h *Handlers) CreateFunnelRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nodes, err := client.ListNodes(r.Context())
-	if err != nil {
+	targetNode, err := client.GetNode(r.Context(), req.TargetNodeID)
+	if err != nil && !errors.Is(err, hscl.ErrNotFound) {
 		h.serverError(w, r, err)
 		return
 	}
-	var targetNode *hscl.Node
-	for i := range nodes {
-		if nodes[i].ID == req.TargetNodeID {
-			targetNode = &nodes[i]
-			break
-		}
-	}
-	if targetNode == nil {
+	if err != nil {
 		h.writeError(w, http.StatusBadRequest, "target machine not found")
 		return
 	}
@@ -180,7 +173,7 @@ func (h *Handlers) CreateFunnelRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nodesByID := map[string]hscl.Node{targetNode.ID: *targetNode}
+	nodesByID := map[string]hscl.Node{targetNode.ID: targetNode}
 	h.writeJSON(w, http.StatusOK, map[string]any{
 		"funnelRoute": h.toFunnelRouteResponse(created, org.Subdomain, nodesByID),
 	})

@@ -5,6 +5,7 @@ package hscl
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -113,6 +114,10 @@ func NewUnix(socketPath string) *Client {
 	return &Client{api: api}
 }
 
+// ErrNotFound is returned by lookups for an object this organization's
+// headscale instance doesn't have.
+var ErrNotFound = errors.New("not found")
+
 // response is what every generated XxxWithResponse call returns, with T the
 // operation's 200 body.
 type response[T any] interface {
@@ -173,6 +178,25 @@ func (c *Client) ListNodes(ctx context.Context) (_ []Node, err error) {
 		return nil, err
 	}
 	return convert(out.Nodes, toNode), nil
+}
+
+// GetNode returns the node with nodeID, or ErrNotFound if this
+// organization's tailnet has no such node.
+func (c *Client) GetNode(ctx context.Context, nodeID string) (_ Node, err error) {
+	defer derrors.Wrap(&err, "c.GetNode(%q)", nodeID)
+
+	resp, err := c.api.GetNodeWithResponse(ctx, nodeID)
+	if err != nil {
+		return Node{}, err
+	}
+	if resp.StatusCode() == http.StatusNotFound {
+		return Node{}, ErrNotFound
+	}
+	out, err := result[clientv1.NodeOutputBody](resp, nil)
+	if err != nil {
+		return Node{}, err
+	}
+	return toNode(out.Node), nil
 }
 
 // ListUsers returns every user known to this organization's headscale

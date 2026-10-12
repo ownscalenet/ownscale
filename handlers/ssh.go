@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"net/netip"
@@ -47,19 +48,12 @@ func (h *Handlers) CreateSSHSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	nodes, err := client.ListNodes(r.Context())
-	if err != nil {
+	target, err := client.GetNode(r.Context(), id)
+	if err != nil && !errors.Is(err, hscl.ErrNotFound) {
 		h.serverError(w, r, err)
 		return
 	}
-	var target *hscl.Node
-	for i, n := range nodes {
-		if n.ID == id {
-			target = &nodes[i]
-			break
-		}
-	}
-	if target == nil || funnelproxy.IsFunnelUser(target.User) {
+	if err != nil || funnelproxy.IsFunnelUser(target.User) {
 		h.writeError(w, http.StatusNotFound, "machine not found")
 		return
 	}
@@ -71,7 +65,7 @@ func (h *Handlers) CreateSSHSession(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusConflict, "machine is offline")
 		return
 	}
-	addr := sshTargetAddress(*target)
+	addr := sshTargetAddress(target)
 	if addr == "" {
 		h.writeError(w, http.StatusConflict, "machine has no tailnet address")
 		return

@@ -91,9 +91,9 @@ func TestCreateSSHSessionUnreachableMachine(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			h, org, owner, _ := sshTestOrg(t)
 			mux := http.NewServeMux()
-			mux.HandleFunc("/api/v1/node", func(w http.ResponseWriter, _ *http.Request) {
+			mux.HandleFunc("/api/v1/node/{id}", func(w http.ResponseWriter, _ *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
-				fmt.Fprintf(w, `{"nodes":[%s]}`, tt.node)
+				fmt.Fprintf(w, `{"node":%s}`, tt.node)
 			})
 			client := hscl.NewUnix(hstest.Socket(t, mux))
 

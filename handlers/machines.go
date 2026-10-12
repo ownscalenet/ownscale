@@ -487,14 +487,12 @@ func (h *Handlers) DeleteMachine(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handlers) isFunnelMachine(ctx context.Context, client *hscl.Client, nodeID string) (bool, error) {
-	nodes, err := client.ListNodes(ctx)
+	node, err := client.GetNode(ctx, nodeID)
+	if errors.Is(err, hscl.ErrNotFound) {
+		return false, nil
+	}
 	if err != nil {
 		return false, err
 	}
-	for _, n := range nodes {
-		if n.ID == nodeID {
-			return funnelproxy.IsFunnelUser(n.User), nil
-		}
-	}
-	return false, nil
+	return funnelproxy.IsFunnelUser(node.User), nil
 }

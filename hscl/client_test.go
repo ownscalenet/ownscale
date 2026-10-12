@@ -1,6 +1,7 @@
 package hscl
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -59,16 +60,14 @@ func userByName(t *testing.T, c *Client, name string) (User, bool) {
 
 func nodeByID(t *testing.T, c *Client, id string) (Node, bool) {
 	t.Helper()
-	nodes, err := c.ListNodes(t.Context())
+	node, err := c.GetNode(t.Context(), id)
+	if errors.Is(err, ErrNotFound) {
+		return Node{}, false
+	}
 	if err != nil {
-		t.Fatalf("ListNodes: %v", err)
+		t.Fatalf("GetNode(%q): %v", id, err)
 	}
-	for _, n := range nodes {
-		if n.ID == id {
-			return n, true
-		}
-	}
-	return Node{}, false
+	return node, true
 }
 
 func TestUsers(t *testing.T) {
@@ -165,6 +164,9 @@ func TestNodes(t *testing.T) {
 	}
 	if _, ok := nodeByID(t, c, node.ID); ok {
 		t.Error("deleted node still listed")
+	}
+	if _, err := c.GetNode(t.Context(), "99999"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("GetNode(unknown) error = %v, want ErrNotFound", err)
 	}
 }
 

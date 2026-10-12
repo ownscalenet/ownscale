@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"context"
+	"errors"
 	"net/http"
 
 	"github.com/ownscalenet/ownscale/auth"
@@ -106,15 +107,13 @@ func (h *Handlers) requireNodeAccess(w http.ResponseWriter, r *http.Request, cli
 	if isManager(caller.Role) {
 		return true
 	}
-	nodes, err := client.ListNodes(r.Context())
-	if err != nil {
+	node, err := client.GetNode(r.Context(), nodeID)
+	if err != nil && !errors.Is(err, hscl.ErrNotFound) {
 		h.serverError(w, r, err)
 		return false
 	}
-	for _, n := range nodes {
-		if n.ID == nodeID && n.User != nil && ownsHeadscaleUser(caller, n.User.ID) {
-			return true
-		}
+	if err == nil && node.User != nil && ownsHeadscaleUser(caller, node.User.ID) {
+		return true
 	}
 	h.writeError(w, http.StatusForbidden, "you can only manage your own machines")
 	return false

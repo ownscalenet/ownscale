@@ -73,19 +73,21 @@ func newFakeHeadscaleServer(t *testing.T) (*hscl.Client, *[]*http.Request, *stri
 	policy := `{"acls":[{"action":"accept","src":["*"],"dst":["*:*"]}]}`
 	var lastTags []string
 
+	nodes := map[string]string{
+		"1": `{"id":"1","name":"node1","givenName":"node1","ipAddresses":["100.64.0.1"],
+			 "user":{"id":"1","name":"alice"},"online":true,"tags":["tag:server"],
+			 "approvedRoutes":["10.0.0.0/24"],"availableRoutes":["10.0.0.0/24"],
+			 "createdAt":"2024-01-01T00:00:00Z"}`,
+		"2": fmt.Sprintf(`{"id":"2","name":"funnel-acme","givenName":"funnel-acme","ipAddresses":["100.64.0.2"],
+			 "user":{"id":"2","name":%q},"online":false,
+			 "expiry":"2020-01-01T00:00:00Z","createdAt":"2024-01-01T00:00:00Z"}`, funnelproxy.FunnelHeadscaleUserName),
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/v1/node", func(w http.ResponseWriter, r *http.Request) {
 		requests = append(requests, r)
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprintf(w, `{"nodes":[
-			{"id":"1","name":"node1","givenName":"node1","ipAddresses":["100.64.0.1"],
-			 "user":{"id":"1","name":"alice"},"online":true,"tags":["tag:server"],
-			 "approvedRoutes":["10.0.0.0/24"],"availableRoutes":["10.0.0.0/24"],
-			 "createdAt":"2024-01-01T00:00:00Z"},
-			{"id":"2","name":"funnel-acme","givenName":"funnel-acme","ipAddresses":["100.64.0.2"],
-			 "user":{"id":"2","name":%q},"online":false,
-			 "expiry":"2020-01-01T00:00:00Z","createdAt":"2024-01-01T00:00:00Z"}
-		]}`, funnelproxy.FunnelHeadscaleUserName)
+		fmt.Fprintf(w, `{"nodes":[%s,%s]}`, nodes["1"], nodes["2"])
 	})
 	mux.HandleFunc("/api/v1/user", func(w http.ResponseWriter, r *http.Request) {
 		requests = append(requests, r)
@@ -136,10 +138,20 @@ func newFakeHeadscaleServer(t *testing.T) (*hscl.Client, *[]*http.Request, *stri
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"node":{"id":"1"}}`)
 	})
-	mux.HandleFunc("/api/v1/node/1", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("/api/v1/node/{id}", func(w http.ResponseWriter, r *http.Request) {
 		requests = append(requests, r)
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, `{}`)
+		if r.Method != http.MethodGet {
+			fmt.Fprint(w, `{}`)
+			return
+		}
+		node, ok := nodes[r.PathValue("id")]
+		if !ok {
+			w.WriteHeader(http.StatusNotFound)
+			fmt.Fprint(w, `{"detail":"node not found"}`)
+			return
+		}
+		fmt.Fprintf(w, `{"node":%s}`, node)
 	})
 	mux.HandleFunc("/api/v1/policy", func(w http.ResponseWriter, r *http.Request) {
 		requests = append(requests, r)
@@ -621,8 +633,14 @@ func TestDeleteMachineCascadesFunnelRoutesForInternalMachine(t *testing.T) {
 	})
 	var deletedNodeID string
 	mux.HandleFunc("/api/v1/node/2", func(w http.ResponseWriter, r *http.Request) {
-		deletedNodeID = "2"
 		w.Header().Set("Content-Type", "application/json")
+		if r.Method == http.MethodGet {
+			fmt.Fprintf(w, `{"node":{"id":"2","name":"funnel-acme","givenName":"funnel-acme",
+				"user":{"id":"2","name":%q},"online":true,"createdAt":"2024-01-01T00:00:00Z"}}`,
+				funnelproxy.FunnelHeadscaleUserName)
+			return
+		}
+		deletedNodeID = "2"
 		fmt.Fprint(w, `{}`)
 	})
 	client := hscl.NewUnix(hstest.Socket(t, mux))
