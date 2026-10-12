@@ -425,13 +425,64 @@ func (c *Client) GetPolicy(ctx context.Context) (_ string, err error) {
 	return out.Policy, nil
 }
 
+// PolicyError is headscale's reason for rejecting a policy, such as a syntax
+// problem or the failing entries of its "tests" block (one per line).
+type PolicyError struct {
+	Reason string
+}
+
+func (e *PolicyError) Error() string { return e.Reason }
+
+// policyError returns a *PolicyError when headscale rejected the policy
+// itself (400), and otherwise the generic error from result.
+func policyError(status int, problem *clientv1.ErrorModel, err error) error {
+	if status != http.StatusBadRequest || problem == nil || problem.Detail == nil {
+		return err
+	}
+	// The errors carry the specifics (such as each failing test); detail is
+	// only a generic summary like "setting policy".
+	var msgs []string
+	if problem.Errors != nil {
+		for _, e := range *problem.Errors {
+			if e.Message != nil {
+				msgs = append(msgs, *e.Message)
+			}
+		}
+	}
+	reason := *problem.Detail
+	if len(msgs) > 0 {
+		reason = strings.Join(msgs, "\n")
+	}
+	return &PolicyError{Reason: reason}
+}
+
 // SetPolicy replaces the organization's access control policy with
 // content (HuJSON), taking effect immediately. headscale reloads its
-// policy live in database mode, no restart required.
+// policy live in database mode, no restart required. It returns a
+// *PolicyError if headscale rejects the policy, including when the policy's
+// "tests" fail.
 func (c *Client) SetPolicy(ctx context.Context, content string) (err error) {
 	defer derrors.Wrap(&err, "c.SetPolicy()")
 
-	_, err = result(c.api.SetPolicyWithResponse(ctx, clientv1.SetPolicyJSONRequestBody{Policy: &content}))
+	resp, err := c.api.SetPolicyWithResponse(ctx, clientv1.SetPolicyJSONRequestBody{Policy: &content})
+	_, err = result(resp, err)
+	if resp != nil {
+		err = policyError(resp.StatusCode(), resp.ApplicationproblemJSONDefault, err)
+	}
+	return err
+}
+
+// CheckPolicy validates content against the organization's live users and
+// machines, running the policy's "tests", without saving it. It returns a
+// *PolicyError if headscale rejects the policy.
+func (c *Client) CheckPolicy(ctx context.Context, content string) (err error) {
+	defer derrors.Wrap(&err, "c.CheckPolicy()")
+
+	resp, err := c.api.CheckPolicyWithResponse(ctx, clientv1.CheckPolicyJSONRequestBody{Policy: &content})
+	_, err = result(resp, err)
+	if resp != nil {
+		err = policyError(resp.StatusCode(), resp.ApplicationproblemJSONDefault, err)
+	}
 	return err
 }
 

@@ -56,7 +56,9 @@ export function ErrorAlert({
   if (!error) return null
   return (
     <div role="alert" className={`alert alert-error ${className}`}>
-      <span>{error}</span>
+      <span className={`whitespace-pre-wrap ${error.includes('\n') ? 'font-mono text-sm' : ''}`}>
+        {error}
+      </span>
     </div>
   )
 }

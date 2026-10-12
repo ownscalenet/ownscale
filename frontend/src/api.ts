@@ -327,6 +327,15 @@ export function getAccessControlPolicy(signal?: AbortSignal) {
   return request<AccessControlResponse>('/api/access-control', { signal })
 }
 
+// checkAccessControlPolicy validates content and runs its tests without
+// saving; it rejects with the failing tests' details.
+export function checkAccessControlPolicy(content: string) {
+  return request<{ ok: boolean }>('/api/access-control/check', {
+    method: 'POST',
+    body: JSON.stringify({ content }),
+  })
+}
+
 export function updateAccessControlPolicy(content: string) {
   return request<{ ok: boolean }>('/api/access-control', {
     method: 'PUT',

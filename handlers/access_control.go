@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"errors"
 	"net/http"
 
 	"github.com/ownscalenet/ownscale/auth"
+	"github.com/ownscalenet/ownscale/hscl"
 	"github.com/ownscalenet/ownscale/orgs"
 	"github.com/tailscale/hujson"
 )
@@ -69,8 +71,51 @@ func (h *Handlers) UpdateAccessControlPolicy(w http.ResponseWriter, r *http.Requ
 	}
 
 	if err := client.SetPolicy(r.Context(), req.Content); err != nil {
-		h.writeError(w, http.StatusBadRequest, "headscale rejected policy: "+err.Error())
+		h.writePolicyError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// CheckAccessControlPolicy handles POST /api/access-control/check. It
+// validates content and runs its "tests" against the organization's current
+// users and machines without saving, returning headscale's reason as a 400
+// when the policy is rejected.
+func (h *Handlers) CheckAccessControlPolicy(w http.ResponseWriter, r *http.Request) {
+	caller, ok := auth.UserFromContext(r.Context())
+	if !ok {
+		h.writeError(w, http.StatusUnauthorized, "unauthenticated")
+		return
+	}
+	if !isManager(caller.Role) {
+		h.writeError(w, http.StatusForbidden, "only owners and admins can edit the access control policy")
+		return
+	}
+	client, _, _ := headscaleClientFromContext(r)
+
+	var req struct {
+		Content string `json:"content"`
+	}
+	if !h.decodeJSONBody(w, r, &req) {
+		return
+	}
+	if _, err := hujson.Parse([]byte(req.Content)); err != nil {
+		h.writeError(w, http.StatusBadRequest, "invalid HuJSON: "+err.Error())
+		return
+	}
+	if err := client.CheckPolicy(r.Context(), req.Content); err != nil {
+		h.writePolicyError(w, r, err)
+		return
+	}
+	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// writePolicyError answers a 400 with headscale's own reason when it rejected
+// the policy, and a 500 for any other failure.
+func (h *Handlers) writePolicyError(w http.ResponseWriter, r *http.Request, err error) {
+	if perr, ok := errors.AsType[*hscl.PolicyError](err); ok {
+		h.writeError(w, http.StatusBadRequest, perr.Reason)
+		return
+	}
+	h.serverError(w, r, err)
 }

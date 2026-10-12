@@ -1,9 +1,10 @@
-import { AlignLeft, Save } from 'lucide-react'
+import { AlignLeft, FlaskConical, Save } from 'lucide-react'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getAccessControlPolicy,
   updateAccessControlPolicy,
+  checkAccessControlPolicy,
   errorMessage,
   formatHuJSON,
   isNotConfigured,
@@ -79,6 +80,14 @@ function Cheatsheet() {
               <code>*</code>; use <code>autogroup:self</code> for a user's own machines. Target
               machines must run <code>tailscale up --ssh</code>, and <code>acls</code> must allow
               port 22.
+            </dd>
+          </div>
+          <div>
+            <dt className="font-semibold">tests</dt>
+            <dd className="text-base-content/70">
+              Checks run by <em>Run tests</em> and on every save; a failing test blocks the save.
+              Each has a <code>src</code> and <code>accept</code> / <code>deny</code> lists of
+              destinations, e.g. <code>{'{"src": "alice@", "accept": ["tag:server:22"]}'}</code>
             </dd>
           </div>
         </dl>
@@ -166,19 +175,36 @@ export default function AccessControl() {
     mutationFn: formatHuJSON,
     onSuccess: (res) => setDraft(res.content),
   })
+  const check = useMutation({ mutationFn: checkAccessControlPolicy })
+  const checking = check.isPending
   const saving = save.isPending
   const formatting = format.isPending
   const success = save.isSuccess
-  const failure = save.error ?? format.error ?? (notConfigured ? null : query.error)
+  const failure = save.error ?? check.error ?? format.error ?? (notConfigured ? null : query.error)
   const error = failure ? errorMessage(failure) : null
 
   const handleSave = () => {
     format.reset()
+    check.reset()
     save.mutate(content)
+  }
+
+  const handleCheck = () => {
+    save.reset()
+    format.reset()
+    check.mutate(content)
+  }
+
+  const handleEdit = (value: string) => {
+    save.reset()
+    format.reset()
+    check.reset()
+    setDraft(value)
   }
 
   const handleFormat = () => {
     save.reset()
+    check.reset()
     format.mutate(content)
   }
 
@@ -201,6 +227,11 @@ export default function AccessControl() {
       )}
 
       <ErrorAlert error={error} />
+      {check.isSuccess && (
+        <div role="alert" className="alert alert-success mb-4">
+          <span>Policy is valid and all its tests pass.</span>
+        </div>
+      )}
       {success && (
         <div role="alert" className="alert alert-success mb-4">
           <span>Policy saved.</span>
@@ -241,6 +272,20 @@ export default function AccessControl() {
                   {canManage && (
                     <button
                       type="button"
+                      className="btn btn-ghost btn-sm"
+                      disabled={checking || notConfigured}
+                      onClick={handleCheck}
+                    >
+                      {checking ? (
+                        <span className="loading loading-spinner loading-xs"></span>
+                      ) : null}
+                      <FlaskConical className="size-3.5" aria-hidden="true" />
+                      Run tests
+                    </button>
+                  )}
+                  {canManage && (
+                    <button
+                      type="button"
                       className="btn btn-primary btn-sm"
                       disabled={saving || notConfigured || !dirty}
                       onClick={handleSave}
@@ -252,7 +297,7 @@ export default function AccessControl() {
                   )}
                 </div>
               </div>
-              <LineNumberedTextarea value={content} readOnly={!canManage} onChange={setDraft} />
+              <LineNumberedTextarea value={content} readOnly={!canManage} onChange={handleEdit} />
               {!canManage && (
                 <p className="text-sm text-base-content/60 mt-2">
                   Only owners and admins can edit the access control policy.

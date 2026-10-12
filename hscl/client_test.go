@@ -1,6 +1,7 @@
 package hscl
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -387,5 +388,63 @@ func TestNodeExpiry(t *testing.T) {
 
 	if err := c.DisableNodeExpiry(t.Context(), "99999"); !errors.Is(err, ErrNotFound) {
 		t.Errorf("DisableNodeExpiry(unknown) error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestPolicyTests(t *testing.T) {
+	c, sock := newTestClient(t)
+	registerNode(t, c, sock, "alice", "laptop")
+
+	withTests := func(accept, deny string) string {
+		return `{
+	"tagOwners": {"tag:server": ["alice@"]},
+	"acls": [{"action": "accept", "src": ["*"], "dst": ["*:*"]}],
+	"tests": [{"src": "alice@", "accept": [` + accept + `], "deny": [` + deny + `]}],
+}`
+	}
+	tests := []struct {
+		name    string
+		policy  string
+		wantErr string
+	}{
+		{"passing", withTests(`"10.0.0.1:22"`, ``), ""},
+		{"failing deny", withTests(`"10.0.0.1:22"`, `"10.0.0.2:22"`), "10.0.0.2:22"},
+	}
+	runs := []struct {
+		name string
+		run  func(context.Context, string) error
+	}{
+		{"CheckPolicy", c.CheckPolicy},
+		{"SetPolicy", c.SetPolicy},
+	}
+	for _, tt := range tests {
+		for _, r := range runs {
+			t.Run(tt.name+"/"+r.name, func(t *testing.T) {
+				err := r.run(t.Context(), tt.policy)
+				if tt.wantErr == "" {
+					if err != nil {
+						t.Fatalf("unexpected error: %v", err)
+					}
+					return
+				}
+				var perr *PolicyError
+				if !errors.As(err, &perr) {
+					t.Fatalf("error = %v, want *PolicyError", err)
+				}
+				t.Logf("reason: %q", perr.Reason)
+				if !strings.Contains(perr.Reason, tt.wantErr) {
+					t.Errorf("reason = %q, want it to contain %q", perr.Reason, tt.wantErr)
+				}
+			})
+		}
+	}
+
+	// A rejected policy is not saved.
+	got, err := c.GetPolicy(t.Context())
+	if err != nil {
+		t.Fatalf("GetPolicy: %v", err)
+	}
+	if strings.Contains(got, "10.0.0.2:22") {
+		t.Error("policy with failing tests was saved")
 	}
 }

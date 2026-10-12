@@ -64,6 +64,7 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	mux.HandleFunc("DELETE /api/passkeys/{id}", requireAuthAPI(h.DeletePasskey))
 
 	mux.HandleFunc("GET /api/access-control", requireAuthAPI(h.ReadHeadscale(h.GetAccessControlPolicy)))
+	mux.HandleFunc("POST /api/access-control/check", requireAuthAPI(h.ProvisionHeadscale(h.CheckAccessControlPolicy)))
 	mux.HandleFunc("PUT /api/access-control", requireAuthAPI(h.ProvisionHeadscale(h.UpdateAccessControlPolicy)))
 	mux.HandleFunc("POST /api/hujson/format", requireAuthAPI(h.FormatHuJSON))
 
