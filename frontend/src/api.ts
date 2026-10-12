@@ -422,6 +422,7 @@ export interface FunnelRoute {
   targetNodeMissing: boolean
   targetPort: number
   createdAt: string
+  createdBy?: string
 }
 
 export interface FunnelRoutesResponse {

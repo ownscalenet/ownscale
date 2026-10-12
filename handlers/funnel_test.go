@@ -110,6 +110,7 @@ func TestListFunnelRoutesFlagsMissingTargetNode(t *testing.T) {
 			Label             string `json:"label"`
 			Hostname          string `json:"hostname"`
 			TargetNodeMissing bool   `json:"targetNodeMissing"`
+			CreatedBy         string `json:"createdBy"`
 		} `json:"funnelRoutes"`
 		CanManage bool `json:"canManage"`
 	}
@@ -121,6 +122,9 @@ func TestListFunnelRoutesFlagsMissingTargetNode(t *testing.T) {
 	}
 	if want := "ghost-" + org.Subdomain + ".example-funnel.net"; len(resp.FunnelRoutes) == 1 && resp.FunnelRoutes[0].Hostname != want {
 		t.Errorf("hostname = %q, want %q", resp.FunnelRoutes[0].Hostname, want)
+	}
+	if want := userDisplayName(owner); len(resp.FunnelRoutes) == 1 && resp.FunnelRoutes[0].CreatedBy != want {
+		t.Errorf("createdBy = %q, want %q", resp.FunnelRoutes[0].CreatedBy, want)
 	}
 	if !resp.CanManage {
 		t.Error("canManage = false for an owner, want true")

@@ -110,14 +110,14 @@ export default function Funnel() {
               <thead>
                 <tr>
                   <th>Public URL</th>
-                  <th>Target machine</th>
-                  <th>Target port</th>
+                  <th>Target machine:port</th>
+                  <th>Created by</th>
                   {canManage && <th></th>}
                 </tr>
               </thead>
               <tbody>
                 {routes.length === 0 && (
-                  <EmptyRow colSpan={4}>No funnel routes configured</EmptyRow>
+                  <EmptyRow colSpan={canManage ? 4 : 3}>No funnel routes configured</EmptyRow>
                 )}
                 {routes.map((r) => (
                   <tr key={r.id}>
@@ -135,8 +135,9 @@ export default function Funnel() {
                       ) : (
                         r.targetNodeName
                       )}
+                      :{r.targetPort}
                     </td>
-                    <td className="font-mono">{r.targetPort}</td>
+                    <td>{r.createdBy || '—'}</td>
                     {canManage && (
                       <td>
                         <button

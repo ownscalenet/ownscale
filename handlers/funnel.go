@@ -36,9 +36,17 @@ type funnelRouteResponse struct {
 	TargetNodeMissing bool   `json:"targetNodeMissing"`
 	TargetPort        int64  `json:"targetPort"`
 	CreatedAt         string `json:"createdAt"`
+	CreatedBy         string `json:"createdBy,omitempty"`
 }
 
-func (h *Handlers) toFunnelRouteResponse(route sqlcgen.FunnelRoute, subdomain string, nodesByID map[string]hscl.Node) funnelRouteResponse {
+func userDisplayName(u sqlcgen.User) string {
+	if u.Name != "" {
+		return u.Name
+	}
+	return u.Email
+}
+
+func (h *Handlers) toFunnelRouteResponse(route sqlcgen.FunnelRoute, subdomain string, nodesByID map[string]hscl.Node, createdBy string) funnelRouteResponse {
 	resp := funnelRouteResponse{
 		ID:           route.ID,
 		Label:        route.Label,
@@ -46,6 +54,7 @@ func (h *Handlers) toFunnelRouteResponse(route sqlcgen.FunnelRoute, subdomain st
 		TargetNodeID: route.TargetNodeID,
 		TargetPort:   route.TargetPort,
 		CreatedAt:    route.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
+		CreatedBy:    createdBy,
 	}
 	if node, ok := nodesByID[route.TargetNodeID]; ok {
 		if node.GivenName != "" {
@@ -87,9 +96,19 @@ func (h *Handlers) ListFunnelRoutes(w http.ResponseWriter, r *http.Request) {
 		nodesByID[n.ID] = n
 	}
 
+	users, err := h.queries.ListUsersByOrganization(r.Context(), org.ID)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	namesByID := make(map[string]string, len(users))
+	for _, u := range users {
+		namesByID[u.ID] = userDisplayName(u)
+	}
+
 	resp := make([]funnelRouteResponse, 0, len(routes))
 	for _, route := range routes {
-		resp = append(resp, h.toFunnelRouteResponse(route, org.Subdomain, nodesByID))
+		resp = append(resp, h.toFunnelRouteResponse(route, org.Subdomain, nodesByID, namesByID[route.CreatedBy.String]))
 	}
 	h.writeJSON(w, http.StatusOK, map[string]any{
 		"funnelRoutes": resp,
@@ -175,7 +194,7 @@ func (h *Handlers) CreateFunnelRoute(w http.ResponseWriter, r *http.Request) {
 
 	nodesByID := map[string]hscl.Node{targetNode.ID: targetNode}
 	h.writeJSON(w, http.StatusOK, map[string]any{
-		"funnelRoute": h.toFunnelRouteResponse(created, org.Subdomain, nodesByID),
+		"funnelRoute": h.toFunnelRouteResponse(created, org.Subdomain, nodesByID, userDisplayName(*caller)),
 	})
 }
 
