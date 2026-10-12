@@ -25,7 +25,7 @@ const tones = {
 }
 
 // ConfirmProvider renders the confirmation dialog that useConfirm asks for.
-// Cancel has the initial focus, so Enter never confirms by accident.
+// The confirm button has the initial focus, matching the other modals' order.
 export default function ConfirmProvider({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState<ConfirmOptions | null>(null)
   const [typed, setTyped] = useState('')
@@ -100,16 +100,17 @@ export default function ConfirmProvider({ children }: { children: ReactNode }) {
           </form>
         )}
         <div className="modal-action">
-          <button type="button" className="btn btn-ghost" autoFocus onClick={() => finish(false)}>
-            Cancel
-          </button>
           <button
             type="button"
             className={`btn ${tone.button}`}
+            autoFocus
             disabled={!matches}
             onClick={() => finish(true)}
           >
             {pending?.confirmLabel}
+          </button>
+          <button type="button" className="btn btn-ghost" onClick={() => finish(false)}>
+            Cancel
           </button>
         </div>
       </Modal>
