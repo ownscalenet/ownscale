@@ -333,3 +333,21 @@ func TestNonJSONResponseIsAnError(t *testing.T) {
 		t.Error("ListNodes: want error, got nil")
 	}
 }
+
+func TestGetDeviceInfo(t *testing.T) {
+	c, sock := newTestClient(t)
+	node := registerNode(t, c, sock, "alice", "laptop")
+
+	got, err := c.GetDeviceInfo(t.Context(), node.ID)
+	if err != nil {
+		t.Fatalf("GetDeviceInfo: %v", err)
+	}
+	// The test node reports no host info, so only the hostname is known.
+	if got.Hostname != "laptop" {
+		t.Errorf("hostname = %q, want laptop", got.Hostname)
+	}
+
+	if _, err := c.GetDeviceInfo(t.Context(), "99999"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("GetDeviceInfo(unknown) error = %v, want ErrNotFound", err)
+	}
+}

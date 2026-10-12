@@ -36,7 +36,7 @@ func (s *Service) ensureNoiseKey(ctx context.Context, orgID, subdomain string) (
 	defer derrors.Wrap(&err, "s.ensureNoiseKey(%q)", subdomain)
 
 	path := noisePath(s.dataDir, subdomain)
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}
 	file, err := os.ReadFile(path)
@@ -57,7 +57,7 @@ func (s *Service) ensureNoiseKey(ctx context.Context, orgID, subdomain string) (
 		if fileKey != "" {
 			s.logger.Warn("noise key file differs from the stored key, restoring the stored one", "subdomain", subdomain)
 		}
-		return os.WriteFile(path, []byte(row.Content), 0600)
+		return os.WriteFile(path, []byte(row.Content), 0o600)
 	case !errors.Is(err, sql.ErrNoRows):
 		return err
 	}
@@ -81,7 +81,7 @@ func (s *Service) ensureNoiseKey(ctx context.Context, orgID, subdomain string) (
 		return err
 	}
 	if fileKey == "" {
-		return os.WriteFile(path, []byte(stored), 0600)
+		return os.WriteFile(path, []byte(stored), 0o600)
 	}
 	return nil
 }
@@ -115,16 +115,17 @@ const DefaultACLPolicy = `{
 			"dst":    ["*:*"],
 		},
 	],
-	// Uncomment to let users Tailscale SSH into their own machines. Those
-	// machines must run "tailscale up --ssh".
-	// "ssh": [
-	// 	{
-	// 		"action": "accept",
-	// 		"src":    ["autogroup:member"],
-	// 		"dst":    ["autogroup:self"],
-	// 		"users":  ["autogroup:nonroot", "root"],
-	// 	},
-	// ],
+	// The target machines must enable ssh with either:
+	// tailscale up --ssh {API_KEY}
+	// tailscale set --ssh
+	"ssh": [
+		{
+			"action": "accept",
+			"src":    ["autogroup:member"],
+			"dst":    ["autogroup:self"],
+			"users":  ["autogroup:nonroot", "root"],
+		},
+	],
 }
 `
 
@@ -144,7 +145,7 @@ func createHeadscale(
 	pv6 := netip.MustParsePrefix("fd7a:115c:a1e0::/48")
 
 	orgDir := filepath.Dir(noisePath(dataDir, subdomain))
-	if err := os.Mkdir(orgDir, 0755); err != nil && !errors.Is(err, fs.ErrExist) {
+	if err := os.Mkdir(orgDir, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
 		return nil, err
 	}
 
@@ -177,7 +178,7 @@ func createHeadscale(
 		// nodes receive a DNS config (nameservers, MagicDNS) from startup.
 		TailcfgDNSConfig:     buildTailcfgDNS(dns),
 		UnixSocket:           SocketPath(dataDir, subdomain),
-		UnixSocketPermission: 0770,
+		UnixSocketPermission: 0o770,
 		Policy:               types.PolicyConfig{Mode: types.PolicyMode("database")},
 		Node: types.NodeConfig{
 			Ephemeral: types.EphemeralConfig{

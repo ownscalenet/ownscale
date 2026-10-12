@@ -159,6 +159,24 @@ export function listMachines(
   return request<MachinesResponse>(`/api/machines${suffix}`, { signal })
 }
 
+export interface DeviceInfo {
+  os: string
+  clientVersion: string
+  hostname: string
+  updateAvailable: boolean
+}
+
+export interface MachineDetailResponse {
+  machine: Machine
+  deviceInfo: DeviceInfo
+  // fullDomain is empty when MagicDNS is off.
+  fullDomain: string
+}
+
+export function getMachineByIP(ip: string, signal?: AbortSignal) {
+  return request<MachineDetailResponse>(`/api/machines/by-ip/${encodeURIComponent(ip)}`, { signal })
+}
+
 export function registerMachine(memberId: string, key: string) {
   return request<{ machine: Machine }>('/api/machines/register', {
     method: 'POST',

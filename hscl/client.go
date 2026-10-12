@@ -14,6 +14,7 @@ import (
 	"time"
 
 	clientv1 "github.com/juanfont/headscale/gen/client/v1"
+	clientv2 "github.com/juanfont/headscale/gen/client/v2"
 
 	"github.com/ownscalenet/ownscale/derrors"
 )
@@ -94,6 +95,8 @@ type CreateUserParams struct {
 // the instance's unix socket (see orgs.Service.Client).
 type Client struct {
 	api *clientv1.ClientWithResponses
+	// apiV2 serves what v1 lacks, such as the reported host info.
+	apiV2 *clientv2.ClientWithResponses
 }
 
 // NewUnix returns a Client that talks to headscale over its local unix
@@ -111,7 +114,11 @@ func NewUnix(socketPath string) *Client {
 		// Only fails for an unparsable server URL, which is a constant.
 		panic(err)
 	}
-	return &Client{api: api}
+	apiV2, err := clientv2.NewClientWithResponses("http://local", clientv2.WithHTTPClient(httpClient))
+	if err != nil {
+		panic(err)
+	}
+	return &Client{api: api, apiV2: apiV2}
 }
 
 // ErrNotFound is returned by lookups for an object this organization's
@@ -485,4 +492,32 @@ func timeString(t time.Time) string {
 		return ""
 	}
 	return t.Format(time.RFC3339)
+}
+
+// DeviceInfo is what a node reported about its host. Fields are empty until
+// the node has reported them.
+type DeviceInfo struct {
+	OS              string `json:"os"`
+	ClientVersion   string `json:"clientVersion"`
+	Hostname        string `json:"hostname"`
+	UpdateAvailable bool   `json:"updateAvailable"`
+}
+
+// GetDeviceInfo returns the host info reported by node nodeID, or
+// ErrNotFound if this organization's tailnet has no such node.
+func (c *Client) GetDeviceInfo(ctx context.Context, nodeID string) (_ DeviceInfo, err error) {
+	defer derrors.Wrap(&err, "c.GetDeviceInfo(%q)", nodeID)
+
+	resp, err := c.apiV2.GetDeviceWithResponse(ctx, nodeID, &clientv2.GetDeviceParams{})
+	if err != nil {
+		return DeviceInfo{}, err
+	}
+	if resp.StatusCode() == http.StatusNotFound {
+		return DeviceInfo{}, ErrNotFound
+	}
+	if resp.JSON200 == nil {
+		return DeviceInfo{}, fmt.Errorf("headscale: %s", resp.Status())
+	}
+	d := resp.JSON200
+	return DeviceInfo{OS: d.Os, ClientVersion: d.ClientVersion, Hostname: d.Hostname, UpdateAvailable: d.UpdateAvailable}, nil
 }

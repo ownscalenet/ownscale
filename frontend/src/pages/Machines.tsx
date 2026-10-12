@@ -1,9 +1,15 @@
+import {
+  useDialogAction,
+  RenameDialog,
+  TagsDialog,
+  RoutesDialog,
+} from '../components/MachineDialogs'
 import { RelativeTime } from '../components/RelativeTime'
 import { Ellipsis, LogOut, Pencil, Plus, Route, Tag, TerminalSquare, Trash2 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useSearchParams } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../auth'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { faqURL } from '../lib/faq'
@@ -18,9 +24,6 @@ import {
   listFunnelRoutes,
   listMachines,
   registerMachine,
-  renameMachine,
-  setMachineRoutes,
-  setMachineTags,
   type AssignableUser,
   type Machine,
 } from '../api'
@@ -38,6 +41,10 @@ const searchDelayMs = 300
 // it with this browser's clock, which may be off.
 function isExpired(m: Machine): boolean {
   return m.expired
+}
+
+function ipv4(m: Machine): string | undefined {
+  return m.ipAddresses.find((ip) => !ip.includes(':'))
 }
 
 function tags(m: Machine): string[] {
@@ -302,23 +309,6 @@ type MachineDialog =
 
 type MachineDialogKind = Exclude<MachineDialog['kind'], 'register'>
 
-// useDialogAction runs a dialog's action: busy while it runs, its error shown
-// in the dialog, and on success onDone (reload the list) and onClose.
-function useDialogAction(onClose: () => void, onDone: () => void) {
-  const mutation = useMutation({
-    mutationFn: (action: () => Promise<unknown>) => action(),
-    onSuccess: () => {
-      onDone()
-      onClose()
-    },
-  })
-  return {
-    busy: mutation.isPending,
-    error: mutation.error ? errorMessage(mutation.error) : null,
-    run: (action: () => Promise<unknown>) => mutation.mutate(action),
-  }
-}
-
 function RegisterMachineDialog({
   users,
   onClose,
@@ -400,158 +390,6 @@ function RegisterMachineDialog({
         <div className="modal-action">
           <button type="submit" className="btn btn-primary" disabled={busy}>
             Register
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Cancel
-          </button>
-        </div>
-      </form>
-    </Modal>
-  )
-}
-
-function RenameDialog({
-  machine: m,
-  onClose,
-  onDone,
-}: {
-  machine: Machine
-  onClose: () => void
-  onDone: () => void
-}) {
-  const [name, setName] = useState(m.givenName)
-  const { busy, error, run } = useDialogAction(onClose, onDone)
-  return (
-    <Modal open onClose={onClose} title={`Rename ${m.givenName}`}>
-      <ErrorAlert error={error} />
-      <form
-        className="space-y-4"
-        onSubmit={(e) => {
-          e.preventDefault()
-          run(() => renameMachine(m.id, name))
-        }}
-      >
-        <input
-          type="text"
-          className="input input-bordered w-full"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          required
-        />
-        <div className="modal-action">
-          <button type="submit" className="btn btn-primary" disabled={busy}>
-            Rename
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Cancel
-          </button>
-        </div>
-      </form>
-    </Modal>
-  )
-}
-
-function TagsDialog({
-  machine: m,
-  onClose,
-  onDone,
-}: {
-  machine: Machine
-  onClose: () => void
-  onDone: () => void
-}) {
-  const [tagsInput, setTagsInput] = useState(tags(m).join(', '))
-  const { busy, error, run } = useDialogAction(onClose, onDone)
-  return (
-    <Modal open onClose={onClose} title={`Edit ACL tags of ${m.givenName}`}>
-      <ErrorAlert error={error} />
-      <form
-        className="space-y-4"
-        onSubmit={(e) => {
-          e.preventDefault()
-          const parsed = tagsInput
-            .split(',')
-            .map((t) => t.trim())
-            .filter(Boolean)
-            .map((t) => (t.startsWith('tag:') ? t : `tag:${t}`))
-          run(() => setMachineTags(m.id, parsed))
-        }}
-      >
-        <input
-          type="text"
-          className="input input-bordered w-full font-mono"
-          placeholder="tag:server, tag:prod"
-          value={tagsInput}
-          onChange={(e) => setTagsInput(e.target.value)}
-        />
-        <p className="text-sm opacity-60">
-          Comma-separated. The <code>tag:</code> prefix is added automatically.
-        </p>
-        <div className="modal-action">
-          <button type="submit" className="btn btn-primary" disabled={busy}>
-            Save
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Cancel
-          </button>
-        </div>
-      </form>
-    </Modal>
-  )
-}
-
-function RoutesDialog({
-  machine: m,
-  onClose,
-  onDone,
-}: {
-  machine: Machine
-  onClose: () => void
-  onDone: () => void
-}) {
-  const [selectedRoutes, setSelectedRoutes] = useState<string[]>(m.approvedRoutes ?? [])
-  const { busy, error, run } = useDialogAction(onClose, onDone)
-  const availableRoutes = m.availableRoutes ?? []
-  return (
-    <Modal open onClose={onClose} title={`Edit route settings of ${m.givenName}`}>
-      <ErrorAlert error={error} />
-      <form
-        className="space-y-4"
-        onSubmit={(e) => {
-          e.preventDefault()
-          run(() => setMachineRoutes(m.id, selectedRoutes))
-        }}
-      >
-        {availableRoutes.length > 0 ? (
-          <ul className="space-y-2">
-            {availableRoutes.map((route) => (
-              <li key={route}>
-                <label className="fieldset-label cursor-pointer gap-3">
-                  <input
-                    type="checkbox"
-                    className="checkbox checkbox-sm"
-                    checked={selectedRoutes.includes(route)}
-                    onChange={(e) => {
-                      setSelectedRoutes((prev) =>
-                        e.target.checked ? [...prev, route] : prev.filter((r) => r !== route),
-                      )
-                    }}
-                  />
-                  <span className="font-mono text-sm">{route}</span>
-                </label>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p className="text-sm opacity-60">This machine hasn&rsquo;t advertised any routes.</p>
-        )}
-        <div className="modal-action">
-          <button
-            type="submit"
-            className="btn btn-primary"
-            disabled={busy || availableRoutes.length === 0}
-          >
-            Save
           </button>
           <button type="button" className="btn btn-ghost" onClick={onClose}>
             Cancel
@@ -658,7 +496,13 @@ function MachineRow({
       <td className="whitespace-nowrap">
         <div className="font-bold font-mono">
           <span className="inline-flex items-center gap-1">
-            {m.givenName}
+            {ipv4(m) ? (
+              <Link to={`/machines/${ipv4(m)}`} className="link link-hover">
+                {m.givenName}
+              </Link>
+            ) : (
+              m.givenName
+            )}
             <CopyIcon text={m.givenName} label="machine name" />
           </span>
         </div>

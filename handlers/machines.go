@@ -496,3 +496,49 @@ func (h *Handlers) isFunnelMachine(ctx context.Context, client *hscl.Client, nod
 	}
 	return funnelproxy.IsFunnelUser(node.User), nil
 }
+
+// GetMachineByIP handles GET /api/machines/by-ip/{ip}. It looks the machine
+// up by one of its Tailscale addresses, as the machine page's URL does.
+func (h *Handlers) GetMachineByIP(w http.ResponseWriter, r *http.Request) {
+	client, org, _ := headscaleClientFromContext(r)
+	caller, _ := auth.UserFromContext(r.Context())
+	if client == nil {
+		h.writeError(w, http.StatusNotFound, "machine not found")
+		return
+	}
+
+	nodes, err := client.ListNodes(r.Context())
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	ip := r.PathValue("ip")
+	i := slices.IndexFunc(nodes, func(n hscl.Node) bool { return slices.Contains(n.IPAddresses, ip) })
+	if i < 0 {
+		h.writeError(w, http.StatusNotFound, "machine not found")
+		return
+	}
+	node := nodes[i]
+
+	info, err := client.GetDeviceInfo(r.Context(), node.ID)
+	if err != nil && !errors.Is(err, hscl.ErrNotFound) {
+		h.serverError(w, r, err)
+		return
+	}
+	dns, err := h.orgs.ForOrg(org).GetDNSSettings(r.Context())
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	// The full name only resolves when MagicDNS is on.
+	fullDomain := ""
+	if dns.MagicDNS && dns.BaseDomain != "" {
+		fullDomain = node.GivenName + "." + dns.BaseDomain
+	}
+
+	h.writeJSON(w, http.StatusOK, map[string]any{
+		"machine":    toMachineResponse(node, caller),
+		"deviceInfo": info,
+		"fullDomain": fullDomain,
+	})
+}

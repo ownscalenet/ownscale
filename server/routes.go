@@ -27,6 +27,7 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	mux.HandleFunc("POST /api/logout", requireAuthAPI(h.APILogout))
 
 	mux.HandleFunc("GET /api/machines", requireAuthAPI(h.ReadHeadscale(h.ListMachines)))
+	mux.HandleFunc("GET /api/machines/by-ip/{ip}", requireAuthAPI(h.ReadHeadscale(h.GetMachineByIP)))
 	mux.HandleFunc("POST /api/machines/register", requireAuthAPI(h.ProvisionHeadscale(h.RegisterMachine)))
 	mux.HandleFunc("POST /api/machines/{id}/rename", requireAuthAPI(h.RequireHeadscaleClient(h.RenameMachine)))
 	mux.HandleFunc("POST /api/machines/{id}/tags", requireAuthAPI(h.RequireHeadscaleClient(h.SetMachineTags)))

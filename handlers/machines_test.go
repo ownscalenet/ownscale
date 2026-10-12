@@ -89,6 +89,10 @@ func newFakeHeadscaleServer(t *testing.T) (*hscl.Client, *[]*http.Request, *stri
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprintf(w, `{"nodes":[%s,%s]}`, nodes["1"], nodes["2"])
 	})
+	mux.HandleFunc("/api/v2/device/1", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{"id":"1","os":"linux","clientVersion":"1.80.0","hostname":"node1-host"}`)
+	})
 	mux.HandleFunc("/api/v1/user", func(w http.ResponseWriter, r *http.Request) {
 		requests = append(requests, r)
 		w.Header().Set("Content-Type", "application/json")
@@ -765,5 +769,43 @@ func TestWithoutFunnelUser(t *testing.T) {
 	got := withoutFunnelUser(users)
 	if len(got) != 2 || got[0].ID != "1" || got[1].ID != "3" {
 		t.Errorf("withoutFunnelUser() = %+v, want users 1 and 3", got)
+	}
+}
+
+func TestGetMachineByIP(t *testing.T) {
+	h, org, users := newOrgTestHandlers(t, RoleOwner)
+	client, _, _, _ := newFakeHeadscaleServer(t)
+
+	tests := []struct {
+		name string
+		ip   string
+		code int
+	}{
+		{"known address", "100.64.0.1", http.StatusOK},
+		{"unknown address", "100.64.9.9", http.StatusNotFound},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req := withHeadscaleClientOrg(withTestUser(httptest.NewRequest(http.MethodGet, "/", nil), users[0]), client, org)
+			req.SetPathValue("ip", tt.ip)
+			rec := httptest.NewRecorder()
+			h.GetMachineByIP(rec, req)
+			if rec.Code != tt.code {
+				t.Fatalf("status = %d, want %d: %s", rec.Code, tt.code, rec.Body.String())
+			}
+			if tt.code != http.StatusOK {
+				return
+			}
+			var resp struct {
+				Machine    struct{ ID string } `json:"machine"`
+				DeviceInfo hscl.DeviceInfo     `json:"deviceInfo"`
+			}
+			if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+				t.Fatal(err)
+			}
+			if resp.Machine.ID != "1" || resp.DeviceInfo.OS != "linux" || resp.DeviceInfo.ClientVersion != "1.80.0" {
+				t.Errorf("response = %+v", resp)
+			}
+		})
 	}
 }
