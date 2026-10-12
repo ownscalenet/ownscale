@@ -31,7 +31,7 @@ test('creating and deleting a funnel route', async ({ page, account }) => {
     // Creating the org's first funnel starts its tsnet client, which may wait
     // up to funnelUpTimeout (45s) for a DERP relay before the route exists.
     await expect(row).toBeVisible({ timeout: 60_000 })
-    await expect(row.getByText('8080', { exact: true })).toBeVisible()
+    await expect(row.getByText(`${machine.hostname}:8080`, { exact: true })).toBeVisible()
 
     await row.getByRole('button', { name: 'Remove' }).click()
     await confirmDialog(page, 'Remove route')
