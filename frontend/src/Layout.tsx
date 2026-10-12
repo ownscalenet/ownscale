@@ -11,11 +11,11 @@ import {
   ShieldCheck,
   UserCog,
   Users,
-  Waypoints,
 } from 'lucide-react'
 import { useAuth } from './auth'
 import { logout } from './api'
 import CopyButton from './components/CopyButton'
+import Logo from './components/Logo'
 import ThemeToggle from './components/ThemeToggle'
 
 // navGroups are the sidebar's pages. NavLink marks the current one active.
@@ -140,9 +140,7 @@ export default function Layout() {
         <aside className="bg-base-100 border-r border-base-300 min-h-full w-64 flex flex-col">
           <div className="p-4 border-b border-base-300">
             <div className="flex items-center gap-2.5">
-              <div className="size-7 rounded-lg bg-neutral text-neutral-content grid place-items-center">
-                <Waypoints className="size-4" aria-hidden="true" />
-              </div>
+              <Logo className="size-7" />
               <span className="text-sm font-semibold">Ownscale</span>
             </div>
             {organization && (
