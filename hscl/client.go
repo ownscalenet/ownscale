@@ -325,6 +325,34 @@ func (c *Client) ExpireNode(ctx context.Context, nodeID string) (err error) {
 	return err
 }
 
+// SetNodeExpiry sets nodeID's key expiry to at, re-enabling expiry for a node
+// that never expired. Headscale's v2 API can only disable expiry, so this
+// uses v1.
+func (c *Client) SetNodeExpiry(ctx context.Context, nodeID string, at time.Time) (err error) {
+	defer derrors.Wrap(&err, "c.SetNodeExpiry(%q, %s)", nodeID, at.Format(time.RFC3339))
+
+	_, err = result(c.api.ExpireNodeWithResponse(ctx, nodeID, clientv1.ExpireNodeJSONRequestBody{Expiry: &at}))
+	return err
+}
+
+// DisableNodeExpiry makes nodeID's key never expire, or returns ErrNotFound
+// if there is no such node.
+func (c *Client) DisableNodeExpiry(ctx context.Context, nodeID string) (err error) {
+	defer derrors.Wrap(&err, "c.DisableNodeExpiry(%q)", nodeID)
+
+	resp, err := c.apiV2.SetDeviceKeyWithResponse(ctx, nodeID, clientv2.SetDeviceKeyJSONRequestBody{KeyExpiryDisabled: true})
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode() == http.StatusNotFound {
+		return ErrNotFound
+	}
+	if resp.StatusCode() != http.StatusOK {
+		return fmt.Errorf("headscale: %s", resp.Status())
+	}
+	return nil
+}
+
 // DeleteNode permanently removes nodeID from the tailnet.
 func (c *Client) DeleteNode(ctx context.Context, nodeID string) (err error) {
 	defer derrors.Wrap(&err, "c.DeleteNode(%q)", nodeID)

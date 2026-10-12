@@ -351,3 +351,41 @@ func TestGetDeviceInfo(t *testing.T) {
 		t.Errorf("GetDeviceInfo(unknown) error = %v, want ErrNotFound", err)
 	}
 }
+
+func TestNodeExpiry(t *testing.T) {
+	c, sock := newTestClient(t)
+	node := registerNode(t, c, sock, "alice", "laptop")
+	expiry := func() *string {
+		t.Helper()
+		nodes, err := c.ListNodes(t.Context())
+		if err != nil {
+			t.Fatalf("ListNodes: %v", err)
+		}
+		for _, n := range nodes {
+			if n.ID == node.ID {
+				return n.Expiry
+			}
+		}
+		t.Fatalf("node %s not listed", node.ID)
+		return nil
+	}
+
+	if err := c.DisableNodeExpiry(t.Context(), node.ID); err != nil {
+		t.Fatalf("DisableNodeExpiry: %v", err)
+	}
+	if got := expiry(); got != nil {
+		t.Errorf("expiry after disable = %q, want nil", *got)
+	}
+
+	at := time.Now().Add(30 * 24 * time.Hour).UTC().Truncate(time.Second)
+	if err := c.SetNodeExpiry(t.Context(), node.ID, at); err != nil {
+		t.Fatalf("SetNodeExpiry: %v", err)
+	}
+	if got := expiry(); got == nil {
+		t.Error("expiry after enable = nil, want a date")
+	}
+
+	if err := c.DisableNodeExpiry(t.Context(), "99999"); !errors.Is(err, ErrNotFound) {
+		t.Errorf("DisableNodeExpiry(unknown) error = %v, want ErrNotFound", err)
+	}
+}

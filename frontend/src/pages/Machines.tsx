@@ -1,7 +1,17 @@
-import { RenameDialog, TagsDialog, RoutesDialog } from '../components/MachineDialogs'
+import { ExpiryDialog, RenameDialog, TagsDialog, RoutesDialog } from '../components/MachineDialogs'
 import { useDialogAction } from '../hooks/useDialogAction'
 import { RelativeTime } from '../components/RelativeTime'
-import { Ellipsis, LogOut, Pencil, Plus, Route, Tag, TerminalSquare, Trash2 } from 'lucide-react'
+import {
+  Ellipsis,
+  KeyRound,
+  LogOut,
+  Pencil,
+  Plus,
+  Route,
+  Tag,
+  TerminalSquare,
+  Trash2,
+} from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -186,6 +196,9 @@ export default function Machines() {
       {dialog?.kind === 'routes' && (
         <RoutesDialog machine={dialog.machine} onClose={closeDialog} onDone={reload} />
       )}
+      {dialog?.kind === 'expiry' && (
+        <ExpiryDialog machine={dialog.machine} onClose={closeDialog} onDone={reload} />
+      )}
       {dialog?.kind === 'removeInternal' && (
         <RemoveInternalDialog machine={dialog.machine} onClose={closeDialog} onDone={reload} />
       )}
@@ -301,7 +314,8 @@ export default function Machines() {
 
 // MachineDialog is the dialog the Machines page has open, if any.
 type MachineDialog =
-  { kind: 'register' } | { kind: 'rename' | 'tags' | 'routes' | 'removeInternal'; machine: Machine }
+  | { kind: 'register' }
+  | { kind: 'rename' | 'tags' | 'routes' | 'expiry' | 'removeInternal'; machine: Machine }
 
 type MachineDialogKind = Exclude<MachineDialog['kind'], 'register'>
 
@@ -620,6 +634,19 @@ function MachineRow({
                 >
                   <Route className="size-3.5" aria-hidden="true" />
                   Edit route settings
+                </button>
+              </MenuItem>
+            </li>
+            <li>
+              <MenuItem disabled={m.internal || !canEdit}>
+                <button
+                  type="button"
+                  className="data-focus:bg-base-content/10"
+                  disabled={m.internal || !canEdit}
+                  onClick={() => onOpen('expiry')}
+                >
+                  <KeyRound className="size-3.5" aria-hidden="true" />
+                  {m.expiry ? 'Disable key expiry' : 'Enable key expiry'}
                 </button>
               </MenuItem>
             </li>

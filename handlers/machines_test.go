@@ -6,12 +6,14 @@ import (
 	"database/sql"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/rs/xid"
 	"github.com/tailscale/hujson"
@@ -136,6 +138,11 @@ func newFakeHeadscaleServer(t *testing.T) (*hscl.Client, *[]*http.Request, *stri
 		requests = append(requests, r)
 		w.Header().Set("Content-Type", "application/json")
 		fmt.Fprint(w, `{"node":{"id":"1"}}`)
+	})
+	mux.HandleFunc("/api/v2/device/1/key", func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r)
+		w.Header().Set("Content-Type", "application/json")
+		fmt.Fprint(w, `{}`)
 	})
 	mux.HandleFunc("/api/v1/node/1/expire", func(w http.ResponseWriter, r *http.Request) {
 		requests = append(requests, r)
@@ -566,19 +573,45 @@ func TestSetMachineRoutes(t *testing.T) {
 }
 
 func TestExpireMachine(t *testing.T) {
-	h, queries := newTestHandlers(t)
-	user, client, requests := activeOrgUser(t, h, queries)
-
-	req := withPathValue(withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/expire", nil), user), client), "id", "1")
-	rec := httptest.NewRecorder()
-	h.ExpireMachine(rec, req)
-
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
+	future := time.Now().Add(24 * time.Hour).UTC().Format(time.RFC3339)
+	tests := []struct {
+		name     string
+		body     string
+		wantCode int
+		wantPath string
+	}{
+		{"no body expires now", "", http.StatusOK, "/api/v1/node/1/expire"},
+		{"mode now", `{"mode":"now"}`, http.StatusOK, "/api/v1/node/1/expire"},
+		{"disable", `{"mode":"disable"}`, http.StatusOK, "/api/v2/device/1/key"},
+		{"enable", `{"mode":"enable","expiry":"` + future + `"}`, http.StatusOK, "/api/v1/node/1/expire"},
+		{"enable without expiry", `{"mode":"enable"}`, http.StatusBadRequest, ""},
+		{"enable in the past", `{"mode":"enable","expiry":"2020-01-01T00:00:00Z"}`, http.StatusBadRequest, ""},
+		{"unknown mode", `{"mode":"later"}`, http.StatusBadRequest, ""},
+		{"invalid json", `{`, http.StatusBadRequest, ""},
 	}
-	last := (*requests)[len(*requests)-1]
-	if !strings.HasSuffix(last.URL.Path, "/expire") {
-		t.Errorf("unexpected upstream request path: %s", last.URL.Path)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, queries := newTestHandlers(t)
+			user, client, requests := activeOrgUser(t, h, queries)
+			var body io.Reader
+			if tt.body != "" {
+				body = strings.NewReader(tt.body)
+			}
+			req := withPathValue(withHeadscaleClient(withTestUser(httptest.NewRequest(http.MethodPost, "/api/machines/1/expire", body), user), client), "id", "1")
+			rec := httptest.NewRecorder()
+			h.ExpireMachine(rec, req)
+
+			if rec.Code != tt.wantCode {
+				t.Fatalf("status = %d, want %d: %s", rec.Code, tt.wantCode, rec.Body.String())
+			}
+			if tt.wantPath == "" {
+				return
+			}
+			last := (*requests)[len(*requests)-1]
+			if last.URL.Path != tt.wantPath {
+				t.Errorf("upstream path = %s, want %s", last.URL.Path, tt.wantPath)
+			}
+		})
 	}
 }
 

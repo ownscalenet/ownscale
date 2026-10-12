@@ -2,11 +2,11 @@ import type { ReactNode } from 'react'
 import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Pencil, Route, Tag, TerminalSquare } from 'lucide-react'
+import { KeyRound, Pencil, Route, Tag, TerminalSquare } from 'lucide-react'
 import { ApiError, errorMessage, getMachineByIP, type Machine } from '../api'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { CopyIcon } from '../components/CopyButton'
-import { RenameDialog, RoutesDialog, TagsDialog } from '../components/MachineDialogs'
+import { ExpiryDialog, RenameDialog, RoutesDialog, TagsDialog } from '../components/MachineDialogs'
 import { RelativeTime } from '../components/RelativeTime'
 import { ErrorAlert, PageSpinner, StatusBadge } from '../components/ui'
 
@@ -68,7 +68,7 @@ export default function MachineDetail() {
     refetchInterval: refreshIntervalMs,
     retry: (count, err) => !(err instanceof ApiError && err.status === 404) && count < 3,
   })
-  const [dialog, setDialog] = useState<'rename' | 'tags' | 'routes' | null>(null)
+  const [dialog, setDialog] = useState<'rename' | 'tags' | 'routes' | 'expiry' | null>(null)
   const reload = () => queryClient.invalidateQueries({ queryKey: ['machine', ip] })
 
   if (query.isPending) return <PageSpinner />
@@ -109,6 +109,9 @@ export default function MachineDetail() {
       {dialog === 'tags' && (
         <TagsDialog machine={m} onClose={() => setDialog(null)} onDone={reload} />
       )}
+      {dialog === 'expiry' && (
+        <ExpiryDialog machine={m} onClose={() => setDialog(null)} onDone={reload} />
+      )}
       {dialog === 'routes' && (
         <RoutesDialog machine={m} onClose={() => setDialog(null)} onDone={reload} />
       )}
@@ -121,7 +124,7 @@ function Header({
   onOpen,
 }: {
   machine: Machine
-  onOpen: (kind: 'rename' | 'tags' | 'routes') => void
+  onOpen: (kind: 'rename' | 'tags' | 'routes' | 'expiry') => void
 }) {
   const status = m.expired ? 'expired' : m.online ? 'online' : 'offline'
   return (
@@ -179,6 +182,15 @@ function Header({
           >
             <Route className="size-3.5" aria-hidden="true" />
             Edit route settings
+          </button>
+          <button
+            type="button"
+            className="btn btn-sm"
+            disabled={m.internal || !m.canEdit}
+            onClick={() => onOpen('expiry')}
+          >
+            <KeyRound className="size-3.5" aria-hidden="true" />
+            {m.expiry ? 'Disable key expiry' : 'Enable key expiry'}
           </button>
         </div>
       </div>
@@ -269,7 +281,7 @@ function MachineDetails({
               ) : undefined
             }
           />
-          <Attribute name="Key expiry" value={m.expiry ? formatDate(m.expiry) : 'No expiry'} />
+          <Attribute name="Key expiry" value={m.expiry ? formatDate(m.expiry) : 'Never expires'} />
         </div>
       </dl>
     </Card>

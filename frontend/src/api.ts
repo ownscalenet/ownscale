@@ -209,6 +209,18 @@ export function expireMachine(id: string) {
   return request<{ ok: boolean }>(`/api/machines/${id}/expire`, { method: 'POST' })
 }
 
+// setMachineExpiry disables a machine's key expiry, or re-enables it with
+// expiry (an ISO timestamp) as the new date.
+export function setMachineExpiry(
+  id: string,
+  change: { mode: 'disable' } | { mode: 'enable'; expiry: string },
+) {
+  return request<{ ok: boolean }>(`/api/machines/${id}/expire`, {
+    method: 'POST',
+    body: JSON.stringify(change),
+  })
+}
+
 export function deleteMachine(id: string) {
   return request<{ ok: boolean }>(`/api/machines/${id}`, { method: 'DELETE' })
 }

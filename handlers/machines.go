@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
@@ -435,13 +436,43 @@ func (h *Handlers) SetMachineRoutes(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
-// ExpireMachine handles POST /api/machines/{id}/expire.
+// ExpireMachine handles POST /api/machines/{id}/expire. The optional body
+// selects the mode: "now" (default) expires the key, "disable" makes it never
+// expire, and "enable" sets "expiry" (RFC 3339, in the future) as its expiry.
 func (h *Handlers) ExpireMachine(w http.ResponseWriter, r *http.Request) {
 	client, id := h.machineIDAndClient(r)
 	if !h.requireNodeAccess(w, r, client, id) {
 		return
 	}
-	if err := client.ExpireNode(r.Context(), id); err != nil {
+	var req struct {
+		Mode   string    `json:"mode"`
+		Expiry time.Time `json:"expiry"`
+	}
+	if err := h.decodeJSONBodyOptional(r, &req); err != nil {
+		h.writeError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	var err error
+	switch req.Mode {
+	case "", "now":
+		err = client.ExpireNode(r.Context(), id)
+	case "disable":
+		err = client.DisableNodeExpiry(r.Context(), id)
+	case "enable":
+		if !req.Expiry.After(time.Now()) {
+			h.writeError(w, http.StatusBadRequest, "expiry must be in the future")
+			return
+		}
+		err = client.SetNodeExpiry(r.Context(), id, req.Expiry)
+	default:
+		h.writeError(w, http.StatusBadRequest, "mode must be now, disable or enable")
+		return
+	}
+	if errors.Is(err, hscl.ErrNotFound) {
+		h.writeError(w, http.StatusNotFound, "machine not found")
+		return
+	}
+	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}

@@ -18,6 +18,17 @@ test('a machine page opens from the list by IPv4 and shows its details', async (
 
     await expect(page.getByRole('link', { name: 'SSH' })).toHaveAttribute('href', /\/machines\/\d+\/ssh$/)
 
+    // The test machine registers without an expiry.
+    await expect(page.getByText('Never expires')).toBeVisible()
+    await page.getByRole('button', { name: 'Enable key expiry' }).click()
+    await page.getByRole('button', { name: 'Enable expiry' }).click()
+    await expect(page.getByRole('button', { name: 'Disable key expiry' })).toBeVisible()
+    await expect(page.getByText('Never expires')).toHaveCount(0)
+
+    await page.getByRole('button', { name: 'Disable key expiry' }).click()
+    await page.getByRole('button', { name: 'Disable expiry' }).click()
+    await expect(page.getByText('Never expires')).toBeVisible()
+
     await page.goto('/machines/100.64.255.255')
     await expect(page.getByText('Machine not found')).toBeVisible()
   } finally {
