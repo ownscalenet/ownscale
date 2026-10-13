@@ -2,6 +2,7 @@ import { ExpiryDialog, RenameDialog, TagsDialog, RoutesDialog } from '../compone
 import { useDialogAction } from '../hooks/useDialogAction'
 import { RelativeTime } from '../components/RelativeTime'
 import {
+  BookOpen,
   Ellipsis,
   KeyRound,
   LogOut,
@@ -18,7 +19,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../authContext'
 import { usePageTitle } from '../hooks/usePageTitle'
-import { faqURL } from '../lib/faq'
+import { shortURL } from '../lib/faq'
 import { useConfirm } from '../lib/confirm'
 import Modal from '../components/Modal'
 import { CopyIcon } from '../components/CopyButton'
@@ -531,13 +532,14 @@ function MachineRow({
           {!m.expiry && <span className="badge badge-ghost badge-sm">No expiry</span>}
           {m.internal && (
             <a
-              href={faqURL('funnel-machine')}
+              href={shortURL('agent')}
               target="_blank"
               rel="noreferrer"
-              className="badge badge-info badge-sm"
+              className="badge badge-info badge-sm gap-1"
               title="Automatically created for the funnel feature"
             >
-              Internal
+              <BookOpen className="size-3.5" aria-hidden="true" />
+              Agent
             </a>
           )}
           {tags(m).map((t) => (
