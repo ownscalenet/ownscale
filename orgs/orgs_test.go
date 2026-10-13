@@ -574,6 +574,21 @@ func TestCreateHeadscaleDERP(t *testing.T) {
 	}
 }
 
+// TestCreateHeadscaleBaseDomain guards against nodes getting bare hostnames
+// as their FQDN, which breaks MagicDNS resolution of <host>.<base_domain>.
+func TestCreateHeadscaleBaseDomain(t *testing.T) {
+	hsCfg := newHeadscaleConfig("acme", OIDCConfig{Issuer: "https://auth.example.com"})
+	app, err := createHeadscale(t.TempDir(), "acme", "example.com", 0, hsCfg, testDERPMap(7))
+	if err != nil {
+		t.Fatalf("createHeadscale: %v", err)
+	}
+	t.Cleanup(func() { _ = app.GetState().Close() })
+
+	if got, want := app.GetState().DebugConfig().BaseDomain, "acme.ownscale"; got != want {
+		t.Errorf("BaseDomain = %q, want %q", got, want)
+	}
+}
+
 func TestSetOIDCIdentity(t *testing.T) {
 	svc := newRealService(t)
 	createStarted(t, svc, "acme")

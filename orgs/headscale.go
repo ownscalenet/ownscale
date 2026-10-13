@@ -169,9 +169,12 @@ func createHeadscale(
 				WALAutoCheckPoint: 1000,
 			},
 		},
-		Log:       types.LogConfig{Format: "json", Level: zerolog.InfoLevel},
-		Taildrop:  types.TaildropConfig{Enabled: true},
-		DNSConfig: dns,
+		Log:      types.LogConfig{Format: "json", Level: zerolog.InfoLevel},
+		Taildrop: types.TaildropConfig{Enabled: true},
+		// headscale builds node FQDNs (and MagicDNS names) from this field,
+		// not from DNSConfig.BaseDomain.
+		BaseDomain: dns.BaseDomain,
+		DNSConfig:  dns,
 		// TailcfgDNSConfig is the pre-computed tailcfg representation sent
 		// to nodes. NewHeadscale does not compute it from DNSConfig — the
 		// Viper config loader does. We replicate the conversion here so
