@@ -146,9 +146,9 @@ export default function AuthRestrictions() {
         <div className="lg:col-span-2">
           <div className="card bg-base-100 shadow h-full">
             <div className="card-body">
-              <div className="flex items-center justify-between mb-2">
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
                 <h2 className="card-title">OIDC allowlist</h2>
-                <div className="flex items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2">
                   {canManage && (
                     <button
                       type="button"
