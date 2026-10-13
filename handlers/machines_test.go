@@ -82,7 +82,7 @@ func newFakeHeadscaleServer(t *testing.T) (*hscl.Client, *[]*http.Request, *stri
 			 "createdAt":"2024-01-01T00:00:00Z"}`,
 		"2": fmt.Sprintf(`{"id":"2","name":"funnel-acme","givenName":"funnel-acme","ipAddresses":["100.64.0.2"],
 			 "user":{"id":"2","name":%q},"online":false,
-			 "expiry":"2020-01-01T00:00:00Z","createdAt":"2024-01-01T00:00:00Z"}`, funnelproxy.FunnelHeadscaleUserName),
+			 "expiry":"2020-01-01T00:00:00Z","createdAt":"2024-01-01T00:00:00Z"}`, funnelproxy.AgentHeadscaleUserName),
 	}
 
 	mux := http.NewServeMux()
@@ -666,7 +666,7 @@ func TestDeleteMachineCascadesFunnelRoutesForInternalMachine(t *testing.T) {
 			 "user":{"id":"1","name":"alice"},"online":true,"createdAt":"2024-01-01T00:00:00Z"},
 			{"id":"2","name":"funnel-acme","givenName":"funnel-acme","ipAddresses":["100.64.0.2"],
 			 "user":{"id":"2","name":%q},"online":true,"createdAt":"2024-01-01T00:00:00Z"}
-		]}`, funnelproxy.FunnelHeadscaleUserName)
+		]}`, funnelproxy.AgentHeadscaleUserName)
 	})
 	var deletedNodeID string
 	mux.HandleFunc("/api/v1/node/2", func(w http.ResponseWriter, r *http.Request) {
@@ -674,7 +674,7 @@ func TestDeleteMachineCascadesFunnelRoutesForInternalMachine(t *testing.T) {
 		if r.Method == http.MethodGet {
 			fmt.Fprintf(w, `{"node":{"id":"2","name":"funnel-acme","givenName":"funnel-acme",
 				"user":{"id":"2","name":%q},"online":true,"createdAt":"2024-01-01T00:00:00Z"}}`,
-				funnelproxy.FunnelHeadscaleUserName)
+				funnelproxy.AgentHeadscaleUserName)
 			return
 		}
 		deletedNodeID = "2"
@@ -796,8 +796,8 @@ func TestRegisterMachine(t *testing.T) {
 func TestWithoutFunnelUser(t *testing.T) {
 	users := []hscl.User{
 		{ID: "1", Name: "alice"},
-		{ID: "2", Name: funnelproxy.FunnelHeadscaleUserName},
-		{ID: "3", Name: funnelproxy.FunnelHeadscaleUserName, ProviderID: "https://ownscale.test/abc"},
+		{ID: "2", Name: funnelproxy.AgentHeadscaleUserName},
+		{ID: "3", Name: funnelproxy.AgentHeadscaleUserName, ProviderID: "https://ownscale.test/abc"},
 	}
 	got := withoutFunnelUser(users)
 	if len(got) != 2 || got[0].ID != "1" || got[1].ID != "3" {

@@ -53,7 +53,7 @@ func (h *Handlers) CreateSSHSession(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	if err != nil || funnelproxy.IsFunnelUser(target.User) {
+	if err != nil || funnelproxy.IsAgentUser(target.User) {
 		h.writeError(w, http.StatusNotFound, "machine not found")
 		return
 	}

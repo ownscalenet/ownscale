@@ -57,7 +57,7 @@ func TestUniqueHeadscaleName(t *testing.T) {
 		{"no collision", "bob", "google", "user-id", existing, "bob"},
 		{"candidate collides", "alice", "microsoft", "user-id", existing, "alice-microsoft"},
 		{"provider-qualified collides too", "alice", "google", "12345678-abcd", existing, "alice-google-12345678"},
-		{"funnel name reserved", funnelproxy.FunnelHeadscaleUserName, "google", "user-id", nil, funnelproxy.FunnelHeadscaleUserName + "-google"},
+		{"funnel name reserved", funnelproxy.AgentHeadscaleUserName, "google", "user-id", nil, funnelproxy.AgentHeadscaleUserName + "-google"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

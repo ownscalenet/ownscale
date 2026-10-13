@@ -58,7 +58,7 @@ func shortID(id string) string {
 // our auth provider), then "<candidate>-<provider>-<8 chars of userID>"
 // as a last resort. The funnel's user name is always treated as taken.
 func uniqueHeadscaleName(candidate, provider, userID string, existing []hscl.User) string {
-	taken := map[string]bool{funnelproxy.FunnelHeadscaleUserName: true}
+	taken := map[string]bool{funnelproxy.AgentHeadscaleUserName: true}
 	for _, u := range existing {
 		taken[u.Name] = true
 	}
