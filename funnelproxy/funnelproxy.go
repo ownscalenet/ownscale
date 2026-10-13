@@ -484,6 +484,8 @@ func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *
 // agentHostname is the hostname given to each org's funnel/agent tsnet
 // node. It's a plain constant (no subdomain suffix) since each org has its
 // own isolated headscale tailnet.
+// Careful if renaming this. The state associated with the node is preserved on
+// disk and persists after a rename.
 const agentHostname = "ownscale-agent"
 
 // removeStaleFunnelNodes deletes subdomain's funnel machines other than

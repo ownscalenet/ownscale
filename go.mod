@@ -19,14 +19,14 @@ require (
 	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f
 	github.com/zitadel/oidc/v3 v3.49.2
 	golang.org/x/crypto v0.57.0
-	golang.org/x/sync v0.23.0
+	golang.org/x/sync v0.24.0
 	golang.org/x/time v0.15.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.59.0
 	tailscale.com v1.103.0-pre.0.20260819232550-0e84b4a3a0a0
 )
 
-replace github.com/juanfont/headscale => github.com/ownscalenet/headscale v0.29.4-5
+replace github.com/juanfont/headscale => github.com/ownscalenet/headscale v0.29.4-6
 
 require (
 	cloud.google.com/go v0.121.6 // indirect
@@ -89,7 +89,7 @@ require (
 	github.com/fsnotify/fsnotify v1.10.1 // indirect
 	github.com/fxamacker/cbor/v2 v2.9.3 // indirect
 	github.com/gaissmai/bart v0.26.1 // indirect
-	github.com/go-chi/chi/v5 v5.3.2 // indirect
+	github.com/go-chi/chi/v5 v5.4.0 // indirect
 	github.com/go-chi/metrics v0.1.1 // indirect
 	github.com/go-faster/city v1.0.1 // indirect
 	github.com/go-faster/errors v0.7.1 // indirect
