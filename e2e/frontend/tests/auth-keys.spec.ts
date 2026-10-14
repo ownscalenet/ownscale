@@ -12,7 +12,7 @@ function uniqueTag(): string {
 test('creating, expiring and deleting a tag-only pre-auth key', async ({ page }) => {
   const tag = uniqueTag()
   await page.goto('/pre-auth-keys')
-  await expect(page.getByRole('heading', { name: 'Pre-Auth Keys', level: 2 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Pre-auth Keys' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Create pre-auth key' }).click()
   const dialog = page.getByRole('dialog')
@@ -46,7 +46,7 @@ test('creating and expiring a reusable, ephemeral pre-auth key for a real user',
 }) => {
   const tag = uniqueTag()
   await page.goto('/pre-auth-keys')
-  await expect(page.getByRole('heading', { name: 'Pre-Auth Keys', level: 2 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Pre-auth Keys' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Create pre-auth key' }).click()
   const dialog = page.getByRole('dialog')
