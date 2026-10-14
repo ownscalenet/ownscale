@@ -22,7 +22,7 @@ func main() {
 		err = bridge.Run(ctx, input, os.Stdout)
 	}
 	if err != nil {
-		_, _ = fmt.Fprintln(os.Stderr, "tscl-bridge: protocol or cleanup failure")
+		_, _ = fmt.Fprintf(os.Stderr, "tscl-bridge: exiting due to error: %v\n", err)
 		os.Exit(1)
 	}
 }

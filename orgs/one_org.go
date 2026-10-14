@@ -65,8 +65,8 @@ func (o *OrgService) getHeadscaleConfig(ctx context.Context) (_ *HeadscaleConfig
 // extraWrites runs within the same short transaction as the config row
 // write.
 //
-// This function is NOT a single big transaction because headscale
-// restarting takes several seconds and that would block all other DB ops.
+// This function is NOT a single big transaction because restarting
+// headscale might take time and we don't want to block the db on it.
 func (o *OrgService) applyHeadscaleConfig(ctx context.Context, cfg *HeadscaleConfig, extraWrites func(ctx context.Context, txQueries *sqlcgen.Queries) error) (err error) {
 	defer derrors.Wrap(&err, "o.applyHeadscaleConfig(%q, %q)", o.orgID, o.subdomain)
 
