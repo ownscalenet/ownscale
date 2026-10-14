@@ -12,7 +12,7 @@ import AccessControl from './pages/AccessControl'
 import AuthRestrictions from './pages/AuthRestrictions'
 import DNS from './pages/DNS'
 import Funnel from './pages/Funnel'
-import Settings from './pages/Settings'
+import PreAuthKeys from './pages/PreAuthKeys'
 import UserSettings from './pages/UserSettings'
 import AcceptInvite from './pages/AcceptInvite'
 import { PageSpinner } from './components/ui'
@@ -54,7 +54,7 @@ function AppRoutes() {
         <Route path="dns" element={<DNS />} />
         <Route path="funnels" element={<Funnel />} />
 
-        <Route path="settings" element={<Settings />} />
+        <Route path="pre-auth-keys" element={<PreAuthKeys />} />
         <Route path="user-settings" element={<UserSettings />} />
       </Route>
       <Route path="*" element={<NotFound />} />

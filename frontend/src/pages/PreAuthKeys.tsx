@@ -57,8 +57,8 @@ function matchesUser(k: PreAuthKey, userFilter: string): boolean {
   return k.user?.name === userFilter
 }
 
-export default function Settings() {
-  usePageTitle('Settings')
+export default function PreAuthKeys() {
+  usePageTitle('Pre-auth Keys')
   const [searchParams, setSearchParams] = useSearchParams()
   const userFilter = searchParams.get('user') ?? ''
   const status = searchParams.get('status') ?? ''
@@ -91,7 +91,7 @@ export default function Settings() {
   return (
     <>
       <PageHeader
-        title="Settings"
+        title="Pre-auth Keys"
         subtitle={`${authKeys.length} auth ${authKeys.length === 1 ? 'key' : 'keys'}`}
       />
 
