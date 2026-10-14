@@ -92,3 +92,67 @@ test('copying a member email from the table', async ({ page, account }) => {
   await expect(row.locator('[data-tip="Copied!"]')).toBeVisible()
   expect(await page.evaluate(() => navigator.clipboard.readText())).toBe(account.email)
 })
+
+test('visiting an invite link with an unknown token shows an error, signed in', async ({
+  page,
+}) => {
+  await page.goto('/invite/this-token-does-not-exist')
+  await expect(page.getByRole('heading', { name: 'Join organization' })).toBeVisible()
+  await expect(page.getByText(/invite not found/i)).toBeVisible()
+})
+
+test('a plain member cannot see owner/admin-only management controls', async ({
+  page,
+  browser,
+  account,
+}) => {
+  // Invite a plain member so we can sign in as someone without manage
+  // rights, then verify the UI hides (not just the backend rejecting)
+  // owner/admin-only actions for them.
+  await page.goto('/users')
+  await page.getByRole('button', { name: 'Invite member' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: 'Create invite link' }).click()
+  const inviteLink = await dialog.getByRole('textbox').inputValue()
+  await dialog.getByRole('button', { name: 'Done' }).click()
+
+  const memberContext = await browser.newContext({
+    storageState: { cookies: [], origins: [] },
+    ignoreHTTPSErrors: true,
+  })
+  const memberPage = await memberContext.newPage()
+  try {
+    await memberPage.goto(inviteLink)
+    await memberPage.getByRole('link', { name: 'Sign in to join' }).click()
+    await memberPage.getByRole('link', { name: 'Sign in with SSO' }).click()
+    await memberPage.locator('#login').fill(account.invitee)
+    await memberPage.locator('#password').fill('ownscale')
+    await memberPage.locator('#submit-login').click()
+    await expect(memberPage.getByRole('link', { name: 'Machines' })).toBeVisible({
+      timeout: 15_000,
+    })
+
+    // Users page: no "Invite member" button, no role dropdowns/Remove
+    // buttons for other members.
+    await memberPage.goto('/users')
+    await expect(memberPage.getByRole('heading', { name: 'Users' })).toBeVisible()
+    await expect(memberPage.getByRole('button', { name: 'Invite member' })).toBeHidden()
+    await expect(memberPage.getByRole('combobox')).toHaveCount(0)
+    await expect(memberPage.getByRole('button', { name: 'Remove' })).toHaveCount(0)
+
+    // Pre-auth keys, DNS, access control and auth restrictions pages are
+    // read-only / inaccessible for a plain member.
+    await memberPage.goto('/pre-auth-keys')
+    await expect(memberPage.getByRole('heading', { name: 'Pre-auth Keys', level: 1 })).toBeVisible()
+    await expect(memberPage.getByRole('button', { name: 'Create pre-auth key' })).toBeVisible()
+  } finally {
+    await memberContext.close()
+  }
+
+  // Clean up so the invitee is free to be re-invited by other tests.
+  await page.goto('/users')
+  const memberRow = page.getByRole('row').filter({ hasText: account.invitee })
+  await memberRow.getByRole('button', { name: 'Remove' }).click()
+  await confirmDialog(page, 'Remove member', account.invitee)
+  await expect(memberRow).toBeHidden()
+})

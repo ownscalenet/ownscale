@@ -300,6 +300,82 @@ func TestPasskeyAddListLoginAndDelete(t *testing.T) {
 	}
 }
 
+func TestPasskeyAddFinishRejectsMismatchedCeremonyUser(t *testing.T) {
+	setupSessions()
+	h, queries := newTestHandlers(t)
+	owner := insertUser(t, queries)
+	other := insertUser(t, queries)
+
+	beginReq := withTestUser(httptest.NewRequest(http.MethodPost, "/api/passkeys/register/begin", strings.NewReader(`{}`)), owner)
+	beginRec := httptest.NewRecorder()
+	h.PasskeyAddBegin(beginRec, beginReq)
+	if beginRec.Code != http.StatusOK {
+		t.Fatalf("begin status = %d, want 200: %s", beginRec.Code, beginRec.Body)
+	}
+
+	// other finishes the ceremony owner began, carrying owner's ceremony
+	// cookie but authenticated as a different user.
+	finishReq := withTestUser(httptest.NewRequest(http.MethodPost, "/api/passkeys/register/finish", strings.NewReader(`{}`)), other)
+	for _, c := range beginRec.Result().Cookies() {
+		finishReq.AddCookie(c)
+	}
+	finishRec := httptest.NewRecorder()
+	h.PasskeyAddFinish(finishRec, finishReq)
+	if finishRec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", finishRec.Code, finishRec.Body)
+	}
+}
+
+func TestPasskeyAddFinishRejectsInvalidAttestation(t *testing.T) {
+	setupSessions()
+	h, queries := newTestHandlers(t)
+	owner := insertUser(t, queries)
+
+	beginReq := withTestUser(httptest.NewRequest(http.MethodPost, "/api/passkeys/register/begin", strings.NewReader(`{}`)), owner)
+	beginRec := httptest.NewRecorder()
+	h.PasskeyAddBegin(beginRec, beginReq)
+	if beginRec.Code != http.StatusOK {
+		t.Fatalf("begin status = %d, want 200: %s", beginRec.Code, beginRec.Body)
+	}
+
+	// A well-formed JSON body that is nonetheless not a valid attestation
+	// response makes FinishRegistration fail verification.
+	finishReq := withTestUser(httptest.NewRequest(http.MethodPost, "/api/passkeys/register/finish", strings.NewReader(`{"id":"bogus"}`)), owner)
+	for _, c := range beginRec.Result().Cookies() {
+		finishReq.AddCookie(c)
+	}
+	finishRec := httptest.NewRecorder()
+	h.PasskeyAddFinish(finishRec, finishReq)
+	if finishRec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", finishRec.Code, finishRec.Body)
+	}
+}
+
+func TestDeletePasskeyNotFound(t *testing.T) {
+	h, queries := newTestHandlers(t)
+	owner := insertUser(t, queries)
+
+	req := withTestUser(httptest.NewRequest(http.MethodDelete, "/api/passkeys/nonexistent", nil), owner)
+	req.SetPathValue("id", "nonexistent")
+	rec := httptest.NewRecorder()
+	h.DeletePasskey(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestDeletePasskeyUnauthenticated(t *testing.T) {
+	h, _ := newTestHandlers(t)
+
+	req := httptest.NewRequest(http.MethodDelete, "/api/passkeys/x", nil)
+	req.SetPathValue("id", "x")
+	rec := httptest.NewRecorder()
+	h.DeletePasskey(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401: %s", rec.Code, rec.Body)
+	}
+}
+
 // listAllUsers is a small test helper: there's no "get user by email"
 // query (email isn't unique across providers), so tests that need to find
 // a just-created user by email scan every row.

@@ -371,6 +371,57 @@ func TestRemoveMemberRefusesOwner(t *testing.T) {
 	}
 }
 
+func TestRemoveMemberRequiresManager(t *testing.T) {
+	h, _, users := newOrgTestHandlers(t, RoleMember, RoleMember)
+	plainMember, target := users[0], users[1]
+
+	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/members/x", nil), plainMember), "id", target.ID)
+	rec := httptest.NewRecorder()
+	h.RemoveMember(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403: %s", rec.Code, rec.Body)
+	}
+	if _, err := h.queries.GetUserByID(t.Context(), target.ID); err != nil {
+		t.Errorf("GetUserByID after forbidden remove: err = %v, want member to still exist", err)
+	}
+}
+
+func TestRemoveMemberNotFound(t *testing.T) {
+	h, _, users := newOrgTestHandlers(t, RoleOwner)
+	owner := users[0]
+
+	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/members/x", nil), owner), "id", "nonexistent-id")
+	rec := httptest.NewRecorder()
+	h.RemoveMember(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestRemoveMemberNotFoundForDifferentOrg(t *testing.T) {
+	h, _, users := newOrgTestHandlers(t, RoleOwner)
+	owner := users[0]
+	other := insertUser(t, h.queries)
+
+	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/members/x", nil), owner), "id", other.ID)
+	rec := httptest.NewRecorder()
+	h.RemoveMember(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestUpdateMemberRoleUnauthenticated(t *testing.T) {
+	h, _, _ := newOrgTestHandlers(t, RoleOwner)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/members/x/role", strings.NewReader(`{"role":"admin"}`))
+	rec := httptest.NewRecorder()
+	h.UpdateMemberRole(rec, req)
+	if rec.Code != http.StatusUnauthorized {
+		t.Fatalf("status = %d, want 401: %s", rec.Code, rec.Body)
+	}
+}
+
 func TestTransferOwnership(t *testing.T) {
 	h, _, users := newOrgTestHandlers(t, RoleOwner, RoleAdmin)
 	owner, admin := users[0], users[1]
@@ -409,5 +460,39 @@ func TestTransferOwnershipRequiresOwner(t *testing.T) {
 	h.TransferOwnership(rec, req)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestTransferOwnershipRefusesSelf(t *testing.T) {
+	h, _, users := newOrgTestHandlers(t, RoleOwner)
+	owner := users[0]
+
+	body := strings.NewReader(`{"memberId":"` + owner.ID + `"}`)
+	req := withTestUser(httptest.NewRequest(http.MethodPost, "/api/members/transfer-ownership", body), owner)
+	rec := httptest.NewRecorder()
+	h.TransferOwnership(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body)
+	}
+
+	reloaded, err := h.queries.GetUserByID(t.Context(), owner.ID)
+	if err != nil {
+		t.Fatalf("GetUserByID: %v", err)
+	}
+	if reloaded.Role != RoleOwner {
+		t.Errorf("role = %q, want unchanged owner", reloaded.Role)
+	}
+}
+
+func TestTransferOwnershipTargetNotFound(t *testing.T) {
+	h, _, users := newOrgTestHandlers(t, RoleOwner)
+	owner := users[0]
+
+	body := strings.NewReader(`{"memberId":"nonexistent-id"}`)
+	req := withTestUser(httptest.NewRequest(http.MethodPost, "/api/members/transfer-ownership", body), owner)
+	rec := httptest.NewRecorder()
+	h.TransferOwnership(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404: %s", rec.Code, rec.Body)
 	}
 }

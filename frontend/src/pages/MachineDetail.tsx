@@ -245,9 +245,7 @@ function MachineDetails({
   deviceInfo: { os: string; clientVersion: string; hostname: string; updateAvailable: boolean }
 }) {
   return (
-    <Card
-      title="Machine details"
-    >
+    <Card title="Machine details">
       <dl className="grid grid-cols-1 lg:grid-cols-2 gap-x-12">
         <div>
           <Attribute name="Creator" value={m.user?.name} />
