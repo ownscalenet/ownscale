@@ -77,7 +77,7 @@ type Service struct {
 	// derpMap is the last DERP map RunDERPMapUpdater fetched.
 	derpMap atomic.Pointer[tailcfg.DERPMap]
 	// restarts counts each org's in-flight restarts, including those still
-	// waiting on startMu; a counter as two settings saves can overlap.
+	// waiting on their orgLock; a counter as two settings saves can overlap.
 	restarts utils.Map[string, *atomic.Int32]
 	// startFailures holds when Ensure last failed to start each org, so
 	// device traffic can't retry a broken org on every request.
@@ -91,16 +91,23 @@ type Service struct {
 	idleTimeout   time.Duration
 	sweepInterval time.Duration
 
-	// startMu serializes headscale startup and DERP map pushes, as
-	// headscale's DERP map shuffling shares one non-thread-safe rand.Rand.
-	startMu sync.Mutex
-	// closed is set by Close, under startMu, so no headscale (and its
-	// database) starts while backups shut down.
-	closed bool
+	// orgLocks holds a lock per subdomain, serializing headscale
+	// start/stop/restart/sleep for that organization.
+	// The mutexes have to be on this separate map (instead of inside orgRuntime)
+	// to be able to get a lock before the orgRuntime was instantiated.
+	orgLocks utils.Map[string, *sync.Mutex]
+	// closed is set by Close, so no  (and its database) starts
+	// while backups shut down.
+	closed atomic.Bool
 
 	// createFn defaults to createHeadscale; override in tests to skip
 	// real headscale startup.
 	createFn func(dataDir, subdomain, baseDomain string, port int, hsCfg *HeadscaleConfig, derpMap *tailcfg.DERPMap) (*hscontrol.Headscale, error)
+}
+
+func (s *Service) orgLock(subdomain string) *sync.Mutex {
+	mu, _ := s.orgLocks.LoadOrStore(subdomain, new(sync.Mutex))
+	return mu
 }
 
 // orgRuntime is an organization's in-memory headscale state. It exists
@@ -324,8 +331,8 @@ func (s *Service) Ensure(ctx context.Context, subdomain string) (_ *hscl.Client,
 		s.touch(subdomain)
 		return inst.client, nil
 	}
-	s.startMu.Lock()
-	defer s.startMu.Unlock()
+	s.orgLock(subdomain).Lock()
+	defer s.orgLock(subdomain).Unlock()
 	// Another caller may have started it while this one waited.
 	if inst, ok := s.running(subdomain); ok {
 		s.touch(subdomain)
@@ -568,11 +575,12 @@ func (s *Service) insertProvisioned(ctx context.Context, subdomain, clientID, cl
 // subdomain, registering it in s.orgs. It listens on a loopback port
 // picked by the kernel, reused across restarts of the instance within this
 // process; if another process took that port, it retries on a new one.
-// Callers hold startMu, so instances start one at a time.
+// Callers hold subdomain's orgLock, so an org's own instances start one at
+// a time; different orgs start concurrently.
 //
 // It returns once the instance serves, or with the reason it doesn't.
 func (s *Service) startLocked(ctx context.Context, orgID, subdomain string, hsCfg *HeadscaleConfig) error {
-	if s.closed {
+	if s.closed.Load() {
 		return errClosed
 	}
 	if err := s.ensureNoiseKey(ctx, orgID, subdomain); err != nil {
@@ -728,8 +736,8 @@ func (s *Service) restartHeadscale(ctx context.Context, subdomain string) (err e
 	n.Add(1)
 	defer n.Add(-1)
 
-	s.startMu.Lock()
-	defer s.startMu.Unlock()
+	s.orgLock(subdomain).Lock()
+	defer s.orgLock(subdomain).Unlock()
 
 	// The stored config takes effect on the first start.
 	if !s.provisioned(subdomain) {
@@ -754,7 +762,7 @@ func (s *Service) restartHeadscale(ctx context.Context, subdomain string) (err e
 }
 
 // stopLocked stops rt's headscale instance, if any, and closes its
-// connections. Callers hold startMu.
+// connections. Callers hold the org's orgLock.
 func stopLocked(ctx context.Context, rt *orgRuntime) error {
 	// Cleared only once stopped, so a timed-out stop is retried by the next
 	// stop instead of leaving it running unreferenced.
@@ -779,8 +787,8 @@ func (s *Service) sleepHeadscale(ctx context.Context, subdomain string) (err err
 	defer derrors.Wrap(&err, "s.sleepHeadscale(%q)", subdomain)
 
 	s.logger.Info("putting org to sleep", "org", subdomain)
-	s.startMu.Lock()
-	defer s.startMu.Unlock()
+	s.orgLock(subdomain).Lock()
+	defer s.orgLock(subdomain).Unlock()
 
 	rt, ok := s.orgs.Load(subdomain)
 	if !ok || rt.inst.Load() == nil {
@@ -818,12 +826,12 @@ func (s *Service) BackUpProvisioned(ctx context.Context) (err error) {
 func (s *Service) Close(ctx context.Context) (err error) {
 	defer derrors.Wrap(&err, "s.Close()")
 
-	s.startMu.Lock()
-	defer s.startMu.Unlock()
-	s.closed = true
+	s.closed.Store(true)
 	var errs []error
-	for _, rt := range s.orgs.Range {
+	for subdomain, rt := range s.orgs.Range {
+		s.orgLock(subdomain).Lock()
 		errs = append(errs, stopLocked(ctx, rt))
+		s.orgLock(subdomain).Unlock()
 	}
 	return errors.Join(errs...)
 }

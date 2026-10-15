@@ -537,9 +537,9 @@ func TestStartRetriesTakenPort(t *testing.T) {
 	svc.orgs.Store("acme", &orgRuntime{port: taken})
 	org := dbtest.CreateOrg(t, svc.queries.Queries, "acme")
 
-	svc.startMu.Lock()
+	svc.orgLock("acme").Lock()
 	err = svc.startLocked(t.Context(), org.ID, "acme", newHeadscaleConfig("acme", OIDCConfig{Issuer: "https://auth.example.com"}))
-	svc.startMu.Unlock()
+	svc.orgLock("acme").Unlock()
 	if err != nil {
 		t.Fatalf("startLocked: %v", err)
 	}
@@ -700,5 +700,45 @@ func TestCloseStopsStarts(t *testing.T) {
 				t.Errorf("acme's headscale is running after Close")
 			}
 		})
+	}
+}
+
+// TestOrgRestartsDoNotBlockEachOther verifies that restarting one
+// organization's headscale doesn't hold up a different organization's
+// restart.
+func TestOrgRestartsDoNotBlockEachOther(t *testing.T) {
+	svc := newTestService(t)
+	createStarted(t, svc, "acme")
+	createStarted(t, svc, "other")
+
+	entered, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	svc.createFn = func(dataDir, subdomain, baseDomain string, port int, hsCfg *HeadscaleConfig, derpMap *tailcfg.DERPMap) (*hscontrol.Headscale, error) {
+		if subdomain == "acme" {
+			entered <- struct{}{}
+			<-release
+		}
+		return nil, nil
+	}
+	go func() {
+		defer close(done)
+		if err := svc.restartHeadscale(t.Context(), "acme"); err != nil {
+			t.Errorf("restartHeadscale(acme): %v", err)
+		}
+	}()
+	<-entered
+	t.Cleanup(func() {
+		close(release)
+		<-done
+	})
+
+	otherErr := make(chan error, 1)
+	go func() { otherErr <- svc.restartHeadscale(t.Context(), "other") }()
+	select {
+	case err := <-otherErr:
+		if err != nil {
+			t.Errorf("restartHeadscale(other): %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("restartHeadscale(other) blocked on acme's in-flight restart")
 	}
 }
