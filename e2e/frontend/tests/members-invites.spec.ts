@@ -113,7 +113,9 @@ test('a plain member cannot see owner/admin-only management controls', async ({
   await page.getByRole('button', { name: 'Invite member' }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('button', { name: 'Create invite link' }).click()
+  await expect(dialog.getByText(/expires in 7 days/i)).toBeVisible()
   const inviteLink = await dialog.getByRole('textbox').inputValue()
+  expect(inviteLink).toContain('/invite/')
   await dialog.getByRole('button', { name: 'Done' }).click()
 
   const memberContext = await browser.newContext({
