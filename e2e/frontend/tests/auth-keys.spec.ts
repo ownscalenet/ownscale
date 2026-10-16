@@ -68,4 +68,11 @@ test('creating and expiring a reusable, ephemeral pre-auth key for a real user',
   await row.getByRole('button', { name: 'Expire Key' }).click()
   await confirmDialog(page, 'Expire key')
   await expect(row.getByText('Expired')).toBeVisible()
+
+  await row.getByRole('button', { name: 'Delete' }).click()
+  await confirmDialog(page, 'Delete key')
+  await expect(row).toBeHidden()
+  const res = await page.request.get('/api/auth-keys')
+  expect(res.ok()).toBe(true)
+  expect(await res.text()).not.toContain(tag)
 })
