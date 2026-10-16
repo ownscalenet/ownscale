@@ -179,14 +179,17 @@ export function ExpiryDialog({
   const [days, setDays] = useState('90')
   const [date, setDate] = useState('')
   const { busy, error, run } = useDialogAction(onClose, onDone)
+  // Captured once per dialog instance so render stays pure; the dialog is
+  // short-lived, so a slightly stale "now" doesn't matter in practice.
+  const [now] = useState(() => Date.now())
 
   const custom = days === 'custom'
   const expiry = custom
     ? date
       ? new Date(`${date}T23:59:59`)
       : null
-    : new Date(Date.now() + Number(days) * 24 * 60 * 60 * 1000)
-  const valid = disabling || (expiry !== null && expiry.getTime() > Date.now())
+    : new Date(now + Number(days) * 24 * 60 * 60 * 1000)
+  const valid = disabling || (expiry !== null && expiry.getTime() > now)
 
   return (
     <Modal
@@ -232,7 +235,7 @@ export function ExpiryDialog({
                 className="input input-bordered w-full"
                 aria-label="Expiry date"
                 value={date}
-                min={new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)}
+                min={new Date(now + 24 * 60 * 60 * 1000).toISOString().slice(0, 10)}
                 onChange={(e) => setDate(e.target.value)}
                 required
               />

@@ -1,5 +1,5 @@
 import { Plus, Save, Trash2 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getDNSSettings,
@@ -160,7 +160,12 @@ export default function DNS() {
       )}
 
       <div className="flex flex-col gap-6">
-        <RenameTailnet dns={dns} disabled={!canManage || saving} onSave={save} />
+        <RenameTailnet
+          key={dns.baseDomain}
+          dns={dns}
+          disabled={!canManage || saving}
+          onSave={save}
+        />
 
         <div className="card bg-base-100 shadow">
           <div className="card-body">
@@ -429,8 +434,6 @@ function RenameTailnet({
   onSave: (next: DNSConfig) => void
 }) {
   const [name, setName] = useState(dns.baseDomain)
-
-  useEffect(() => setName(dns.baseDomain), [dns.baseDomain])
 
   return (
     <div className="card bg-base-100 shadow">

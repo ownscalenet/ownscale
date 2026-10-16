@@ -40,6 +40,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   useEffect(() => {
+    // Initial session fetch from the server; setState happens after the
+    // await inside refresh, not synchronously, so this is a safe mount effect.
+    // oxlint-disable-next-line react/set-state-in-effect
     void refresh()
   }, [])
 
