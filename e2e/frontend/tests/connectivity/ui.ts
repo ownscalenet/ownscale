@@ -59,7 +59,7 @@ export function validateSession(session: Session, identity: Identity): boolean {
 // stepTimeoutMs bounds each UI step of saving a policy. Saves take up to
 // about a second, but a busy stack (other suites running) or a remote one
 // can be several times slower.
-const stepTimeoutMs = 10_000
+const stepTimeoutMs = 30_000
 
 /** OrgUI mutates resources only through the authenticated browser. */
 export class OrgUI {
