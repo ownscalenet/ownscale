@@ -71,14 +71,15 @@ func New(
 	derpCfg config.DerpConfig,
 	authCfg config.AuthConfig,
 	funnelCfg config.FunnelConfig,
-	backups *backup.Replicator) (_ *Handlers, err error) {
+	backups *backup.Replicator,
+	fixedSubdomains []string) (_ *Handlers, err error) {
 	defer derrors.Wrap(&err, "handlers.New(%q)", baseDomain)
 
 	issuer := ""
 	if oidc != nil {
 		issuer = oidc.Issuer()
 	}
-	orgSvc := orgs.NewService(queries, baseDomain, issuer, derpCfg, logger, dataDir, backups)
+	orgSvc := orgs.NewService(queries, baseDomain, issuer, derpCfg, logger, dataDir, backups, fixedSubdomains)
 
 	// The console is served on console.baseDomain (per-org subdomains are
 	// only used for headscale/tailnet traffic, not this admin UI), so one

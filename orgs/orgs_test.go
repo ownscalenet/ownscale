@@ -27,12 +27,19 @@ import (
 	"github.com/ownscalenet/ownscale/hscl"
 )
 
+// testFixedSubdomains is the fixedSubdomains list used across orgs package
+// tests.
+var testFixedSubdomains = []string{
+	"aaaa", "bbbb", "cccc", "dddd", "eeee",
+	"ffff", "gggg", "hhhh", "iiii", "jjjj",
+}
+
 // newRealService builds a Service backed by a fresh database that starts
 // real headscale instances.
 func newRealService(t *testing.T) *Service {
 	t.Helper()
 	_, queries := dbtest.New(t)
-	svc := NewService(queries, "example.com", "https://auth.example.com", config.DerpConfig{}, slog.New(slog.DiscardHandler), t.TempDir(), nil)
+	svc := NewService(queries, "example.com", "https://auth.example.com", config.DerpConfig{}, slog.New(slog.DiscardHandler), t.TempDir(), nil, testFixedSubdomains)
 	svc.derpMap.Store(testDERPMap(1))
 	return svc
 }
@@ -316,7 +323,7 @@ func TestNextSubdomain(t *testing.T) {
 	}{
 		{"empty database", nil, "aaaa"},
 		{"skips taken fixed subdomains", []string{"aaaa", "bbbb"}, "cccc"},
-		{"falls back to random", fixedSubdomains, ""},
+		{"falls back to random", testFixedSubdomains, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -334,7 +341,7 @@ func TestNextSubdomain(t *testing.T) {
 				t.Errorf("NextSubdomain = %q, want %q", got, tt.want)
 			}
 			if tt.want == "" {
-				if slices.Contains(fixedSubdomains, got) {
+				if slices.Contains(testFixedSubdomains, got) {
 					t.Errorf("NextSubdomain = %q, want a random subdomain", got)
 				}
 				if err := ValidateSubdomain(got); err != nil {

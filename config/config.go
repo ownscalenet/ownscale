@@ -28,6 +28,9 @@ type Config struct {
 	// Caddy; it reveals which organizations exist, better not to publish this
 	// but then again, orgs can already be queried at http://org.base_domain.
 	TLSAskAddr string `env:"OWNSCALE_TLS_ASK_ADDR"`
+	// FixedSubdomains are handed out in order to the first organizations
+	// created, so development identities land on predictable subdomains.
+	FixedSubdomains []string `env:"OWNSCALE_FIXED_SUBDOMAINS" envSeparator:","`
 
 	Auth   AuthConfig
 	Log    LogConfig
@@ -142,6 +145,10 @@ func defaults() *Config {
 		Addr:       ":8080",
 		DataDir:    "data",
 		LocalCADir: "local-ca",
+		FixedSubdomains: []string{
+			"aaaa", "bbbb", "cccc", "dddd", "eeee",
+			"ffff", "gggg", "hhhh", "iiii", "jjjj",
+		},
 		Funnel: FunnelConfig{
 			MaxBodyBytes: 32 << 20,
 		},

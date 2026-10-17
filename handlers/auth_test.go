@@ -499,7 +499,7 @@ func TestAuthProviders(t *testing.T) {
 		UpstreamOIDC: config.UpstreamOIDCConfig{Issuer: "https://idp.example.com", ClientID: "oidc-id"},
 		Google:       config.GoogleConfig{ClientID: "google-id"},
 		// Microsoft left unset: Enabled() should report false.
-	}, config.FunnelConfig{}, nil)
+	}, config.FunnelConfig{}, nil, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

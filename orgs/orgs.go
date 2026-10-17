@@ -54,14 +54,6 @@ const (
 	startTimeout = 30 * time.Second
 )
 
-// fixedSubdomains are handed out in order to the first organizations
-// created, so development identities land on predictable subdomains.
-// TODO: move these to env.
-var fixedSubdomains = []string{
-	"aaaa", "bbbb", "cccc", "dddd", "eeee",
-	"ffff", "gggg", "hhhh", "iiii", "jjjj",
-}
-
 // Service provisions organizations and manages the lifecycle of every
 // org's in-process hscontrol.Headscale instance.
 type Service struct {
@@ -72,6 +64,9 @@ type Service struct {
 	logger     *slog.Logger
 	dataDir    string
 	backups    *backup.Replicator
+	// fixedSubdomains are handed out in order to the first organizations
+	// created, so development identities land on predictable subdomains.
+	fixedSubdomains []string
 
 	orgs utils.Map[string, *orgRuntime]
 	// derpMap is the last DERP map RunDERPMapUpdater fetched.
@@ -176,18 +171,19 @@ type instance struct {
 // exists; backups may be nil.
 func NewService(queries *db.TxQueries, baseDomain, issuer string,
 	derpCfg config.DerpConfig, logger *slog.Logger,
-	dataDir string, backups *backup.Replicator) *Service {
+	dataDir string, backups *backup.Replicator, fixedSubdomains []string) *Service {
 	return &Service{
-		queries:       queries,
-		baseDomain:    baseDomain,
-		issuer:        issuer,
-		derpCfg:       derpCfg,
-		logger:        logger,
-		dataDir:       dataDir,
-		backups:       backups,
-		createFn:      createHeadscale,
-		idleTimeout:   idleTimeout,
-		sweepInterval: sweepInterval,
+		queries:         queries,
+		baseDomain:      baseDomain,
+		issuer:          issuer,
+		derpCfg:         derpCfg,
+		logger:          logger,
+		dataDir:         dataDir,
+		backups:         backups,
+		fixedSubdomains: fixedSubdomains,
+		createFn:        createHeadscale,
+		idleTimeout:     idleTimeout,
+		sweepInterval:   sweepInterval,
 	}
 }
 
@@ -476,7 +472,7 @@ func (s *Service) LookupPort(subdomain string) (int, bool) {
 func (s *Service) NextSubdomain(ctx context.Context) (_ string, err error) {
 	defer derrors.Wrap(&err, "s.NextSubdomain()")
 
-	candidates := slices.Clone(fixedSubdomains)
+	candidates := slices.Clone(s.fixedSubdomains)
 	for range maxSubdomainAttempts {
 		suffix, err := randomAlphaNum(6)
 		if err != nil {
