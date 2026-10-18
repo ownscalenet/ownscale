@@ -42,6 +42,7 @@ func TestCreateSSHSession(t *testing.T) {
 	want := sshSessionResponse{
 		ControlURL:  "https://acme." + testBaseDomain,
 		AuthKey:     "nodekey:newkey",
+		AuthKeyID:   "2",
 		Hostname:    "alice-console-ssh",
 		Target:      "100.64.0.1",
 		MachineName: "node1",
