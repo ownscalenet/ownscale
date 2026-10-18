@@ -59,7 +59,7 @@ export function validateSession(session: Session, identity: Identity): boolean {
 // stepTimeoutMs bounds each UI step of saving a policy. Saves take up to
 // about a second, but a busy stack (other suites running) or a remote one
 // can be several times slower.
-const stepTimeoutMs = 10_000
+const stepTimeoutMs = 30_000
 
 /** OrgUI mutates resources only through the authenticated browser. */
 export class OrgUI {
@@ -169,7 +169,7 @@ export class OrgUI {
 
   async createKey(recovery: Recovery, token: string): Promise<string> {
     const resource: OwnedResource = { token, org: this.org, kind: 'key', reference: token }
-    await this.page.goto('/settings')
+    await this.page.goto('/pre-auth-keys')
     await this.page.getByRole('button', { name: 'Create pre-auth key' }).click()
     const dialog = this.page.getByRole('dialog')
     await dialog.getByRole('combobox').selectOption(this.ownerID)
@@ -258,7 +258,7 @@ export class OrgUI {
       const key = authKeys.find(k => String(k.id) === resource.id)
       if (key && !(key.used && !key.reusable) && !(new Date(key.expiration).getTime() <= Date.now())) {
         try {
-          await this.page.goto('/settings')
+          await this.page.goto('/pre-auth-keys')
           await this.page.getByRole('heading', { name: 'Pre-Auth Keys' }).waitFor()
           const rows = this.page.locator('tbody tr')
           // Keep key material out of locator descriptions and assertion reports.

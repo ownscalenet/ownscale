@@ -50,7 +50,7 @@ export async function registerRealMachine(page: Page, orgSubdomain: string): Pro
   // with net::ERR_NETWORK_CHANGED. Retry the navigation itself for a while.
   for (let attempt = 1; ; attempt++) {
     try {
-      await page.goto('/settings')
+      await page.goto('/pre-auth-keys')
       await page.getByRole('button', { name: 'Create pre-auth key' }).click()
       break
     } catch (err) {

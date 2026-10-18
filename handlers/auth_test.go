@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/ownscalenet/ownscale/auth"
+	"github.com/ownscalenet/ownscale/auth/oidcprovider"
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
@@ -20,6 +21,8 @@ import (
 
 	"github.com/markbates/goth"
 	"github.com/markbates/goth/gothic"
+	"github.com/rs/xid"
+	"github.com/zitadel/oidc/v3/pkg/oidc"
 )
 
 // newTestOIDCServer spins up a minimal OIDC discovery server so
@@ -344,6 +347,116 @@ func TestAuthCallbackRejectsInvalidInvite(t *testing.T) {
 	}
 }
 
+// newTestOIDCStorage builds a real *oidcprovider.Storage (backed by a fresh
+// signing key in t.TempDir()) wired to queries, so finishLogin's OIDC
+// authorize-request wiring can be exercised end-to-end.
+func newTestOIDCStorage(t *testing.T, queries *sqlcgen.Queries) *oidcprovider.Storage {
+	t.Helper()
+	cfg := &config.Config{
+		Auth: config.AuthConfig{
+			SessionSecret: "test-session-secret-at-least-32-bytes-long",
+			OIDCProvider: config.OIDCProviderConfig{
+				Issuer:              "https://auth.example.com",
+				SigningKeyPath:      t.TempDir() + "/oidc_signing_key.pem",
+				AccessTokenLifetime: "5m",
+				IDTokenLifetime:     "1h",
+			},
+		},
+	}
+	_, storage, err := oidcprovider.New(cfg, queries)
+	if err != nil {
+		t.Fatalf("oidcprovider.New: %v", err)
+	}
+	return storage
+}
+
+// insertTestOIDCClient inserts an OIDC client (as provisioned for a
+// headscale/tailnet login-server) belonging to orgID.
+func insertTestOIDCClient(t *testing.T, queries *sqlcgen.Queries, orgID string) sqlcgen.OidcClient {
+	t.Helper()
+	client, err := queries.CreateOIDCClient(t.Context(), sqlcgen.CreateOIDCClientParams{
+		ID:               xid.New().String(),
+		OrganizationID:   orgID,
+		ClientID:         "client-" + xid.New().String(),
+		ClientSecretHash: "unused",
+		RedirectUris:     `["https://acme.example.com/oidc/callback"]`,
+	})
+	if err != nil {
+		t.Fatalf("CreateOIDCClient: %v", err)
+	}
+	return client
+}
+
+// TestFinishLoginRejectsNonMemberOIDCAuthRequest verifies that finishing
+// login with a "next" pointing at a pending OIDC authorize request (as
+// created by `tailscale up --login-server=...`) for a client belonging to
+// a different organization than the signed-in user is rejected with 403.
+func TestFinishLoginRejectsNonMemberOIDCAuthRequest(t *testing.T) {
+	setupSessions()
+	h, queries := newTestHandlers(t)
+	storage := newTestOIDCStorage(t, queries.Queries)
+	h.oidc = storage
+
+	acme := insertUser(t, queries)
+	otherOrgUser := insertUser(t, queries)
+	client := insertTestOIDCClient(t, queries.Queries, acme.OrganizationID)
+
+	authReq, err := storage.CreateAuthRequest(t.Context(), &oidc.AuthRequest{
+		ClientID:     client.ClientID,
+		RedirectURI:  "https://acme.example.com/oidc/callback",
+		ResponseType: oidc.ResponseTypeCode,
+		Scopes:       []string{oidc.ScopeOpenID},
+	}, "")
+	if err != nil {
+		t.Fatalf("CreateAuthRequest: %v", err)
+	}
+	next := "/authorize/callback?id=" + authReq.GetID()
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/callback", nil)
+	rec := httptest.NewRecorder()
+	h.finishLogin(rec, req, otherOrgUser, next)
+
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403: %s", rec.Code, rec.Body)
+	}
+}
+
+// TestFinishLoginAuthorizesMemberOIDCAuthRequest is
+// TestFinishLoginRejectsNonMemberOIDCAuthRequest's counterpart: a member of
+// the client's organization successfully authorizes the pending request and
+// is redirected to its callback.
+func TestFinishLoginAuthorizesMemberOIDCAuthRequest(t *testing.T) {
+	setupSessions()
+	h, queries := newTestHandlers(t)
+	storage := newTestOIDCStorage(t, queries.Queries)
+	h.oidc = storage
+
+	member := insertUser(t, queries)
+	client := insertTestOIDCClient(t, queries.Queries, member.OrganizationID)
+
+	authReq, err := storage.CreateAuthRequest(t.Context(), &oidc.AuthRequest{
+		ClientID:     client.ClientID,
+		RedirectURI:  "https://acme.example.com/oidc/callback",
+		ResponseType: oidc.ResponseTypeCode,
+		Scopes:       []string{oidc.ScopeOpenID},
+	}, "")
+	if err != nil {
+		t.Fatalf("CreateAuthRequest: %v", err)
+	}
+	next := "/authorize/callback?id=" + authReq.GetID()
+
+	req := httptest.NewRequest(http.MethodGet, "/auth/callback", nil)
+	rec := httptest.NewRecorder()
+	h.finishLogin(rec, req, member, next)
+
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("status = %d, want 303: %s", rec.Code, rec.Body)
+	}
+	if loc := rec.Header().Get("Location"); loc != next {
+		t.Errorf("Location = %q, want %q", loc, next)
+	}
+}
+
 func TestLogout(t *testing.T) {
 	h, queries := newTestHandlers(t)
 	user := insertUser(t, queries)
@@ -386,7 +499,7 @@ func TestAuthProviders(t *testing.T) {
 		UpstreamOIDC: config.UpstreamOIDCConfig{Issuer: "https://idp.example.com", ClientID: "oidc-id"},
 		Google:       config.GoogleConfig{ClientID: "google-id"},
 		// Microsoft left unset: Enabled() should report false.
-	}, config.FunnelConfig{}, nil)
+	}, config.FunnelConfig{}, nil, nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

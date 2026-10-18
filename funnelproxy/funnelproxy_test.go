@@ -258,7 +258,7 @@ func newFakeUserPreAuthKeyServer(t *testing.T, existingUsers string) (*hscl.Clie
 			f.mu.Lock()
 			f.createdUser = true
 			f.mu.Unlock()
-			fmt.Fprint(w, `{"user":{"id":"99","name":"ownscale-funnel"}}`)
+			fmt.Fprint(w, `{"user":{"id":"99","name":"ownscale-agent"}}`)
 			return
 		}
 		fmt.Fprint(w, existingUsers)
@@ -290,15 +290,15 @@ func TestEnsureFunnelAuthKey(t *testing.T) {
 		wantNewCreate bool
 	}{
 		{"no users", `{"users":[]}`, "99", true},
-		{"existing funnel user", `{"users":[{"id":"5","name":"ownscale-funnel"}]}`, "5", false},
+		{"existing funnel user", `{"users":[{"id":"5","name":"ownscale-agent"}]}`, "5", false},
 		{
 			"only an OIDC member with the funnel name",
-			`{"users":[{"id":"7","name":"ownscale-funnel","providerId":"https://ownscale.test/abc"}]}`,
+			`{"users":[{"id":"7","name":"ownscale-agent","providerId":"https://ownscale.test/abc"}]}`,
 			"99", true,
 		},
 		{
 			"OIDC member listed before the funnel user",
-			`{"users":[{"id":"7","name":"ownscale-funnel","providerId":"https://ownscale.test/abc"},{"id":"5","name":"ownscale-funnel"}]}`,
+			`{"users":[{"id":"7","name":"ownscale-agent","providerId":"https://ownscale.test/abc"},{"id":"5","name":"ownscale-agent"}]}`,
 			"5", false,
 		},
 	}
@@ -504,26 +504,26 @@ func TestRemoveStaleFunnelNodes(t *testing.T) {
 	}{
 		{
 			name:  "only the running funnel",
-			nodes: []node{{FunnelHeadscaleUserName, "funnel-aaaa", true}},
-			want:  []string{"ownscale-funnel/funnel-aaaa"},
+			nodes: []node{{AgentHeadscaleUserName, "ownscale-agent", true}},
+			want:  []string{"ownscale-agent/ownscale-agent"},
 		},
 		{
 			name: "orphans from lost state",
 			nodes: []node{
-				{FunnelHeadscaleUserName, "funnel-aaaa", false},
-				{FunnelHeadscaleUserName, "funnel-aaaa-1", false},
-				{FunnelHeadscaleUserName, "funnel-aaaa-2", true},
+				{AgentHeadscaleUserName, "ownscale-agent", false},
+				{AgentHeadscaleUserName, "ownscale-agent-1", false},
+				{AgentHeadscaleUserName, "ownscale-agent-2", true},
 			},
-			want: []string{"ownscale-funnel/funnel-aaaa"},
+			want: []string{"ownscale-agent/ownscale-agent"},
 		},
 		{
 			name: "members' machines are kept",
 			nodes: []node{
-				{"alice", "funnel-aaaa", false},
+				{"alice", "ownscale-agent", false},
 				{"alice", "laptop", false},
-				{FunnelHeadscaleUserName, "funnel-aaaa-1", true},
+				{AgentHeadscaleUserName, "ownscale-agent-1", true},
 			},
-			want: []string{"alice/funnel-aaaa", "alice/laptop", "ownscale-funnel/funnel-aaaa-1"},
+			want: []string{"alice/laptop", "alice/ownscale-agent", "ownscale-agent/ownscale-agent-1"},
 		},
 	}
 	for _, tt := range tests {
@@ -531,7 +531,7 @@ func TestRemoveStaleFunnelNodes(t *testing.T) {
 			ctx := t.Context()
 			sock := hstest.Headscale(t)
 			client := hscl.NewUnix(sock)
-			for _, user := range []string{FunnelHeadscaleUserName, "alice"} {
+			for _, user := range []string{AgentHeadscaleUserName, "alice"} {
 				if _, err := client.CreateUser(ctx, hscl.CreateUserParams{Name: user}); err != nil {
 					t.Fatal(err)
 				}

@@ -6,3 +6,10 @@ export function faqURL(anchor: string): string {
   const baseDomain = window.location.hostname.replace(/^console\./, '')
   return `https://${baseDomain}/docs/faqs/#${anchor}`
 }
+
+// shortURL builds a link to the docs site's short redirect page for slug,
+// e.g. shortURL('agent') -> https://<baseDomain>/s/agent.
+export function shortURL(slug: string): string {
+  const baseDomain = window.location.hostname.replace(/^console\./, '')
+  return `https://${baseDomain}/s/${slug}`
+}

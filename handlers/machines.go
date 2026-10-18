@@ -103,7 +103,7 @@ func matchesFilters(m hscl.Node, q, userFilter, status string) bool {
 // withoutFunnelUser drops the reserved funnel user, which isn't a member.
 func withoutFunnelUser(users []hscl.User) []hscl.User {
 	return slices.DeleteFunc(users, func(u hscl.User) bool {
-		return funnelproxy.IsFunnelUser(&u)
+		return funnelproxy.IsAgentUser(&u)
 	})
 }
 
@@ -117,7 +117,7 @@ type machineResponse struct {
 func toMachineResponse(n hscl.Node, caller *sqlcgen.User) machineResponse {
 	return machineResponse{
 		Node:     n,
-		Internal: funnelproxy.IsFunnelUser(n.User),
+		Internal: funnelproxy.IsAgentUser(n.User),
 		CanEdit: caller != nil &&
 			(isManager(caller.Role) || n.User != nil && ownsHeadscaleUser(caller, n.User.ID)),
 	}
@@ -525,7 +525,7 @@ func (h *Handlers) isFunnelMachine(ctx context.Context, client *hscl.Client, nod
 	if err != nil {
 		return false, err
 	}
-	return funnelproxy.IsFunnelUser(node.User), nil
+	return funnelproxy.IsAgentUser(node.User), nil
 }
 
 // GetMachineByIP handles GET /api/machines/by-ip/{ip}. It looks the machine

@@ -25,6 +25,9 @@ type sshSessionResponse struct {
 	// AuthKey registers the browser as an ephemeral node. It is single
 	// use, short lived, and never stored by ownscale.
 	AuthKey string `json:"authKey"`
+	// AuthKeyID lets the console delete the key once it's been consumed,
+	// instead of waiting out sshKeyTTL.
+	AuthKeyID string `json:"authKeyId"`
 	// Hostname is the name the browser node registers under.
 	Hostname string `json:"hostname"`
 	// Target is the address the SSH session connects to.
@@ -53,7 +56,7 @@ func (h *Handlers) CreateSSHSession(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	if err != nil || funnelproxy.IsFunnelUser(target.User) {
+	if err != nil || funnelproxy.IsAgentUser(target.User) {
 		h.writeError(w, http.StatusNotFound, "machine not found")
 		return
 	}
@@ -90,6 +93,7 @@ func (h *Handlers) CreateSSHSession(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, sshSessionResponse{
 		ControlURL:  fmt.Sprintf("https://%s.%s", org.Subdomain, h.baseDomain),
 		AuthKey:     key.Key,
+		AuthKeyID:   key.ID,
 		Hostname:    browserNodeHostname(hsUser.Name),
 		Target:      addr,
 		MachineName: target.GivenName,

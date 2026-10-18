@@ -231,6 +231,9 @@ export interface SSHSession {
   controlURL: string
   // Single use, short lived, and only ever held in memory.
   authKey: string
+  // Lets the console delete the key once it's consumed, instead of
+  // waiting out its short server-side TTL.
+  authKeyId: string
   hostname: string
   target: string
   machineName: string

@@ -128,89 +128,91 @@ function Header({
 }) {
   const status = m.expired ? 'expired' : m.online ? 'online' : 'offline'
   return (
-    <div className="mb-5">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-[22px] font-semibold tracking-tight font-mono">{m.givenName}</h1>
-          <div className="flex flex-wrap items-center gap-2 mt-1">
-            <StatusBadge status={status} />
-            {m.internal && <span className="badge badge-info badge-sm">Internal</span>}
-            {!m.expiry && <span className="badge badge-ghost badge-sm">No expiry</span>}
-            {(m.tags ?? []).map((t) => (
-              <span key={t} className="badge badge-outline badge-sm font-mono">
-                {t}
-              </span>
-            ))}
+    <div className="card bg-base-100 shadow mb-6">
+      <div className="card-body">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">
+            <h1 className="text-[22px] font-semibold tracking-tight font-mono">{m.givenName}</h1>
+            <div className="flex flex-wrap items-center gap-2 mt-1">
+              <StatusBadge status={status} />
+              {m.internal && <span className="badge badge-info badge-sm">Internal</span>}
+              {!m.expiry && <span className="badge badge-ghost badge-sm">No expiry</span>}
+              {(m.tags ?? []).map((t) => (
+                <span key={t} className="badge badge-outline badge-sm font-mono">
+                  {t}
+                </span>
+              ))}
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {/* Plain anchor: the SSH page needs a full load for its own CSP. */}
+            {m.internal || !m.online || m.expired ? (
+              <button type="button" className="btn btn-sm" disabled>
+                <TerminalSquare className="size-3.5" aria-hidden="true" />
+                SSH
+              </button>
+            ) : (
+              <a className="btn btn-sm" href={`/machines/${m.id}/ssh`}>
+                <TerminalSquare className="size-3.5" aria-hidden="true" />
+                SSH
+              </a>
+            )}
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={m.internal || !m.canEdit}
+              onClick={() => onOpen('rename')}
+            >
+              <Pencil className="size-3.5" aria-hidden="true" />
+              Edit machine name
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={m.internal || !m.canEdit}
+              onClick={() => onOpen('tags')}
+            >
+              <Tag className="size-3.5" aria-hidden="true" />
+              Edit ACL tags
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={m.internal || !m.canEdit}
+              onClick={() => onOpen('routes')}
+            >
+              <Route className="size-3.5" aria-hidden="true" />
+              Edit route settings
+            </button>
+            <button
+              type="button"
+              className="btn btn-sm"
+              disabled={m.internal || !m.canEdit}
+              onClick={() => onOpen('expiry')}
+            >
+              <KeyRound className="size-3.5" aria-hidden="true" />
+              {m.expiry ? 'Disable key expiry' : 'Enable key expiry'}
+            </button>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2">
-          {/* Plain anchor: the SSH page needs a full load for its own CSP. */}
-          {m.internal || !m.online || m.expired ? (
-            <button type="button" className="btn btn-sm" disabled>
-              <TerminalSquare className="size-3.5" aria-hidden="true" />
-              SSH
-            </button>
-          ) : (
-            <a className="btn btn-sm" href={`/machines/${m.id}/ssh`}>
-              <TerminalSquare className="size-3.5" aria-hidden="true" />
-              SSH
-            </a>
-          )}
-          <button
-            type="button"
-            className="btn btn-sm"
-            disabled={m.internal || !m.canEdit}
-            onClick={() => onOpen('rename')}
-          >
-            <Pencil className="size-3.5" aria-hidden="true" />
-            Edit machine name
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm"
-            disabled={m.internal || !m.canEdit}
-            onClick={() => onOpen('tags')}
-          >
-            <Tag className="size-3.5" aria-hidden="true" />
-            Edit ACL tags
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm"
-            disabled={m.internal || !m.canEdit}
-            onClick={() => onOpen('routes')}
-          >
-            <Route className="size-3.5" aria-hidden="true" />
-            Edit route settings
-          </button>
-          <button
-            type="button"
-            className="btn btn-sm"
-            disabled={m.internal || !m.canEdit}
-            onClick={() => onOpen('expiry')}
-          >
-            <KeyRound className="size-3.5" aria-hidden="true" />
-            {m.expiry ? 'Disable key expiry' : 'Enable key expiry'}
-          </button>
-        </div>
+        <dl className="flex flex-wrap gap-x-10 mt-3">
+          <Attribute name="Managed by" value={m.user?.name} />
+          <Attribute
+            name="Status"
+            value={
+              m.expired ? (
+                <>Expired {formatDate(m.expiry)}</>
+              ) : m.online ? (
+                'Connected'
+              ) : m.lastSeen ? (
+                <RelativeTime value={m.lastSeen} />
+              ) : (
+                'Never connected'
+              )
+            }
+          />
+        </dl>
       </div>
-      <dl className="flex flex-wrap gap-x-10 mt-3">
-        <Attribute name="Managed by" value={m.user?.name} />
-        <Attribute
-          name="Status"
-          value={
-            m.expired ? (
-              <>Expired {formatDate(m.expiry)}</>
-            ) : m.online ? (
-              'Connected'
-            ) : m.lastSeen ? (
-              <RelativeTime value={m.lastSeen} />
-            ) : (
-              'Never connected'
-            )
-          }
-        />
-      </dl>
     </div>
   )
 }
@@ -243,10 +245,7 @@ function MachineDetails({
   deviceInfo: { os: string; clientVersion: string; hostname: string; updateAvailable: boolean }
 }) {
   return (
-    <Card
-      title="Machine details"
-      subtitle="Information about this machine’s network. Used to debug connection issues."
-    >
+    <Card title="Machine details">
       <dl className="grid grid-cols-1 lg:grid-cols-2 gap-x-12">
         <div>
           <Attribute name="Creator" value={m.user?.name} />
@@ -266,7 +265,6 @@ function MachineDetails({
               )
             }
           />
-          <Attribute name="ID" value={m.id} copyable mono />
         </div>
         <div>
           <Attribute name="Node key" value={m.nodeKey} copyable mono />

@@ -94,23 +94,32 @@ func (s *Service) refreshDERPMap(ctx context.Context) error {
 	}
 	s.logger.Info("fetched DERP map", "regions", len(dm.Regions))
 
-	// Holding startMu serializes this with instance startup, which reads
-	// the map too, and with headscale's shuffle of a shared rand.
-	s.startMu.Lock()
-	defer s.startMu.Unlock()
 	s.derpMap.Store(dm)
 	for subdomain := range s.orgs.Range {
-		inst, ok := s.running(subdomain)
-		if !ok {
-			continue
-		}
-		// GetDERPMap clones and shuffles the map for this instance.
-		instMap, err := derp.GetDERPMap(types.DERPConfig{DERPMap: dm})
-		if err != nil {
+		if err := s.pushDERPMap(subdomain, dm); err != nil {
 			return err
 		}
-		inst.app.GetState().SetDERPMap(instMap)
-		inst.app.Change(change.DERPMap())
 	}
+	return nil
+}
+
+// pushDERPMap shuffles dm for subdomain and pushes it to subdomain's
+// running instance, if any. It holds subdomain's orgLock so it doesn't race
+// a concurrent restart/sleep of the same organization.
+func (s *Service) pushDERPMap(subdomain string, dm *tailcfg.DERPMap) error {
+	s.orgLock(subdomain).Lock()
+	defer s.orgLock(subdomain).Unlock()
+
+	inst, ok := s.running(subdomain)
+	if !ok {
+		return nil
+	}
+	// GetDERPMap clones and shuffles the map for this instance.
+	instMap, err := derp.GetDERPMap(types.DERPConfig{DERPMap: dm})
+	if err != nil {
+		return err
+	}
+	inst.app.GetState().SetDERPMap(instMap)
+	inst.app.Change(change.DERPMap())
 	return nil
 }

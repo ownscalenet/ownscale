@@ -27,12 +27,19 @@ import (
 	"github.com/ownscalenet/ownscale/hscl"
 )
 
+// testFixedSubdomains is the fixedSubdomains list used across orgs package
+// tests.
+var testFixedSubdomains = []string{
+	"aaaa", "bbbb", "cccc", "dddd", "eeee",
+	"ffff", "gggg", "hhhh", "iiii", "jjjj",
+}
+
 // newRealService builds a Service backed by a fresh database that starts
 // real headscale instances.
 func newRealService(t *testing.T) *Service {
 	t.Helper()
 	_, queries := dbtest.New(t)
-	svc := NewService(queries, "example.com", "https://auth.example.com", config.DerpConfig{}, slog.New(slog.DiscardHandler), t.TempDir(), nil)
+	svc := NewService(queries, "example.com", "https://auth.example.com", config.DerpConfig{}, slog.New(slog.DiscardHandler), t.TempDir(), nil, testFixedSubdomains)
 	svc.derpMap.Store(testDERPMap(1))
 	return svc
 }
@@ -316,7 +323,7 @@ func TestNextSubdomain(t *testing.T) {
 	}{
 		{"empty database", nil, "aaaa"},
 		{"skips taken fixed subdomains", []string{"aaaa", "bbbb"}, "cccc"},
-		{"falls back to random", fixedSubdomains, ""},
+		{"falls back to random", testFixedSubdomains, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -334,7 +341,7 @@ func TestNextSubdomain(t *testing.T) {
 				t.Errorf("NextSubdomain = %q, want %q", got, tt.want)
 			}
 			if tt.want == "" {
-				if slices.Contains(fixedSubdomains, got) {
+				if slices.Contains(testFixedSubdomains, got) {
 					t.Errorf("NextSubdomain = %q, want a random subdomain", got)
 				}
 				if err := ValidateSubdomain(got); err != nil {
@@ -537,9 +544,9 @@ func TestStartRetriesTakenPort(t *testing.T) {
 	svc.orgs.Store("acme", &orgRuntime{port: taken})
 	org := dbtest.CreateOrg(t, svc.queries.Queries, "acme")
 
-	svc.startMu.Lock()
+	svc.orgLock("acme").Lock()
 	err = svc.startLocked(t.Context(), org.ID, "acme", newHeadscaleConfig("acme", OIDCConfig{Issuer: "https://auth.example.com"}))
-	svc.startMu.Unlock()
+	svc.orgLock("acme").Unlock()
 	if err != nil {
 		t.Fatalf("startLocked: %v", err)
 	}
@@ -571,6 +578,21 @@ func TestCreateHeadscaleDERP(t *testing.T) {
 	}
 	if derpCfg.DERPMap == nil || derpCfg.DERPMap.Regions[7] == nil {
 		t.Errorf("DERPMap = %+v, want region 7", derpCfg.DERPMap)
+	}
+}
+
+// TestCreateHeadscaleBaseDomain guards against nodes getting bare hostnames
+// as their FQDN, which breaks MagicDNS resolution of <host>.<base_domain>.
+func TestCreateHeadscaleBaseDomain(t *testing.T) {
+	hsCfg := newHeadscaleConfig("acme", OIDCConfig{Issuer: "https://auth.example.com"})
+	app, err := createHeadscale(t.TempDir(), "acme", "example.com", 0, hsCfg, testDERPMap(7))
+	if err != nil {
+		t.Fatalf("createHeadscale: %v", err)
+	}
+	t.Cleanup(func() { _ = app.GetState().Close() })
+
+	if got, want := app.GetState().DebugConfig().BaseDomain, "acme.ownscale"; got != want {
+		t.Errorf("BaseDomain = %q, want %q", got, want)
 	}
 }
 
@@ -685,5 +707,45 @@ func TestCloseStopsStarts(t *testing.T) {
 				t.Errorf("acme's headscale is running after Close")
 			}
 		})
+	}
+}
+
+// TestOrgRestartsDoNotBlockEachOther verifies that restarting one
+// organization's headscale doesn't hold up a different organization's
+// restart.
+func TestOrgRestartsDoNotBlockEachOther(t *testing.T) {
+	svc := newTestService(t)
+	createStarted(t, svc, "acme")
+	createStarted(t, svc, "other")
+
+	entered, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
+	svc.createFn = func(dataDir, subdomain, baseDomain string, port int, hsCfg *HeadscaleConfig, derpMap *tailcfg.DERPMap) (*hscontrol.Headscale, error) {
+		if subdomain == "acme" {
+			entered <- struct{}{}
+			<-release
+		}
+		return nil, nil
+	}
+	go func() {
+		defer close(done)
+		if err := svc.restartHeadscale(t.Context(), "acme"); err != nil {
+			t.Errorf("restartHeadscale(acme): %v", err)
+		}
+	}()
+	<-entered
+	t.Cleanup(func() {
+		close(release)
+		<-done
+	})
+
+	otherErr := make(chan error, 1)
+	go func() { otherErr <- svc.restartHeadscale(t.Context(), "other") }()
+	select {
+	case err := <-otherErr:
+		if err != nil {
+			t.Errorf("restartHeadscale(other): %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("restartHeadscale(other) blocked on acme's in-flight restart")
 	}
 }

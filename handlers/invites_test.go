@@ -180,3 +180,82 @@ func TestDeleteInvite(t *testing.T) {
 		t.Error("expected invite to be deleted")
 	}
 }
+
+func TestDeleteInviteRequiresManager(t *testing.T) {
+	h, _, users := newOrgTestHandlers(t, RoleOwner, RoleMember)
+	owner, plainMember := users[0], users[1]
+
+	inv, err := h.queries.CreateInvite(t.Context(), sqlcgen.CreateInviteParams{
+		ID:             xid.New().String(),
+		OrganizationID: owner.OrganizationID,
+		Role:           RoleMember,
+		Token:          "keep-me",
+		CreatedBy:      owner.ID,
+		ExpiresAt:      time.Now().Add(24 * time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("CreateInvite: %v", err)
+	}
+
+	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/invites/"+inv.ID, nil), plainMember), "id", inv.ID)
+	rec := httptest.NewRecorder()
+	h.DeleteInvite(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403: %s", rec.Code, rec.Body)
+	}
+	if _, err := h.queries.GetInvite(t.Context(), inv.ID); err != nil {
+		t.Errorf("GetInvite after forbidden delete: err = %v, want invite to still exist", err)
+	}
+}
+
+func TestDeleteInviteNotFound(t *testing.T) {
+	h, _, users := newOrgTestHandlers(t, RoleOwner)
+	owner := users[0]
+
+	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/invites/nonexistent", nil), owner), "id", "nonexistent")
+	rec := httptest.NewRecorder()
+	h.DeleteInvite(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestDeleteInviteNotFoundForDifferentOrg(t *testing.T) {
+	h, _, users := newOrgTestHandlers(t, RoleOwner)
+	owner := users[0]
+	otherOwner := insertUser(t, h.queries)
+
+	inv, err := h.queries.CreateInvite(t.Context(), sqlcgen.CreateInviteParams{
+		ID:             xid.New().String(),
+		OrganizationID: otherOwner.OrganizationID,
+		Role:           RoleMember,
+		Token:          "other-org-invite",
+		CreatedBy:      otherOwner.ID,
+		ExpiresAt:      time.Now().Add(24 * time.Hour),
+	})
+	if err != nil {
+		t.Fatalf("CreateInvite: %v", err)
+	}
+
+	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/invites/"+inv.ID, nil), owner), "id", inv.ID)
+	rec := httptest.NewRecorder()
+	h.DeleteInvite(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404: %s", rec.Code, rec.Body)
+	}
+	if _, err := h.queries.GetInvite(t.Context(), inv.ID); err != nil {
+		t.Errorf("GetInvite after cross-org delete attempt: err = %v, want invite to still exist", err)
+	}
+}
+
+func TestListInvitesRequiresManager(t *testing.T) {
+	h, _, users := newOrgTestHandlers(t, RoleMember)
+	plainMember := users[0]
+
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/invites", nil), plainMember)
+	rec := httptest.NewRecorder()
+	h.ListInvites(rec, req)
+	if rec.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403: %s", rec.Code, rec.Body)
+	}
+}

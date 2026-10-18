@@ -113,6 +113,8 @@ export class Bridge {
   private stopping = false
   private forced = false
   private stderrBytes = 0
+  private stderrText = ''
+  private static readonly maxStderrText = 4096
   private requests = 0
   private replies = 0
   // Number of calls awaiting a reply. Unlike the old hand-rolled protocol,
@@ -148,7 +150,7 @@ export class Bridge {
         this.exitCode = code
         this.exitSignal = signal
         if (this.lineBuffer.length || this.inFlight > 0 || !this.stopping || code !== 0)
-          this.fail('Bridge exited unexpectedly')
+          this.fail(`Bridge exited unexpectedly${this.stderrText ? `: ${this.stderrText.trim()}` : ''}`)
         resolve()
       })
     })
@@ -157,8 +159,8 @@ export class Bridge {
     this.child.stdout.on('error', () => this.fail('Bridge output stream failed'))
     this.child.stderr.on('error', () => this.fail('Bridge diagnostic stream failed'))
     this.child.stderr.on('data', (data: Buffer) => {
-      // Keep counts, never diagnostic text: upstream logs may contain credentials.
       this.stderrBytes = Math.min(Number.MAX_SAFE_INTEGER, this.stderrBytes + data.length)
+      this.stderrText = (this.stderrText + data.toString('utf8')).slice(-Bridge.maxStderrText)
     })
     this.child.stdout.setEncoding('utf8')
     this.child.stdout.on('data', (data: string) => this.receive(data))
@@ -209,7 +211,8 @@ export class Bridge {
   diagnostics(): string {
     return JSON.stringify({
       pid: this.child.pid ?? null, requests: this.requests, replies: this.replies,
-      stderrBytes: this.stderrBytes, exited: this.exited, exitCode: this.exitCode,
+      stderrBytes: this.stderrBytes, stderrTail: this.stderrText.trim() || undefined,
+      exited: this.exited, exitCode: this.exitCode,
       exitSignal: this.exitSignal, forcedCleanup: this.forced, failed: !!this.fault,
     })
   }

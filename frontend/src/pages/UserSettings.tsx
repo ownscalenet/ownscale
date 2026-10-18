@@ -72,7 +72,7 @@ function PasskeysCard() {
     <div className="card bg-base-100 shadow">
       <div className="card-body">
         {naming && <PasskeyNameDialog onClose={() => setNaming(false)} onSubmit={handleAdd} />}
-        <div className="flex items-center justify-between">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="card-title">Passkeys</h2>
             <p className="text-sm opacity-60 -mt-1">

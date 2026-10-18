@@ -34,12 +34,12 @@ import (
 	"github.com/ownscalenet/ownscale/hscl"
 )
 
-// FunnelHeadscaleUserName is the headscale user owning each org's funnel node.
+// AgentHeadscaleUserName is the headscale user owning each org's funnel node.
 // It's reserved: members are never given this name.
-const FunnelHeadscaleUserName = "ownscale-funnel"
+const AgentHeadscaleUserName = "ownscale-agent"
 
-func IsFunnelUser(u *hscl.User) bool {
-	return u != nil && u.Name == FunnelHeadscaleUserName && u.ProviderID == ""
+func IsAgentUser(u *hscl.User) bool {
+	return u != nil && u.Name == AgentHeadscaleUserName && u.ProviderID == ""
 }
 
 // Queries is the narrow subset of *db.TxQueries the proxy needs.
@@ -435,7 +435,7 @@ func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *
 
 			srv := &tsnet.Server{
 				Dir:        p.stateDir(subdomain),
-				Hostname:   funnelHostname(subdomain),
+				Hostname:   agentHostname,
 				AuthKey:    authKey.Key,
 				ControlURL: controlURL,
 				Logf:       tsnetLogf(p.logger, subdomain),
@@ -481,9 +481,12 @@ func (p *Pool) getOrCreateServer(ctx context.Context, subdomain string, client *
 	}
 }
 
-func funnelHostname(subdomain string) string {
-	return "funnel-" + subdomain
-}
+// agentHostname is the hostname given to each org's funnel/agent tsnet
+// node. It's a plain constant (no subdomain suffix) since each org has its
+// own isolated headscale tailnet.
+// Careful if renaming this. The state associated with the node is preserved on
+// disk and persists after a rename.
+const agentHostname = "ownscale-agent"
 
 // removeStaleFunnelNodes deletes subdomain's funnel machines other than
 // selfID, then names selfID after the funnel again. Those machines are left
@@ -496,7 +499,7 @@ func removeStaleFunnelNodes(ctx context.Context, client *hscl.Client, subdomain,
 	if err != nil {
 		return err
 	}
-	name := funnelHostname(subdomain)
+	name := agentHostname
 	var errs []error
 	var self *hscl.Node
 	nameTaken := false
@@ -504,7 +507,7 @@ func removeStaleFunnelNodes(ctx context.Context, client *hscl.Client, subdomain,
 		switch {
 		case n.ID == selfID:
 			self = &n
-		case IsFunnelUser(n.User):
+		case IsAgentUser(n.User):
 			errs = append(errs, client.DeleteNode(ctx, n.ID))
 		case n.GivenName == name:
 			nameTaken = true // by a member's machine
@@ -528,13 +531,13 @@ func ensureFunnelAuthKey(ctx context.Context, client *hscl.Client) (hscl.PreAuth
 	}
 	var userID string
 	for _, u := range users {
-		if IsFunnelUser(&u) {
+		if IsAgentUser(&u) {
 			userID = u.ID
 			break
 		}
 	}
 	if userID == "" {
-		created, err := client.CreateUser(ctx, hscl.CreateUserParams{Name: FunnelHeadscaleUserName})
+		created, err := client.CreateUser(ctx, hscl.CreateUserParams{Name: AgentHeadscaleUserName})
 		if err != nil {
 			return hscl.PreAuthKey{}, err
 		}

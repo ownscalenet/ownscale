@@ -57,8 +57,8 @@ function matchesUser(k: PreAuthKey, userFilter: string): boolean {
   return k.user?.name === userFilter
 }
 
-export default function Settings() {
-  usePageTitle('Settings')
+export default function PreAuthKeys() {
+  usePageTitle('Pre-auth Keys')
   const [searchParams, setSearchParams] = useSearchParams()
   const userFilter = searchParams.get('user') ?? ''
   const status = searchParams.get('status') ?? ''
@@ -91,9 +91,13 @@ export default function Settings() {
   return (
     <>
       <PageHeader
-        title="Settings"
+        title="Pre-auth Keys"
         subtitle={`${authKeys.length} auth ${authKeys.length === 1 ? 'key' : 'keys'}`}
-      />
+      >
+        <button type="button" className="btn btn-sm btn-primary" onClick={() => setCreating(true)}>
+          Create pre-auth key
+        </button>
+      </PageHeader>
 
       <ErrorAlert error={error} />
 
@@ -105,90 +109,86 @@ export default function Settings() {
           </span>
         </div>
       ) : (
-        <div className="card bg-base-100 shadow">
-          <div className="card-body">
-            <h2 className="card-title">Pre-Auth Keys</h2>
-            <p className="text-sm opacity-60 -mt-2">
-              Pre-authentication keys let a new machine join this tailnet without an interactive
-              login.
-            </p>
+        <>
+          <p className="text-sm opacity-60 mb-4">
+            Pre-authentication keys let a new machine join this tailnet without an interactive
+            login.
+          </p>
 
-            <form className="flex flex-wrap gap-2 mt-2 mb-2" onSubmit={(e) => e.preventDefault()}>
-              <select
-                className="select select-bordered select-sm"
-                value={userFilter}
-                onChange={(e) => updateFilter('user', e.target.value)}
-              >
-                <option value="">All users</option>
-                {canManage && <option value={TAG_ONLY}>Tag Only</option>}
-                {users.map((u) => (
-                  <option key={u.id} value={u.name}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
-              <select
-                className="select select-bordered select-sm"
-                value={status}
-                onChange={(e) => updateFilter('status', e.target.value)}
-              >
-                <option value="">Any status</option>
-                <option value="active">Active</option>
-                <option value="expired">Used / Expired</option>
-                <option value="reusable">Reusable</option>
-                <option value="ephemeral">Ephemeral</option>
-              </select>
-              {filtered && (
-                <button
-                  type="button"
-                  className="btn btn-sm btn-ghost"
-                  onClick={() => setSearchParams({}, { replace: true })}
-                >
-                  Clear
-                </button>
-              )}
+          <form className="flex flex-wrap gap-2 mb-4" onSubmit={(e) => e.preventDefault()}>
+            <select
+              className="select select-bordered select-sm"
+              value={userFilter}
+              onChange={(e) => updateFilter('user', e.target.value)}
+            >
+              <option value="">All users</option>
+              {canManage && <option value={TAG_ONLY}>Tag Only</option>}
+              {users.map((u) => (
+                <option key={u.id} value={u.name}>
+                  {u.name}
+                </option>
+              ))}
+            </select>
+            <select
+              className="select select-bordered select-sm"
+              value={status}
+              onChange={(e) => updateFilter('status', e.target.value)}
+            >
+              <option value="">Any status</option>
+              <option value="active">Active</option>
+              <option value="expired">Used / Expired</option>
+              <option value="reusable">Reusable</option>
+              <option value="ephemeral">Ephemeral</option>
+            </select>
+            {filtered && (
               <button
                 type="button"
-                className="btn btn-sm btn-primary ml-auto"
-                onClick={() => setCreating(true)}
+                className="btn btn-sm btn-ghost"
+                onClick={() => setSearchParams({}, { replace: true })}
               >
-                Create pre-auth key
+                Clear
               </button>
-            </form>
-
-            {visible.length > 0 ? (
-              <div className="overflow-x-auto">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th>Key</th>
-                      <th>User</th>
-                      <th>Tags</th>
-                      <th>Reusable</th>
-                      <th>Ephemeral</th>
-                      <th>Expiration</th>
-                      <th className="text-right">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {visible.map((k) => (
-                      <AuthKeyRow
-                        key={k.id}
-                        authKey={k}
-                        onChange={reload}
-                        onError={setActionError}
-                      />
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            ) : (
-              <div className="p-8 text-center opacity-60">
-                {filtered ? 'No pre-auth keys match the current filters.' : 'No pre-auth keys yet.'}
-              </div>
             )}
+          </form>
+
+          <div className="card bg-base-100 shadow">
+            <div className="card-body p-0">
+              {visible.length > 0 ? (
+                <div className="overflow-x-auto">
+                  <table className="table">
+                    <thead>
+                      <tr>
+                        <th>Key</th>
+                        <th>User</th>
+                        <th>Tags</th>
+                        <th>Reusable</th>
+                        <th>Ephemeral</th>
+                        <th>Expiration</th>
+                        <th className="text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {visible.map((k) => (
+                        <AuthKeyRow
+                          key={k.id}
+                          authKey={k}
+                          onChange={reload}
+                          onError={setActionError}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              ) : (
+                <div className="p-8 text-center opacity-60">
+                  {filtered
+                    ? 'No pre-auth keys match the current filters.'
+                    : 'No pre-auth keys yet.'}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
+        </>
       )}
 
       {creating && (

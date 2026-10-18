@@ -89,7 +89,7 @@ async function createFunnel(page: Page, label: string, machineHostname: string, 
 
 test('a funnel works again after its internal funnel machine is deleted', async ({ page, account }) => {
   test.setTimeout(240_000)
-  const funnelMachine = `funnel-${account.org}`
+  const funnelMachine = 'ownscale-agent'
   const target = await registerRealMachine(page, account.org)
   try {
     const service = await target.bridge.serve(target.hostname, `${target.hostname}web`, 0)

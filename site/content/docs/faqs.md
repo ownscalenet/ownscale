@@ -5,10 +5,11 @@ weight: 3
 
 # FAQs
 
-## Funnel machine
+## ownscale-agent user & machine
 
-When creating a funnel, ownscale will automatically create a new user and a new
-machine. These will show up in your listings marked as internal resources.
+When creating a funnel, ownscale automatically creates an `ownscale-agent`
+headscale user and an `ownscale-agent` machine. These show up in your
+listings marked as internal resources.
 
 ## How do I enable Tailscale SSH?
 

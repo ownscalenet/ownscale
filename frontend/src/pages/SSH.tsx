@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { IPN } from '@tailscale/connect'
 import { Link, useParams } from 'react-router-dom'
 import { TerminalSquare } from 'lucide-react'
-import { createSSHSession, errorMessage, type SSHSession } from '../api'
+import { createSSHSession, deleteAuthKey, errorMessage, type SSHSession } from '../api'
 import { useAuth } from '../authContext'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { ErrorAlert, PageHeader } from '../components/ui'
@@ -66,6 +66,7 @@ export default function SSH() {
   const termRef = useRef<HTMLDivElement>(null)
   const cleanupRef = useRef<(() => void)[]>([])
   const startedRef = useRef(false)
+  const keyDeletedRef = useRef(false)
 
   // The terminal can only be attached once its container exists, which is
   // one render after the client reports Running.
@@ -147,6 +148,12 @@ export default function SSH() {
           return
         }
         if (state !== 'Running') return
+        // The pre-auth key is consumed once the node registers; delete it
+        // now instead of waiting out its short server-side TTL.
+        if (!keyDeletedRef.current) {
+          keyDeletedRef.current = true
+          void deleteAuthKey(s.authKeyId).catch(() => {})
+        }
         setPhase('connected')
         setPending({ ipn, run: runSSHSession, target: s.target, username: user })
       },

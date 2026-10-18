@@ -34,7 +34,7 @@ const navGroups: { title: string; links: { to: string; label: string; icon: Reac
       { to: '/users', label: 'Users', icon: <Users /> },
       { to: '/access-control', label: 'Access Control', icon: <ListChecks /> },
       { to: '/auth-restrictions', label: 'Auth Restrictions', icon: <ShieldCheck /> },
-      { to: '/settings', label: 'Settings', icon: <SettingsIcon /> },
+      { to: '/pre-auth-keys', label: 'Pre-auth Keys', icon: <SettingsIcon /> },
     ],
   },
 ]
