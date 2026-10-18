@@ -4,7 +4,7 @@ import { dirname } from 'node:path'
 import { expect, test as setup, type Page } from '@playwright/test'
 import { baseDomain, baseURL, consoleDomain } from './connectivity/environment'
 import { identities, OrgUI } from './connectivity/ui'
-import { accountNames, accountsFile, emailOf, signIn, storageStateOf } from './support/account'
+import { accountNames, accountsFile, emailOf, resetAuthRestrictions, signIn, storageStateOf } from './support/account'
 import { addVirtualAuthenticator, clearCredentials, exportCredential, importCredential } from './support/webauthn'
 
 const STORAGE_STATE = 'tests/.auth/admin.json'
@@ -44,6 +44,12 @@ setup.describe.serial('bootstrap fixed dev identities', () => {
 
       const ui = await OrgUI.login(browser, identity)
       try {
+        // Undoes any restrictive allowlist a previous interrupted run left
+        // in place (see settings-apply.spec.ts's "login restrictions are
+        // enforced by headscale"), so every run starts from a known-good
+        // state regardless of the stack's history.
+        await resetAuthRestrictions(ui.page)
+
         // Every other spec depends on this cached admin session (see
         // playwright.config.ts's "chromium" project); user1/user2 only
         // need their organization claimed, not a saved session.
@@ -112,6 +118,8 @@ setup.describe.serial('bootstrap fixed dev identities', () => {
         mkdirSync(dirname(PASSKEY_CREDENTIAL_STATE), { recursive: true })
         writeFileSync(PASSKEY_CREDENTIAL_STATE, JSON.stringify({ email: PASSKEY_IDENTITY, org: session.organization?.Domain, credential }))
       }
+
+      await resetAuthRestrictions(page)
     } finally {
       await context.close()
     }
@@ -134,6 +142,7 @@ setup.describe.serial('bootstrap fixed dev identities', () => {
         orgs[name] = org
         writeFileSync(accountsFile, JSON.stringify(orgs, null, 2))
         await checkHost(org)
+        await resetAuthRestrictions(page)
       } finally {
         await context.close()
       }

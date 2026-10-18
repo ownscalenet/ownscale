@@ -52,6 +52,26 @@ export async function signIn(page: Page, email: string): Promise<void> {
   await expect(page.getByRole('button', { name: 'Logout' })).toBeVisible({ timeout: 30_000 })
 }
 
+// defaultAuthRestrictions is the empty OIDC login allowlist (orgs.go's
+// defaultAuthRestrictions), admitting any upstream login.
+const defaultAuthRestrictions = '{"domains": [], "groups": [], "users": []}'
+
+// resetAuthRestrictions resets page's signed-in org's OIDC login allowlist
+// back to the default (empty) policy. Runs unconditionally during setup, so
+// a run interrupted mid-test (e.g. settings-apply.spec.ts's own restore
+// never completing) can't leave a later run stuck with a stale restrictive
+// allowlist, since orgs are never reset between runs on a persistent stack.
+export async function resetAuthRestrictions(page: Page): Promise<void> {
+  let lastStatus = 0
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const response = await page.request.put('/api/auth-restrictions', { data: { content: defaultAuthRestrictions } })
+    if (response.ok()) return
+    lastStatus = response.status()
+    await new Promise(resolve => setTimeout(resolve, 2_000))
+  }
+  throw new Error(`resetAuthRestrictions: /api/auth-restrictions PUT failed after retries, last HTTP ${lastStatus}`)
+}
+
 function loadAccount(name: string): Account {
   let orgs: Record<string, string>
   try {
