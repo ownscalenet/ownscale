@@ -33,6 +33,14 @@ function defaultUsername(machineId: string, email: string | undefined): string {
   return localStorage.getItem(sshUserKey(machineId)) ?? (email ?? '').split('@')[0]
 }
 
+// replace a dry EOF message with something more appropiate for a user.
+function sshErrorMessage(raw: string): string {
+  if (raw === 'EOF' || raw === 'unexpected EOF') {
+    return 'Connection closed before the SSH session started. This usually means your access control policy doesn’t allow SSH from you to this machine, or the machine isn’t running `tailscale up --ssh`.'
+  }
+  return raw
+}
+
 // muteTailscaleLogs stops the upstream WebAssembly build from uploading
 // client logs to Tailscale's log service: ownscale is self-hosted, so
 // nothing should leave the tailnet. It returns a function restoring the
@@ -81,7 +89,7 @@ export default function SSH() {
         onConnectionProgress: setProgress,
         onConnected: () => setProgress(''),
         onDone: () => setPhase('done'),
-        onError: setError,
+        onError: (err) => setError(sshErrorMessage(err)),
       },
       { fontSize: 13 },
     )
