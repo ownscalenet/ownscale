@@ -72,3 +72,15 @@ body {
   -webkit-font-smoothing: antialiased;
   font-variant-numeric: tabular-nums;
 }
+
+/* Dialog action buttons are often autoFocus'd when the dialog opens, which
+   happens as a result of the mouse click that opened it. Browsers then
+   treat that focus as "not from the keyboard" and skip the :focus-visible
+   ring, so the button looks unfocused until the user presses Tab. Showing
+   the ring on plain :focus for modal buttons keeps it visible from the
+   start. */
+.modal .btn:focus {
+  outline-width: 2px;
+  outline-style: solid;
+  outline-color: var(--btn-color, var(--color-base-content));
+}
