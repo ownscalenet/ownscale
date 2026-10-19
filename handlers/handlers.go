@@ -57,29 +57,27 @@ type authProvidersStatus struct {
 	Microsoft bool
 }
 
-// New builds the Handlers, wiring queries/baseDomain/dataDir into the
-// orgs.Service that manages in-process headscale instances. dataDir is
-// also used by the funnel proxy's per-organization tsnet.Server instances
-// (see funnelproxy.NewPool); pass "" in tests that never exercise funnel
+// New builds the Handlers, wiring queries and cfg into the orgs.Service
+// that manages in-process headscale instances. cfg.DataDir is also used by
+// the funnel proxy's per-organization tsnet.Server instances (see
+// funnelproxy.NewPool); pass "" in tests that never exercise funnel
 // routing. backups replicates organizations' headscale databases and may be
 // nil. Returns an error if the WebAuthn relying party cannot be configured.
 func New(
 	queries *db.TxQueries,
-	baseDomain, dataDir string,
+	cfg *config.Config,
 	oidc *oidcprovider.Storage,
 	logger *slog.Logger,
-	derpCfg config.DerpConfig,
-	authCfg config.AuthConfig,
-	funnelCfg config.FunnelConfig,
-	backups *backup.Replicator,
-	fixedSubdomains []string) (_ *Handlers, err error) {
-	defer derrors.Wrap(&err, "handlers.New(%q)", baseDomain)
+	backups *backup.Replicator) (_ *Handlers, err error) {
+	defer derrors.Wrap(&err, "handlers.New(%q)", cfg.BaseDomain)
+
+	baseDomain := cfg.BaseDomain
 
 	issuer := ""
 	if oidc != nil {
 		issuer = oidc.Issuer()
 	}
-	orgSvc := orgs.NewService(queries, baseDomain, issuer, derpCfg, logger, dataDir, backups, fixedSubdomains)
+	orgSvc := orgs.NewService(queries, cfg, issuer, logger, backups)
 
 	// The console is served on console.baseDomain (per-org subdomains are
 	// only used for headscale/tailnet traffic, not this admin UI), so one
@@ -101,18 +99,18 @@ func New(
 	h := &Handlers{
 		queries:         queries,
 		baseDomain:      baseDomain,
-		funnelDomain:    funnelCfg.Domain,
+		funnelDomain:    cfg.Funnel.Domain,
 		oidc:            oidc,
 		logger:          logger,
 		orgs:            orgSvc,
 		hs:              orgSvc,
-		funnel:          funnelproxy.NewPool(queries, orgSvc, dataDir, logger, orgSvc, funnelCfg.MaxBodyBytes),
+		funnel:          funnelproxy.NewPool(queries, orgSvc, cfg.DataDir, logger, orgSvc, cfg.Funnel.MaxBodyBytes),
 		webauthn:        wa,
 		passkeySessions: newPasskeyCeremonyStore(),
 		authProviders: authProvidersStatus{
-			OIDC:      authCfg.UpstreamOIDC.Enabled(),
-			Google:    authCfg.Google.Enabled(),
-			Microsoft: authCfg.Microsoft.Enabled(),
+			OIDC:      cfg.Auth.UpstreamOIDC.Enabled(),
+			Google:    cfg.Auth.Google.Enabled(),
+			Microsoft: cfg.Auth.Microsoft.Enabled(),
 		},
 	}
 	orgSvc.OnStart(h.linkAllMembers)

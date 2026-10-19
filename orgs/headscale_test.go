@@ -100,7 +100,7 @@ func TestEnsureNoiseKey(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			svc := newTestService(t)
 			org := dbtest.CreateOrg(t, svc.queries.Queries, "acme")
-			path := noisePath(svc.dataDir, "acme")
+			path := noisePath(svc.cfg.DataDir, "acme")
 			if tt.stored != "" {
 				if _, err := svc.queries.UpsertOrgConfig(t.Context(), sqlcgen.UpsertOrgConfigParams{
 					ID: xid.New().String(), OrganizationID: org.ID, Path: noiseKeyConfigKey, Content: tt.stored,
@@ -163,7 +163,7 @@ func TestNoiseKeySurvivesLostFile(t *testing.T) {
 	first, _ := svc.running("acme")
 	want := first.app.NoisePublicKey()
 
-	if err := os.Remove(noisePath(svc.dataDir, "acme")); err != nil {
+	if err := os.Remove(noisePath(svc.cfg.DataDir, "acme")); err != nil {
 		t.Fatal(err)
 	}
 	if err := svc.restartHeadscale(t.Context(), "acme"); err != nil {

@@ -98,7 +98,7 @@ func run() error {
 	if err != nil {
 		return err
 	}
-	h, err := handlers.New(queries, cfg.BaseDomain, cfg.DataDir, oidcStorage, logger, cfg.Derp, cfg.Auth, cfg.Funnel, backups, cfg.FixedSubdomains)
+	h, err := handlers.New(queries, cfg, oidcStorage, logger, backups)
 	if err != nil {
 		return err
 	}

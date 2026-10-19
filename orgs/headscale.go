@@ -35,7 +35,7 @@ const noiseKeyConfigKey = "noise_private.key"
 func (s *Service) ensureNoiseKey(ctx context.Context, orgID, subdomain string) (err error) {
 	defer derrors.Wrap(&err, "s.ensureNoiseKey(%q)", subdomain)
 
-	path := noisePath(s.dataDir, subdomain)
+	path := noisePath(s.cfg.DataDir, subdomain)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err
 	}

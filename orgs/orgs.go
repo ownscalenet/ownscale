@@ -57,16 +57,11 @@ const (
 // Service provisions organizations and manages the lifecycle of every
 // org's in-process hscontrol.Headscale instance.
 type Service struct {
-	queries    *db.TxQueries
-	baseDomain string
-	issuer     string
-	derpCfg    config.DerpConfig
-	logger     *slog.Logger
-	dataDir    string
-	backups    *backup.Replicator
-	// fixedSubdomains are handed out in order to the first organizations
-	// created, so development identities land on predictable subdomains.
-	fixedSubdomains []string
+	queries *db.TxQueries
+	cfg     *config.Config
+	issuer  string
+	logger  *slog.Logger
+	backups *backup.Replicator
 
 	orgs utils.Map[string, *orgRuntime]
 	// derpMap is the last DERP map RunDERPMapUpdater fetched.
@@ -166,24 +161,20 @@ type instance struct {
 	err    error
 }
 
-// NewService builds a Service that manages organizations under baseDomain.
-// Each organization's headscale database is added to backups once it
-// exists; backups may be nil.
-func NewService(queries *db.TxQueries, baseDomain, issuer string,
-	derpCfg config.DerpConfig, logger *slog.Logger,
-	dataDir string, backups *backup.Replicator, fixedSubdomains []string) *Service {
+// NewService builds a Service that manages organizations under
+// cfg.BaseDomain. Each organization's headscale database is added to
+// backups once it exists; backups may be nil.
+func NewService(queries *db.TxQueries, cfg *config.Config, issuer string,
+	logger *slog.Logger, backups *backup.Replicator) *Service {
 	return &Service{
-		queries:         queries,
-		baseDomain:      baseDomain,
-		issuer:          issuer,
-		derpCfg:         derpCfg,
-		logger:          logger,
-		dataDir:         dataDir,
-		backups:         backups,
-		fixedSubdomains: fixedSubdomains,
-		createFn:        createHeadscale,
-		idleTimeout:     idleTimeout,
-		sweepInterval:   sweepInterval,
+		queries:       queries,
+		cfg:           cfg,
+		issuer:        issuer,
+		logger:        logger,
+		backups:       backups,
+		createFn:      createHeadscale,
+		idleTimeout:   idleTimeout,
+		sweepInterval: sweepInterval,
 	}
 }
 
@@ -241,7 +232,7 @@ func (s *Service) provisioned(subdomain string) bool {
 	if _, ok := s.orgs.Load(subdomain); ok {
 		return true
 	}
-	_, err := os.Stat(sqlitePath(s.dataDir, subdomain))
+	_, err := os.Stat(sqlitePath(s.cfg.DataDir, subdomain))
 	return err == nil
 }
 
@@ -472,7 +463,7 @@ func (s *Service) LookupPort(subdomain string) (int, bool) {
 func (s *Service) NextSubdomain(ctx context.Context) (_ string, err error) {
 	defer derrors.Wrap(&err, "s.NextSubdomain()")
 
-	candidates := slices.Clone(s.fixedSubdomains)
+	candidates := slices.Clone(s.cfg.FixedSubdomains)
 	for range maxSubdomainAttempts {
 		suffix, err := randomAlphaNum(6)
 		if err != nil {
@@ -515,8 +506,8 @@ func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organ
 		return sqlcgen.Organization{}, err
 	}
 	redirectURIsJSON, err := json.Marshal([]string{
-		"https://" + subdomain + "." + s.baseDomain + "/oidc/callback",
-		"https://" + subdomain + "." + s.baseDomain + "/admin/oidc/callback",
+		"https://" + subdomain + "." + s.cfg.BaseDomain + "/oidc/callback",
+		"https://" + subdomain + "." + s.cfg.BaseDomain + "/admin/oidc/callback",
 	})
 	if err != nil {
 		return sqlcgen.Organization{}, err
@@ -631,7 +622,7 @@ func (s *Service) launch(ctx context.Context, subdomain string, port int, hsCfg 
 	if err != nil {
 		return nil, err
 	}
-	app, err := s.createFn(s.dataDir, subdomain, s.baseDomain, port, hsCfg, derpMap)
+	app, err := s.createFn(s.cfg.DataDir, subdomain, s.cfg.BaseDomain, port, hsCfg, derpMap)
 	if err != nil {
 		return nil, fmt.Errorf("create headscale instance for %q: %w", subdomain, err)
 	}
@@ -648,7 +639,7 @@ func (s *Service) launch(ctx context.Context, subdomain string, port int, hsCfg 
 	serveCtx, cancel := context.WithCancel(context.Background())
 	inst := &instance{
 		app:    app,
-		client: hscl.NewUnix(SocketPath(s.dataDir, subdomain)),
+		client: hscl.NewUnix(SocketPath(s.cfg.DataDir, subdomain)),
 		cancel: cancel,
 		exited: make(chan struct{}),
 	}

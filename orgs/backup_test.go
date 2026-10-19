@@ -54,7 +54,12 @@ func TestBackup(t *testing.T) {
 	_, queries := dbtest.New(t)
 	dataDir := t.TempDir()
 	r, cfg, replicaDir := newReplicator(t, dataDir)
-	svc := NewService(queries, "example.com", "https://auth.example.com", config.DerpConfig{}, slog.New(slog.DiscardHandler), dataDir, r, testFixedSubdomains)
+	svcCfg := &config.Config{
+		BaseDomain:      "example.com",
+		DataDir:         dataDir,
+		FixedSubdomains: testFixedSubdomains,
+	}
+	svc := NewService(queries, svcCfg, "https://auth.example.com", slog.New(slog.DiscardHandler), r)
 	svc.derpMap.Store(testDERPMap(1))
 
 	if _, err := svc.Create(ctx, "acme"); err != nil {
@@ -99,7 +104,7 @@ func TestBackup(t *testing.T) {
 	}
 
 	r2, _, replicaDir2 := newReplicator(t, dataDir)
-	svc2 := NewService(queries, "example.com", "https://auth.example.com", config.DerpConfig{}, slog.New(slog.DiscardHandler), dataDir, r2, testFixedSubdomains)
+	svc2 := NewService(queries, svcCfg, "https://auth.example.com", slog.New(slog.DiscardHandler), r2)
 	if err := svc2.BackUpProvisioned(ctx); err != nil {
 		t.Fatalf("BackUpProvisioned: %v", err)
 	}

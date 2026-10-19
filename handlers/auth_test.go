@@ -495,11 +495,14 @@ func TestAPILogout(t *testing.T) {
 // buttons to grey out.
 func TestAuthProviders(t *testing.T) {
 	_, queries := dbtest.New(t)
-	h, err := New(queries, "", t.TempDir(), nil, slog.New(slog.DiscardHandler), config.DerpConfig{}, config.AuthConfig{
-		UpstreamOIDC: config.UpstreamOIDCConfig{Issuer: "https://idp.example.com", ClientID: "oidc-id"},
-		Google:       config.GoogleConfig{ClientID: "google-id"},
-		// Microsoft left unset: Enabled() should report false.
-	}, config.FunnelConfig{}, nil, nil)
+	h, err := New(queries, &config.Config{
+		DataDir: t.TempDir(),
+		Auth: config.AuthConfig{
+			UpstreamOIDC: config.UpstreamOIDCConfig{Issuer: "https://idp.example.com", ClientID: "oidc-id"},
+			Google:       config.GoogleConfig{ClientID: "google-id"},
+			// Microsoft left unset: Enabled() should report false.
+		},
+	}, nil, slog.New(slog.DiscardHandler), nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

@@ -39,7 +39,12 @@ var testFixedSubdomains = []string{
 func newRealService(t *testing.T) *Service {
 	t.Helper()
 	_, queries := dbtest.New(t)
-	svc := NewService(queries, "example.com", "https://auth.example.com", config.DerpConfig{}, slog.New(slog.DiscardHandler), t.TempDir(), nil, testFixedSubdomains)
+	cfg := &config.Config{
+		BaseDomain:      "example.com",
+		DataDir:         t.TempDir(),
+		FixedSubdomains: testFixedSubdomains,
+	}
+	svc := NewService(queries, cfg, "https://auth.example.com", slog.New(slog.DiscardHandler), nil)
 	svc.derpMap.Store(testDERPMap(1))
 	return svc
 }
@@ -94,7 +99,7 @@ func createStarted(t *testing.T, svc *Service, subdomain string) sqlcgen.Organiz
 // subdomain would have left in svc's data directory.
 func markProvisioned(t *testing.T, svc *Service, subdomain string) {
 	t.Helper()
-	path := sqlitePath(svc.dataDir, subdomain)
+	path := sqlitePath(svc.cfg.DataDir, subdomain)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		t.Fatal(err)
 	}

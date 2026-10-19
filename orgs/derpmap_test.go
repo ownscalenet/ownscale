@@ -81,7 +81,13 @@ func TestCurrentDERPMap(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			_, queries := dbtest.New(t)
 			derpCfg := config.DerpConfig{MapURL: derpMapServer(t, tt.status, mustJSON(t, testDERPMap(2)))}
-			svc := NewService(queries, "example.com", "https://auth.example.com", derpCfg, slog.New(slog.DiscardHandler), t.TempDir(), nil, testFixedSubdomains)
+			cfg := &config.Config{
+				BaseDomain:      "example.com",
+				DataDir:         t.TempDir(),
+				Derp:            derpCfg,
+				FixedSubdomains: testFixedSubdomains,
+			}
+			svc := NewService(queries, cfg, "https://auth.example.com", slog.New(slog.DiscardHandler), nil)
 			if tt.stored != nil {
 				svc.derpMap.Store(tt.stored)
 			}
@@ -113,7 +119,7 @@ func TestRefreshDERPMapPushesToRunningOrgs(t *testing.T) {
 		return inst.app.GetState().DERPMap().Regions().Contains(id)
 	}
 
-	svc.derpCfg.MapURL = derpMapServer(t, http.StatusOK, mustJSON(t, testDERPMap(5)))
+	svc.cfg.Derp.MapURL = derpMapServer(t, http.StatusOK, mustJSON(t, testDERPMap(5)))
 	if err := svc.refreshDERPMap(t.Context()); err != nil {
 		t.Fatalf("refreshDERPMap: %v", err)
 	}
@@ -121,7 +127,7 @@ func TestRefreshDERPMapPushesToRunningOrgs(t *testing.T) {
 		t.Fatalf("DERP map after refresh has %d regions, want only region 5", inst.app.GetState().DERPMap().Regions().Len())
 	}
 
-	svc.derpCfg.MapURL = derpMapServer(t, http.StatusBadGateway, "")
+	svc.cfg.Derp.MapURL = derpMapServer(t, http.StatusBadGateway, "")
 	if err := svc.refreshDERPMap(t.Context()); err == nil {
 		t.Fatal("refreshDERPMap succeeded on a failing endpoint")
 	}

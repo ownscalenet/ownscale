@@ -61,7 +61,7 @@ func (s *Service) currentDERPMap(ctx context.Context) (*tailcfg.DERPMap, error) 
 	if dm := s.derpMap.Load(); dm != nil {
 		return dm, nil
 	}
-	dm, err := fetchDERPMap(ctx, derpMapClient, s.derpCfg.MapURL)
+	dm, err := fetchDERPMap(ctx, derpMapClient, s.cfg.Derp.MapURL)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func (s *Service) RunDERPMapUpdater(ctx context.Context) {
 
 // refreshDERPMap fetches the DERP map and pushes it to running instances.
 func (s *Service) refreshDERPMap(ctx context.Context) error {
-	dm, err := fetchDERPMap(ctx, derpMapClient, s.derpCfg.MapURL)
+	dm, err := fetchDERPMap(ctx, derpMapClient, s.cfg.Derp.MapURL)
 	if err != nil {
 		return err
 	}

@@ -40,7 +40,12 @@ func newTestHandlersWithBaseDomain(t *testing.T, baseDomain string) (*Handlers, 
 	}))
 	t.Cleanup(derpMap.Close)
 	derpCfg := config.DerpConfig{MapURL: derpMap.URL}
-	h, err := New(queries, baseDomain, t.TempDir(), nil, slog.New(slog.DiscardHandler), derpCfg, config.AuthConfig{}, config.FunnelConfig{Domain: baseDomain, MaxBodyBytes: 1 << 20}, nil, nil)
+	h, err := New(queries, &config.Config{
+		BaseDomain: baseDomain,
+		DataDir:    t.TempDir(),
+		Derp:       derpCfg,
+		Funnel:     config.FunnelConfig{Domain: baseDomain, MaxBodyBytes: 1 << 20},
+	}, nil, slog.New(slog.DiscardHandler), nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
