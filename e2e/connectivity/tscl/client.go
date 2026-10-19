@@ -17,7 +17,6 @@ import (
 	"time"
 
 	"github.com/ownscalenet/ownscale/derrors"
-	"tailscale.com/ipn"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/net/tsaddr"
 	"tailscale.com/tailcfg"
@@ -190,18 +189,16 @@ func (c *Client) DNS(ctx context.Context) (_ tailcfg.DNSConfig, err error) {
 	if err != nil {
 		return tailcfg.DNSConfig{}, err
 	}
-	watcher, err := lc.WatchIPNBus(ctx, ipn.NotifyInitialNetMap)
-	if err != nil {
-		return tailcfg.DNSConfig{}, err
-	}
-	defer watcher.Close()
+	// DNSConfig fails until the first netmap arrives, so retry until ctx ends.
 	for {
-		n, err := watcher.Next()
-		if err != nil {
-			return tailcfg.DNSConfig{}, err
+		cfg, err := lc.DNSConfig(ctx)
+		if err == nil && cfg != nil {
+			return *cfg, nil
 		}
-		if n.NetMap != nil {
-			return n.NetMap.DNS, nil
+		select {
+		case <-ctx.Done():
+			return tailcfg.DNSConfig{}, errors.Join(ctx.Err(), err)
+		case <-time.After(250 * time.Millisecond):
 		}
 	}
 }
