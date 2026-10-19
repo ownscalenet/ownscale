@@ -26,7 +26,7 @@ require (
 	tailscale.com v1.105.0-pre.0.20261014225612-b83f28ebfbd9
 )
 
-replace github.com/juanfont/headscale => github.com/ownscalenet/headscale v0.29.4-8
+replace github.com/juanfont/headscale => github.com/ownscalenet/headscale v0.29.4-9
 
 require (
 	cloud.google.com/go/auth/oauth2adapt v0.3.0 // indirect
@@ -35,6 +35,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.21.1 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.13.1 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.12.0 // indirect
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/dns/armdns v1.2.0 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.6.2 // indirect
 	github.com/AzureAD/microsoft-authentication-library-for-go v1.6.0 // indirect
 	github.com/ClickHouse/ch-go v0.73.0 // indirect
@@ -136,6 +137,7 @@ require (
 	github.com/kradalby/libdns-gigahost v0.0.0-20261014145029-4c03bc63b974 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
 	github.com/libdns/acmedns v0.5.0 // indirect
+	github.com/libdns/azure v0.5.0 // indirect
 	github.com/libdns/cloudflare v0.2.2 // indirect
 	github.com/libdns/hetzner/v2 v2.0.1 // indirect
 	github.com/libdns/libdns v1.1.1 // indirect
