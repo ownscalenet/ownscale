@@ -42,10 +42,11 @@ type OidcClient struct {
 }
 
 type Organization struct {
-	ID        string
-	Subdomain string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID           string
+	Subdomain    string
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	TailnetLabel string
 }
 
 type Orgconfig struct {

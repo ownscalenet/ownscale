@@ -1,6 +1,6 @@
 -- name: CreateOrganization :one
-INSERT INTO organizations (id, subdomain)
-VALUES (?, ?)
+INSERT INTO organizations (id, subdomain, tailnet_label)
+VALUES (?, ?, ?)
 RETURNING *;
 
 -- name: GetOrganizationBySubdomain :one

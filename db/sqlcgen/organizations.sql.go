@@ -10,24 +10,26 @@ import (
 )
 
 const createOrganization = `-- name: CreateOrganization :one
-INSERT INTO organizations (id, subdomain)
-VALUES (?, ?)
-RETURNING id, subdomain, created_at, updated_at
+INSERT INTO organizations (id, subdomain, tailnet_label)
+VALUES (?, ?, ?)
+RETURNING id, subdomain, created_at, updated_at, tailnet_label
 `
 
 type CreateOrganizationParams struct {
-	ID        string
-	Subdomain string
+	ID           string
+	Subdomain    string
+	TailnetLabel string
 }
 
 func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (Organization, error) {
-	row := q.db.QueryRowContext(ctx, createOrganization, arg.ID, arg.Subdomain)
+	row := q.db.QueryRowContext(ctx, createOrganization, arg.ID, arg.Subdomain, arg.TailnetLabel)
 	var i Organization
 	err := row.Scan(
 		&i.ID,
 		&i.Subdomain,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TailnetLabel,
 	)
 	return i, err
 }
@@ -42,7 +44,7 @@ func (q *Queries) DeleteOrganization(ctx context.Context, id string) error {
 }
 
 const getOrganization = `-- name: GetOrganization :one
-SELECT id, subdomain, created_at, updated_at FROM organizations WHERE id = ?
+SELECT id, subdomain, created_at, updated_at, tailnet_label FROM organizations WHERE id = ?
 `
 
 func (q *Queries) GetOrganization(ctx context.Context, id string) (Organization, error) {
@@ -53,12 +55,13 @@ func (q *Queries) GetOrganization(ctx context.Context, id string) (Organization,
 		&i.Subdomain,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TailnetLabel,
 	)
 	return i, err
 }
 
 const getOrganizationBySubdomain = `-- name: GetOrganizationBySubdomain :one
-SELECT id, subdomain, created_at, updated_at FROM organizations WHERE subdomain = ?
+SELECT id, subdomain, created_at, updated_at, tailnet_label FROM organizations WHERE subdomain = ?
 `
 
 func (q *Queries) GetOrganizationBySubdomain(ctx context.Context, subdomain string) (Organization, error) {
@@ -69,12 +72,13 @@ func (q *Queries) GetOrganizationBySubdomain(ctx context.Context, subdomain stri
 		&i.Subdomain,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.TailnetLabel,
 	)
 	return i, err
 }
 
 const listOrganizations = `-- name: ListOrganizations :many
-SELECT id, subdomain, created_at, updated_at FROM organizations ORDER BY subdomain
+SELECT id, subdomain, created_at, updated_at, tailnet_label FROM organizations ORDER BY subdomain
 `
 
 func (q *Queries) ListOrganizations(ctx context.Context) ([]Organization, error) {
@@ -91,6 +95,7 @@ func (q *Queries) ListOrganizations(ctx context.Context) ([]Organization, error)
 			&i.Subdomain,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.TailnetLabel,
 		); err != nil {
 			return nil, err
 		}

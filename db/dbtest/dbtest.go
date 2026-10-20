@@ -94,8 +94,9 @@ func New(t *testing.T) (*sql.DB, *dbpkg.TxQueries) {
 func CreateOrg(t testing.TB, q *sqlcgen.Queries, subdomain string) sqlcgen.Organization {
 	t.Helper()
 	org, err := q.CreateOrganization(t.Context(), sqlcgen.CreateOrganizationParams{
-		ID:        xid.New().String(),
-		Subdomain: subdomain,
+		ID:           xid.New().String(),
+		Subdomain:    subdomain,
+		TailnetLabel: "net" + subdomain,
 	})
 	if err != nil {
 		t.Fatalf("CreateOrg(%q): %v", subdomain, err)
