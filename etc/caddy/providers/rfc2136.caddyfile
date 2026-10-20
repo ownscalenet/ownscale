@@ -1,0 +1,6 @@
+acme_dns rfc2136 {
+	key_name {$RFC2136_KEY_NAME}
+	key_alg {$RFC2136_KEY_ALG}
+	key {$RFC2136_KEY}
+	server {$RFC2136_SERVER}
+}

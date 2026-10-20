@@ -194,9 +194,10 @@ func TestNewMuxOverHTTP(t *testing.T) {
 	const baseDomain = "srvit.test"
 
 	h, err := handlers.New(queries, &config.Config{
-		BaseDomain: baseDomain,
-		DataDir:    t.TempDir(),
-		Funnel:     config.FunnelConfig{Domain: baseDomain, MaxBodyBytes: 1 << 20},
+		BaseDomain:    baseDomain,
+		DataDir:       t.TempDir(),
+		ContentDomain: baseDomain,
+		Funnel:        config.FunnelConfig{MaxBodyBytes: 1 << 20},
 	}, nil, logger, nil)
 	if err != nil {
 		t.Fatalf("handlers.New: %v", err)

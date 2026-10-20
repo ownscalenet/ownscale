@@ -4,7 +4,7 @@ import { chmod, lstat, mkdir, readFile, rename } from 'node:fs/promises'
 import { request } from 'node:https'
 import { promisify } from 'node:util'
 import { acquireRunGuard, guardPath } from '../../run-guard'
-import { baseDomain, baseURL, bridgeBinary, caFile, dexURL, funnelDomain, privateDir, root, scratchDir } from './environment'
+import { baseDomain, baseURL, bridgeBinary, caFile, dexURL, contentDomain, privateDir, root, scratchDir } from './environment'
 
 export async function buildBridge(): Promise<void> {
   await mkdir(scratchDir, { recursive: true, mode: 0o700 })
@@ -42,7 +42,7 @@ async function endpoint(url: string, ca: Buffer | undefined): Promise<void> {
 export async function checkPrerequisites(): Promise<void> {
   const hosts = [new URL(baseURL).hostname, new URL(dexURL).hostname,
     ...['aaaa', 'bbbb', 'cccc'].flatMap(org =>
-      [`${org}.${baseDomain}`, `web1-${org}.${funnelDomain}`, `web2-${org}.${funnelDomain}`])]
+      [`${org}.${baseDomain}`, `web1-${org}.${contentDomain}`, `web2-${org}.${contentDomain}`])]
   for (const host of hosts) {
     try { await lookup(host) } catch { throw new Error(`Required host does not resolve: ${host}; add it to /etc/hosts or your local DNS (e.g. dnsmasq)`) }
   }

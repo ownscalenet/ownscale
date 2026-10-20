@@ -41,10 +41,11 @@ func newTestHandlersWithBaseDomain(t *testing.T, baseDomain string) (*Handlers, 
 	t.Cleanup(derpMap.Close)
 	derpCfg := config.DerpConfig{MapURL: derpMap.URL}
 	h, err := New(queries, &config.Config{
-		BaseDomain: baseDomain,
-		DataDir:    t.TempDir(),
-		Derp:       derpCfg,
-		Funnel:     config.FunnelConfig{Domain: baseDomain, MaxBodyBytes: 1 << 20},
+		BaseDomain:    baseDomain,
+		DataDir:       t.TempDir(),
+		Derp:          derpCfg,
+		ContentDomain: baseDomain,
+		Funnel:        config.FunnelConfig{MaxBodyBytes: 1 << 20},
 	}, nil, slog.New(slog.DiscardHandler), nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
@@ -82,7 +83,6 @@ func insertOrg(t *testing.T, queries *dbpkg.TxQueries, subdomain string) sqlcgen
 	hsCfg := &orgs.HeadscaleConfig{
 		DNS: orgs.DNSConfig{
 			MagicDNS:    true,
-			BaseDomain:  subdomain + ".ownscale",
 			Nameservers: orgs.Nameservers{Global: []string{"1.1.1.1"}},
 		},
 		OIDC: orgs.OIDCConfig{Issuer: "https://auth.example.com"},
@@ -113,7 +113,7 @@ func insertUser(t *testing.T, queries *dbpkg.TxQueries) sqlcgen.User {
 // insertOrg), and inserts one of its users per role in roles, in order.
 func newOrgTestHandlers(t *testing.T, roles ...string) (*Handlers, sqlcgen.Organization, []sqlcgen.User) {
 	t.Helper()
-	h, queries := newTestHandlers(t)
+	h, queries := newTestHandlersWithBaseDomain(t, testBaseDomain)
 	org := insertOrg(t, queries, "acme")
 	users := make([]sqlcgen.User, 0, len(roles))
 	for _, role := range roles {

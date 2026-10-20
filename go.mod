@@ -11,7 +11,10 @@ require (
 	github.com/go-webauthn/webauthn v0.18.1
 	github.com/gorilla/sessions v1.4.0
 	github.com/juanfont/headscale v0.29.4
+	github.com/letsencrypt/pebble/v2 v2.10.1
+	github.com/libdns/libdns v1.1.1
 	github.com/markbates/goth v1.82.0
+	github.com/miekg/dns v1.1.73
 	github.com/peterbourgon/ff/v4 v4.0.0-beta.1
 	github.com/pressly/goose/v3 v3.27.3
 	github.com/rs/xid v1.6.0
@@ -136,11 +139,11 @@ require (
 	github.com/kradalby/gigahost-go/client v0.0.0-20261014144355-025b38b667ed // indirect
 	github.com/kradalby/libdns-gigahost v0.0.0-20261014145029-4c03bc63b974 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
+	github.com/letsencrypt/challtestsrv v1.4.2 // indirect
 	github.com/libdns/acmedns v0.5.0 // indirect
 	github.com/libdns/azure v0.5.0 // indirect
 	github.com/libdns/cloudflare v0.2.2 // indirect
 	github.com/libdns/hetzner/v2 v2.0.1 // indirect
-	github.com/libdns/libdns v1.1.1 // indirect
 	github.com/libdns/powerdns v0.1.4 // indirect
 	github.com/libdns/rfc2136 v1.0.1 // indirect
 	github.com/lmittmann/tint v1.1.3 // indirect
@@ -155,7 +158,6 @@ require (
 	github.com/mfridman/xflag v0.1.0 // indirect
 	github.com/mholt/acmez/v3 v3.1.7 // indirect
 	github.com/microsoft/go-mssqldb v1.10.0 // indirect
-	github.com/miekg/dns v1.1.73 // indirect
 	github.com/mitchellh/go-ps v1.0.0 // indirect
 	github.com/mittwald/go-powerdns v0.6.6 // indirect
 	github.com/muhlemmer/gu v0.3.1 // indirect

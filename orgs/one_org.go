@@ -29,6 +29,8 @@ type OrgService struct {
 	queries   *db.TxQueries
 	orgID     string
 	subdomain string
+	// domain is the org's MagicDNS domain.
+	domain string
 	// restart restarts the org's headscale so it picks up its stored config.
 	restart func(ctx context.Context) error
 	// sleep stops the org's headscale until its next use.
@@ -56,6 +58,7 @@ func (o *OrgService) getHeadscaleConfig(ctx context.Context) (_ *HeadscaleConfig
 	if err != nil {
 		return nil, err
 	}
+	cfg.DNS.BaseDomain = o.domain
 	return cfg, nil
 }
 
@@ -213,6 +216,7 @@ func (o *OrgService) GetDNSSettings(ctx context.Context) (_ DNSConfig, err error
 func (o *OrgService) SetDNSSettings(ctx context.Context, dns DNSConfig) (err error) {
 	defer derrors.Wrap(&err, "o.SetDNSSettings(%q)", o.orgID)
 
+	dns.BaseDomain = o.domain
 	if err := validateDNSSettings(dns); err != nil {
 		return err
 	}

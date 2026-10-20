@@ -86,8 +86,12 @@ func TestCurrentDERPMap(t *testing.T) {
 				DataDir:         t.TempDir(),
 				Derp:            derpCfg,
 				FixedSubdomains: testFixedSubdomains,
+				ContentDomain:   "example.com",
 			}
-			svc := NewService(queries, cfg, "https://auth.example.com", slog.New(slog.DiscardHandler), nil)
+			svc, err := NewService(queries, cfg, "https://auth.example.com", slog.New(slog.DiscardHandler), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if tt.stored != nil {
 				svc.derpMap.Store(tt.stored)
 			}

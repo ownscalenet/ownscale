@@ -226,7 +226,8 @@ func ParseHost(host, base string) (label, subdomain string, ok bool) {
 		host = h
 	}
 	sub, ok := strings.CutSuffix(host, "."+base)
-	if !ok || sub == "" {
+	// Deeper names, e.g. node names under Config.TailnetDomain, aren't funnels.
+	if !ok || sub == "" || strings.Contains(sub, ".") {
 		return "", "", false
 	}
 	label, subdomain, ok = strings.Cut(sub, "-")

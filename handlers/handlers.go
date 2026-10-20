@@ -39,7 +39,7 @@ type Handlers struct {
 	orgs            *orgs.Service
 	hs              headscaleClients
 	baseDomain      string
-	funnelDomain    string
+	contentDomain   string
 	oidc            *oidcprovider.Storage
 	logger          *slog.Logger
 	funnel          *funnelproxy.Pool
@@ -77,7 +77,10 @@ func New(
 	if oidc != nil {
 		issuer = oidc.Issuer()
 	}
-	orgSvc := orgs.NewService(queries, cfg, issuer, logger, backups)
+	orgSvc, err := orgs.NewService(queries, cfg, issuer, logger, backups)
+	if err != nil {
+		return nil, err
+	}
 
 	// The console is served on console.baseDomain (per-org subdomains are
 	// only used for headscale/tailnet traffic, not this admin UI), so one
@@ -99,7 +102,7 @@ func New(
 	h := &Handlers{
 		queries:         queries,
 		baseDomain:      baseDomain,
-		funnelDomain:    cfg.Funnel.Domain,
+		contentDomain:   cfg.ContentDomain,
 		oidc:            oidc,
 		logger:          logger,
 		orgs:            orgSvc,
@@ -127,16 +130,16 @@ func (h *Handlers) Close(ctx context.Context) error {
 }
 
 // ServeFunnelIfMatched serves r via the funnel proxy and returns true if
-// r.Host is shaped like a funnel hostname ("<label>-<subdomain>.<funnelDomain>",
-// see etc/caddy/Caddyfile's "*.{$FUNNEL_DOMAIN}" site address that routes
+// r.Host is shaped like a funnel hostname ("<label>-<subdomain>.<contentDomain>",
+// see etc/caddy/Caddyfile's "*.{$CONTENT_DOMAIN}" site address that routes
 // these to ownscale, and funnelproxy.ParseHost); otherwise
 // it does nothing and returns false, so the caller (server.NewMux) can
 // fall through to the normal API/SPA mux.
 func (h *Handlers) ServeFunnelIfMatched(w http.ResponseWriter, r *http.Request) bool {
-	if h.funnelDomain == "" {
+	if h.contentDomain == "" {
 		return false
 	}
-	label, subdomain, ok := funnelproxy.ParseHost(r.Host, h.funnelDomain)
+	label, subdomain, ok := funnelproxy.ParseHost(r.Host, h.contentDomain)
 	if !ok {
 		return false
 	}

@@ -25,10 +25,10 @@ func TestHandler(t *testing.T) {
 	}
 
 	tests := []struct {
-		name         string
-		funnelDomain string
-		domain       string
-		want         int
+		name          string
+		contentDomain string
+		domain        string
+		want          int
 	}{
 		{"base domain", "funnel.net", "vpn.example.com", http.StatusOK},
 		{"console", "funnel.net", "console.vpn.example.com", http.StatusOK},
@@ -41,13 +41,15 @@ func TestHandler(t *testing.T) {
 		{"funnel of unknown org", "funnel.net", "web-other.funnel.net", http.StatusNotFound},
 		{"funnel on base domain", "vpn.example.com", "web-acme.vpn.example.com", http.StatusOK},
 		{"org when funnel domain is base", "vpn.example.com", "acme.vpn.example.com", http.StatusOK},
+		{"node name", "funnel.net", "web.netacme.os.funnel.net", http.StatusNotFound},
+		{"node name on base domain", "vpn.example.com", "web.netacme.os.vpn.example.com", http.StatusNotFound},
 		{"foreign domain", "funnel.net", "example.org", http.StatusNotFound},
 		{"suffix lookalike", "funnel.net", "evilvpn.example.com", http.StatusNotFound},
 		{"empty", "funnel.net", "", http.StatusNotFound},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h := Handler(queries.Queries, "vpn.example.com", tt.funnelDomain, slog.New(slog.DiscardHandler))
+			h := Handler(queries.Queries, "vpn.example.com", tt.contentDomain, slog.New(slog.DiscardHandler))
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/tls-allowed?domain="+url.QueryEscape(tt.domain), nil))
 			if rec.Code != tt.want {

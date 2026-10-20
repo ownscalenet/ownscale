@@ -23,8 +23,9 @@ func TestGetDNSSettingsReflectsProvisionedDefaults(t *testing.T) {
 		t.Fatalf("status = %d, want %d, body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
 	var resp struct {
-		DNS       orgs.DNSConfig `json:"dns"`
-		CanManage bool           `json:"canManage"`
+		DNS               orgs.DNSConfig `json:"dns"`
+		CanManage         bool           `json:"canManage"`
+		HTTPSCertificates bool           `json:"httpsCertificates"`
 	}
 	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
 		t.Fatalf("unmarshal: %v", err)
@@ -32,11 +33,14 @@ func TestGetDNSSettingsReflectsProvisionedDefaults(t *testing.T) {
 	if !resp.DNS.MagicDNS {
 		t.Error("MagicDNS = false, want true (headscale's default)")
 	}
-	if resp.DNS.BaseDomain != "acme.ownscale" {
-		t.Errorf("BaseDomain = %q, want %q", resp.DNS.BaseDomain, "acme.ownscale")
+	if want := "netacme.os.example.com"; resp.DNS.BaseDomain != want {
+		t.Errorf("BaseDomain = %q, want %q", resp.DNS.BaseDomain, want)
 	}
 	if resp.CanManage {
 		t.Error("canManage = true for a plain member, want false")
+	}
+	if resp.HTTPSCertificates {
+		t.Error("httpsCertificates = true without a DNS provider, want false")
 	}
 	// The frontend iterates over split, so it must be {} rather than null.
 	if !strings.Contains(rec.Body.String(), `"split":{}`) {
@@ -48,7 +52,7 @@ func TestUpdateDNSSettingsRequiresManager(t *testing.T) {
 	h, _, users := newOrgTestHandlers(t, RoleMember)
 	member := users[0]
 
-	body := `{"baseDomain":"acme.ownscale","magicDns":true}`
+	body := `{"magicDns":true}`
 	req := withTestUser(httptest.NewRequest(http.MethodPut, "/api/dns", strings.NewReader(body)), member)
 	rec := httptest.NewRecorder()
 	h.UpdateDNSSettings(rec, req)
@@ -62,7 +66,7 @@ func TestUpdateDNSSettingsRejectsInvalidInput(t *testing.T) {
 	h, _, users := newOrgTestHandlers(t, RoleOwner)
 	owner := users[0]
 
-	body := `{"baseDomain":"acme.ownscale","nameservers":["not-an-ip"]}`
+	body := `{"nameservers":["not-an-ip"]}`
 	req := withTestUser(httptest.NewRequest(http.MethodPut, "/api/dns", strings.NewReader(body)), owner)
 	rec := httptest.NewRecorder()
 	h.UpdateDNSSettings(rec, req)
@@ -76,7 +80,7 @@ func TestUpdateDNSSettingsPersistsAndReturnsOK(t *testing.T) {
 	h, _, users := newOrgTestHandlers(t, RoleOwner)
 	owner := users[0]
 
-	body := `{"baseDomain":"acme.ownscale","magicDns":true,` +
+	body := `{"magicDns":true,` +
 		`"nameservers":{"global":["1.1.1.1","8.8.8.8"],"split":{"Corp.Example.com.":["10.0.0.53"]}},` +
 		`"searchDomains":["internal.acme.example.com"],"extraRecords":[{"name":"server.acme.ownscale","type":"A","value":"10.0.0.1"}]}`
 	req := withTestUser(httptest.NewRequest(http.MethodPut, "/api/dns", strings.NewReader(body)), owner)

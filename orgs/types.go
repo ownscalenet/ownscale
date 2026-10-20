@@ -50,8 +50,10 @@ type DNSRecord struct {
 
 // DNSConfig is an organization's tailnet DNS settings.
 type DNSConfig struct {
-	MagicDNS      bool        `json:"magicDns" yaml:"magic_dns"`
-	BaseDomain    string      `json:"baseDomain" yaml:"base_domain"`
+	MagicDNS bool `json:"magicDns" yaml:"magic_dns"`
+	// BaseDomain is derived from the organization's tailnet label and is
+	// never stored or edited.
+	BaseDomain    string      `json:"baseDomain" yaml:"-"`
 	Nameservers   Nameservers `json:"nameservers" yaml:"nameservers"`
 	SearchDomains []string    `json:"searchDomains" yaml:"search_domains,omitempty"`
 	ExtraRecords  []DNSRecord `json:"extraRecords" yaml:"extra_records,omitempty"`
@@ -117,12 +119,11 @@ func ValidateSubdomain(s string) (err error) {
 }
 
 // newHeadscaleConfig returns the initial config for an organization:
-// MagicDNS on its own tailnet domain, and the OIDC client credentials.
-func newHeadscaleConfig(subdomain string, oidc OIDCConfig) *HeadscaleConfig {
+// MagicDNS on, and the OIDC client credentials.
+func newHeadscaleConfig(oidc OIDCConfig) *HeadscaleConfig {
 	return &HeadscaleConfig{
 		DNS: DNSConfig{
 			MagicDNS:    true,
-			BaseDomain:  subdomain + ".ownscale",
 			Nameservers: Nameservers{Global: []string{"1.1.1.1"}},
 		},
 		OIDC: oidc,

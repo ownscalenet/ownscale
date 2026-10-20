@@ -58,8 +58,12 @@ func TestBackup(t *testing.T) {
 		BaseDomain:      "example.com",
 		DataDir:         dataDir,
 		FixedSubdomains: testFixedSubdomains,
+		ContentDomain:   "example.com",
 	}
-	svc := NewService(queries, svcCfg, "https://auth.example.com", slog.New(slog.DiscardHandler), r)
+	svc, err := NewService(queries, svcCfg, "https://auth.example.com", slog.New(slog.DiscardHandler), r)
+	if err != nil {
+		t.Fatal(err)
+	}
 	svc.derpMap.Store(testDERPMap(1))
 
 	if _, err := svc.Create(ctx, "acme"); err != nil {
@@ -104,7 +108,10 @@ func TestBackup(t *testing.T) {
 	}
 
 	r2, _, replicaDir2 := newReplicator(t, dataDir)
-	svc2 := NewService(queries, svcCfg, "https://auth.example.com", slog.New(slog.DiscardHandler), r2)
+	svc2, err := NewService(queries, svcCfg, "https://auth.example.com", slog.New(slog.DiscardHandler), r2)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if err := svc2.BackUpProvisioned(ctx); err != nil {
 		t.Fatalf("BackUpProvisioned: %v", err)
 	}

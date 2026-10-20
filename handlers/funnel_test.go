@@ -84,7 +84,7 @@ func TestCreateFunnelRouteRejectsDuplicateLabel(t *testing.T) {
 func TestListFunnelRoutesFlagsMissingTargetNode(t *testing.T) {
 	h, org, users := newOrgTestHandlers(t, RoleOwner)
 	owner := users[0]
-	h.funnelDomain = "example-funnel.net"
+	h.contentDomain = "example-funnel.net"
 	client, _, _, _ := newFakeHeadscaleServer(t)
 
 	if _, err := h.queries.CreateFunnelRoute(t.Context(), sqlcgen.CreateFunnelRouteParams{

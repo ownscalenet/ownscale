@@ -3,7 +3,7 @@ import type {
   AccessControlResponse, AuthKeysResponse, FunnelRoute, FunnelRoutesResponse,
   Machine, MachinesResponse, User,
 } from '../../../../frontend/src/api'
-import { baseDomain, baseURL, funnelDomain } from './environment'
+import { baseDomain, baseURL, contentDomain } from './environment'
 import { Recovery, type OwnedResource } from './recovery'
 import { confirmDialog } from '../support/confirm'
 
@@ -244,7 +244,7 @@ export class OrgUI {
     const { funnelRoute: route } = await response.json() as { funnelRoute: FunnelRoute }
     if (!route.id) throw new Error(`${this.org}: missing created funnel ID`)
     await recovery.update(resource, { id: String(route.id) })
-    if (route.hostname !== `web2-${this.org}.${funnelDomain}` || String(route.targetNodeId) !== machineID || route.targetPort !== port) {
+    if (route.hostname !== `web2-${this.org}.${contentDomain}` || String(route.targetNodeId) !== machineID || route.targetPort !== port) {
       throw new Error(`${this.org}: created funnel metadata mismatch`)
     }
     await expect(this.page.getByRole('link', { name: `https://${route.hostname}`, exact: true })).toBeVisible()

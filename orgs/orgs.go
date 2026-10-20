@@ -15,6 +15,7 @@ import (
 	"os"
 	"slices"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -90,9 +91,12 @@ type Service struct {
 	// while backups shut down.
 	closed atomic.Bool
 
+	// certs is nil when node certificates are disabled.
+	certs *nodeCerts
+
 	// createFn defaults to createHeadscale; override in tests to skip
 	// real headscale startup.
-	createFn func(dataDir, subdomain, baseDomain string, port int, hsCfg *HeadscaleConfig, derpMap *tailcfg.DERPMap) (*hscontrol.Headscale, error)
+	createFn func(p headscaleParams) (*hscontrol.Headscale, error)
 }
 
 func (s *Service) orgLock(subdomain string) *sync.Mutex {
@@ -165,17 +169,42 @@ type instance struct {
 // cfg.BaseDomain. Each organization's headscale database is added to
 // backups once it exists; backups may be nil.
 func NewService(queries *db.TxQueries, cfg *config.Config, issuer string,
-	logger *slog.Logger, backups *backup.Replicator) *Service {
+	logger *slog.Logger, backups *backup.Replicator) (_ *Service, err error) {
+	defer derrors.Wrap(&err, "orgs.NewService()")
+
+	provider, err := cfg.DNS.ChallengeProvider()
+	if err != nil {
+		return nil, err
+	}
+	var certs *nodeCerts
+	if provider != nil {
+		certs = &nodeCerts{
+			provider:           provider,
+			providerName:       cfg.DNS.Provider,
+			zone:               cfg.DNS.Zone,
+			propagationTimeout: cfg.DNS.PropagationTimeout,
+		}
+	}
 	return &Service{
 		queries:       queries,
 		cfg:           cfg,
 		issuer:        issuer,
 		logger:        logger,
 		backups:       backups,
+		certs:         certs,
 		createFn:      createHeadscale,
 		idleTimeout:   idleTimeout,
 		sweepInterval: sweepInterval,
-	}
+	}, nil
+}
+
+// CertsEnabled reports whether nodes can get HTTPS certificates, for
+// organizations with MagicDNS on.
+func (s *Service) CertsEnabled() bool { return s.certs != nil }
+
+// tailnetDomain returns the MagicDNS domain of the organization with label.
+func (s *Service) tailnetDomain(label string) string {
+	return label + "." + s.cfg.TailnetDomain()
 }
 
 // OnStart sets f to run each time Ensure starts an organization's
@@ -198,6 +227,7 @@ func (s *Service) ForOrg(org sqlcgen.Organization) *OrgService {
 		queries:   s.queries,
 		orgID:     org.ID,
 		subdomain: sub,
+		domain:    s.tailnetDomain(org.TailnetLabel),
 		restart: func(ctx context.Context) error {
 			return s.restartHeadscale(ctx, sub)
 		},
@@ -372,6 +402,7 @@ func (s *Service) loadConfig(ctx context.Context, subdomain string) (sqlcgen.Org
 	if err != nil {
 		return sqlcgen.Organization{}, nil, err
 	}
+	hsCfg.DNS.BaseDomain = s.tailnetDomain(org.TailnetLabel)
 	return org, hsCfg, nil
 }
 
@@ -512,16 +543,32 @@ func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organ
 	if err != nil {
 		return sqlcgen.Organization{}, err
 	}
-	hsCfg := newHeadscaleConfig(subdomain, OIDCConfig{Issuer: s.issuer, ClientID: clientID, ClientSecret: clientSecret})
+	hsCfg := newHeadscaleConfig(OIDCConfig{Issuer: s.issuer, ClientID: clientID, ClientSecret: clientSecret})
 	hsConfig, err := hsCfg.Marshal()
 	if err != nil {
 		return sqlcgen.Organization{}, err
 	}
 
-	return s.insertProvisioned(ctx, subdomain, clientID, string(clientSecretHash), string(redirectURIsJSON), hsConfig)
+	// maxLabelAttempts bounds retries when a new tailnet label
+	// collides with an existing one.
+	const maxLabelAttempts = 5
+	for attempt := 1; ; attempt++ {
+		org, err := s.insertProvisioned(ctx, subdomain, newTailnetLabel(), clientID, string(clientSecretHash), string(redirectURIsJSON), hsConfig)
+		if err != nil && strings.Contains(err.Error(), "organizations.tailnet_label") && attempt < maxLabelAttempts {
+			continue
+		}
+		return org, err
+	}
 }
 
-func (s *Service) insertProvisioned(ctx context.Context, subdomain, clientID, clientSecretHash, redirectURIsJSON, hsConfig string) (_ sqlcgen.Organization, err error) {
+// newTailnetLabel returns a random label for an organization's MagicDNS
+// domain. It is unrelated to the subdomain, so certificate transparency logs
+// don't reveal which organization a node belongs to.
+func newTailnetLabel() string {
+	return "net" + strings.ToLower(rand.Text()[:6])
+}
+
+func (s *Service) insertProvisioned(ctx context.Context, subdomain, tailnetLabel, clientID, clientSecretHash, redirectURIsJSON, hsConfig string) (_ sqlcgen.Organization, err error) {
 	txQueries, commit, rollback, err := s.queries.StartTx(ctx)
 	if err != nil {
 		return sqlcgen.Organization{}, err
@@ -529,8 +576,9 @@ func (s *Service) insertProvisioned(ctx context.Context, subdomain, clientID, cl
 	defer rollback()
 
 	org, err := txQueries.CreateOrganization(ctx, sqlcgen.CreateOrganizationParams{
-		ID:        xid.New().String(),
-		Subdomain: subdomain,
+		ID:           xid.New().String(),
+		Subdomain:    subdomain,
+		TailnetLabel: tailnetLabel,
 	})
 	if err != nil {
 		return sqlcgen.Organization{}, fmt.Errorf("create organization record (already exists?): %w", err)
@@ -622,7 +670,15 @@ func (s *Service) launch(ctx context.Context, subdomain string, port int, hsCfg 
 	if err != nil {
 		return nil, err
 	}
-	app, err := s.createFn(s.cfg.DataDir, subdomain, s.cfg.BaseDomain, port, hsCfg, derpMap)
+	app, err := s.createFn(headscaleParams{
+		dataDir:    s.cfg.DataDir,
+		subdomain:  subdomain,
+		baseDomain: s.cfg.BaseDomain,
+		port:       port,
+		hsCfg:      hsCfg,
+		derpMap:    derpMap,
+		certs:      s.certs,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("create headscale instance for %q: %w", subdomain, err)
 	}

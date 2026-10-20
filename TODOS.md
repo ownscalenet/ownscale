@@ -1,5 +1,4 @@
 - Check if abs can have automatic regular snapshots/backups
-- TLS for DNS providers other than Azure, Cloudflare and AWS
 - when deleting a node, how to warn users of funnels that rely on the node
 - add a page with explanations about huJSON for end users
 - stress tests

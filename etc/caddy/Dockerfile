@@ -7,9 +7,8 @@ FROM caddy:2-builder AS builder
 RUN xcaddy build \
 	--with github.com/caddy-dns/azure@v0.6.0 \
 	--with github.com/caddy-dns/cloudflare@v0.2.4 \
-	--with github.com/caddy-dns/route53@v1.6.2 \
 	--with github.com/caddy-dns/hetzner/v2@v2.0.1 \
-	--with github.com/caddy-dns/digitalocean@04bde2867106
+	--with github.com/caddy-dns/rfc2136@v1.0.0
 
 FROM ghcr.io/gohugoio/hugo:v0.165.0 AS site
 COPY --chown=hugo:hugo site /project

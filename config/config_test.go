@@ -297,6 +297,8 @@ func fullyPopulatedConfig() *Config {
 	cfg.Auth.UpstreamOIDC.CallbackURL = "https://example.com/callback"
 	cfg.Auth.OIDCProvider.Issuer = "https://auth.example.com"
 	cfg.Auth.OIDCProvider.SigningKeyPath = "/abs/data/oidc_signing_key.pem"
+	cfg.ContentDomain = "example-content.net"
+	cfg.DNS.Zone = "example-content.net"
 	return cfg
 }
 
@@ -364,6 +366,31 @@ func TestValidate(t *testing.T) {
 		})
 	}
 
+	rfc2136 := RFC2136DNSConfig{Server: "ns:53", KeyName: "k.", KeyAlg: "hmac-sha256", Key: "c2VjcmV0"}
+	domains := []struct {
+		name    string
+		content string
+		zone    string
+		wantErr string
+	}{
+		{name: "zone is content domain", content: "example.net", zone: "example.net"},
+		{name: "zone is parent", content: "c.example.net", zone: "example.net"},
+		{name: "zone is tailnet domain", content: "example.net", zone: "os.example.net", wantErr: "OWNSCALE_DNS_ZONE"},
+		{name: "zone elsewhere", content: "example.net", zone: "other.net", wantErr: "OWNSCALE_DNS_ZONE"},
+		{name: "uppercase content domain", content: "Example.net", zone: "example.net", wantErr: "OWNSCALE_CONTENT_DOMAIN"},
+	}
+	for _, tt := range domains {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := fullyPopulatedConfig()
+			cfg.ContentDomain = tt.content
+			cfg.DNS = DNSConfig{Provider: "rfc2136", Zone: tt.zone, RFC2136: rfc2136}
+			err := cfg.Validate()
+			if tt.wantErr == "" && err != nil || tt.wantErr != "" && (err == nil || !strings.Contains(err.Error(), tt.wantErr)) {
+				t.Errorf("Validate() error = %v, want %q", err, tt.wantErr)
+			}
+		})
+	}
+
 	t.Run("non-positive funnel max body rejected", func(t *testing.T) {
 		cfg := fullyPopulatedConfig()
 		cfg.Funnel.MaxBodyBytes = 0
@@ -393,6 +420,122 @@ func TestValidate(t *testing.T) {
 			}
 			if !strings.Contains(err.Error(), f.want) {
 				t.Errorf("Validate error = %q, want it to mention %q", err.Error(), f.want)
+			}
+		})
+	}
+}
+
+func TestLoadDNSConfig(t *testing.T) {
+	cases := []struct {
+		name string
+		env  map[string]string
+		want DNSConfig
+	}{
+		{
+			name: "defaults",
+			want: DNSConfig{Provider: "none", Zone: "example.com", PropagationTimeout: 2 * time.Minute},
+		},
+		{
+			name: "zone defaults to content domain",
+			env:  map[string]string{"OWNSCALE_CONTENT_DOMAIN": "example.net"},
+			want: DNSConfig{Provider: "none", Zone: "example.net", PropagationTimeout: 2 * time.Minute},
+		},
+		{
+			name: "overrides",
+			env: map[string]string{
+				"OWNSCALE_DNS_PROVIDER":             "cloudflare",
+				"OWNSCALE_DNS_ZONE":                 "corp.com",
+				"OWNSCALE_DNS_PROPAGATION_TIMEOUT":  "0s",
+				"OWNSCALE_DNS_CLOUDFLARE_API_TOKEN": "tok",
+			},
+			want: DNSConfig{
+				Provider: "cloudflare", Zone: "corp.com",
+				Cloudflare: CloudflareDNSConfig{APIToken: "tok"},
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("OWNSCALE_BASE_DOMAIN", "example.com")
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			if cfg.DNS != tc.want {
+				t.Errorf("DNS = %+v, want %+v", cfg.DNS, tc.want)
+			}
+		})
+	}
+}
+
+func TestDNSConfigValidate(t *testing.T) {
+	base := DNSConfig{Provider: "none", Zone: "example.com"}
+	rfc2136 := RFC2136DNSConfig{Server: "ns:53", KeyName: "k.", KeyAlg: "hmac-sha256", Key: "c2VjcmV0"}
+	cases := []struct {
+		name    string
+		change  func(*DNSConfig)
+		wantErr string
+	}{
+		{name: "none"},
+		{name: "unknown provider", change: func(d *DNSConfig) { d.Provider = "route53" }, wantErr: "OWNSCALE_DNS_PROVIDER"},
+		{name: "missing credentials", change: func(d *DNSConfig) { d.Provider = "azure"; d.Azure.TenantID = "t" }, wantErr: "OWNSCALE_DNS_AZURE_CLIENT_SECRET"},
+		{name: "cloudflare", change: func(d *DNSConfig) { d.Provider = "cloudflare"; d.Cloudflare.APIToken = "x" }},
+		{name: "hetzner", change: func(d *DNSConfig) { d.Provider = "hetzner"; d.Hetzner.APIToken = "x" }},
+		{name: "rfc2136", change: func(d *DNSConfig) { d.Provider = "rfc2136"; d.RFC2136 = rfc2136 }},
+		{name: "uppercase zone", change: func(d *DNSConfig) { d.Zone = "Example.com" }, wantErr: "OWNSCALE_DNS_ZONE"},
+		{name: "negative propagation", change: func(d *DNSConfig) {
+			d.Provider = "hetzner"
+			d.Hetzner.APIToken = "x"
+			d.PropagationTimeout = -time.Second
+		}, wantErr: "OWNSCALE_DNS_PROPAGATION_TIMEOUT"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			d := base
+			if tc.change != nil {
+				tc.change(&d)
+			}
+			err := d.Validate()
+			if tc.wantErr == "" {
+				if err != nil {
+					t.Fatalf("Validate: %v", err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tc.wantErr) {
+				t.Errorf("Validate() error = %v, want it to mention %q", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+func TestChallengeProvider(t *testing.T) {
+	cases := []struct {
+		name    string
+		dns     DNSConfig
+		wantNil bool
+	}{
+		{name: "none", dns: DNSConfig{Provider: "none"}, wantNil: true},
+		{name: "cloudflare", dns: DNSConfig{Provider: "cloudflare", Cloudflare: CloudflareDNSConfig{APIToken: "x"}}},
+		{name: "hetzner", dns: DNSConfig{Provider: "hetzner", Hetzner: HetznerDNSConfig{APIToken: "x"}}},
+		{name: "azure", dns: DNSConfig{Provider: "azure", Azure: AzureDNSConfig{
+			SubscriptionID: "s", ResourceGroupName: "r", TenantID: "t", ClientID: "c", ClientSecret: "x",
+		}}},
+		{name: "rfc2136", dns: DNSConfig{Provider: "rfc2136", RFC2136: RFC2136DNSConfig{
+			Server: "ns:53", KeyName: "k.", KeyAlg: "hmac-sha256", Key: "c2VjcmV0",
+		}}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			p, err := tc.dns.ChallengeProvider()
+			if err != nil {
+				t.Fatalf("ChallengeProvider: %v", err)
+			}
+			if (p == nil) != tc.wantNil {
+				t.Errorf("ChallengeProvider() = %v, want nil %v", p, tc.wantNil)
 			}
 		})
 	}

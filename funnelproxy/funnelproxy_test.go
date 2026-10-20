@@ -56,6 +56,7 @@ func TestParseHost(t *testing.T) {
 		{"empty label", "-acme.example.com", "", "", false},
 		{"empty subdomain", "web-.example.com", "", "", false},
 		{"bare base domain", "example.com", "", "", false},
+		{"node name", "my-pc.netacme.os.example.com", "", "", false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

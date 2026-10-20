@@ -13,7 +13,9 @@ import (
 	"time"
 
 	"github.com/juanfont/headscale/hscontrol"
+	hsdns "github.com/juanfont/headscale/hscontrol/dns"
 	"github.com/juanfont/headscale/hscontrol/types"
+	"github.com/libdns/libdns"
 	"github.com/rs/xid"
 	"github.com/rs/zerolog"
 	"tailscale.com/tailcfg"
@@ -129,18 +131,42 @@ const DefaultACLPolicy = `{
 }
 `
 
-// createHeadscale creates an *hscontrol.Headscale instance for subdomain,
-// listening on 127.0.0.1:port. DNS and OIDC settings come from hsCfg,
+// headscaleParams is what createHeadscale needs to build an organization's
+// headscale instance.
+type headscaleParams struct {
+	dataDir    string
+	subdomain  string
+	baseDomain string
+	port       int
+	// hsCfg is ownscale's stored config; hsCfg.DNS.BaseDomain is the org's
+	// MagicDNS domain.
+	hsCfg   *HeadscaleConfig
+	derpMap *tailcfg.DERPMap
+	// certs is nil when node certificates are disabled.
+	certs *nodeCerts
+}
+
+// nodeCerts configures the DNS provider publishing ACME DNS-01 challenges
+// for node certificates.
+type nodeCerts struct {
+	provider           hsdns.Provider
+	providerName       string
+	zone               string
+	propagationTimeout time.Duration
+}
+
+// challengeResolvers find a zone's nameservers when waiting for a challenge
+// record to propagate.
+var challengeResolvers = []string{"1.1.1.1:53", "8.8.8.8:53"}
+
+// createHeadscale creates an *hscontrol.Headscale instance for p.subdomain,
+// listening on 127.0.0.1:p.port. DNS and OIDC settings come from p.hsCfg,
 // ownscale's stored config. The org data directory (dataDir/subdomain) is
 // created if absent.
-func createHeadscale(
-	dataDir, subdomain, baseDomain string,
-	port int,
-	hsCfg *HeadscaleConfig,
-	derpMap *tailcfg.DERPMap,
-) (_ *hscontrol.Headscale, err error) {
-	defer derrors.Wrap(&err, "createHeadscale(%q)", subdomain)
+func createHeadscale(p headscaleParams) (_ *hscontrol.Headscale, err error) {
+	defer derrors.Wrap(&err, "createHeadscale(%q)", p.subdomain)
 
+	dataDir, subdomain, hsCfg := p.dataDir, p.subdomain, p.hsCfg
 	pv4 := netip.MustParsePrefix("100.64.0.0/10")
 	pv6 := netip.MustParsePrefix("fd7a:115c:a1e0::/48")
 
@@ -150,15 +176,26 @@ func createHeadscale(
 	}
 
 	dns := ownscaleDNSToTypes(hsCfg.DNS)
+	var challenge types.DNSChallengeConfig
+	// headscale only issues certificates for MagicDNS names.
+	if p.certs != nil && dns.MagicDNS {
+		dns.Certificates = types.CertificatesConfig{Enabled: true, Zone: p.certs.zone}
+		challenge = types.DNSChallengeConfig{
+			PropagationTimeout: p.certs.propagationTimeout,
+			Resolvers:          challengeResolvers,
+			ProviderName:       p.certs.providerName,
+			Provider:           &scopedProvider{Provider: p.certs.provider, domain: dns.BaseDomain},
+		}
+	}
 	cfg := &types.Config{
-		ServerURL:           fmt.Sprintf("https://%s.%s", subdomain, baseDomain),
-		Addr:                fmt.Sprintf("127.0.0.1:%d", port),
+		ServerURL:           fmt.Sprintf("https://%s.%s", subdomain, p.baseDomain),
+		Addr:                fmt.Sprintf("127.0.0.1:%d", p.port),
 		NoisePrivateKeyPath: noisePath(dataDir, subdomain),
 		PrefixV4:            &pv4,
 		PrefixV6:            &pv6,
 		IPAllocation:        types.IPAllocationStrategy("sequential"),
 		// ownscale fetches the DERP map and pushes updates (see RunDERPMapUpdater).
-		DERP: types.DERPConfig{DERPMap: derpMap},
+		DERP: types.DERPConfig{DERPMap: p.derpMap},
 		Database: types.DatabaseConfig{
 			Type: "sqlite3",
 			Sqlite: types.SqliteConfig{
@@ -180,6 +217,7 @@ func createHeadscale(
 		// Viper config loader does. We replicate the conversion here so
 		// nodes receive a DNS config (nameservers, MagicDNS) from startup.
 		TailcfgDNSConfig:     buildTailcfgDNS(dns),
+		DNSChallenge:         challenge,
 		UnixSocket:           SocketPath(dataDir, subdomain),
 		UnixSocketPermission: 0o770,
 		Policy:               types.PolicyConfig{Mode: types.PolicyMode("database")},
@@ -265,4 +303,39 @@ func toResolvers(nameservers []string) []*dnstype.Resolver {
 		resolvers = append(resolvers, &dnstype.Resolver{Addr: ns})
 	}
 	return resolvers
+}
+
+// scopedProvider limits a provider shared by every organization to
+// challenge records under one organization's MagicDNS domain.
+type scopedProvider struct {
+	hsdns.Provider
+	domain string
+}
+
+var errOutOfScope = errors.New("DNS record outside the organization's domain")
+
+func (p *scopedProvider) check(zone string, recs []libdns.Record) error {
+	suffix := "." + strings.TrimSuffix(p.domain, ".") + "."
+	for _, r := range recs {
+		rr := r.RR()
+		name := strings.ToLower(libdns.AbsoluteName(rr.Name, zone))
+		if rr.Type != "TXT" || !strings.HasPrefix(name, types.ACMEChallengePrefix) || !strings.HasSuffix(name, suffix) {
+			return fmt.Errorf("%w: %s %s", errOutOfScope, rr.Type, name)
+		}
+	}
+	return nil
+}
+
+func (p *scopedProvider) AppendRecords(ctx context.Context, zone string, recs []libdns.Record) ([]libdns.Record, error) {
+	if err := p.check(zone, recs); err != nil {
+		return nil, err
+	}
+	return p.Provider.AppendRecords(ctx, zone, recs)
+}
+
+func (p *scopedProvider) DeleteRecords(ctx context.Context, zone string, recs []libdns.Record) ([]libdns.Record, error) {
+	if err := p.check(zone, recs); err != nil {
+		return nil, err
+	}
+	return p.Provider.DeleteRecords(ctx, zone, recs)
 }

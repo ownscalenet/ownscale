@@ -43,8 +43,12 @@ func newRealService(t *testing.T) *Service {
 		BaseDomain:      "example.com",
 		DataDir:         t.TempDir(),
 		FixedSubdomains: testFixedSubdomains,
+		ContentDomain:   "example.com",
 	}
-	svc := NewService(queries, cfg, "https://auth.example.com", slog.New(slog.DiscardHandler), nil)
+	svc, err := NewService(queries, cfg, "https://auth.example.com", slog.New(slog.DiscardHandler), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
 	svc.derpMap.Store(testDERPMap(1))
 	return svc
 }
@@ -67,7 +71,7 @@ func newTestService(t *testing.T) *Service {
 	return svc
 }
 
-func noopCreateFn(string, string, string, int, *HeadscaleConfig, *tailcfg.DERPMap) (*hscontrol.Headscale, error) {
+func noopCreateFn(headscaleParams) (*hscontrol.Headscale, error) {
 	return nil, nil
 }
 
@@ -109,8 +113,8 @@ func markProvisioned(t *testing.T, svc *Service, subdomain string) {
 }
 
 // failingCreateFn returns a createFn that fails, counting its calls in n.
-func failingCreateFn(n *int) func(string, string, string, int, *HeadscaleConfig, *tailcfg.DERPMap) (*hscontrol.Headscale, error) {
-	return func(string, string, string, int, *HeadscaleConfig, *tailcfg.DERPMap) (*hscontrol.Headscale, error) {
+func failingCreateFn(n *int) func(headscaleParams) (*hscontrol.Headscale, error) {
+	return func(headscaleParams) (*hscontrol.Headscale, error) {
 		*n++
 		return nil, errors.New("headscale failed (injected)")
 	}
@@ -220,9 +224,9 @@ func TestEnsureStartsOnce(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	var starts, hooks atomic.Int32
-	svc.createFn = func(dataDir, subdomain, baseDomain string, port int, hsCfg *HeadscaleConfig, derpMap *tailcfg.DERPMap) (*hscontrol.Headscale, error) {
+	svc.createFn = func(p headscaleParams) (*hscontrol.Headscale, error) {
 		starts.Add(1)
-		return createHeadscale(dataDir, subdomain, baseDomain, port, hsCfg, derpMap)
+		return createHeadscale(p)
 	}
 	svc.OnStart(func(context.Context, string, *hscl.Client) { hooks.Add(1) })
 	t.Cleanup(func() {
@@ -304,7 +308,7 @@ func TestCreateRejectsDuplicateSubdomain(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Create: %v", err)
 	}
-	svc.createFn = func(string, string, string, int, *HeadscaleConfig, *tailcfg.DERPMap) (*hscontrol.Headscale, error) {
+	svc.createFn = func(headscaleParams) (*hscontrol.Headscale, error) {
 		t.Error("headscale started for a duplicate organization")
 		return nil, nil
 	}
@@ -359,8 +363,8 @@ func TestNextSubdomain(t *testing.T) {
 
 // blockingCreateFn returns a createFn that signals entered and then blocks
 // until release is closed, building no instance.
-func blockingCreateFn(entered chan<- struct{}, release <-chan struct{}) func(string, string, string, int, *HeadscaleConfig, *tailcfg.DERPMap) (*hscontrol.Headscale, error) {
-	return func(string, string, string, int, *HeadscaleConfig, *tailcfg.DERPMap) (*hscontrol.Headscale, error) {
+func blockingCreateFn(entered chan<- struct{}, release <-chan struct{}) func(headscaleParams) (*hscontrol.Headscale, error) {
+	return func(headscaleParams) (*hscontrol.Headscale, error) {
 		entered <- struct{}{}
 		<-release
 		return nil, nil
@@ -550,7 +554,7 @@ func TestStartRetriesTakenPort(t *testing.T) {
 	org := dbtest.CreateOrg(t, svc.queries.Queries, "acme")
 
 	svc.orgLock("acme").Lock()
-	err = svc.startLocked(t.Context(), org.ID, "acme", newHeadscaleConfig("acme", OIDCConfig{Issuer: "https://auth.example.com"}))
+	err = svc.startLocked(t.Context(), org.ID, "acme", newHeadscaleConfig(OIDCConfig{Issuer: "https://auth.example.com"}))
 	svc.orgLock("acme").Unlock()
 	if err != nil {
 		t.Fatalf("startLocked: %v", err)
@@ -569,9 +573,23 @@ func TestStartRetriesTakenPort(t *testing.T) {
 	}
 }
 
+// testHeadscaleParams returns createHeadscale params for organization acme
+// with node certificates from certs, if non-nil.
+func testHeadscaleParams(t *testing.T, certs *nodeCerts) headscaleParams {
+	hsCfg := newHeadscaleConfig(OIDCConfig{Issuer: "https://auth.example.com"})
+	hsCfg.DNS.BaseDomain = "netacme.os.example.com"
+	return headscaleParams{
+		dataDir:    t.TempDir(),
+		subdomain:  "acme",
+		baseDomain: "example.com",
+		hsCfg:      hsCfg,
+		derpMap:    testDERPMap(7),
+		certs:      certs,
+	}
+}
+
 func TestCreateHeadscaleDERP(t *testing.T) {
-	hsCfg := newHeadscaleConfig("acme", OIDCConfig{Issuer: "https://auth.example.com"})
-	app, err := createHeadscale(t.TempDir(), "acme", "example.com", 0, hsCfg, testDERPMap(7))
+	app, err := createHeadscale(testHeadscaleParams(t, nil))
 	if err != nil {
 		t.Fatalf("createHeadscale: %v", err)
 	}
@@ -589,14 +607,13 @@ func TestCreateHeadscaleDERP(t *testing.T) {
 // TestCreateHeadscaleBaseDomain guards against nodes getting bare hostnames
 // as their FQDN, which breaks MagicDNS resolution of <host>.<base_domain>.
 func TestCreateHeadscaleBaseDomain(t *testing.T) {
-	hsCfg := newHeadscaleConfig("acme", OIDCConfig{Issuer: "https://auth.example.com"})
-	app, err := createHeadscale(t.TempDir(), "acme", "example.com", 0, hsCfg, testDERPMap(7))
+	app, err := createHeadscale(testHeadscaleParams(t, nil))
 	if err != nil {
 		t.Fatalf("createHeadscale: %v", err)
 	}
 	t.Cleanup(func() { _ = app.GetState().Close() })
 
-	if got, want := app.GetState().DebugConfig().BaseDomain, "acme.ownscale"; got != want {
+	if got, want := app.GetState().DebugConfig().BaseDomain, "netacme.os.example.com"; got != want {
 		t.Errorf("BaseDomain = %q, want %q", got, want)
 	}
 }
@@ -724,8 +741,8 @@ func TestOrgRestartsDoNotBlockEachOther(t *testing.T) {
 	createStarted(t, svc, "other")
 
 	entered, release, done := make(chan struct{}), make(chan struct{}), make(chan struct{})
-	svc.createFn = func(dataDir, subdomain, baseDomain string, port int, hsCfg *HeadscaleConfig, derpMap *tailcfg.DERPMap) (*hscontrol.Headscale, error) {
-		if subdomain == "acme" {
+	svc.createFn = func(p headscaleParams) (*hscontrol.Headscale, error) {
+		if p.subdomain == "acme" {
 			entered <- struct{}{}
 			<-release
 		}

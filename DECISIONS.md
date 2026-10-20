@@ -54,3 +54,14 @@ Reasons why it is bad:
 - above trouble with the modernc import
 - if backups panic, they bring the whole program down
 I'm not convinced it's a good decision, but I'm willing to try it.
+
+### 8. Node certificates use the same DNS provider as Caddy
+The idea of RFC2136 providing DNS, regardless of what cloud provider administrates
+the zones, proved to require a lot more maintenance.
+`tailscale cert` and `tailscale serve` need publicly-trusted certificates for
+node names, which means real DNS names and DNS-01 challenges.
+Headscale publishes each challenge TXT record through it. Every organization
+gets a random tailnet label under `os.<CONTENT_DOMAIN>` that can't be changed,
+so names are unique and don't reveal the organization's subdomain.
+Node sites are user content, so like funnels they live on the content domain,
+not on the console's site. Drawback: the provider credentials can write the whole zone.

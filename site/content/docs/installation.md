@@ -77,10 +77,11 @@ minimum, set:
   (e.g. `example.com`). The console lives at `console.<BASE_DOMAIN>`,
   this documentation site at the bare `<BASE_DOMAIN>`, and each
   organization at `<subdomain>.<BASE_DOMAIN>`.
-- `FUNNEL_DOMAIN` (optional) -- domain for Funnels, served at
-  `<label>-<subdomain>.<FUNNEL_DOMAIN>`. Defaults to `BASE_DOMAIN`. Use a
-  separate registrable domain (e.g. `example-funnel.net`) with its own
-  wildcard DNS record, so public Funnel content is isolated from the console.
+- `CONTENT_DOMAIN` (optional) -- domain for user content: Funnels at
+  `<label>-<subdomain>.<CONTENT_DOMAIN>` and node names under
+  `os.<CONTENT_DOMAIN>`. Defaults to `BASE_DOMAIN`. Use a separate registrable
+  domain (e.g. `example-content.net`) with its own wildcard DNS record, so
+  user content is isolated from the console.
 - `OWNSCALE_AUTH_SESSION_SECRET` -- a random string used to sign login
   session cookies. Required to start the server.
 - `OWNSCALE_AUTH_UPSTREAM_OIDC_ISSUER`,
@@ -91,6 +92,17 @@ minimum, set:
 - `OWNSCALE_DATA_DIR` -- an absolute path where every SQLite database
   (ownscale's own, plus one per organization's Headscale instance) is
   stored.
+- `DNS_PROVIDER` -- `azure`, `cloudflare`, `hetzner` or `rfc2136`, plus that
+  provider's credentials. Caddy uses it for the wildcard certificates, and
+  ownscale for node certificates (`tailscale cert`, `tailscale serve`).
+
+### Node certificates
+
+Each organization's MagicDNS domain is a random, fixed label under
+`os.<CONTENT_DOMAIN>`, e.g. `web.net3k9x2a.os.example.com`. With a DNS provider set and MagicDNS on,
+nodes can get Let's Encrypt certificates for their names. These names are
+published in Certificate Transparency logs, and Let's Encrypt allows 50 new
+certificates per registered domain per week, shared by all organizations.
 
 ## Local development
 
@@ -109,5 +121,5 @@ with one seeded test login (`admin@ownscale.test` / `ownscale`).
 
 See the repository's `README.md` for full details on local development
 (`make build`, `make dev-up`), production TLS (wildcard certificates
-via Azure DNS-01), and trusting the local development CA in your OS or
+via DNS-01), and trusting the local development CA in your OS or
 browser.

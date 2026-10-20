@@ -1,4 +1,4 @@
-import { Plus, Save, Trash2 } from 'lucide-react'
+import { Plus, Trash2 } from 'lucide-react'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -91,6 +91,7 @@ export default function DNS() {
   const query = useQuery({ queryKey: ['dns'], queryFn: ({ signal }) => getDNSSettings(signal) })
   const dns = query.data?.dns
   const canManage = query.data?.canManage ?? false
+  const certsAvailable = query.data?.httpsCertificates ?? false
 
   const [newRecordName, setNewRecordName] = useState('')
   const [newRecordType, setNewRecordType] = useState(RECORD_TYPES[0])
@@ -160,12 +161,7 @@ export default function DNS() {
       )}
 
       <div className="flex flex-col gap-6">
-        <RenameTailnet
-          key={dns.baseDomain}
-          dns={dns}
-          disabled={!canManage || saving}
-          onSave={save}
-        />
+        <TailnetName dns={dns} certsAvailable={certsAvailable} />
 
         <div className="card bg-base-100 shadow">
           <div className="card-body">
@@ -424,42 +420,33 @@ function SplitDNS({
   )
 }
 
-function RenameTailnet({
-  dns,
-  disabled,
-  onSave,
-}: {
-  dns: DNSConfig
-  disabled: boolean
-  onSave: (next: DNSConfig) => void
-}) {
-  const [name, setName] = useState(dns.baseDomain)
-
+function TailnetName({ dns, certsAvailable }: { dns: DNSConfig; certsAvailable: boolean }) {
   return (
     <div className="card bg-base-100 shadow">
       <div className="card-body">
         <h2 className="card-title">Tailnet Name</h2>
         <p className="text-sm text-base-content/70">
-          The base domain used for Magic DNS and device names on this tailnet.
+          The base domain used for Magic DNS and device names on this tailnet. It is assigned by
+          ownscale and cannot be changed.
         </p>
-        <div className="flex gap-2">
-          <input
-            type="text"
-            className="input input-bordered input-sm flex-1 max-w-md"
-            value={name}
-            disabled={disabled}
-            onChange={(e) => setName(e.target.value)}
-          />
-          <button
-            type="button"
-            className="btn btn-primary btn-sm"
-            disabled={disabled || name.trim() === '' || name === dns.baseDomain}
-            onClick={() => onSave({ ...dns, baseDomain: name.trim() })}
-          >
-            <Save className="size-3.5" aria-hidden="true" />
-            Save
-          </button>
+        <div className="flex items-center gap-2">
+          <span className="font-mono">{dns.baseDomain}</span>
+          <CopyIcon text={dns.baseDomain} label="tailnet name" />
         </div>
+        <h3 className="font-semibold mt-4">HTTPS Certificates</h3>
+        {!certsAvailable ? (
+          <p className="text-sm text-base-content/70">
+            Disabled: the server has no DNS provider configured.
+          </p>
+        ) : !dns.magicDns ? (
+          <p className="text-sm text-base-content/70">Disabled: enable Magic DNS to use them.</p>
+        ) : (
+          <p className="text-sm text-base-content/70">
+            Enabled: devices can get a Let&apos;s Encrypt certificate with{' '}
+            <code>tailscale cert</code> or <code>tailscale serve</code>. Certificate names are
+            published in public Certificate Transparency logs.
+          </p>
+        )}
       </div>
     </div>
   )

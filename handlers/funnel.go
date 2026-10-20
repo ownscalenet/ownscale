@@ -50,7 +50,7 @@ func (h *Handlers) toFunnelRouteResponse(route sqlcgen.FunnelRoute, subdomain st
 	resp := funnelRouteResponse{
 		ID:           route.ID,
 		Label:        route.Label,
-		Hostname:     route.Label + "-" + subdomain + "." + h.funnelDomain,
+		Hostname:     route.Label + "-" + subdomain + "." + h.contentDomain,
 		TargetNodeID: route.TargetNodeID,
 		TargetPort:   route.TargetPort,
 		CreatedAt:    route.CreatedAt.Format("2006-01-02T15:04:05Z07:00"),
@@ -112,7 +112,7 @@ func (h *Handlers) ListFunnelRoutes(w http.ResponseWriter, r *http.Request) {
 	}
 	h.writeJSON(w, http.StatusOK, map[string]any{
 		"funnelRoutes":   resp,
-		"hostnameSuffix": "-" + org.Subdomain + "." + h.funnelDomain,
+		"hostnameSuffix": "-" + org.Subdomain + "." + h.contentDomain,
 		"canManage":      isManager(caller.Role),
 	})
 }

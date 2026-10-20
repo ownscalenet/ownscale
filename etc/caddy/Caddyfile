@@ -43,12 +43,12 @@ console.{$BASE_DOMAIN} {
 # Local-dev sites (Dex), see the global import above.
 import /etc/caddy/dev/sites*.caddyfile
 
-# Route https://<sub>.{$BASE_DOMAIN} and https://<label>-<sub>.{$FUNNEL_DOMAIN}
+# Route https://<sub>.{$BASE_DOMAIN} and https://<label>-<sub>.{$CONTENT_DOMAIN}
 # (funnel) to the ownscale container. ownscale's SubdomainProxy dispatches
 # org-subdomain traffic to the right in-process headscale port, and its
-# funnelproxy routes funnel traffic into the org's tailnet. FUNNEL_DOMAIN
+# funnelproxy routes funnel traffic into the org's tailnet. CONTENT_DOMAIN
 # defaults to BASE_DOMAIN (see compose.yaml); a repeated address is fine.
-*.{$BASE_DOMAIN}, *.{$FUNNEL_DOMAIN} {
+*.{$BASE_DOMAIN}, *.{$CONTENT_DOMAIN} {
 	handle {
 		reverse_proxy ownscale:8080 {
 			lb_try_duration 5s

@@ -19,8 +19,9 @@ func (h *Handlers) GetDNSSettings(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]any{
-		"dns":       dns,
-		"canManage": isManager(caller.Role),
+		"dns":               dns,
+		"canManage":         isManager(caller.Role),
+		"httpsCertificates": h.orgs.CertsEnabled(), // also needs MagicDNS
 	})
 }
 

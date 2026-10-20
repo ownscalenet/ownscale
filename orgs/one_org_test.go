@@ -3,12 +3,12 @@ package orgs
 import (
 	"errors"
 	"reflect"
+	"regexp"
 	"slices"
 	"strings"
 	"testing"
 
 	"github.com/juanfont/headscale/hscontrol"
-	"tailscale.com/tailcfg"
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
@@ -92,8 +92,8 @@ func TestGetDNSSettingsReflectsProvisionedDefaults(t *testing.T) {
 	if !dns.MagicDNS {
 		t.Errorf("MagicDNS = false, want true")
 	}
-	if dns.BaseDomain != "acme.ownscale" {
-		t.Errorf("BaseDomain = %q, want %q", dns.BaseDomain, "acme.ownscale")
+	if !regexp.MustCompile(`^net[a-z0-9]{6}\.os\.example\.com$`).MatchString(dns.BaseDomain) {
+		t.Errorf("BaseDomain = %q, want net<6 chars>.os.example.com", dns.BaseDomain)
 	}
 }
 
@@ -101,7 +101,7 @@ func TestSetDNSSettingsPersistsAndMarksActive(t *testing.T) {
 	_, o := newTestOrgService(t)
 
 	want := DNSConfig{
-		BaseDomain: "acme.headscale.internal",
+		BaseDomain: o.domain,
 		MagicDNS:   true,
 		Nameservers: Nameservers{
 			Global: []string{"1.1.1.1", "8.8.8.8"},
@@ -112,8 +112,9 @@ func TestSetDNSSettingsPersistsAndMarksActive(t *testing.T) {
 		SearchDomains: []string{"internal.acme.example.com"},
 		ExtraRecords:  []DNSRecord{{Name: "server.acme.headscale.internal", Type: "A", Value: "10.0.0.1"}},
 	}
-	// Split domains are stored in canonical form.
+	// Split domains are stored in canonical form; the base domain is fixed.
 	in := want
+	in.BaseDomain = "ignored.example.com"
 	in.Nameservers.Split = map[string][]string{
 		" Corp.Example.COM. ": {"10.0.0.53", "https://dns.example.com/dns-query"},
 	}
@@ -133,14 +134,19 @@ func TestSetDNSSettingsPersistsAndMarksActive(t *testing.T) {
 // TestSetDNSSettingsRejectsInvalidInput verifies invalid settings are
 // rejected with an InvalidConfigError and leave the stored ones unchanged.
 func TestSetDNSSettingsRejectsInvalidInput(t *testing.T) {
+	_, o := newTestOrgService(t)
+	original, err := o.GetDNSSettings(t.Context())
+	if err != nil {
+		t.Fatalf("GetDNSSettings: %v", err)
+	}
+
 	tests := []struct {
 		name string
 		dns  DNSConfig
 	}{
-		{"empty base domain", DNSConfig{BaseDomain: "", MagicDNS: true}},
-		{"empty record name", DNSConfig{BaseDomain: "acme.headscale.internal", ExtraRecords: []DNSRecord{{Name: "", Type: "A", Value: "1.2.3.4"}}}},
-		{"empty record value", DNSConfig{BaseDomain: "acme.headscale.internal", ExtraRecords: []DNSRecord{{Name: "a.example.com", Type: "A", Value: ""}}}},
-		{"duplicate record", DNSConfig{BaseDomain: "acme.headscale.internal", ExtraRecords: []DNSRecord{
+		{"empty record name", DNSConfig{ExtraRecords: []DNSRecord{{Name: "", Type: "A", Value: "1.2.3.4"}}}},
+		{"empty record value", DNSConfig{ExtraRecords: []DNSRecord{{Name: "a.example.com", Type: "A", Value: ""}}}},
+		{"duplicate record", DNSConfig{ExtraRecords: []DNSRecord{
 			{Name: "a.example.com", Type: "A", Value: "1.2.3.4"},
 			{Name: "a.example.com", Type: "A", Value: "5.6.7.8"},
 		}}},
@@ -151,20 +157,14 @@ func TestSetDNSSettingsRejectsInvalidInput(t *testing.T) {
 		{"root split domain", withSplit(map[string][]string{".": {"10.0.0.53"}})},
 		{"invalid split domain", withSplit(map[string][]string{"corp..example.com": {"10.0.0.53"}})},
 		{"split domain with bad label", withSplit(map[string][]string{"-corp.example.com": {"10.0.0.53"}})},
-		{"split domain is the tailnet name", withSplit(map[string][]string{"acme.headscale.internal": {"10.0.0.53"}})},
-		{"split domain inside the tailnet name", withSplit(map[string][]string{"db.acme.headscale.internal": {"10.0.0.53"}})},
+		{"split domain is the tailnet name", withSplit(map[string][]string{o.domain: {"10.0.0.53"}})},
+		{"split domain inside the tailnet name", withSplit(map[string][]string{"db." + o.domain: {"10.0.0.53"}})},
 		{"split domain without nameservers", withSplit(map[string][]string{"corp.example.com": {}})},
 		{"invalid split nameserver", withSplit(map[string][]string{"corp.example.com": {"corp-dns"}})},
 		{"duplicate split domain", withSplit(map[string][]string{
 			"corp.example.com":  {"10.0.0.53"},
 			"CORP.example.com.": {"10.0.0.54"},
 		})},
-	}
-
-	_, o := newTestOrgService(t)
-	original, err := o.GetDNSSettings(t.Context())
-	if err != nil {
-		t.Fatalf("GetDNSSettings: %v", err)
 	}
 
 	for _, tt := range tests {
@@ -185,7 +185,7 @@ func TestSetDNSSettingsRejectsInvalidInput(t *testing.T) {
 }
 
 func withNameservers(ns Nameservers) DNSConfig {
-	return DNSConfig{BaseDomain: "acme.headscale.internal", Nameservers: ns}
+	return DNSConfig{Nameservers: ns}
 }
 
 func withSplit(split map[string][]string) DNSConfig {
@@ -196,7 +196,7 @@ func withSplit(split map[string][]string) DNSConfig {
 // reported and leaves the org unavailable.
 func TestSettingsRestartFailureLeavesUnavailable(t *testing.T) {
 	svc, o := newTestOrgService(t)
-	svc.createFn = func(string, string, string, int, *HeadscaleConfig, *tailcfg.DERPMap) (*hscontrol.Headscale, error) {
+	svc.createFn = func(headscaleParams) (*hscontrol.Headscale, error) {
 		return nil, errors.New("headscale failed (injected)")
 	}
 
@@ -242,7 +242,6 @@ func TestSettingsApplyToRunningHeadscale(t *testing.T) {
 
 	o := svc.ForOrg(org)
 	if err := o.SetDNSSettings(t.Context(), DNSConfig{
-		BaseDomain:  "acme.ownscale",
 		MagicDNS:    true,
 		Nameservers: Nameservers{Global: []string{"1.2.3.4"}},
 	}); err != nil {

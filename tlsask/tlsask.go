@@ -25,10 +25,10 @@ type Queries interface {
 // Handler serves GET /tls-allowed?domain=<host>: 200 if ownscale serves
 // host, 404 otherwise. It reveals which organizations and funnels exist, so
 // it must only be reachable by the reverse proxy, never publicly.
-func Handler(q Queries, baseDomain, funnelDomain string, logger *slog.Logger) http.Handler {
+func Handler(q Queries, baseDomain, contentDomain string, logger *slog.Logger) http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /tls-allowed", func(w http.ResponseWriter, r *http.Request) {
-		ok, err := allowed(r.Context(), q, baseDomain, funnelDomain, r.URL.Query().Get("domain"))
+		ok, err := allowed(r.Context(), q, baseDomain, contentDomain, r.URL.Query().Get("domain"))
 		if err != nil {
 			logger.Error("tls ask", "domain", r.URL.Query().Get("domain"), "error", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -45,7 +45,7 @@ func Handler(q Queries, baseDomain, funnelDomain string, logger *slog.Logger) ht
 
 // allowed reports whether host is the base domain, the console, an existing
 // organization or an existing funnel.
-func allowed(ctx context.Context, q Queries, baseDomain, funnelDomain, host string) (bool, error) {
+func allowed(ctx context.Context, q Queries, baseDomain, contentDomain, host string) (bool, error) {
 	host = strings.TrimSuffix(strings.ToLower(host), ".")
 	if host == "" {
 		return false, nil
@@ -53,7 +53,7 @@ func allowed(ctx context.Context, q Queries, baseDomain, funnelDomain, host stri
 	if host == baseDomain || host == orgs.ConsoleSubdomain+"."+baseDomain {
 		return true, nil
 	}
-	if label, sub, ok := funnelproxy.ParseHost(host, funnelDomain); ok {
+	if label, sub, ok := funnelproxy.ParseHost(host, contentDomain); ok {
 		_, err := q.GetFunnelRouteBySubdomainAndLabel(ctx, sqlcgen.GetFunnelRouteBySubdomainAndLabelParams{Subdomain: sub, Label: label})
 		return found(err)
 	}

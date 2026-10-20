@@ -144,7 +144,7 @@ func run() error {
 		}
 		defer aln.Close()
 		askSrv := &http.Server{
-			Handler:           tlsask.Handler(queries.Queries, cfg.BaseDomain, cfg.Funnel.Domain, logger),
+			Handler:           tlsask.Handler(queries.Queries, cfg.BaseDomain, cfg.ContentDomain, logger),
 			ReadHeaderTimeout: 10 * time.Second,
 		}
 		go func() {

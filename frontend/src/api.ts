@@ -392,6 +392,8 @@ export interface DNSConfig {
 export interface DNSSettingsResponse {
   dns: DNSConfig
   canManage: boolean
+  // Whether the server can issue node certificates; also needs Magic DNS.
+  httpsCertificates: boolean
 }
 
 export function getDNSSettings(signal?: AbortSignal) {
