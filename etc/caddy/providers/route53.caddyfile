@@ -1,3 +1,0 @@
-# Uses the standard AWS SDK credential chain (AWS_ACCESS_KEY_ID,
-# AWS_SECRET_ACCESS_KEY, AWS_REGION env vars, or an instance/task IAM role).
-acme_dns route53
