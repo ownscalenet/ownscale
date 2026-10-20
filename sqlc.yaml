@@ -9,3 +9,6 @@ sql:
         out: "db/sqlcgen"
         sql_package: "database/sql"
         emit_json_tags: false
+        overrides:
+          - column: "users.headscale_user_id"
+            go_struct_tag: 'json:"-"'
