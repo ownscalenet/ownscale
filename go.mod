@@ -29,7 +29,7 @@ require (
 	tailscale.com v1.105.0-pre.0.20261014225612-b83f28ebfbd9
 )
 
-replace github.com/juanfont/headscale => github.com/ownscalenet/headscale v0.29.4-9
+replace github.com/juanfont/headscale => github.com/ownscalenet/headscale v0.29.4-10
 
 require (
 	cloud.google.com/go/auth/oauth2adapt v0.3.0 // indirect

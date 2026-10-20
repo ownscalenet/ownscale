@@ -492,8 +492,8 @@ github.com/oapi-codegen/runtime v1.7.0/go.mod h1:GwV7hC2hviaMzj+ITfHVRESK5J2W/Ge
 github.com/oauth2-proxy/mockoidc v0.0.0-20240214162133-caebfff84d25 h1:9bCMuD3TcnjeqjPT2gSlha4asp8NvgcFRYExCaikCxk=
 github.com/oauth2-proxy/mockoidc v0.0.0-20240214162133-caebfff84d25/go.mod h1:eDjgYHYDJbPLBLsyZ6qRaugP0mX8vePOhZ5id1fdzJw=
 github.com/orisano/pixelmatch v0.0.0-20220722002657-fb0b55479cde/go.mod h1:nZgzbfBr3hhjoZnS66nKrHmduYNpc34ny7RK4z5/HM0=
-github.com/ownscalenet/headscale v0.29.4-9 h1:Z/XMYqn4qjZh77p8lmWOn02bxEJ2W6gv9d+F7Izro0A=
-github.com/ownscalenet/headscale v0.29.4-9/go.mod h1:EN5un0QlSvzayZLrC0V4NnmRvehOdqQkZgbXUSHkd0w=
+github.com/ownscalenet/headscale v0.29.4-10 h1:TzPVrzLcT4H/pBGWTibL4ax3Q0Z0nLjJeq30m4lCLEY=
+github.com/ownscalenet/headscale v0.29.4-10/go.mod h1:EN5un0QlSvzayZLrC0V4NnmRvehOdqQkZgbXUSHkd0w=
 github.com/paulmach/orb v0.13.0 h1:r7n7mQGGF+cj/CbcivEj9J3HGK+XR+yXnvzRdq9saIw=
 github.com/paulmach/orb v0.13.0/go.mod h1:6scRWINywA2Jf05dcjOfLfxrUIMECvTSG2MVbRLxu/k=
 github.com/pelletier/go-toml/v2 v2.4.3 h1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=
