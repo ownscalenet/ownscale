@@ -26,12 +26,26 @@
 
 # The documentation site lives at the bare base domain; the Ownscale
 # console (web UI, API, its own OIDC provider) is at console.{$BASE_DOMAIN}
-# below.
-{$BASE_DOMAIN} {
+# below. When CONTENT_DOMAIN differs from BASE_DOMAIN, this same block also
+# answers the bare content domain.
+{$BASE_DOMAIN}, {$CONTENT_DOMAIN} {
 	root * /srv/site
 
 	@development expression `"{$OWNSCALE_DEVELOPMENT}" != ""`
 	header @development Cache-Control "no-store"
+
+	# "{$CONTENT_DOMAIN} != {$BASE_DOMAIN}" is substituted to a literal
+	# true/false before this expression is even parsed, so it's static per
+	# deployment, not re-evaluated per request.
+	@contentDomain {
+		expression `"{$CONTENT_DOMAIN}" != "{$BASE_DOMAIN}"`
+		host {$CONTENT_DOMAIN}
+	}
+	handle @contentDomain {
+		root * /etc/caddy/content-domain-site
+		templates
+		file_server
+	}
 
 	file_server
 }

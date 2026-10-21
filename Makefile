@@ -170,6 +170,8 @@ archive: docker-image caddy-image
 	docker save $(DOCKER_IMAGE) $(CADDY_IMAGE) | gzip | ssh az 'gzip -d | docker load'
 	ssh az mkdir -p ownscale
 	scp compose.yaml az:ownscale/compose.yaml
+	scp -r etc az:ownscale
+	scp Makefile az:ownscale
 
 purge:
 	docker compose down

@@ -22,4 +22,5 @@ COPY --from=builder /usr/bin/caddy /usr/bin/caddy
 
 COPY etc/caddy/Caddyfile /etc/caddy/Caddyfile
 COPY etc/caddy/providers /etc/caddy/providers
+COPY etc/caddy/content-domain-site /etc/caddy/content-domain-site
 COPY --from=site /tmp/site /srv/site
