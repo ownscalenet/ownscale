@@ -1,0 +1,11 @@
+{{/*
+  Overrides the theme's empty default list.html (used for the home page and
+  any section list pages) with the same main block as our single.html
+  override, so the page-actions (view-source/suggest-a-change links)
+  render right under the title there too.
+*/}}
+{{ define "main" }}
+<article class="markdown book-article">
+  {{ partial "docs/content-with-actions" . }}
+</article>
+{{ end }}

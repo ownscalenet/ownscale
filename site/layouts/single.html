@@ -1,0 +1,13 @@
+{{/*
+  Overrides the theme's empty default single.html so the page-actions
+  (view-source/suggest-a-change links) render right
+  under the title, instead of the theme's default footer placement. The
+  title itself is just the first "# ..." line of the markdown content
+  (there's no separate templated <h1>), so we split the rendered content
+  on the first closing </h1> tag and inject the actions there.
+*/}}
+{{ define "main" }}
+<article class="markdown book-article">
+  {{ partial "docs/content-with-actions" . }}
+</article>
+{{ end }}

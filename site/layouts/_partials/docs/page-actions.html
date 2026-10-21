@@ -1,0 +1,23 @@
+{{/*
+  Renders page-level action links right under the title:
+  links to view the raw source / suggest a change on GitHub.
+*/}}
+<div class="flex flex-wrap gap text-small book-page-actions">
+{{ if and .File .Site.Params.BookViewLink }}
+  {{- $viewURL := partial "docs/text/template" (dict "Template" .Site.Params.BookViewLink "Context" (dict
+    "Site" .Site
+    "Page" .Page
+    "Path" (strings.TrimPrefix hugo.WorkingDir .Page.File.Filename)
+  )) | urls.JoinPath -}}
+  <a class="flex align-center" href="{{ $viewURL }}" target="_blank" rel="noopener">
+    <img src="{{ partial "docs/icon" "markdown" }}" class="book-icon" alt="View source" />
+    <span>View as markdown</span>
+  </a>
+{{ end }}
+{{ if and .File .Site.Params.BookEditLink }}
+  <a class="flex align-center" href="{{ partial "docs/links/edit" . }}" target="_blank" rel="noopener edit">
+    <img src="{{ partial "docs/icon" "edit" }}" class="book-icon" alt="Suggest a change" />
+    <span>Suggest a change</span>
+  </a>
+{{ end }}
+</div>

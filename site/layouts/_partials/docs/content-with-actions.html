@@ -1,0 +1,16 @@
+{{/*
+  Splits the current page's rendered .Content on the first closing </h1>
+  and renders docs/page-actions right after it (used by single.html and
+  list.html overrides so page-actions sits under the title instead of the
+  theme's default footer placement).
+*/}}
+{{- $marker := "</h1>" -}}
+{{- $parts := split .Content $marker -}}
+{{- if gt (len $parts) 1 -}}
+  {{ index $parts 0 | safeHTML }}{{ $marker | safeHTML }}
+  {{ partial "docs/page-actions" . }}
+  {{ delimit (after 1 $parts) $marker | safeHTML }}
+{{- else -}}
+  {{ .Content }}
+  {{ partial "docs/page-actions" . }}
+{{- end -}}
