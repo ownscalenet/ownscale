@@ -1,7 +1,7 @@
 import { randomBytes } from 'node:crypto'
-import type { Page } from '@playwright/test'
 import { expect, test } from '../support/account'
 import { docker, ensureDevboxImage, removeDevbox, startDevbox } from '../support/devbox'
+import { getPolicy, putPolicy } from '../support/policy'
 
 const allowAll = `"acls": [{"action": "accept", "src": ["*"], "dst": ["*:*"]}],`
 const withSSH = `{
@@ -13,17 +13,6 @@ const withSSH = `{
 const withoutSSH = `{
   ${allowAll}
 }`
-
-async function getPolicy(page: Page): Promise<string> {
-  const res = await page.request.get('/api/access-control')
-  expect(res.ok(), await res.text()).toBe(true)
-  return ((await res.json()) as { content: string }).content
-}
-
-async function putPolicy(page: Page, content: string): Promise<void> {
-  const res = await page.request.put('/api/access-control', { data: { content } })
-  expect(res.ok(), await res.text()).toBe(true)
-}
 
 // `osa devbox-key` mints keys for the org's first headscale user, so both
 // devboxes below belong to the same user, as autogroup:self requires.

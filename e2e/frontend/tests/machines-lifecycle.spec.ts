@@ -45,9 +45,8 @@ test('registering a real device and managing it from the Machines page', async (
     await tagsDialog.getByRole('button', { name: 'Save', exact: true }).click()
     await expect(renamedRow.getByText('tag:e2e-lifecycle', { exact: true })).toBeVisible()
 
-    // Edit route settings: this tsnet-backed device never advertises a
-    // subnet route, so the dialog is expected to show its empty state
-    // (extending tscl-bridge to advertise routes is out of scope here).
+    // Edit route settings: this tsnet-backed device advertises no routes;
+    // devbox/subnet-router.spec.ts covers approving real ones.
     await renamedRow.getByRole('button', { name: 'Actions', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Edit route settings', exact: true }).click()
     const routesDialog = page.getByRole('dialog')

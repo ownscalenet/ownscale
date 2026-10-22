@@ -1,8 +1,8 @@
 import { randomBytes } from 'node:crypto'
-import type { Page } from '@playwright/test'
 import { expect, test } from '../support/account'
 import { docker, ensureDevboxImage, removeDevbox, startDevbox } from '../support/devbox'
 import { dnsPageLoaded, snapshotDns } from '../support/dnsPage'
+import { getPolicy, putPolicy } from '../support/policy'
 import { retryUntil } from '../support/retry'
 
 // answerIP is what dnsmasq on the server devbox answers; it's never routed,
@@ -12,17 +12,6 @@ const answerIP = '10.53.0.7'
 const allowAll = `{
   "acls": [{"action": "accept", "src": ["*"], "dst": ["*:*"]}],
 }`
-
-async function getPolicy(page: Page): Promise<string> {
-  const res = await page.request.get('/api/access-control')
-  expect(res.ok(), await res.text()).toBe(true)
-  return ((await res.json()) as { content: string }).content
-}
-
-async function putPolicy(page: Page, content: string): Promise<void> {
-  const res = await page.request.put('/api/access-control', { data: { content } })
-  expect(res.ok(), await res.text()).toBe(true)
-}
 
 test('split DNS sends queries for a domain to its nameserver on the tailnet', async ({ page, account }) => {
   test.setTimeout(10 * 60_000)
