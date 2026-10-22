@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react'
+import type { ExitNodeStatus } from '../api'
 
 // PageHeader is a page's title, with an optional subtitle and the page's
 // main actions next to it.
@@ -41,6 +42,21 @@ export function StatusBadge({ status }: { status: keyof typeof statusStyles }) {
     <span className={`badge badge-sm gap-1.5 ${st.badge}`}>
       <span className={st.marker} aria-hidden="true" />
       {status[0].toUpperCase() + status.slice(1)}
+    </span>
+  )
+}
+
+// ExitNodeBadge marks a machine that advertises itself as an exit node, and
+// nothing when it doesn't.
+export function ExitNodeBadge({ status }: { status: ExitNodeStatus }) {
+  if (status === 'none') return null
+  if (status === 'approved') return <span className="badge badge-primary badge-sm">Exit node</span>
+  return (
+    <span
+      className="badge badge-warning badge-soft badge-sm"
+      title="Approve it from Edit route settings"
+    >
+      Exit node · awaiting approval
     </span>
   )
 }

@@ -571,5 +571,6 @@ func (h *Handlers) GetMachineByIP(w http.ResponseWriter, r *http.Request) {
 		"machine":    toMachineResponse(node, caller),
 		"deviceInfo": info,
 		"fullDomain": fullDomain,
+		"canManage":  caller != nil && isManager(caller.Role),
 	})
 }

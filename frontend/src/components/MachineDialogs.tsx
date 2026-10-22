@@ -3,6 +3,7 @@ import Modal from './Modal'
 import { ErrorAlert } from './ui'
 import { useDialogAction } from '../hooks/useDialogAction'
 import {
+  isExitRoute,
   renameMachine,
   setMachineExpiry,
   setMachineRoutes,
@@ -112,6 +113,11 @@ export function RoutesDialog({
   const [selectedRoutes, setSelectedRoutes] = useState<string[]>(m.approvedRoutes ?? [])
   const { busy, error, run } = useDialogAction(onClose, onDone)
   const availableRoutes = m.availableRoutes ?? []
+  const subnetRoutes = availableRoutes.filter((r) => !isExitRoute(r))
+  // Clients only offer an exit node once both default routes are approved,
+  // so they are toggled together.
+  const exitRoutes = availableRoutes.filter(isExitRoute)
+  const exitSelected = exitRoutes.some((r) => selectedRoutes.includes(r))
   return (
     <Modal open onClose={onClose} title={`Edit route settings of ${m.givenName}`}>
       <ErrorAlert error={error} />
@@ -122,27 +128,55 @@ export function RoutesDialog({
           run(() => setMachineRoutes(m.id, selectedRoutes))
         }}
       >
-        {availableRoutes.length > 0 ? (
-          <ul className="space-y-2">
-            {availableRoutes.map((route) => (
-              <li key={route}>
-                <label className="fieldset-label cursor-pointer gap-3">
-                  <input
-                    type="checkbox"
-                    className="checkbox checkbox-sm"
-                    checked={selectedRoutes.includes(route)}
-                    onChange={(e) => {
-                      setSelectedRoutes((prev) =>
-                        e.target.checked ? [...prev, route] : prev.filter((r) => r !== route),
-                      )
-                    }}
-                  />
-                  <span className="font-mono text-sm">{route}</span>
-                </label>
-              </li>
-            ))}
-          </ul>
-        ) : (
+        {exitRoutes.length > 0 && (
+          <div>
+            <div className="text-sm font-semibold mb-2">Exit node</div>
+            <label className="fieldset-label cursor-pointer gap-3">
+              <input
+                type="checkbox"
+                className="checkbox checkbox-sm"
+                checked={exitSelected}
+                onChange={(e) => {
+                  setSelectedRoutes((prev) => [
+                    ...prev.filter((r) => !isExitRoute(r)),
+                    ...(e.target.checked ? exitRoutes : []),
+                  ])
+                }}
+              />
+              <span className="text-sm">Use as exit node</span>
+            </label>
+            <p className="text-xs opacity-60 mt-1">
+              Devices that select it send all their internet traffic through it.
+            </p>
+          </div>
+        )}
+        {subnetRoutes.length > 0 && (
+          <div>
+            {exitRoutes.length > 0 && (
+              <div className="text-sm font-semibold mb-2">Subnet routes</div>
+            )}
+            <ul className="space-y-2">
+              {subnetRoutes.map((route) => (
+                <li key={route}>
+                  <label className="fieldset-label cursor-pointer gap-3">
+                    <input
+                      type="checkbox"
+                      className="checkbox checkbox-sm"
+                      checked={selectedRoutes.includes(route)}
+                      onChange={(e) => {
+                        setSelectedRoutes((prev) =>
+                          e.target.checked ? [...prev, route] : prev.filter((r) => r !== route),
+                        )
+                      }}
+                    />
+                    <span className="font-mono text-sm">{route}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+          </div>
+        )}
+        {availableRoutes.length === 0 && (
           <p className="text-sm opacity-60">This machine hasn&rsquo;t advertised any routes.</p>
         )}
         <div className="modal-action">

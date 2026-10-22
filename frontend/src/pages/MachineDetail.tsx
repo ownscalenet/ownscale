@@ -3,13 +3,19 @@ import { useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { KeyRound, Pencil, Route, Tag, TerminalSquare } from 'lucide-react'
-import { ApiError, errorMessage, getMachineByIP, type Machine } from '../api'
+import {
+  ApiError,
+  errorMessage,
+  exitNodeStatus,
+  getMachineByIP,
+  isExitRoute,
+  type Machine,
+} from '../api'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { CopyIcon } from '../components/CopyButton'
 import { ExpiryDialog, RenameDialog, RoutesDialog, TagsDialog } from '../components/MachineDialogs'
 import { RelativeTime } from '../components/RelativeTime'
-import { ErrorAlert, PageSpinner, StatusBadge } from '../components/ui'
-
+import { ErrorAlert, ExitNodeBadge, PageSpinner, StatusBadge } from '../components/ui'
 const refreshIntervalMs = 10_000
 
 // Attribute is one labelled value of a details card; copyable values get a
@@ -52,12 +58,6 @@ function RouteList({ routes }: { routes: string[] }) {
   )
 }
 
-// isExitRoute reports whether route is one of the two default routes a
-// machine advertises to act as an exit node.
-function isExitRoute(route: string): boolean {
-  return route === '0.0.0.0/0' || route === '::/0'
-}
-
 export default function MachineDetail() {
   const { ip = '' } = useParams()
   usePageTitle(ip)
@@ -94,14 +94,14 @@ export default function MachineDetail() {
     )
   }
 
-  const { machine: m, deviceInfo, fullDomain } = query.data
+  const { machine: m, deviceInfo, fullDomain, canManage } = query.data
   return (
     <div>
       {breadcrumb}
-      <Header machine={m} onOpen={setDialog} />
+      <Header machine={m} canManage={canManage} onOpen={setDialog} />
       <MachineDetails machine={m} deviceInfo={deviceInfo} />
       <Addresses machine={m} fullDomain={fullDomain} />
-      <Subnets machine={m} />
+      <Subnets machine={m} canManage={canManage} onApprove={() => setDialog('routes')} />
 
       {dialog === 'rename' && (
         <RenameDialog machine={m} onClose={() => setDialog(null)} onDone={reload} />
@@ -121,9 +121,11 @@ export default function MachineDetail() {
 
 function Header({
   machine: m,
+  canManage,
   onOpen,
 }: {
   machine: Machine
+  canManage: boolean
   onOpen: (kind: 'rename' | 'tags' | 'routes' | 'expiry') => void
 }) {
   const status = m.expired ? 'expired' : m.online ? 'online' : 'offline'
@@ -137,6 +139,7 @@ function Header({
               <StatusBadge status={status} />
               {m.internal && <span className="badge badge-info badge-sm">Internal</span>}
               {!m.expiry && <span className="badge badge-ghost badge-sm">No expiry</span>}
+              <ExitNodeBadge status={exitNodeStatus(m)} />
               {(m.tags ?? []).map((t) => (
                 <span key={t} className="badge badge-outline badge-sm font-mono">
                   {t}
@@ -169,7 +172,7 @@ function Header({
             <button
               type="button"
               className="btn btn-sm"
-              disabled={m.internal || !m.canEdit}
+              disabled={m.internal || !canManage}
               onClick={() => onOpen('tags')}
             >
               <Tag className="size-3.5" aria-hidden="true" />
@@ -178,7 +181,7 @@ function Header({
             <button
               type="button"
               className="btn btn-sm"
-              disabled={m.internal || !m.canEdit}
+              disabled={m.internal || !canManage}
               onClick={() => onOpen('routes')}
             >
               <Route className="size-3.5" aria-hidden="true" />
@@ -301,13 +304,20 @@ function Addresses({ machine: m, fullDomain }: { machine: Machine; fullDomain: s
   )
 }
 
-function Subnets({ machine: m }: { machine: Machine }) {
+function Subnets({
+  machine: m,
+  canManage,
+  onApprove,
+}: {
+  machine: Machine
+  canManage: boolean
+  onApprove: () => void
+}) {
   const available = m.availableRoutes ?? []
   const approved = m.approvedRoutes ?? []
   const subnets = (routes: string[]) => routes.filter((r) => !isExitRoute(r))
   const awaiting = subnets(available.filter((r) => !approved.includes(r)))
-  const advertisesExit = available.some(isExitRoute)
-  const exitApproved = approved.some(isExitRoute)
+  const exitStatus = exitNodeStatus(m)
   return (
     <Card
       title="Subnets and routing"
@@ -324,12 +334,19 @@ function Subnets({ machine: m }: { machine: Machine }) {
         </div>
         <div>
           <div className="text-sm text-base-content/60 mb-1">Exit node</div>
-          {!advertisesExit ? (
+          {exitStatus === 'none' ? (
             <span className="opacity-50">—</span>
-          ) : exitApproved ? (
+          ) : exitStatus === 'approved' ? (
             'Allowed'
           ) : (
-            'Awaiting approval'
+            <div className="flex flex-wrap items-center gap-2">
+              Awaiting approval
+              {canManage && !m.internal && (
+                <button type="button" className="btn btn-xs btn-primary" onClick={onApprove}>
+                  Approve
+                </button>
+              )}
+            </div>
           )}
         </div>
       </div>

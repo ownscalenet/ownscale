@@ -171,6 +171,8 @@ export interface MachineDetailResponse {
   deviceInfo: DeviceInfo
   // fullDomain is empty when MagicDNS is off.
   fullDomain: string
+  // canManage is whether the caller may change the machine's tags and routes.
+  canManage: boolean
 }
 
 export function getMachineByIP(ip: string, signal?: AbortSignal) {
@@ -196,6 +198,21 @@ export function setMachineTags(id: string, tags: string[]) {
     method: 'POST',
     body: JSON.stringify({ tags }),
   })
+}
+
+// isExitRoute reports whether route is one of the two default routes a
+// machine advertises to act as an exit node.
+export function isExitRoute(route: string): boolean {
+  return route === '0.0.0.0/0' || route === '::/0'
+}
+
+export type ExitNodeStatus = 'none' | 'awaiting' | 'approved'
+
+// exitNodeStatus reports whether m advertises itself as an exit node and,
+// if so, whether that has been approved.
+export function exitNodeStatus(m: Machine): ExitNodeStatus {
+  if (!(m.availableRoutes ?? []).some(isExitRoute)) return 'none'
+  return (m.approvedRoutes ?? []).some(isExitRoute) ? 'approved' : 'awaiting'
 }
 
 export function setMachineRoutes(id: string, routes: string[]) {

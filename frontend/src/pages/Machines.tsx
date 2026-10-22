@@ -26,6 +26,7 @@ import { CopyIcon } from '../components/CopyButton'
 import {
   deleteMachine,
   errorMessage,
+  exitNodeStatus,
   expireMachine,
   isNotConfigured,
   listFunnelRoutes,
@@ -34,7 +35,7 @@ import {
   type AssignableUser,
   type Machine,
 } from '../api'
-import { ErrorAlert, PageHeader, StatusBadge } from '../components/ui'
+import { ErrorAlert, ExitNodeBadge, PageHeader, StatusBadge } from '../components/ui'
 
 // refreshIntervalMs is how often the Machines page reloads the list, so online
 // status, last seen and expiry stay current.
@@ -530,6 +531,7 @@ function MachineRow({
         <div className="flex flex-wrap gap-1 mt-1">
           {expired && <StatusBadge status="expired" />}
           {!m.expiry && <span className="badge badge-ghost badge-sm">No expiry</span>}
+          <ExitNodeBadge status={exitNodeStatus(m)} />
           {m.internal && (
             <a
               href={shortURL('agent')}
