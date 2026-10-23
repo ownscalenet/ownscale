@@ -248,7 +248,7 @@ func TestAuthCallbackAutoAssignsOrganization(t *testing.T) {
 func TestAuthCallbackAssignsInvitedOrganization(t *testing.T) {
 	setupSessions()
 	h, queries := newTestHandlers(t)
-	owner := insertUser(t, queries)
+	owner := createOwner(t, h)
 	org, err := queries.GetOrganization(t.Context(), owner.OrganizationID)
 	if err != nil {
 		t.Fatalf("GetOrganization: %v", err)

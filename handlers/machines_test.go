@@ -23,7 +23,6 @@ import (
 	"github.com/ownscalenet/ownscale/funnelproxy"
 	"github.com/ownscalenet/ownscale/hscl"
 	"github.com/ownscalenet/ownscale/hscl/hstest"
-	"github.com/ownscalenet/ownscale/orgs"
 )
 
 // fakeHeadscaleClients stands in for orgs.Service's running headscale
@@ -33,35 +32,11 @@ type fakeHeadscaleClients struct {
 	err    error
 }
 
-func (f fakeHeadscaleClients) Wake(context.Context, string) (*hscl.Client, error) {
+func (f fakeHeadscaleClients) Ensure(context.Context, string) (*hscl.Client, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
 	return f.client, nil
-}
-
-func (f fakeHeadscaleClients) Ensure(_ context.Context, subdomain string) (*hscl.Client, error) {
-	return f.Wake(context.Background(), subdomain)
-}
-
-// lazyHeadscaleClients is fakeHeadscaleClients for an organization whose
-// headscale hasn't started yet: Wake reports it unprovisioned until
-// Ensure starts it.
-type lazyHeadscaleClients struct {
-	client  *hscl.Client
-	started bool
-}
-
-func (l *lazyHeadscaleClients) Wake(context.Context, string) (*hscl.Client, error) {
-	if !l.started {
-		return nil, orgs.ErrNotProvisioned
-	}
-	return l.client, nil
-}
-
-func (l *lazyHeadscaleClients) Ensure(context.Context, string) (*hscl.Client, error) {
-	l.started = true
-	return l.client, nil
 }
 
 // newFakeHeadscaleServer builds a fake implementing enough of
@@ -241,8 +216,7 @@ func activeOrgUserWithPolicy(t *testing.T, h *Handlers, queries *dbpkg.TxQueries
 }
 
 // TestAssignableUsers checks which members ListMachines and ListAuthKeys
-// offer for registering machines and creating keys, with or without a
-// running headscale.
+// offer for registering machines and creating keys.
 func TestAssignableUsers(t *testing.T) {
 	endpoints := []struct {
 		name    string
@@ -252,45 +226,40 @@ func TestAssignableUsers(t *testing.T) {
 		{"auth keys", func(h *Handlers) http.HandlerFunc { return h.ListAuthKeys }},
 	}
 	for _, ep := range endpoints {
-		for _, provisioned := range []bool{true, false} {
-			t.Run(fmt.Sprintf("%s/provisioned=%v", ep.name, provisioned), func(t *testing.T) {
-				h, org, users := newOrgTestHandlers(t, RoleOwner, RoleMember)
-				owner, member := users[0], users[1]
-				var client *hscl.Client
-				if provisioned {
-					client, _, _, _ = newFakeHeadscaleServer(t)
-				}
+		t.Run(ep.name, func(t *testing.T) {
+			h, org, users := newOrgTestHandlers(t, RoleOwner, RoleMember)
+			owner, member := users[0], users[1]
+			client, _, _, _ := newFakeHeadscaleServer(t)
 
-				for _, tc := range []struct {
-					caller sqlcgen.User
-					want   []string
-				}{
-					{owner, []string{owner.ID, member.ID}},
-					{member, []string{member.ID}},
-				} {
-					req := withTestUser(httptest.NewRequest(http.MethodGet, "/", nil), tc.caller)
-					rec := httptest.NewRecorder()
-					ep.handler(h)(rec, withHeadscaleContext(req, client, org))
+			for _, tc := range []struct {
+				caller sqlcgen.User
+				want   []string
+			}{
+				{owner, []string{owner.ID, member.ID}},
+				{member, []string{member.ID}},
+			} {
+				req := withTestUser(httptest.NewRequest(http.MethodGet, "/", nil), tc.caller)
+				rec := httptest.NewRecorder()
+				ep.handler(h)(rec, withHeadscaleContext(req, client, org))
 
-					if rec.Code != http.StatusOK {
-						t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
-					}
-					var body struct {
-						AssignableUsers []assignableUser `json:"assignableUsers"`
-					}
-					if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
-						t.Fatalf("decode: %v", err)
-					}
-					var got []string
-					for _, u := range body.AssignableUsers {
-						got = append(got, u.ID)
-					}
-					if !slices.Equal(got, tc.want) {
-						t.Errorf("%s: assignableUsers = %v, want %v", tc.caller.Role, got, tc.want)
-					}
+				if rec.Code != http.StatusOK {
+					t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body.String())
 				}
-			})
-		}
+				var body struct {
+					AssignableUsers []assignableUser `json:"assignableUsers"`
+				}
+				if err := json.NewDecoder(rec.Body).Decode(&body); err != nil {
+					t.Fatalf("decode: %v", err)
+				}
+				var got []string
+				for _, u := range body.AssignableUsers {
+					got = append(got, u.ID)
+				}
+				if !slices.Equal(got, tc.want) {
+					t.Errorf("%s: assignableUsers = %v, want %v", tc.caller.Role, got, tc.want)
+				}
+			}
+		})
 	}
 }
 

@@ -100,7 +100,8 @@ func withHeadscaleClientOrg(req *http.Request, client *hscl.Client, org sqlcgen.
 }
 
 // insertOrg inserts an active organization and its headscale config, as
-// orgs.Service.Create would, but without starting a headscale instance.
+// orgs.Service.Create would, but without starting a headscale instance, so
+// it has no headscale database.
 func insertOrg(t *testing.T, queries *dbpkg.TxQueries, subdomain string) sqlcgen.Organization {
 	t.Helper()
 	org := dbtest.CreateOrg(t, queries.Queries, subdomain)
@@ -131,6 +132,21 @@ func insertUser(t *testing.T, queries *dbpkg.TxQueries) sqlcgen.User {
 	t.Helper()
 	org := insertOrg(t, queries, "org"+xid.New().String())
 	return dbtest.CreateUser(t, queries.Queries, org.ID, RoleOwner)
+}
+
+// createOwner creates an organization through h.orgs, which starts its
+// headscale, and inserts its owner.
+func createOwner(t *testing.T, h *Handlers) sqlcgen.User {
+	t.Helper()
+	subdomain, err := h.orgs.NextSubdomain(t.Context())
+	if err != nil {
+		t.Fatalf("NextSubdomain: %v", err)
+	}
+	org, err := h.orgs.Create(t.Context(), subdomain)
+	if err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	return dbtest.CreateUser(t, h.queries.Queries, org.ID, RoleOwner)
 }
 
 // newOrgTestHandlers builds Handlers, inserts organization "acme" (see

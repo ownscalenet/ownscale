@@ -15,13 +15,12 @@ import (
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/funnelproxy"
 	"github.com/ownscalenet/ownscale/hscl"
-	"github.com/ownscalenet/ownscale/orgs"
 	"github.com/tailscale/hujson"
 )
 
 // resolveHeadscaleClient returns the calling user's organization's
 // hscl.Client, along with the resolved org. notConfigured is true (nil
-// client, nil error) when its headscale isn't running, or never started.
+// client, nil error) when its headscale isn't running.
 func (h *Handlers) resolveHeadscaleClient(r *http.Request) (_ *hscl.Client, org sqlcgen.Organization, notConfigured bool, err error) {
 	client, org, err := h.resolveHeadscale(r)
 	if errors.Is(err, errNoHeadscale) {
@@ -31,8 +30,7 @@ func (h *Handlers) resolveHeadscaleClient(r *http.Request) (_ *hscl.Client, org 
 }
 
 // errNoHeadscale wraps the reason resolveHeadscale has no client: the
-// caller has no organization, or its headscale isn't running, which
-// includes orgs.ErrNotProvisioned.
+// caller has no organization, or its headscale isn't running.
 var errNoHeadscale = errors.New("no headscale client")
 
 // resolveHeadscale returns the calling user's organization and its
@@ -46,11 +44,9 @@ func (h *Handlers) resolveHeadscale(r *http.Request) (_ *hscl.Client, org sqlcge
 	if err != nil {
 		return nil, sqlcgen.Organization{}, err
 	}
-	client, err := h.hs.Wake(r.Context(), org.Subdomain)
+	client, err := h.hs.Ensure(r.Context(), org.Subdomain)
 	if err != nil {
-		if !errors.Is(err, orgs.ErrNotProvisioned) {
-			h.logger.With("org", org.Subdomain).Warn("get headscale client", "error", err)
-		}
+		h.logger.With("org", org.Subdomain).Warn("get headscale client", "error", err)
 		return nil, org, fmt.Errorf("%w: %w", errNoHeadscale, err)
 	}
 	return client, org, nil
@@ -126,8 +122,7 @@ func toMachineResponse(n hscl.Node, caller *sqlcgen.User) machineResponse {
 // ListMachines handles GET /api/machines. It returns every machine
 // (headscale node) for the caller's organization, applying the optional
 // q/user/status query-string filters, plus the headscale users and the
-// members the caller may register machines for. With no client (see
-// ReadHeadscale) there are no machines or headscale users yet.
+// members the caller may register machines for.
 func (h *Handlers) ListMachines(w http.ResponseWriter, r *http.Request) {
 	client, _, _ := headscaleClientFromContext(r)
 	caller, _ := auth.UserFromContext(r.Context())
@@ -137,18 +132,17 @@ func (h *Handlers) ListMachines(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	nodes, users := []hscl.Node{}, []hscl.User{}
-	if client != nil {
-		if nodes, err = client.ListNodes(r.Context()); err != nil {
-			h.serverError(w, r, err)
-			return
-		}
-		if users, err = client.ListUsers(r.Context()); err != nil {
-			h.serverError(w, r, err)
-			return
-		}
-		users = withoutFunnelUser(users)
+	nodes, err := client.ListNodes(r.Context())
+	if err != nil {
+		h.serverError(w, r, err)
+		return
 	}
+	users, err := client.ListUsers(r.Context())
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	users = withoutFunnelUser(users)
 
 	q := r.URL.Query().Get("q")
 	userFilter := r.URL.Query().Get("user")
@@ -173,7 +167,7 @@ func (h *Handlers) ListMachines(w http.ResponseWriter, r *http.Request) {
 // RegisterMachine handles POST /api/machines/register. It registers a
 // machine that's waiting at its interactive registration key/URL (i.e.
 // ran `tailscale up --login-server=...`) to the member memberId. Members
-// may only register machines for themselves. ProvisionHeadscale guarantees
+// may only register machines for themselves. RequireHeadscaleClient guarantees
 // the client is reachable.
 func (h *Handlers) RegisterMachine(w http.ResponseWriter, r *http.Request) {
 	client, org, _ := headscaleClientFromContext(r)
@@ -533,10 +527,6 @@ func (h *Handlers) isFunnelMachine(ctx context.Context, client *hscl.Client, nod
 func (h *Handlers) GetMachineByIP(w http.ResponseWriter, r *http.Request) {
 	client, org, _ := headscaleClientFromContext(r)
 	caller, _ := auth.UserFromContext(r.Context())
-	if client == nil {
-		h.writeError(w, http.StatusNotFound, "machine not found")
-		return
-	}
 
 	nodes, err := client.ListNodes(r.Context())
 	if err != nil {

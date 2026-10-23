@@ -112,8 +112,8 @@ func TestBackup(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := svc2.BackUpProvisioned(ctx); err != nil {
-		t.Fatalf("BackUpProvisioned: %v", err)
+	if err := svc2.BackUpAll(ctx); err != nil {
+		t.Fatalf("BackUpAll: %v", err)
 	}
 	waitReplicated(t, replicaDir2, DBFile("acme"))
 }

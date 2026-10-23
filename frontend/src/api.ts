@@ -40,12 +40,11 @@ export interface Organization {
   ID: string
   Domain: string
   CreatedAt: string
-  // The state of the org's headscale: 'unprovisioned' until its first use
-  // (registering a machine, creating a key, saving the ACL policy),
-  // 'update_pending' while a settings save restarts it, 'sleeping' when it
-  // was stopped while unused (it starts on next use), 'unavailable' when it
-  // failed to start or stopped.
-  Status: 'active' | 'unprovisioned' | 'update_pending' | 'sleeping' | 'unavailable'
+  // The state of the org's headscale: 'update_pending' while a settings save
+  // restarts it, 'sleeping' when it was stopped while unused (it starts on
+  // next use), 'unavailable' when it failed to start, stopped, or lost its
+  // database.
+  Status: 'active' | 'update_pending' | 'sleeping' | 'unavailable'
 }
 
 // AssignableUser is an organization member the caller may register machines

@@ -49,11 +49,11 @@ export function validateSession(session: Session, identity: Identity): boolean {
   if (session.organization.Domain !== `${identity.org}.${baseDomain}`) {
     throw new Error(`${identity.name} must belong to ${identity.org}.${baseDomain}; unexpected registration assignment. Do not reassign or delete existing users.`)
   }
-  // Active, or unprovisioned/sleeping until its next use, is ready.
-  // Anything else means the org's headscale isn't serving yet: it's
-  // restarting to apply saved settings, or it failed.
-  if (!['active', 'unprovisioned', 'sleeping', 'update_pending', 'unavailable'].includes(session.organization.Status)) throw new Error(`${identity.org}: unknown organization status`)
-  return ['active', 'unprovisioned', 'sleeping'].includes(session.organization.Status)
+  // Active, or sleeping until its next use, is ready. Anything else means
+  // the org's headscale isn't serving yet: it's restarting to apply saved
+  // settings, or it failed.
+  if (!['active', 'sleeping', 'update_pending', 'unavailable'].includes(session.organization.Status)) throw new Error(`${identity.org}: unknown organization status`)
+  return ['active', 'sleeping'].includes(session.organization.Status)
 }
 
 // stepTimeoutMs bounds each UI step of saving a policy. Saves take up to

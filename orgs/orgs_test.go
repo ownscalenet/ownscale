@@ -2,6 +2,7 @@ package orgs
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -49,6 +50,7 @@ func newRealService(t *testing.T) *Service {
 		t.Fatal(err)
 	}
 	svc.derpMap.Store(testDERPMap(1))
+	t.Cleanup(func() { _ = svc.Close(context.Background()) })
 	return svc
 }
 
@@ -70,24 +72,23 @@ func newTestService(t *testing.T) *Service {
 	return svc
 }
 
-func noopCreateFn(headscaleParams) (*hscontrol.Headscale, error) {
-	return nil, nil
+// noopCreateFn builds no instance, but leaves the database a headscale start
+// would create.
+func noopCreateFn(p headscaleParams) (*hscontrol.Headscale, error) {
+	path := sqlitePath(p.dataDir, p.subdomain)
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		return nil, err
+	}
+	return nil, os.WriteFile(path, nil, 0o600)
 }
 
-// createStarted creates organization subdomain on svc and starts its
-// headscale, as its first use would.
+// createStarted creates organization subdomain on svc, which starts its
+// headscale, and stops that headscale when the test ends.
 func createStarted(t *testing.T, svc *Service, subdomain string) sqlcgen.Organization {
 	t.Helper()
 	org, err := svc.Create(t.Context(), subdomain)
 	if err != nil {
 		t.Fatalf("Create(%q): %v", subdomain, err)
-	}
-	// noopCreateFn builds no instance, which Ensure reports as not running.
-	if _, err := svc.Ensure(t.Context(), subdomain); err != nil && !errors.Is(err, ErrNotRunning) {
-		t.Fatalf("Ensure(%q): %v", subdomain, err)
-	}
-	if !svc.provisioned(subdomain) {
-		t.Fatalf("%q not provisioned after Ensure", subdomain)
 	}
 	t.Cleanup(func() {
 		if inst, ok := svc.running(subdomain); ok {
@@ -98,9 +99,9 @@ func createStarted(t *testing.T, svc *Service, subdomain string) sqlcgen.Organiz
 	return org
 }
 
-// markProvisioned writes the headscale database an earlier start of
+// writeDatabase writes the headscale database an earlier start of
 // subdomain would have left in svc's data directory.
-func markProvisioned(t *testing.T, svc *Service, subdomain string) {
+func writeDatabase(t *testing.T, svc *Service, subdomain string) {
 	t.Helper()
 	path := sqlitePath(svc.cfg.DataDir, subdomain)
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -120,12 +121,15 @@ func failingCreateFn(n *int) func(headscaleParams) (*hscontrol.Headscale, error)
 }
 
 // TestCreate verifies that Create stores an organization with its OIDC
-// client and a HeadscaleConfig holding the client's credentials, without
-// starting headscale.
+// client and a HeadscaleConfig holding the client's credentials, and starts
+// its headscale.
 func TestCreate(t *testing.T) {
 	svc := newTestService(t)
 	var starts int
-	svc.createFn = failingCreateFn(&starts)
+	svc.createFn = func(p headscaleParams) (*hscontrol.Headscale, error) {
+		starts++
+		return noopCreateFn(p)
+	}
 
 	org, err := svc.Create(t.Context(), "acme")
 	if err != nil {
@@ -134,11 +138,11 @@ func TestCreate(t *testing.T) {
 	if org.Subdomain != "acme" {
 		t.Errorf("org = %+v, want acme", org)
 	}
-	if starts != 0 {
-		t.Errorf("headscale started %d times, want 0", starts)
+	if starts != 1 {
+		t.Errorf("headscale started %d times, want 1", starts)
 	}
-	if got := svc.Status("acme"); got != StatusUnprovisioned {
-		t.Errorf("Status = %q, want %q", got, StatusUnprovisioned)
+	if !svc.hasDatabase("acme") {
+		t.Error("no headscale database after Create")
 	}
 
 	client, err := svc.queries.GetOIDCClientByOrganizationID(t.Context(), org.ID)
@@ -173,6 +177,45 @@ func TestCreate(t *testing.T) {
 	}
 	if err := bcrypt.CompareHashAndPassword([]byte(client.ClientSecretHash), []byte(stored.OIDC.ClientSecret)); err != nil {
 		t.Errorf("stored client secret doesn't match the client's hash: %v", err)
+	}
+}
+
+// TestCreateDeletesOrgWhenHeadscaleFails verifies an organization whose
+// headscale doesn't start isn't kept.
+func TestCreateDeletesOrgWhenHeadscaleFails(t *testing.T) {
+	svc := newTestService(t)
+	var starts int
+	svc.createFn = failingCreateFn(&starts)
+
+	if _, err := svc.Create(t.Context(), "acme"); err == nil {
+		t.Fatal("Create: want the start failure, got nil")
+	}
+	if _, err := svc.queries.GetOrganizationBySubdomain(t.Context(), "acme"); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("GetOrganizationBySubdomain: err = %v, want sql.ErrNoRows", err)
+	}
+}
+
+// TestEnsureRefusesMissingDatabase verifies Ensure doesn't start a fresh
+// headscale for an organization whose database is gone.
+func TestEnsureRefusesMissingDatabase(t *testing.T) {
+	svc := newTestService(t)
+	if _, err := svc.Create(t.Context(), "acme"); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := os.Remove(sqlitePath(svc.cfg.DataDir, "acme")); err != nil {
+		t.Fatal(err)
+	}
+	var starts int
+	svc.createFn = failingCreateFn(&starts)
+
+	if _, err := svc.Ensure(t.Context(), "acme"); !errors.Is(err, ErrDatabaseMissing) {
+		t.Errorf("Ensure: err = %v, want ErrDatabaseMissing", err)
+	}
+	if starts != 0 {
+		t.Errorf("headscale started %d times, want 0", starts)
+	}
+	if got := svc.Status("acme"); got != StatusUnavailable {
+		t.Errorf("Status = %q, want %q", got, StatusUnavailable)
 	}
 }
 
@@ -214,12 +257,15 @@ func TestEnsureBacksOffAfterFailedStart(t *testing.T) {
 	}
 }
 
-// TestEnsureStartsOnce verifies concurrent Ensure calls on an unprovisioned
+// TestEnsureStartsOnce verifies concurrent Ensure calls on a sleeping
 // organization start one headscale and all get its client.
 func TestEnsureStartsOnce(t *testing.T) {
 	svc := newRealService(t)
 	if _, err := svc.Create(t.Context(), "acme"); err != nil {
 		t.Fatalf("Create: %v", err)
+	}
+	if err := svc.sleepHeadscale(t.Context(), "acme"); err != nil {
+		t.Fatalf("sleepHeadscale: %v", err)
 	}
 	var starts atomic.Int32
 	svc.createFn = func(p headscaleParams) (*hscontrol.Headscale, error) {
@@ -252,8 +298,8 @@ func TestEnsureStartsOnce(t *testing.T) {
 	}
 }
 
-// TestDialOrgStartsOrganization verifies device traffic starts an
-// organization that never ran, and is refused for an unknown subdomain.
+// TestDialOrgStartsOrganization verifies device traffic reaches an
+// organization, and is refused for an unknown subdomain.
 func TestDialOrgStartsOrganization(t *testing.T) {
 	svc := newRealService(t)
 	if _, err := svc.Create(t.Context(), "acme"); err != nil {
@@ -416,19 +462,14 @@ func TestStatus(t *testing.T) {
 			want:  StatusUnavailable,
 		},
 		{
-			name: "created, never started",
-			setup: func(t *testing.T, svc *Service) string {
-				if _, err := svc.Create(t.Context(), "acme"); err != nil {
-					t.Fatalf("Create: %v", err)
-				}
-				return "acme"
-			},
-			want: StatusUnprovisioned,
+			name:  "database missing",
+			setup: func(_ *testing.T, svc *Service) string { return "acme" },
+			want:  StatusUnavailable,
 		},
 		{
-			name: "provisioned before this process",
+			name: "started before this process",
 			setup: func(t *testing.T, svc *Service) string {
-				markProvisioned(t, svc, "acme")
+				writeDatabase(t, svc, "acme")
 				return "acme"
 			},
 			want: StatusSleeping,
@@ -437,6 +478,7 @@ func TestStatus(t *testing.T) {
 			name: "put to sleep",
 			setup: func(t *testing.T, svc *Service) string {
 				serving(svc, "acme", 1, false)
+				writeDatabase(t, svc, "acme")
 				if err := svc.sleepHeadscale(t.Context(), "acme"); err != nil {
 					t.Fatalf("sleepHeadscale: %v", err)
 				}
@@ -453,7 +495,6 @@ func TestStatus(t *testing.T) {
 				var starts int
 				svc.createFn = failingCreateFn(&starts)
 				_, _ = svc.Ensure(t.Context(), "acme")
-				markProvisioned(t, svc, "acme")
 				return "acme"
 			},
 			want: StatusUnavailable,
@@ -696,7 +737,7 @@ func TestCloseStopsStarts(t *testing.T) {
 			return err
 		}},
 		{"Wake", func(ctx context.Context, svc *Service) error {
-			_, err := svc.Wake(ctx, "acme")
+			_, err := svc.Ensure(ctx, "acme")
 			return err
 		}},
 		{"DialOrg", func(ctx context.Context, svc *Service) error {

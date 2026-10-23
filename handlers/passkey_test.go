@@ -142,7 +142,7 @@ func TestPasskeyRegisterFinishAssignsInvitedOrganization(t *testing.T) {
 	setupSessions()
 	h, queries := newTestHandlersWithBaseDomain(t, testBaseDomain)
 
-	owner := insertUser(t, queries)
+	owner := createOwner(t, h)
 	org, err := queries.GetOrganization(t.Context(), owner.OrganizationID)
 	if err != nil {
 		t.Fatalf("GetOrganization: %v", err)
@@ -522,7 +522,7 @@ func TestPasskeyUsernameUniquePerOrg(t *testing.T) {
 	setupSessions()
 	h, queries := newTestHandlersWithBaseDomain(t, testBaseDomain)
 
-	ownerA := insertUser(t, queries)
+	ownerA := createOwner(t, h)
 	inviteInto(t, queries, ownerA.OrganizationID, ownerA.ID, "a1token")
 	inviteInto(t, queries, ownerA.OrganizationID, ownerA.ID, "a2token")
 
@@ -533,7 +533,7 @@ func TestPasskeyUsernameUniquePerOrg(t *testing.T) {
 		t.Fatalf("duplicate signup status = %d, want 409: %s", rec.Code, rec.Body)
 	}
 
-	ownerB := insertUser(t, queries)
+	ownerB := createOwner(t, h)
 	inviteInto(t, queries, ownerB.OrganizationID, ownerB.ID, "b1token")
 	if rec := passkeySignup(t, h, "alice", "b1token"); rec.Code != http.StatusSeeOther {
 		t.Fatalf("same username in another org status = %d, want 303: %s", rec.Code, rec.Body)

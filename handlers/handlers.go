@@ -25,10 +25,6 @@ import (
 // headscaleClients reaches organizations' headscale instances. Implemented
 // by *orgs.Service.
 type headscaleClients interface {
-	// Wake returns the instance's client, starting it first if it's asleep,
-	// or orgs.ErrNotProvisioned for an organization whose headscale never
-	// started.
-	Wake(ctx context.Context, subdomain string) (*hscl.Client, error)
 	// Ensure returns the client, starting the instance first if needed.
 	Ensure(ctx context.Context, subdomain string) (*hscl.Client, error)
 }
@@ -151,11 +147,11 @@ func (h *Handlers) DialOrg(ctx context.Context, subdomain string) (net.Conn, err
 	return h.orgs.DialOrg(ctx, subdomain)
 }
 
-// Start backs up provisioned organizations' databases, then runs
+// Start backs up organizations' databases, then runs
 // background work, such as putting idle organizations to sleep, until ctx
 // is done. It doesn't wait for the background work.
 func (h *Handlers) Start(ctx context.Context) {
-	if err := h.orgs.BackUpProvisioned(ctx); err != nil {
+	if err := h.orgs.BackUpAll(ctx); err != nil {
 		h.logger.Error("back up organization databases", "error", err)
 	}
 	go h.orgs.RunSleeper(ctx)

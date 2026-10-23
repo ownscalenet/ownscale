@@ -53,8 +53,8 @@ func TestMemoryAfterSleep(t *testing.T) {
 				orgs = append(orgs, svc.ForOrg(createStarted(t, svc, sub)))
 				continue
 			}
-			if _, err := svc.Wake(t.Context(), sub); err != nil {
-				t.Fatalf("Wake: %v", err)
+			if _, err := svc.Ensure(t.Context(), sub); err != nil {
+				t.Fatalf("Ensure: %v", err)
 			}
 			org, err := svc.queries.GetOrganizationBySubdomain(t.Context(), sub)
 			if err != nil {

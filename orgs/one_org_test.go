@@ -206,31 +206,6 @@ func TestSettingsRestartFailureLeavesUnavailable(t *testing.T) {
 	assertStatus(t, svc, StatusUnavailable)
 }
 
-// TestSettingsOnUnprovisionedOrg verifies settings saved before an
-// organization's first use are stored without starting its headscale.
-func TestSettingsOnUnprovisionedOrg(t *testing.T) {
-	svc := newTestService(t)
-	org, err := svc.Create(t.Context(), "acme")
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	var starts int
-	svc.createFn = failingCreateFn(&starts)
-	o := svc.ForOrg(org)
-
-	const content = `{"domains":["example.com"]}`
-	if err := o.SetAuthRestrictions(t.Context(), content); err != nil {
-		t.Fatalf("SetAuthRestrictions: %v", err)
-	}
-	if got, err := o.GetAuthRestrictions(t.Context()); err != nil || got != content {
-		t.Errorf("GetAuthRestrictions = %q, %v; want %q", got, err, content)
-	}
-	if starts != 0 {
-		t.Errorf("headscale started %d times, want 0", starts)
-	}
-	assertStatus(t, svc, StatusUnprovisioned)
-}
-
 // TestSettingsApplyToRunningHeadscale uses real headscale instances to
 // verify saved settings reach the restarted server, which keeps its port,
 // and leave the org active.

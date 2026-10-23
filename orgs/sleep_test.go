@@ -19,8 +19,8 @@ func TestSleepAndWake(t *testing.T) {
 		{
 			name: "Wake",
 			wake: func(t *testing.T, svc *Service) {
-				if _, err := svc.Wake(t.Context(), "acme"); err != nil {
-					t.Fatalf("Wake: %v", err)
+				if _, err := svc.Ensure(t.Context(), "acme"); err != nil {
+					t.Fatalf("Ensure: %v", err)
 				}
 			},
 		},
@@ -84,19 +84,6 @@ func TestSleepAndWake(t *testing.T) {
 				t.Errorf("ListUsers after waking: %v", err)
 			}
 		})
-	}
-}
-
-func TestWakeUnprovisioned(t *testing.T) {
-	svc := newTestService(t)
-	if _, err := svc.Create(t.Context(), "acme"); err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	if _, err := svc.Wake(t.Context(), "acme"); !errors.Is(err, ErrNotProvisioned) {
-		t.Errorf("Wake error = %v, want ErrNotProvisioned", err)
-	}
-	if got := svc.Status("acme"); got != StatusUnprovisioned {
-		t.Errorf("Status = %q, want %q", got, StatusUnprovisioned)
 	}
 }
 
@@ -196,7 +183,7 @@ func TestWakeIgnoresCanceledRequest(t *testing.T) {
 	}
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	if _, err := svc.Wake(ctx, "acme"); err != nil {
+	if _, err := svc.Ensure(ctx, "acme"); err != nil {
 		t.Fatalf("Wake with canceled ctx: %v", err)
 	}
 	if got := svc.Status("acme"); got != StatusActive {

@@ -13,8 +13,7 @@ import (
 // ListAuthKeys handles GET /api/auth-keys. It returns the
 // pre-authentication keys for the caller's organization's tailnet (only
 // their own for members), the headscale users for filtering, and the
-// members the caller may create keys for. With no client (see
-// ReadHeadscale) there are no keys or headscale users yet.
+// members the caller may create keys for.
 func (h *Handlers) ListAuthKeys(w http.ResponseWriter, r *http.Request) {
 	client, _, _ := headscaleClientFromContext(r)
 	caller, _ := auth.UserFromContext(r.Context())
@@ -24,16 +23,15 @@ func (h *Handlers) ListAuthKeys(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	keys, users := []hscl.PreAuthKey{}, []hscl.User{}
-	if client != nil {
-		if keys, err = client.ListPreAuthKeys(r.Context()); err != nil {
-			h.serverError(w, r, err)
-			return
-		}
-		if users, err = client.ListUsers(r.Context()); err != nil {
-			h.serverError(w, r, err)
-			return
-		}
+	keys, err := client.ListPreAuthKeys(r.Context())
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	users, err := client.ListUsers(r.Context())
+	if err != nil {
+		h.serverError(w, r, err)
+		return
 	}
 
 	canManage := caller != nil && isManager(caller.Role)
@@ -54,7 +52,7 @@ func (h *Handlers) ListAuthKeys(w http.ResponseWriter, r *http.Request) {
 // CreateAuthKey handles POST /api/auth-keys. The request body must set
 // either memberId (the member owning the key) or a non-empty aclTags (for
 // a "tag only" key with no owning user). Members may only create untagged
-// keys for themselves. ProvisionHeadscale guarantees the client is
+// keys for themselves. RequireHeadscaleClient guarantees the client is
 // reachable.
 func (h *Handlers) CreateAuthKey(w http.ResponseWriter, r *http.Request) {
 	client, org, _ := headscaleClientFromContext(r)
