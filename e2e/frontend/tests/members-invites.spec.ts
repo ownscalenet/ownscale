@@ -82,6 +82,65 @@ test('accepting an invite adds a member, whose role can be changed and who can b
   await expect(memberRow).toBeHidden()
 })
 
+test('transferring ownership promotes the member and demotes the caller to admin', async ({
+  page,
+  browser,
+  account,
+}) => {
+  await page.goto('/users')
+  await page.getByRole('button', { name: 'Invite member' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: 'Create invite link' }).click()
+  const inviteLink = await dialog.getByRole('textbox').inputValue()
+  await dialog.getByRole('button', { name: 'Done' }).click()
+
+  const memberContext = await browser.newContext({
+    storageState: { cookies: [], origins: [] },
+    ignoreHTTPSErrors: true,
+  })
+  try {
+    const memberPage = await memberContext.newPage()
+    await memberPage.goto(inviteLink)
+    await memberPage.getByRole('link', { name: 'Sign in to join' }).click()
+    await memberPage.getByRole('link', { name: 'Sign in with SSO' }).click()
+    await memberPage.locator('#login').fill(account.invitee)
+    await memberPage.locator('#password').fill('ownscale')
+    await memberPage.locator('#submit-login').click()
+    await expect(memberPage.getByRole('link', { name: 'Machines' })).toBeVisible({
+      timeout: 15_000,
+    })
+
+    // The owner transfers ownership to the new member.
+    await page.reload()
+    const memberRow = page.getByRole('row').filter({ hasText: account.invitee })
+    await memberRow.getByRole('button', { name: 'Make owner' }).click()
+    await confirmDialog(page, 'Transfer ownership')
+    await expect(memberRow.getByText('Owner', { exact: true })).toBeVisible()
+    const callerRow = page.getByRole('row').filter({ hasText: account.email })
+    await expect(callerRow.getByRole('combobox')).toHaveValue('admin')
+    // Only the owner can transfer ownership, so the demoted caller no
+    // longer sees any "Make owner" button.
+    await expect(page.getByRole('button', { name: 'Make owner' })).toHaveCount(0)
+
+    // The new owner transfers it back, so the worker's account stays the
+    // owner for every other spec sharing this org.
+    await memberPage.goto('/users')
+    const originalOwnerRow = memberPage.getByRole('row').filter({ hasText: account.email })
+    await originalOwnerRow.getByRole('button', { name: 'Make owner' }).click()
+    await confirmDialog(memberPage, 'Transfer ownership')
+    await expect(originalOwnerRow.getByText('Owner', { exact: true })).toBeVisible()
+  } finally {
+    await memberContext.close()
+  }
+
+  // Clean up so the invitee is free to be re-invited by other tests.
+  await page.reload()
+  const memberRow = page.getByRole('row').filter({ hasText: account.invitee })
+  await memberRow.getByRole('button', { name: 'Remove' }).click()
+  await confirmDialog(page, 'Remove member', account.invitee)
+  await expect(memberRow).toBeHidden()
+})
+
 test('copying a member email from the table', async ({ page, account }) => {
   await page.context().grantPermissions(['clipboard-read', 'clipboard-write'])
   await page.goto('/users')
