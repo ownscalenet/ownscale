@@ -17,3 +17,8 @@ UPDATE webauthn_credentials SET sign_count = ?, last_used_at = CURRENT_TIMESTAMP
 
 -- name: DeleteWebauthnCredential :exec
 DELETE FROM webauthn_credentials WHERE id = ?;
+
+-- name: DeleteWebauthnCredentialUnlessLast :execrows
+DELETE FROM webauthn_credentials
+WHERE webauthn_credentials.id = @id
+  AND (SELECT COUNT(*) FROM webauthn_credentials AS c WHERE c.user_id = @user_id) > 1;

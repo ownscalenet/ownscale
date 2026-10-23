@@ -68,6 +68,25 @@ func (q *Queries) DeleteWebauthnCredential(ctx context.Context, id string) error
 	return err
 }
 
+const deleteWebauthnCredentialUnlessLast = `-- name: DeleteWebauthnCredentialUnlessLast :execrows
+DELETE FROM webauthn_credentials
+WHERE webauthn_credentials.id = ?1
+  AND (SELECT COUNT(*) FROM webauthn_credentials AS c WHERE c.user_id = ?2) > 1
+`
+
+type DeleteWebauthnCredentialUnlessLastParams struct {
+	ID     string
+	UserID string
+}
+
+func (q *Queries) DeleteWebauthnCredentialUnlessLast(ctx context.Context, arg DeleteWebauthnCredentialUnlessLastParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteWebauthnCredentialUnlessLast, arg.ID, arg.UserID)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const getWebauthnCredential = `-- name: GetWebauthnCredential :one
 SELECT id, user_id, credential_id, public_key, attestation_type, transports, sign_count, backup_eligible, backup_state, name, created_at, last_used_at FROM webauthn_credentials WHERE id = ?
 `

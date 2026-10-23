@@ -410,7 +410,21 @@ func (h *Handlers) DeletePasskey(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusNotFound, "passkey not found")
 		return
 	}
-	if err := h.queries.DeleteWebauthnCredential(r.Context(), id); err != nil {
+	// Prevent users locking themselves up by deleting their only auth option.
+	if user.Provider == passkeyProvider {
+		n, err := h.queries.DeleteWebauthnCredentialUnlessLast(r.Context(), sqlcgen.DeleteWebauthnCredentialUnlessLastParams{
+			ID:     id,
+			UserID: user.ID,
+		})
+		if err != nil {
+			h.serverError(w, r, err)
+			return
+		}
+		if n == 0 {
+			h.writeError(w, http.StatusConflict, "you can't delete your only passkey: it is your only way to sign in")
+			return
+		}
+	} else if err := h.queries.DeleteWebauthnCredential(r.Context(), id); err != nil {
 		h.serverError(w, r, err)
 		return
 	}

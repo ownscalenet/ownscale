@@ -10,6 +10,7 @@ import (
 	"time"
 
 	vwa "github.com/descope/virtualwebauthn"
+	"github.com/rs/xid"
 
 	dbpkg "github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
@@ -393,6 +394,67 @@ func TestDeletePasskeyUnauthenticated(t *testing.T) {
 	h.DeletePasskey(rec, req)
 	if rec.Code != http.StatusUnauthorized {
 		t.Fatalf("status = %d, want 401: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestDeletePasskeyLastLoginMethod(t *testing.T) {
+	tests := []struct {
+		name          string
+		provider      string
+		passkeys      int
+		wantStatus    int
+		wantRemaining int
+	}{
+		{"passkey user, only passkey", passkeyProvider, 1, http.StatusConflict, 1},
+		{"passkey user, two passkeys", passkeyProvider, 2, http.StatusOK, 1},
+		{"oidc user, only passkey", "oidc", 1, http.StatusOK, 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, queries := newTestHandlers(t)
+			org := insertOrg(t, queries, "org"+xid.New().String())
+			userID := xid.New().String()
+			user, err := queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
+				ID:             userID,
+				OrganizationID: org.ID,
+				Role:           RoleOwner,
+				Provider:       tt.provider,
+				ProviderUserID: userID,
+				Email:          userID + "@" + tt.provider,
+			})
+			if err != nil {
+				t.Fatalf("CreateUser: %v", err)
+			}
+			var credIDs []string
+			for range tt.passkeys {
+				id := xid.New().String()
+				if _, err := queries.CreateWebauthnCredential(t.Context(), sqlcgen.CreateWebauthnCredentialParams{
+					ID:           id,
+					UserID:       user.ID,
+					CredentialID: []byte(id),
+					PublicKey:    []byte("key"),
+				}); err != nil {
+					t.Fatalf("CreateWebauthnCredential: %v", err)
+				}
+				credIDs = append(credIDs, id)
+			}
+
+			req := withTestUser(httptest.NewRequest(http.MethodDelete, "/api/passkeys/"+credIDs[0], nil), user)
+			req.SetPathValue("id", credIDs[0])
+			rec := httptest.NewRecorder()
+			h.DeletePasskey(rec, req)
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d: %s", rec.Code, tt.wantStatus, rec.Body)
+			}
+
+			remaining, err := queries.ListWebauthnCredentialsByUser(t.Context(), user.ID)
+			if err != nil {
+				t.Fatalf("ListWebauthnCredentialsByUser: %v", err)
+			}
+			if len(remaining) != tt.wantRemaining {
+				t.Errorf("len(remaining) = %d, want %d", len(remaining), tt.wantRemaining)
+			}
+		})
 	}
 }
 
