@@ -657,9 +657,10 @@ func TestSetOIDCIdentity(t *testing.T) {
 		t.Error("sub-1 still resolves to a user after alice's identity was replaced")
 	}
 
-	// An identity owned by another user is left alone.
-	if err := svc.SetOIDCIdentity(t.Context(), "acme", bob, "sub-2"); err != nil {
-		t.Fatalf("SetOIDCIdentity taken identity: %v", err)
+	// An identity owned by another user is left alone, and the caller
+	// learns bob didn't get it.
+	if err := svc.SetOIDCIdentity(t.Context(), "acme", bob, "sub-2"); err == nil {
+		t.Error("SetOIDCIdentity of an identity owned by alice succeeded, want an error")
 	}
 	bobUser, err := state.GetUserByID(types.UserID(mustParseUint(t, bob)))
 	if err != nil {
