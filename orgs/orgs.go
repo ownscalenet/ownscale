@@ -73,8 +73,6 @@ type Service struct {
 	// startFailures holds when Ensure last failed to start each org, so
 	// device traffic can't retry a broken org on every request.
 	startFailures utils.Map[string, time.Time]
-	// onStart, if set, runs once Ensure started an org's headscale.
-	onStart func(ctx context.Context, subdomain string, client *hscl.Client)
 	// onSleep, if set, runs once an org's headscale was put to sleep.
 	onSleep func(subdomain string)
 
@@ -207,13 +205,6 @@ func (s *Service) tailnetDomain(label string) string {
 	return label + "." + s.cfg.TailnetDomain()
 }
 
-// OnStart sets f to run each time Ensure starts an organization's
-// headscale, before Ensure returns. It must be set before the Service is
-// used.
-func (s *Service) OnStart(f func(ctx context.Context, subdomain string, client *hscl.Client)) {
-	s.onStart = f
-}
-
 // OnSleep sets f to run each time an organization's headscale is put to
 // sleep. It must be set before the Service is used.
 func (s *Service) OnSleep(f func(subdomain string)) {
@@ -330,6 +321,10 @@ var (
 	// instance never started.
 	ErrNotProvisioned = errors.New("organization not provisioned")
 
+	// ErrIdentityTaken is returned when giving a headscale user an OIDC
+	// identity another headscale user already has.
+	ErrIdentityTaken = errors.New("OIDC identity belongs to another headscale user")
+
 	errClosed = fmt.Errorf("%w: shutting down", ErrNotRunning)
 )
 
@@ -377,9 +372,6 @@ func (s *Service) Ensure(ctx context.Context, subdomain string) (_ *hscl.Client,
 	inst, ok := s.running(subdomain)
 	if !ok {
 		return nil, ErrNotRunning // createFn built no instance (tests)
-	}
-	if s.onStart != nil {
-		s.onStart(ctx, subdomain, inst.client)
 	}
 	return inst.client, nil
 }
@@ -439,13 +431,10 @@ func (c *trackedConn) Close() error {
 }
 
 // SetOIDCIdentity gives subdomain's headscale user headscaleUserID the OIDC
-// identity headscale derives from an ownscale login of the user subject.
-// Without it, that person's first OIDC login through headscale creates a
-// second headscale user, as headscale only matches existing users by this
-// identity. An identity the user already has is replaced: it belongs to an
-// ownscale account that no longer owns this headscale user, such as a
-// removed member who was invited back. Identities already owned by another
-// user are left alone.
+// identity headscale derives from an ownscale login of the user subject,
+// so that person's OIDC logins through headscale land on that user, as
+// headscale only matches existing users by this identity. It returns
+// ErrIdentityTaken if another headscale user already has the identity.
 func (s *Service) SetOIDCIdentity(ctx context.Context, subdomain, headscaleUserID, subject string) (err error) {
 	defer derrors.Wrap(&err, "s.SetOIDCIdentity(%q, %q)", subdomain, headscaleUserID)
 
@@ -456,15 +445,24 @@ func (s *Service) SetOIDCIdentity(ctx context.Context, subdomain, headscaleUserI
 	return s.setOIDCIdentity(inst.app, headscaleUserID, subject)
 }
 
+// Identifier returns the OIDC identity headscale gives a user that logs in
+// as the ownscale user subject, as reported in hscl.User.ProviderID.
+func (s *Service) Identifier(subject string) string {
+	return (&types.OIDCClaims{Iss: s.issuer, Sub: subject}).Identifier()
+}
+
 func (s *Service) setOIDCIdentity(app *hscontrol.Headscale, headscaleUserID, subject string) error {
 	uid, err := strconv.ParseUint(headscaleUserID, 10, 64)
 	if err != nil {
 		return err
 	}
 	state := app.GetState()
-	identifier := (&types.OIDCClaims{Iss: s.issuer, Sub: subject}).Identifier()
+	identifier := s.Identifier(subject)
 	if owner, err := state.GetUserByOIDCIdentifier(identifier); err == nil && owner != nil {
-		return nil // already set, or owned by another user
+		if owner.ID == uint(uid) {
+			return nil
+		}
+		return ErrIdentityTaken
 	}
 
 	_, c, err := state.UpdateUser(types.UserID(uid), func(u *types.User) error {

@@ -16,19 +16,18 @@ import (
 )
 
 // insertUser inserts a user row directly via queries, attached to org with
-// the given role, and returns it, mirroring the fields orgs/auth would
-// normally set through separate calls (CreateUser, then optionally
-// LinkUserHeadscaleUser / TouchUserLastLogin).
-func insertUser(t *testing.T, queries *sqlcgen.Queries, ctx context.Context, email string, org sqlcgen.Organization, role string) sqlcgen.User {
+// the given role and linked to headscale user hsUserID, and returns it.
+func insertUser(t *testing.T, queries *sqlcgen.Queries, ctx context.Context, email string, org sqlcgen.Organization, role, hsUserID string) sqlcgen.User {
 	t.Helper()
 	user, err := queries.CreateUser(ctx, sqlcgen.CreateUserParams{
-		ID:             xid.New().String(),
-		OrganizationID: org.ID,
-		Role:           role,
-		Provider:       "google",
-		ProviderUserID: email,
-		Email:          email,
-		Name:           "Test User",
+		ID:              xid.New().String(),
+		OrganizationID:  org.ID,
+		Role:            role,
+		Provider:        "google",
+		ProviderUserID:  email,
+		Email:           email,
+		Name:            "Test User",
+		HeadscaleUserID: hsUserID,
 	})
 	if err != nil {
 		t.Fatalf("insertUser(%q): %v", email, err)
@@ -53,21 +52,14 @@ func TestListUsers(t *testing.T) {
 
 		org := dbtest.CreateOrg(t, queries.Queries, "acme")
 
-		orgUser := insertUser(t, queries.Queries, t.Context(), "owner@acme.test", org, "owner")
-		if err := queries.LinkUserHeadscaleUser(t.Context(), sqlcgen.LinkUserHeadscaleUserParams{
-			HeadscaleUserID: sql.NullString{String: "1", Valid: true},
-			ID:              orgUser.ID,
-		}); err != nil {
-			t.Fatalf("LinkUserHeadscaleUser: %v", err)
-		}
+		orgUser := insertUser(t, queries.Queries, t.Context(), "owner@acme.test", org, "owner", "1")
 		if err := queries.TouchUserLastLogin(t.Context(), orgUser.ID); err != nil {
 			t.Fatalf("TouchUserLastLogin: %v", err)
 		}
 
-		// A second user in a different organization, with no headscale
-		// link and no login yet.
+		// A second user in a different organization, with no login yet.
 		otherOrg := dbtest.CreateOrg(t, queries.Queries, "beta")
-		otherUser := insertUser(t, queries.Queries, t.Context(), "member@beta.test", otherOrg, "member")
+		otherUser := insertUser(t, queries.Queries, t.Context(), "member@beta.test", otherOrg, "member", "7")
 
 		var out strings.Builder
 		if err := listUsers(t.Context(), &out, queries); err != nil {
@@ -78,15 +70,15 @@ func TestListUsers(t *testing.T) {
 		for _, want := range []string{
 			"ID", "EMAIL", "ORGANIZATION", "ROLE", "PROVIDER", "HEADSCALEID", "LAST LOGIN",
 			orgUser.ID, "owner@acme.test", "acme", "owner", "google", "1",
-			otherUser.ID, "member@beta.test", "beta", "member",
+			otherUser.ID, "member@beta.test", "beta", "member", "7",
 		} {
 			if !strings.Contains(got, want) {
 				t.Errorf("listUsers output = %q, want it to contain %q", got, want)
 			}
 		}
 
-		// The second user's row should show "-" for the still-unset
-		// headscale user id and last login columns.
+		// The second user's row should show "-" for the still-unset last
+		// login column.
 		otherLine := ""
 		for line := range strings.SplitSeq(got, "\n") {
 			if strings.Contains(line, "member@beta.test") {
@@ -97,7 +89,7 @@ func TestListUsers(t *testing.T) {
 			t.Fatal("could not find second user's line in output")
 		}
 		if !strings.Contains(otherLine, "-") {
-			t.Errorf("second user's line = %q, want it to show %q for missing headscale id/last login", otherLine, "-")
+			t.Errorf("second user's line = %q, want it to show %q for missing last login", otherLine, "-")
 		}
 	})
 }
@@ -115,29 +107,9 @@ func TestDeleteUser(t *testing.T) {
 		}
 	})
 
-	t.Run("deletes existing user", func(t *testing.T) {
+	t.Run("deletes user, headscale user and machines", func(t *testing.T) {
 		_, queries := dbtest.New(t)
 		org := dbtest.CreateOrg(t, queries.Queries, "acme")
-		user := insertUser(t, queries.Queries, t.Context(), "delete-me@example.test", org, "owner")
-
-		var out strings.Builder
-		if err := deleteUser(t.Context(), &out, queries, nil, user.ID); err != nil {
-			t.Fatalf("deleteUser: %v", err)
-		}
-		got := out.String()
-		if !strings.Contains(got, user.ID) || !strings.Contains(got, "delete-me@example.test") {
-			t.Errorf("deleteUser output = %q, want it to mention the deleted user's id and email", got)
-		}
-
-		if _, err := queries.GetUserByID(t.Context(), user.ID); !errors.Is(err, sql.ErrNoRows) {
-			t.Errorf("GetUserByID after delete: err = %v, want sql.ErrNoRows", err)
-		}
-	})
-
-	t.Run("deletes linked headscale user and machines", func(t *testing.T) {
-		_, queries := dbtest.New(t)
-		org := dbtest.CreateOrg(t, queries.Queries, "acme")
-		user := insertUser(t, queries.Queries, t.Context(), "linked@example.test", org, "member")
 		sock := hstest.Headscale(t)
 		client := hscl.NewUnix(sock)
 		hsUserIDs := map[string]string{}
@@ -152,12 +124,7 @@ func TestDeleteUser(t *testing.T) {
 				t.Fatalf("RegisterNode(%q): %v", name, err)
 			}
 		}
-		if err := queries.LinkUserHeadscaleUser(t.Context(), sqlcgen.LinkUserHeadscaleUserParams{
-			HeadscaleUserID: sql.NullString{String: hsUserIDs["linked"], Valid: true},
-			ID:              user.ID,
-		}); err != nil {
-			t.Fatalf("LinkUserHeadscaleUser: %v", err)
-		}
+		user := insertUser(t, queries.Queries, t.Context(), "linked@example.test", org, "member", hsUserIDs["linked"])
 		var gotSubdomain string
 		clientFor := func(subdomain string) *hscl.Client {
 			gotSubdomain = subdomain

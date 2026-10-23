@@ -199,6 +199,11 @@ func (h *Handlers) PasskeyRegisterFinish(w http.ResponseWriter, r *http.Request)
 			h.writeError(w, http.StatusGone, invErr.Error())
 			return
 		}
+		if errors.Is(err, errHeadscaleUnavailable) {
+			h.logger.Warn("sign-up: create headscale user", "error", err)
+			h.writeError(w, http.StatusServiceUnavailable, "headscale is unavailable right now, try again in a moment")
+			return
+		}
 		if errors.Is(err, errUsernameTaken) {
 			h.writeError(w, http.StatusConflict, "that username is already taken in this organization")
 			return

@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"database/sql"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -36,7 +35,20 @@ func newTestHandlers(t *testing.T) (*Handlers, *dbpkg.TxQueries) {
 // production configures it.
 func newTestHandlersWithBaseDomain(t *testing.T, baseDomain string) (*Handlers, *dbpkg.TxQueries) {
 	t.Helper()
-	return newTestHandlersWithDataDir(t, baseDomain, t.TempDir())
+	return newTestHandlersWithDataDir(t, baseDomain, shortTempDir(t))
+}
+
+// shortTempDir is t.TempDir, but short enough for the unix sockets of the
+// headscale instances sign-ups start, as their paths are limited to ~100
+// bytes.
+func shortTempDir(t *testing.T) string {
+	t.Helper()
+	dir, err := os.MkdirTemp("", "hs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { os.RemoveAll(dir) })
+	return dir
 }
 
 // newTestHandlersWithDataDir is newTestHandlersWithBaseDomain with the
@@ -61,6 +73,7 @@ func newTestHandlersWithDataDir(t *testing.T, baseDomain, dataDir string) (*Hand
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
+	t.Cleanup(func() { _ = h.orgs.Close(context.Background()) })
 	return h, queries
 }
 
@@ -161,17 +174,10 @@ type realOrg struct {
 }
 
 // newRealOrgTestHandlers builds Handlers and starts organization "acme"'s
-// headscale. Members inserted afterwards aren't linked by orgs.Service's
-// OnStart hook, which already ran.
+// headscale.
 func newRealOrgTestHandlers(t *testing.T) (*Handlers, realOrg) {
 	t.Helper()
-	// Not t.TempDir(): unix socket paths are limited to ~100 bytes.
-	dataDir, err := os.MkdirTemp("", "hs")
-	if err != nil {
-		t.Fatal(err)
-	}
-	t.Cleanup(func() { os.RemoveAll(dataDir) })
-
+	dataDir := shortTempDir(t)
 	h, _ := newTestHandlersWithDataDir(t, testBaseDomain, dataDir)
 	org, err := h.orgs.Create(t.Context(), "acme")
 	if err != nil {
@@ -181,16 +187,16 @@ func newRealOrgTestHandlers(t *testing.T) (*Handlers, realOrg) {
 	if err != nil {
 		t.Fatalf("Ensure: %v", err)
 	}
-	t.Cleanup(func() { _ = h.orgs.Close(context.Background()) })
 	return h, realOrg{org: org, client: client, sock: orgs.SocketPath(dataDir, "acme")}
 }
 
-// createMember inserts a member of o with the given role, provider, email
-// and email verification, the way a login through that provider would.
+// createMember creates a member of o with the given role, provider, email
+// and email verification, together with its headscale user, the way a
+// sign-up through that provider does.
 func (o realOrg) createMember(t *testing.T, h *Handlers, role, provider, email string, verified bool) sqlcgen.User {
 	t.Helper()
 	id := xid.New().String()
-	user, err := h.queries.CreateUser(t.Context(), sqlcgen.CreateUserParams{
+	params := sqlcgen.CreateUserParams{
 		ID:             id,
 		OrganizationID: o.org.ID,
 		Role:           role,
@@ -198,51 +204,47 @@ func (o realOrg) createMember(t *testing.T, h *Handlers, role, provider, email s
 		ProviderUserID: id,
 		Email:          email,
 		EmailVerified:  boolToInt64(verified),
+	}
+	user, err := h.insertUser(t.Context(), o.org.Subdomain, params, func(q *sqlcgen.Queries, params sqlcgen.CreateUserParams) (sqlcgen.User, error) {
+		return q.CreateUser(t.Context(), params)
 	})
 	if err != nil {
-		t.Fatalf("CreateUser: %v", err)
+		t.Fatalf("insertUser: %v", err)
 	}
 	return user
 }
 
-// headscaleUserWithIdentity creates a headscale user carrying member's OIDC
-// identity, as headscale's own OIDC login does for an identity it doesn't
-// know yet, and registers a machine named machine for it.
-func (o realOrg) headscaleUserWithIdentity(t *testing.T, h *Handlers, name, email string, member sqlcgen.User, machine string) hscl.User {
+// registerMachine registers a machine named machine for member's headscale user.
+func (o realOrg) registerMachine(t *testing.T, member sqlcgen.User, machine string) {
 	t.Helper()
-	user, err := o.client.CreateUser(t.Context(), hscl.CreateUserParams{Name: name, Email: email})
-	if err != nil {
-		t.Fatalf("CreateUser(%q): %v", name, err)
-	}
-	if err := h.orgs.SetOIDCIdentity(t.Context(), o.org.Subdomain, user.ID, member.ID); err != nil {
-		t.Fatalf("SetOIDCIdentity: %v", err)
-	}
-	if _, err := o.client.RegisterNode(t.Context(), name, hstest.PendingNode(t, o.sock, name, machine)); err != nil {
+	hsUser := o.headscaleUser(t, member.HeadscaleUserID)
+	if _, err := o.client.RegisterNode(t.Context(), hsUser.Name, hstest.PendingNode(t, o.sock, hsUser.Name, machine)); err != nil {
 		t.Fatalf("RegisterNode(%q): %v", machine, err)
 	}
-	return user
 }
 
-// link stores headscaleUserID as member's headscale user.
-func link(t *testing.T, h *Handlers, member sqlcgen.User, headscaleUserID string) sqlcgen.User {
+// headscaleUser returns o's headscale user id.
+func (o realOrg) headscaleUser(t *testing.T, id string) hscl.User {
 	t.Helper()
-	if err := h.queries.LinkUserHeadscaleUser(t.Context(), sqlcgen.LinkUserHeadscaleUserParams{
-		HeadscaleUserID: sql.NullString{String: headscaleUserID, Valid: true},
-		ID:              member.ID,
-	}); err != nil {
-		t.Fatalf("LinkUserHeadscaleUser: %v", err)
+	users, err := o.client.ListUsers(t.Context())
+	if err != nil {
+		t.Fatalf("ListUsers: %v", err)
 	}
-	member.HeadscaleUserID = sql.NullString{String: headscaleUserID, Valid: true}
-	return member
+	for _, u := range users {
+		if u.ID == id {
+			return u
+		}
+	}
+	t.Fatalf("headscale user %s not found in %+v", id, users)
+	return hscl.User{}
 }
 
-// headscaleUserOf returns member's linked headscale user ID, re-read from
-// the database, or "" when it has none.
+// headscaleUserOf returns member's headscale user ID, re-read from the database.
 func headscaleUserOf(t *testing.T, h *Handlers, member sqlcgen.User) string {
 	t.Helper()
 	got, err := h.queries.GetUserByID(t.Context(), member.ID)
 	if err != nil {
 		t.Fatalf("GetUserByID: %v", err)
 	}
-	return got.HeadscaleUserID.String
+	return got.HeadscaleUserID
 }

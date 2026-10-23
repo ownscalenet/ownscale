@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"log/slog"
 	"net"
@@ -116,7 +115,6 @@ func New(
 			Microsoft: cfg.Auth.Microsoft.Enabled(),
 		},
 	}
-	orgSvc.OnStart(h.linkAllMembers)
 	orgSvc.OnSleep(h.funnel.Evict)
 	return h, nil
 }
@@ -216,36 +214,8 @@ func (h *Handlers) Session(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	linked := h.ensureCallerHeadscaleUser(r, *user, org)
-
 	h.writeJSON(w, http.StatusOK, map[string]any{
-		"user":         linked,
+		"user":         user,
 		"organization": h.toOrganizationResponse(org),
 	})
-}
-
-// ensureCallerHeadscaleUser links user to a headscale user if it has none
-// yet, and returns user with that link, so the response that made it
-// already reports it.
-func (h *Handlers) ensureCallerHeadscaleUser(r *http.Request, user sqlcgen.User, org sqlcgen.Organization) sqlcgen.User {
-	if user.HeadscaleUserID.Valid {
-		return user
-	}
-	logger := h.logger.With("org", org.Subdomain)
-	client, _, notConfigured, err := h.resolveHeadscaleClient(r)
-	if err != nil || notConfigured {
-		return user
-	}
-	members, err := h.queries.ListUsersByOrganization(r.Context(), user.OrganizationID)
-	if err != nil {
-		logger.Warn("list organization members for headscale user linking", "error", err)
-		return user
-	}
-	hsID, err := h.ensureHeadscaleUser(r.Context(), org.Subdomain, client, user, claimedHeadscaleUserIDs(members))
-	if err != nil {
-		logger.Warn("ensure headscale user", "user_id", user.ID, "error", err)
-		return user
-	}
-	user.HeadscaleUserID = sql.NullString{String: hsID, Valid: true}
-	return user
 }

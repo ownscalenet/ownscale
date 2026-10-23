@@ -8,19 +8,13 @@ import (
 	"testing"
 
 	"github.com/ownscalenet/ownscale/auth"
-	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
 
-func TestSessionEnsuresHeadscaleUserForActiveOrg(t *testing.T) {
+// TestSessionOmitsHeadscaleUserID checks that the session response leaves
+// out the user's headscale user, which is internal.
+func TestSessionOmitsHeadscaleUserID(t *testing.T) {
 	h, queries := newTestHandlers(t)
-	user, _, _ := activeOrgUser(t, h, queries)
-
-	if err := queries.UpdateUserProfile(t.Context(), sqlcgen.UpdateUserProfileParams{
-		Email: "alice@example.com", Name: user.Name, AvatarUrl: user.AvatarUrl,
-		EmailVerified: user.EmailVerified, ID: user.ID,
-	}); err != nil {
-		t.Fatalf("UpdateUserProfile: %v", err)
-	}
+	user := insertUser(t, queries)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/session", nil)
 	req = authenticatedRequest(t, req, user.ID)
@@ -30,15 +24,6 @@ func TestSessionEnsuresHeadscaleUserForActiveOrg(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
-
-	got, err := queries.GetUserByID(t.Context(), user.ID)
-	if err != nil {
-		t.Fatalf("GetUserByID: %v", err)
-	}
-	if !got.HeadscaleUserID.Valid || got.HeadscaleUserID.String != "1" {
-		t.Errorf("headscaleUserId = %+v, want linked to headscale user 1 (alice) after one Session call", got.HeadscaleUserID)
-	}
-	// The link is internal, so the session response leaves it out.
 	var body struct {
 		User map[string]any `json:"user"`
 	}

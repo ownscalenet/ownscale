@@ -1,6 +1,6 @@
 -- name: CreateUser :one
-INSERT INTO users (id, organization_id, role, provider, provider_user_id, email, name, avatar_url, email_verified)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO users (id, organization_id, role, provider, provider_user_id, email, name, avatar_url, email_verified, headscale_user_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: GetUserByProvider :one
@@ -27,9 +27,6 @@ SELECT * FROM users WHERE organization_id = ? ORDER BY created_at;
 
 -- name: UpdateUserRole :exec
 UPDATE users SET role = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
-
--- name: LinkUserHeadscaleUser :exec
-UPDATE users SET headscale_user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?;
 
 -- name: ListUsersWithOrganization :many
 SELECT users.*, organizations.subdomain AS org_subdomain

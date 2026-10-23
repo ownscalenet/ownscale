@@ -24,7 +24,6 @@ import (
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
-	"github.com/ownscalenet/ownscale/hscl"
 )
 
 // testFixedSubdomains is the fixedSubdomains list used across orgs package
@@ -216,19 +215,17 @@ func TestEnsureBacksOffAfterFailedStart(t *testing.T) {
 }
 
 // TestEnsureStartsOnce verifies concurrent Ensure calls on an unprovisioned
-// organization start one headscale, run the OnStart hook once, and all get
-// its client.
+// organization start one headscale and all get its client.
 func TestEnsureStartsOnce(t *testing.T) {
 	svc := newRealService(t)
 	if _, err := svc.Create(t.Context(), "acme"); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	var starts, hooks atomic.Int32
+	var starts atomic.Int32
 	svc.createFn = func(p headscaleParams) (*hscontrol.Headscale, error) {
 		starts.Add(1)
 		return createHeadscale(p)
 	}
-	svc.OnStart(func(context.Context, string, *hscl.Client) { hooks.Add(1) })
 	t.Cleanup(func() {
 		if inst, ok := svc.running("acme"); ok {
 			inst.cancel()
@@ -249,9 +246,6 @@ func TestEnsureStartsOnce(t *testing.T) {
 	}
 	if n := starts.Load(); n != 1 {
 		t.Errorf("headscale started %d times, want 1", n)
-	}
-	if n := hooks.Load(); n != 1 {
-		t.Errorf("OnStart ran %d times, want 1", n)
 	}
 	if got := svc.Status("acme"); got != StatusActive {
 		t.Errorf("Status = %q, want %q", got, StatusActive)
@@ -633,9 +627,15 @@ func TestSetOIDCIdentity(t *testing.T) {
 	}
 	alice, bob := newUser("alice"), newUser("bob")
 	identifier := (&types.OIDCClaims{Iss: "https://auth.example.com", Sub: "sub-1"}).Identifier()
+	if got := svc.Identifier("sub-1"); got != identifier {
+		t.Errorf("Identifier(sub-1) = %q, want %q", got, identifier)
+	}
 
 	if err := svc.SetOIDCIdentity(t.Context(), "acme", alice, "sub-1"); err != nil {
 		t.Fatalf("SetOIDCIdentity: %v", err)
+	}
+	if err := svc.SetOIDCIdentity(t.Context(), "acme", alice, "sub-1"); err != nil {
+		t.Errorf("SetOIDCIdentity of alice's own identity: %v, want nil", err)
 	}
 	got, err := state.GetUserByOIDCIdentifier(identifier)
 	if err != nil {
@@ -659,8 +659,8 @@ func TestSetOIDCIdentity(t *testing.T) {
 
 	// An identity owned by another user is left alone, and the caller
 	// learns bob didn't get it.
-	if err := svc.SetOIDCIdentity(t.Context(), "acme", bob, "sub-2"); err == nil {
-		t.Error("SetOIDCIdentity of an identity owned by alice succeeded, want an error")
+	if err := svc.SetOIDCIdentity(t.Context(), "acme", bob, "sub-2"); !errors.Is(err, ErrIdentityTaken) {
+		t.Errorf("SetOIDCIdentity of an identity owned by alice = %v, want ErrIdentityTaken", err)
 	}
 	bobUser, err := state.GetUserByID(types.UserID(mustParseUint(t, bob)))
 	if err != nil {

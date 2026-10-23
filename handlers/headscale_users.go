@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"slices"
@@ -12,21 +11,6 @@ import (
 	"github.com/ownscalenet/ownscale/funnelproxy"
 	"github.com/ownscalenet/ownscale/hscl"
 )
-
-// claimedHeadscaleUserIDs returns the set of headscale user IDs already
-// linked to members of the organization (used to keep two ownscale users
-// that share an email address -- e.g. a Google account and a Microsoft
-// account provisioned for the same person -- from fighting over, or
-// silently merging into, the same headscale user; see ensureHeadscaleUser).
-func claimedHeadscaleUserIDs(members []sqlcgen.User) map[string]bool {
-	claimed := make(map[string]bool, len(members))
-	for _, m := range members {
-		if m.HeadscaleUserID.Valid {
-			claimed[m.HeadscaleUserID.String] = true
-		}
-	}
-	return claimed
-}
 
 // emailLocalPart returns the portion of email before "@", lowercased, or
 // "" if email has no "@". Used as the starting point for a headscale
@@ -76,109 +60,52 @@ func uniqueHeadscaleName(candidate, provider, userID string, existing []hscl.Use
 	return fmt.Sprintf("%s-%s", candidate, userID)
 }
 
-func (h *Handlers) ensureHeadscaleUser(
-	ctx context.Context,
-	subdomain string,
-	client *hscl.Client,
-	user sqlcgen.User,
-	claimed map[string]bool) (_ string, err error) {
-	if user.HeadscaleUserID.Valid {
-		return user.HeadscaleUserID.String, nil
-	}
-
+// createHeadscaleUser creates the headscale user of the ownscale user
+// about to be created with params, carrying the OIDC identity of params.ID
+// so that person's tailnet logins land on it. It only gets the email if
+// it's verified, as headscale ACL rules can name users by email. A user
+// whose identity can't be set is deleted again.
+func (h *Handlers) createHeadscaleUser(ctx context.Context, subdomain string, client *hscl.Client, params sqlcgen.CreateUserParams) (string, error) {
 	hsUsers, err := client.ListUsers(ctx)
 	if err != nil {
 		return "", err
 	}
-
-	if user.Email != "" {
-		for _, hu := range hsUsers {
-			if claimed[hu.ID] {
-				continue
-			}
-			if strings.EqualFold(hu.Email, user.Email) {
-				if err := h.queries.LinkUserHeadscaleUser(ctx, sqlcgen.LinkUserHeadscaleUserParams{
-					HeadscaleUserID: sql.NullString{String: hu.ID, Valid: true},
-					ID:              user.ID,
-				}); err != nil {
-					return "", err
-				}
-				h.setOIDCIdentity(ctx, subdomain, hu.ID, user.ID)
-				return hu.ID, nil
-			}
-		}
-	}
-
-	candidate := emailLocalPart(user.Email)
+	candidate := emailLocalPart(params.Email)
 	if candidate == "" {
 		candidate = "user"
 	}
-	name := uniqueHeadscaleName(candidate, user.Provider, user.ID, hsUsers)
-
-	created, err := client.CreateUser(ctx, hscl.CreateUserParams{
-		Name:        name,
-		Email:       user.Email,
-		DisplayName: user.Name,
-		PictureURL:  user.AvatarUrl,
-	})
+	create := hscl.CreateUserParams{
+		Name:        uniqueHeadscaleName(candidate, params.Provider, params.ID, hsUsers),
+		DisplayName: params.Name,
+		PictureURL:  params.AvatarUrl,
+	}
+	if params.EmailVerified != 0 {
+		create.Email = params.Email
+	}
+	created, err := client.CreateUser(ctx, create)
 	if err != nil {
 		return "", err
 	}
-
-	if err := h.queries.LinkUserHeadscaleUser(ctx, sqlcgen.LinkUserHeadscaleUserParams{
-		HeadscaleUserID: sql.NullString{String: created.ID, Valid: true},
-		ID:              user.ID,
-	}); err != nil {
+	if err := h.orgs.SetOIDCIdentity(ctx, subdomain, created.ID, params.ID); err != nil {
+		h.deleteHeadscaleUser(ctx, client, created.ID)
 		return "", err
 	}
-	h.setOIDCIdentity(ctx, subdomain, created.ID, user.ID)
 	return created.ID, nil
 }
 
-// linkMembers links each of members, the members of subdomain's
-// organization, to a headscale user if it has none, updating members in
-// place. It's best-effort: a member that fails to link, e.g. as headscale
-// rejected the create call or another request linked it first, stays
-// unlinked.
-func (h *Handlers) linkMembers(ctx context.Context, subdomain string, client *hscl.Client, members []sqlcgen.User) {
-	claimed := claimedHeadscaleUserIDs(members)
-	for i, m := range members {
-		if m.HeadscaleUserID.Valid {
-			continue
-		}
-		hsID, err := h.ensureHeadscaleUser(ctx, subdomain, client, m, claimed)
-		if err != nil {
-			h.logger.Warn("link member to headscale user", "subdomain", subdomain, "user_id", m.ID, "error", err)
-			continue
-		}
-		members[i].HeadscaleUserID = sql.NullString{String: hsID, Valid: true}
-		claimed[hsID] = true
+// deleteHeadscaleUser deletes the headscale user id created for an ownscale
+// user that then failed to be created. A failure only leaves behind a user
+// nobody can log in as.
+func (h *Handlers) deleteHeadscaleUser(ctx context.Context, client *hscl.Client, id string) {
+	if err := client.DeleteUserAndNodes(ctx, id); err != nil {
+		h.logger.Warn("delete headscale user of a failed sign-up", "headscale_user_id", id, "error", err)
 	}
-}
-
-// linkAllMembers links every member of subdomain's organization to a
-// headscale user. It runs when the organization's headscale starts (see
-// orgs.Service.OnStart), so a member's first OIDC login through headscale
-// finds their headscale user instead of creating another one.
-func (h *Handlers) linkAllMembers(ctx context.Context, subdomain string, client *hscl.Client) {
-	org, err := h.queries.GetOrganizationBySubdomain(ctx, subdomain)
-	if err != nil {
-		h.logger.Warn("link members on start: get organization", "subdomain", subdomain, "error", err)
-		return
-	}
-	members, err := h.queries.ListUsersByOrganization(ctx, org.ID)
-	if err != nil {
-		h.logger.Warn("link members on start: list members", "subdomain", subdomain, "error", err)
-		return
-	}
-	h.linkMembers(ctx, subdomain, client, members)
 }
 
 // errMemberNotFound means a member ID doesn't belong to the organization.
 var errMemberNotFound = errors.New("member not found")
 
-// memberHeadscaleUser returns the headscale user of the member memberID of
-// org, linking one first if the member has none (see ensureHeadscaleUser).
+// memberHeadscaleUser returns the headscale user of the member memberID of org.
 func (h *Handlers) memberHeadscaleUser(ctx context.Context, client *hscl.Client, org sqlcgen.Organization, memberID string) (hscl.User, error) {
 	members, err := h.queries.ListUsersByOrganization(ctx, org.ID)
 	if err != nil {
@@ -188,10 +115,7 @@ func (h *Handlers) memberHeadscaleUser(ctx context.Context, client *hscl.Client,
 	if i < 0 {
 		return hscl.User{}, errMemberNotFound
 	}
-	hsID, err := h.ensureHeadscaleUser(ctx, org.Subdomain, client, members[i], claimedHeadscaleUserIDs(members))
-	if err != nil {
-		return hscl.User{}, err
-	}
+	hsID := members[i].HeadscaleUserID
 	users, err := client.ListUsers(ctx)
 	if err != nil {
 		return hscl.User{}, err
@@ -200,12 +124,4 @@ func (h *Handlers) memberHeadscaleUser(ctx context.Context, client *hscl.Client,
 		return users[j], nil
 	}
 	return hscl.User{}, fmt.Errorf("headscale user %s of member %s not found", hsID, memberID)
-}
-
-// setOIDCIdentity is orgs.Service.SetOIDCIdentity, best-effort: a failure
-// only risks a duplicate headscale user on the person's first OIDC login.
-func (h *Handlers) setOIDCIdentity(ctx context.Context, subdomain, headscaleUserID, userID string) {
-	if err := h.orgs.SetOIDCIdentity(ctx, subdomain, headscaleUserID, userID); err != nil {
-		h.logger.Warn("set headscale user OIDC identity", "subdomain", subdomain, "user_id", userID, "error", err)
-	}
 }

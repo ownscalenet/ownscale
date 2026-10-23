@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"database/sql"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -18,15 +17,7 @@ import (
 // "1" (alice) owns node "1" and pre-auth key "1"; user "2" owns neither.
 func callerWithRole(t *testing.T, h *Handlers, owner sqlcgen.User, role, hsUserID string) sqlcgen.User {
 	t.Helper()
-	user := dbtest.CreateUser(t, h.queries.Queries, owner.OrganizationID, role)
-	if err := h.queries.LinkUserHeadscaleUser(t.Context(), sqlcgen.LinkUserHeadscaleUserParams{
-		HeadscaleUserID: sql.NullString{String: hsUserID, Valid: true},
-		ID:              user.ID,
-	}); err != nil {
-		t.Fatalf("LinkUserHeadscaleUser: %v", err)
-	}
-	user.HeadscaleUserID = sql.NullString{String: hsUserID, Valid: true}
-	return user
+	return dbtest.CreateUserWithHeadscaleUser(t, h.queries.Queries, owner.OrganizationID, role, hsUserID)
 }
 
 func TestRoleAccessToMachinesAndKeys(t *testing.T) {

@@ -105,18 +105,29 @@ func CreateOrg(t testing.TB, q *sqlcgen.Queries, subdomain string) sqlcgen.Organ
 }
 
 // CreateUser inserts a user with role in organization orgID. Its ID,
-// provider user ID and email are derived from a fresh xid.
+// provider user ID, email and headscale user ID are derived from a fresh xid.
 func CreateUser(t testing.TB, q *sqlcgen.Queries, orgID, role string) sqlcgen.User {
 	t.Helper()
 	id := xid.New().String()
+	return createUser(t, q, id, orgID, role, "hs-"+id)
+}
+
+func CreateUserWithHeadscaleUser(t testing.TB, q *sqlcgen.Queries, orgID, role, headscaleUserID string) sqlcgen.User {
+	t.Helper()
+	return createUser(t, q, xid.New().String(), orgID, role, headscaleUserID)
+}
+
+func createUser(t testing.TB, q *sqlcgen.Queries, id, orgID, role, headscaleUserID string) sqlcgen.User {
+	t.Helper()
 	user, err := q.CreateUser(t.Context(), sqlcgen.CreateUserParams{
-		ID:             id,
-		Provider:       "oidc",
-		ProviderUserID: id,
-		Email:          id + "@example.com",
-		Name:           "Test User",
-		OrganizationID: orgID,
-		Role:           role,
+		ID:              id,
+		Provider:        "oidc",
+		ProviderUserID:  id,
+		Email:           id + "@example.com",
+		Name:            "Test User",
+		OrganizationID:  orgID,
+		Role:            role,
+		HeadscaleUserID: headscaleUserID,
 	})
 	if err != nil {
 		t.Fatalf("CreateUser: %v", err)

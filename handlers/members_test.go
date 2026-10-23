@@ -10,7 +10,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/hscl"
 	"github.com/ownscalenet/ownscale/hscl/hstest"
 )
@@ -112,150 +112,27 @@ func TestUpdateMemberRoleRejectsOwnerTransitions(t *testing.T) {
 	}
 }
 
-func TestListMembersAutoLinksByEmail(t *testing.T) {
+// TestListMembersOmitsHeadscaleUserID checks that the members response
+// leaves out each member's headscale user, which is internal.
+func TestListMembersOmitsHeadscaleUserID(t *testing.T) {
 	h, _, users := newOrgTestHandlers(t, RoleOwner, RoleMember)
-	owner, target := users[0], users[1]
 
-	// Give the member the email the fake headscale server's "alice" user
-	// carries (see newFakeHeadscaleServer in machines_test.go), so
-	// ListMembers' auto-link-by-email logic finds a match.
-	if err := h.queries.UpdateUserProfile(t.Context(), sqlcgen.UpdateUserProfileParams{
-		Email:         "alice@example.com",
-		Name:          target.Name,
-		AvatarUrl:     target.AvatarUrl,
-		EmailVerified: target.EmailVerified,
-		ID:            target.ID,
-	}); err != nil {
-		t.Fatalf("UpdateUserProfile: %v", err)
-	}
-
-	client, _, _, _ := newFakeHeadscaleServer(t)
-	h.hs = fakeHeadscaleClients{client: client}
-
-	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/members", nil), owner)
+	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/members", nil), users[0])
 	rec := httptest.NewRecorder()
 	h.ListMembers(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
 	}
-
-	got, err := h.queries.GetUserByID(t.Context(), target.ID)
-	if err != nil {
-		t.Fatalf("GetUserByID: %v", err)
-	}
-	if !got.HeadscaleUserID.Valid || got.HeadscaleUserID.String != "1" {
-		t.Errorf("headscaleUserId = %+v, want linked to headscale user 1 (alice)", got.HeadscaleUserID)
-	}
-
-	// The link is purely internal bookkeeping -- the JSON response must
-	// not surface it.
-	if strings.Contains(rec.Body.String(), "headscaleUserId") {
-		t.Errorf("response leaks headscaleUserId: %s", rec.Body)
-	}
-}
-
-func TestListMembersDoesNotRelinkAlreadyLinkedMember(t *testing.T) {
-	h, _, users := newOrgTestHandlers(t, RoleOwner, RoleMember)
-	owner, target := users[0], users[1]
-
-	if err := h.queries.UpdateUserProfile(t.Context(), sqlcgen.UpdateUserProfileParams{
-		Email:         "alice@example.com",
-		Name:          target.Name,
-		AvatarUrl:     target.AvatarUrl,
-		EmailVerified: target.EmailVerified,
-		ID:            target.ID,
-	}); err != nil {
-		t.Fatalf("UpdateUserProfile: %v", err)
-	}
-	// Pre-link to a different headscale user than the one email-matching
-	// would pick ("1"/alice) -- ListMembers must leave this alone.
-	if err := h.queries.LinkUserHeadscaleUser(t.Context(), sqlcgen.LinkUserHeadscaleUserParams{
-		HeadscaleUserID: sql.NullString{String: "2", Valid: true},
-		ID:              target.ID,
-	}); err != nil {
-		t.Fatalf("LinkUserHeadscaleUser: %v", err)
-	}
-
-	client, _, _, _ := newFakeHeadscaleServer(t)
-	h.hs = fakeHeadscaleClients{client: client}
-
-	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/members", nil), owner)
-	rec := httptest.NewRecorder()
-	h.ListMembers(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
-	}
-
-	got, err := h.queries.GetUserByID(t.Context(), target.ID)
-	if err != nil {
-		t.Fatalf("GetUserByID: %v", err)
-	}
-	if got.HeadscaleUserID.String != "2" {
-		t.Errorf("headscaleUserId = %+v, want unchanged at 2", got.HeadscaleUserID)
-	}
-}
-
-func TestListMembersDifferentProvidersSameEmailGetDistinctHeadscaleUsers(t *testing.T) {
-	h, _, users := newOrgTestHandlers(t, RoleOwner, RoleMember, RoleMember)
-	owner, google, microsoft := users[0], users[1], users[2]
-
-	// Pre-link the owner to an unrelated headscale user so it's excluded
-	// from this scenario -- the fake headscale server's POST /api/v1/user
-	// always returns the same fixed new-user id, so leaving the owner
-	// unlinked would make it consume that id and mask the collision this
-	// test is about.
-	if err := h.queries.LinkUserHeadscaleUser(t.Context(), sqlcgen.LinkUserHeadscaleUserParams{
-		HeadscaleUserID: sql.NullString{String: "9", Valid: true},
-		ID:              owner.ID,
-	}); err != nil {
-		t.Fatalf("LinkUserHeadscaleUser(owner): %v", err)
-	}
-
-	// Two ownscale identities for the same person, via different login
-	// providers, sharing an email -- the scenario the claimed-set logic
-	// exists for.
-	for _, u := range []struct {
-		user     sqlcgen.User
-		provider string
-	}{{google, "google"}, {microsoft, "microsoft"}} {
-		if err := h.queries.UpdateUserProfile(t.Context(), sqlcgen.UpdateUserProfileParams{
-			Email: "alice@example.com", Name: u.user.Name, AvatarUrl: u.user.AvatarUrl,
-			EmailVerified: u.user.EmailVerified, ID: u.user.ID,
-		}); err != nil {
-			t.Fatalf("UpdateUserProfile: %v", err)
-		}
-	}
-
-	client, _, _, _ := newFakeHeadscaleServer(t)
-	h.hs = fakeHeadscaleClients{client: client}
-
-	req := withTestUser(httptest.NewRequest(http.MethodGet, "/api/members", nil), owner)
-	rec := httptest.NewRecorder()
-	h.ListMembers(rec, req)
-	if rec.Code != http.StatusOK {
-		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
-	}
-
-	gotGoogle, err := h.queries.GetUserByID(t.Context(), google.ID)
-	if err != nil {
-		t.Fatalf("GetUserByID(google): %v", err)
-	}
-	gotMicrosoft, err := h.queries.GetUserByID(t.Context(), microsoft.ID)
-	if err != nil {
-		t.Fatalf("GetUserByID(microsoft): %v", err)
-	}
-
-	if !gotGoogle.HeadscaleUserID.Valid || !gotMicrosoft.HeadscaleUserID.Valid {
-		t.Fatalf("expected both members linked, got google=%+v microsoft=%+v", gotGoogle.HeadscaleUserID, gotMicrosoft.HeadscaleUserID)
-	}
-	if gotGoogle.HeadscaleUserID.String == gotMicrosoft.HeadscaleUserID.String {
-		t.Errorf("both members linked to the same headscale user %q, want distinct", gotGoogle.HeadscaleUserID.String)
+	if body := rec.Body.String(); strings.Contains(body, "headscaleUserId") || strings.Contains(body, users[1].HeadscaleUserID) {
+		t.Errorf("response leaks the headscale user: %s", body)
 	}
 }
 
 func TestRemoveMember(t *testing.T) {
 	h, _, users := newOrgTestHandlers(t, RoleOwner, RoleMember)
 	owner, target := users[0], users[1]
+	client, _, _, _ := newFakeHeadscaleServer(t)
+	h.hs = fakeHeadscaleClients{client: client}
 
 	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/members/x", nil), owner), "id", target.ID)
 	rec := httptest.NewRecorder()
@@ -289,9 +166,9 @@ func headscaleWithUsers(t *testing.T, names ...string) (*hscl.Client, map[string
 	return client, ids
 }
 
-// TestRemoveMemberDeletesHeadscaleUser checks that removing a member linked
-// to a headscale user also removes that user and its machines, and that
-// nothing is removed while headscale is unreachable.
+// TestRemoveMemberDeletesHeadscaleUser checks that removing a member also
+// removes their headscale user and its machines, and that nothing is
+// removed while headscale is unreachable.
 func TestRemoveMemberDeletesHeadscaleUser(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -306,15 +183,10 @@ func TestRemoveMemberDeletesHeadscaleUser(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h, _, users := newOrgTestHandlers(t, RoleOwner, RoleMember)
-			owner, target := users[0], users[1]
+			h, org, users := newOrgTestHandlers(t, RoleOwner)
+			owner := users[0]
 			client, hsUserIDs := headscaleWithUsers(t, "member", "other")
-			if err := h.queries.LinkUserHeadscaleUser(t.Context(), sqlcgen.LinkUserHeadscaleUserParams{
-				HeadscaleUserID: sql.NullString{String: hsUserIDs["member"], Valid: true},
-				ID:              target.ID,
-			}); err != nil {
-				t.Fatalf("LinkUserHeadscaleUser: %v", err)
-			}
+			target := dbtest.CreateUserWithHeadscaleUser(t, h.queries.Queries, org.ID, RoleMember, hsUserIDs["member"])
 			h.hs = fakeHeadscaleClients{client: client}
 			if tt.unreachable {
 				h.hs = fakeHeadscaleClients{err: errors.New("not running")}

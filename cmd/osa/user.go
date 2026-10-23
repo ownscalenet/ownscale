@@ -74,16 +74,12 @@ func listUsers(ctx context.Context, out io.Writer, queries *db.TxQueries) error 
 		if u.OrgSubdomain.Valid {
 			org = u.OrgSubdomain.String
 		}
-		headscaleID := "-"
-		if u.HeadscaleUserID.Valid {
-			headscaleID = u.HeadscaleUserID.String
-		}
 		lastLogin := "-"
 		if u.LastLoginAt.Valid {
 			lastLogin = u.LastLoginAt.Time.Format("2006-01-02 15:04:05")
 		}
 		_, _ = fmt.Fprintf(out, "%-38s %-30s %-15s %-10s %-10s %-12s %-20s %s\n",
-			u.ID, u.Email, org, u.Role, u.Provider, headscaleID,
+			u.ID, u.Email, org, u.Role, u.Provider, u.HeadscaleUserID,
 			u.CreatedAt.Format("2006-01-02 15:04:05"), lastLogin)
 	}
 	return nil
@@ -128,14 +124,12 @@ func deleteUser(ctx context.Context, out io.Writer, queries *db.TxQueries, clien
 		return fmt.Errorf("get user: %w", err)
 	}
 
-	if user.HeadscaleUserID.Valid {
-		org, err := queries.GetOrganization(ctx, user.OrganizationID)
-		if err != nil {
-			return fmt.Errorf("get organization: %w", err)
-		}
-		if err := clientFor(org.Subdomain).DeleteUserAndNodes(ctx, user.HeadscaleUserID.String); err != nil {
-			return fmt.Errorf("delete headscale user: %w", err)
-		}
+	org, err := queries.GetOrganization(ctx, user.OrganizationID)
+	if err != nil {
+		return fmt.Errorf("get organization: %w", err)
+	}
+	if err := clientFor(org.Subdomain).DeleteUserAndNodes(ctx, user.HeadscaleUserID); err != nil {
+		return fmt.Errorf("delete headscale user: %w", err)
 	}
 
 	if err := queries.DeleteUser(ctx, user.ID); err != nil {

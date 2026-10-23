@@ -42,7 +42,7 @@ func isManager(role string) bool {
 // ownsHeadscaleUser reports whether caller is linked to the headscale user
 // hsUserID.
 func ownsHeadscaleUser(caller *sqlcgen.User, hsUserID string) bool {
-	return caller.HeadscaleUserID.Valid && caller.HeadscaleUserID.String == hsUserID
+	return caller.HeadscaleUserID == hsUserID
 }
 
 // assignableUser is a member of the caller's organization that the caller

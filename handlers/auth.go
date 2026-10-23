@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -58,6 +59,8 @@ func (e *inviteInvalidError) Error() string { return e.msg }
 // another passkey account in the same organization.
 var errUsernameTaken = errors.New("username is already taken in this organization")
 
+var errHeadscaleUnavailable = errors.New("headscale is unavailable")
+
 // createNewUser creates a brand-new user row, always with a resolved
 // organization and role: either the invite's organization+role (when next
 // points at an invite-accept path, consuming the invite atomically with
@@ -77,7 +80,9 @@ func (h *Handlers) createNewUser(ctx context.Context, params sqlcgen.CreateUserP
 		}
 		params.OrganizationID = org.ID
 		params.Role = RoleOwner
-		return h.queries.CreateUser(ctx, params)
+		return h.insertUser(ctx, org.Subdomain, params, func(q *sqlcgen.Queries, params sqlcgen.CreateUserParams) (sqlcgen.User, error) {
+			return q.CreateUser(ctx, params)
+		})
 	}
 
 	inv, err := h.queries.GetInviteByToken(ctx, token)
@@ -96,51 +101,91 @@ func (h *Handlers) createNewUser(ctx context.Context, params sqlcgen.CreateUserP
 	params.OrganizationID = inv.OrganizationID
 	params.Role = inv.Role
 
-	txQueries, commit, rollback, err := h.queries.StartTx(ctx)
+	org, err := h.queries.GetOrganization(ctx, inv.OrganizationID)
 	if err != nil {
 		return sqlcgen.User{}, err
 	}
-	defer rollback()
-
-	// Passkey usernames (stored as username@passkey emails) must be unique
-	// within the organization. A new-org signup can't collide (its org is
-	// empty), so only the invite path needs this, in the same tx as the
-	// insert.
-	if params.Provider == passkeyProvider {
-		taken, err := txQueries.CountOrgProviderEmail(ctx, sqlcgen.CountOrgProviderEmailParams{
-			OrganizationID: params.OrganizationID,
-			Provider:       passkeyProvider,
-			Email:          params.Email,
+	return h.insertUser(ctx, org.Subdomain, params, func(q *sqlcgen.Queries, params sqlcgen.CreateUserParams) (sqlcgen.User, error) {
+		if err := h.checkPasskeyUsername(ctx, q, params); err != nil {
+			return sqlcgen.User{}, err
+		}
+		// The user row must exist before accepted_by_user_id can
+		// reference it, so create the user first.
+		user, err := q.CreateUser(ctx, params)
+		if err != nil {
+			return sqlcgen.User{}, err
+		}
+		n, err := q.MarkInviteAcceptedIfPending(ctx, sqlcgen.MarkInviteAcceptedIfPendingParams{
+			AcceptedByUserID: sql.NullString{String: params.ID, Valid: true},
+			ID:               inv.ID,
 		})
 		if err != nil {
 			return sqlcgen.User{}, err
 		}
-		if taken > 0 {
-			return sqlcgen.User{}, errUsernameTaken
+		if n == 0 {
+			return sqlcgen.User{}, &inviteInvalidError{"invite has already been used"}
 		}
-	}
-
-	// The user row must exist before accepted_by_user_id can reference
-	// it, so create the user first.
-	user, err := txQueries.CreateUser(ctx, params)
-	if err != nil {
-		return sqlcgen.User{}, err
-	}
-
-	n, err := txQueries.MarkInviteAcceptedIfPending(ctx, sqlcgen.MarkInviteAcceptedIfPendingParams{
-		AcceptedByUserID: sql.NullString{String: params.ID, Valid: true},
-		ID:               inv.ID,
+		return user, nil
 	})
+}
+
+// insertUsercreates the headscale user of the user
+// params describes in subdomain's organization, then runs insert in a
+// transaction with params.HeadscaleUserID set. The headscale user is
+// deleted again if insert fails.
+func (h *Handlers) insertUser(
+	ctx context.Context,
+	subdomain string,
+	params sqlcgen.CreateUserParams,
+	insert func(q *sqlcgen.Queries, params sqlcgen.CreateUserParams) (sqlcgen.User, error),
+) (sqlcgen.User, error) {
+	client, err := h.hs.Ensure(ctx, subdomain)
 	if err != nil {
-		return sqlcgen.User{}, err
+		return sqlcgen.User{}, fmt.Errorf("%w: %w", errHeadscaleUnavailable, err)
 	}
-	if n == 0 {
-		return sqlcgen.User{}, &inviteInvalidError{"invite has already been used"}
+	hsID, err := h.createHeadscaleUser(ctx, subdomain, client, params)
+	if err != nil {
+		return sqlcgen.User{}, fmt.Errorf("%w: %w", errHeadscaleUnavailable, err)
 	}
-	if err := commit(); err != nil {
+	params.HeadscaleUserID = hsID
+
+	user, err := func() (sqlcgen.User, error) {
+		q, commit, rollback, err := h.queries.StartTx(ctx)
+		if err != nil {
+			return sqlcgen.User{}, err
+		}
+		defer rollback()
+		user, err := insert(q, params)
+		if err != nil {
+			return sqlcgen.User{}, err
+		}
+		return user, commit()
+	}()
+	if err != nil {
+		h.deleteHeadscaleUser(ctx, client, hsID)
 		return sqlcgen.User{}, err
 	}
 	return user, nil
+}
+
+// checkPasskeyUsername returns errUsernameTaken if params is a passkey
+// sign-up whose username is already used in its organization.
+func (h *Handlers) checkPasskeyUsername(ctx context.Context, q *sqlcgen.Queries, params sqlcgen.CreateUserParams) error {
+	if params.Provider != passkeyProvider {
+		return nil
+	}
+	taken, err := q.CountOrgProviderEmail(ctx, sqlcgen.CountOrgProviderEmailParams{
+		OrganizationID: params.OrganizationID,
+		Provider:       passkeyProvider,
+		Email:          params.Email,
+	})
+	if err != nil {
+		return err
+	}
+	if taken > 0 {
+		return errUsernameTaken
+	}
+	return nil
 }
 
 // AuthProviders reports which upstream login providers are configured, so
@@ -232,6 +277,11 @@ func (h *Handlers) AuthCallback(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			if invErr, ok := errors.AsType[*inviteInvalidError](err); ok {
 				h.writeError(w, http.StatusGone, invErr.Error())
+				return
+			}
+			if errors.Is(err, errHeadscaleUnavailable) {
+				h.logger.Warn("sign-up: create headscale user", "error", err)
+				h.writeError(w, http.StatusServiceUnavailable, "headscale is unavailable right now, try again in a moment")
 				return
 			}
 			h.serverError(w, r, err)

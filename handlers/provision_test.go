@@ -9,7 +9,6 @@ import (
 	"testing"
 
 	"github.com/ownscalenet/ownscale/db/dbtest"
-	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/orgs"
 )
 
@@ -90,8 +89,7 @@ func TestUnprovisionedOrganization(t *testing.T) {
 }
 
 // TestProvisionOnFirstUse checks that registering a machine or creating a
-// key starts the organization's headscale and links the member to the
-// headscale user with their email.
+// key starts the organization's headscale.
 func TestProvisionOnFirstUse(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -111,15 +109,10 @@ func TestProvisionOnFirstUse(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			h, _, users := newOrgTestHandlers(t, RoleOwner, RoleMember)
-			owner, member := users[0], users[1]
-			// newFakeHeadscaleServer has headscale user "1" for alice@example.com.
-			if err := h.queries.UpdateUserProfile(t.Context(), sqlcgen.UpdateUserProfileParams{
-				Email: "alice@example.com", Name: member.Name, AvatarUrl: member.AvatarUrl,
-				EmailVerified: member.EmailVerified, ID: member.ID,
-			}); err != nil {
-				t.Fatalf("UpdateUserProfile: %v", err)
-			}
+			h, org, users := newOrgTestHandlers(t, RoleOwner)
+			owner := users[0]
+			// newFakeHeadscaleServer has headscale user "1".
+			member := dbtest.CreateUserWithHeadscaleUser(t, h.queries.Queries, org.ID, RoleMember, "1")
 			client, _, _, _ := newFakeHeadscaleServer(t)
 			hs := &lazyHeadscaleClients{client: client}
 			h.hs = hs
@@ -135,51 +128,7 @@ func TestProvisionOnFirstUse(t *testing.T) {
 			if !hs.started {
 				t.Error("headscale not started")
 			}
-			got, err := h.queries.GetUserByID(t.Context(), member.ID)
-			if err != nil {
-				t.Fatalf("GetUserByID: %v", err)
-			}
-			if got.HeadscaleUserID.String != "1" {
-				t.Errorf("member's headscale user = %+v, want 1", got.HeadscaleUserID)
-			}
 		})
-	}
-}
-
-// TestStartLinksMembers checks that starting an organization's headscale
-// links its members to headscale users, so their first OIDC login through
-// headscale doesn't create a second one.
-func TestStartLinksMembers(t *testing.T) {
-	h, queries := newTestHandlers(t)
-	org, err := h.orgs.Create(t.Context(), "acme")
-	if err != nil {
-		t.Fatalf("Create: %v", err)
-	}
-	members := []sqlcgen.User{
-		dbtest.CreateUser(t, queries.Queries, org.ID, RoleOwner),
-		dbtest.CreateUser(t, queries.Queries, org.ID, RoleMember),
-	}
-
-	client, err := h.orgs.Ensure(t.Context(), org.Subdomain)
-	if err != nil {
-		t.Fatalf("Ensure: %v", err)
-	}
-	hsUsers, err := client.ListUsers(t.Context())
-	if err != nil {
-		t.Fatalf("ListUsers: %v", err)
-	}
-	emails := map[string]string{}
-	for _, u := range hsUsers {
-		emails[u.ID] = u.Email
-	}
-	for _, m := range members {
-		got, err := queries.GetUserByID(t.Context(), m.ID)
-		if err != nil {
-			t.Fatalf("GetUserByID: %v", err)
-		}
-		if !got.HeadscaleUserID.Valid || emails[got.HeadscaleUserID.String] != m.Email {
-			t.Errorf("member %s linked to %+v, want a headscale user with email %s", m.Email, got.HeadscaleUserID, m.Email)
-		}
 	}
 }
 

@@ -1,6 +1,6 @@
 -- +goose Up
 ALTER TABLE users ADD COLUMN role TEXT NOT NULL DEFAULT 'member';
-ALTER TABLE users ADD COLUMN headscale_user_id TEXT;
+ALTER TABLE users ADD COLUMN headscale_user_id TEXT NOT NULL DEFAULT '';
 
 -- Every user that already exists at the time this migration runs is, today,
 -- always the sole creator of their organization (there's no invite flow
@@ -8,9 +8,8 @@ ALTER TABLE users ADD COLUMN headscale_user_id TEXT;
 UPDATE users SET role = 'owner' WHERE organization_id IS NOT NULL;
 
 -- Prevents linking the same headscale user to two different ownscale users
--- within an organization; NULLs (unlinked) are unconstrained.
-CREATE UNIQUE INDEX users_org_headscale_user_idx ON users (organization_id, headscale_user_id)
-    WHERE headscale_user_id IS NOT NULL;
+-- within an organization;
+CREATE UNIQUE INDEX users_org_headscale_user_idx ON users (organization_id, headscale_user_id);
 
 CREATE TABLE invites (
     id TEXT PRIMARY KEY,

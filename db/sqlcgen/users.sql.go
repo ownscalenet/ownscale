@@ -41,21 +41,22 @@ func (q *Queries) CountOrgUsers(ctx context.Context, organizationID string) (int
 }
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (id, organization_id, role, provider, provider_user_id, email, name, avatar_url, email_verified)
-VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+INSERT INTO users (id, organization_id, role, provider, provider_user_id, email, name, avatar_url, email_verified, headscale_user_id)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, organization_id, provider, provider_user_id, email, name, avatar_url, created_at, updated_at, email_verified, last_login_at, role, headscale_user_id
 `
 
 type CreateUserParams struct {
-	ID             string
-	OrganizationID string
-	Role           string
-	Provider       string
-	ProviderUserID string
-	Email          string
-	Name           string
-	AvatarUrl      string
-	EmailVerified  int64
+	ID              string
+	OrganizationID  string
+	Role            string
+	Provider        string
+	ProviderUserID  string
+	Email           string
+	Name            string
+	AvatarUrl       string
+	EmailVerified   int64
+	HeadscaleUserID string `json:"-"`
 }
 
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
@@ -69,6 +70,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		arg.Name,
 		arg.AvatarUrl,
 		arg.EmailVerified,
+		arg.HeadscaleUserID,
 	)
 	var i User
 	err := row.Scan(
@@ -153,20 +155,6 @@ func (q *Queries) GetUserByProvider(ctx context.Context, arg GetUserByProviderPa
 	return i, err
 }
 
-const linkUserHeadscaleUser = `-- name: LinkUserHeadscaleUser :exec
-UPDATE users SET headscale_user_id = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?
-`
-
-type LinkUserHeadscaleUserParams struct {
-	HeadscaleUserID sql.NullString `json:"-"`
-	ID              string
-}
-
-func (q *Queries) LinkUserHeadscaleUser(ctx context.Context, arg LinkUserHeadscaleUserParams) error {
-	_, err := q.db.ExecContext(ctx, linkUserHeadscaleUser, arg.HeadscaleUserID, arg.ID)
-	return err
-}
-
 const listUsersByOrganization = `-- name: ListUsersByOrganization :many
 SELECT id, organization_id, provider, provider_user_id, email, name, avatar_url, created_at, updated_at, email_verified, last_login_at, role, headscale_user_id FROM users WHERE organization_id = ? ORDER BY created_at
 `
@@ -228,7 +216,7 @@ type ListUsersWithOrganizationRow struct {
 	EmailVerified   int64
 	LastLoginAt     sql.NullTime
 	Role            string
-	HeadscaleUserID sql.NullString `json:"-"`
+	HeadscaleUserID string `json:"-"`
 	OrgSubdomain    sql.NullString
 }
 

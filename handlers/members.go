@@ -8,8 +8,8 @@ import (
 )
 
 // member is the JSON shape of an org member returned by ListMembers. The
-// member's linked headscale user (see ListMembers' auto-linking) is an
-// internal implementation detail and deliberately not exposed here --
+// member's headscale user is an internal implementation detail and
+// deliberately not exposed here --
 // headscale users aren't a concept end-users should need to know about.
 type member struct {
 	ID    string `json:"id"`
@@ -57,10 +57,6 @@ func (h *Handlers) ListMembers(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.serverError(w, r, err)
 		return
-	}
-
-	if client, _, notConfigured, err := h.resolveHeadscaleClient(r); err == nil && !notConfigured {
-		h.linkMembers(r.Context(), org.Subdomain, client, users)
 	}
 
 	members := make([]member, 0, len(users))
@@ -160,20 +156,18 @@ func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	// Headscale goes first: if the account were deleted first, a failure
 	// here would leave their machines on the tailnet with nothing in the
 	// console to retry from.
-	if target.HeadscaleUserID.Valid {
-		client, _, notConfigured, err := h.resolveHeadscaleClient(r)
-		if err != nil {
-			h.serverError(w, r, err)
-			return
-		}
-		if notConfigured {
-			h.writeError(w, http.StatusConflict, "headscale is unavailable right now, try again in a moment")
-			return
-		}
-		if err := client.DeleteUserAndNodes(r.Context(), target.HeadscaleUserID.String); err != nil {
-			h.serverError(w, r, err)
-			return
-		}
+	client, _, notConfigured, err := h.resolveHeadscaleClient(r)
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	if notConfigured {
+		h.writeError(w, http.StatusConflict, "headscale is unavailable right now, try again in a moment")
+		return
+	}
+	if err := client.DeleteUserAndNodes(r.Context(), target.HeadscaleUserID); err != nil {
+		h.serverError(w, r, err)
+		return
 	}
 	if err := h.queries.DeleteUser(r.Context(), target.ID); err != nil {
 		h.serverError(w, r, err)
