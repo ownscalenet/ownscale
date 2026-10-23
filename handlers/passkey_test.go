@@ -11,6 +11,7 @@ import (
 
 	vwa "github.com/descope/virtualwebauthn"
 
+	dbpkg "github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
 
@@ -87,7 +88,7 @@ func TestPasskeyRegisterSelfServiceProvisionsOrganization(t *testing.T) {
 	cred := vwa.NewCredential(vwa.KeyTypeEC2)
 
 	beginReq := httptest.NewRequest(http.MethodPost, "/api/passkey/register/begin",
-		strings.NewReader(`{"email":"new-passkey-user@example.com"}`))
+		strings.NewReader(`{"username":"newuser"}`))
 	finishRec := runCeremony(t, h.PasskeyRegisterBegin, h.PasskeyRegisterFinish, beginReq, registerBuilder(rp, authenticator, cred))
 
 	if finishRec.Code != http.StatusSeeOther {
@@ -98,19 +99,22 @@ func TestPasskeyRegisterSelfServiceProvisionsOrganization(t *testing.T) {
 	}
 
 	// provider_user_id is a freshly minted xid we don't know ahead of time,
-	// so look the user up by email instead.
+	// so look the user up by username instead.
 	var found sqlcgen.User
 	all := listAllUsers(t, queries)
 	for _, u := range all {
-		if u.Email == "new-passkey-user@example.com" {
+		if u.Name == "newuser" {
 			found = u
 		}
 	}
 	if found.ID == "" {
-		t.Fatalf("expected a user with email new-passkey-user@example.com to have been created")
+		t.Fatalf("expected a user named newuser to have been created")
 	}
 	if found.Provider != passkeyProvider {
 		t.Errorf("Provider = %q, want %q", found.Provider, passkeyProvider)
+	}
+	if found.Email != "newuser@passkey" {
+		t.Errorf("Email = %q, want newuser@passkey", found.Email)
 	}
 	if found.OrganizationID == "" {
 		t.Error("expected OrganizationID to be set (auto-provisioned)")
@@ -159,7 +163,7 @@ func TestPasskeyRegisterFinishAssignsInvitedOrganization(t *testing.T) {
 	cred := vwa.NewCredential(vwa.KeyTypeEC2)
 
 	beginReq := httptest.NewRequest(http.MethodPost, "/api/passkey/register/begin",
-		strings.NewReader(`{"email":"invitee-passkey@example.com","next":"/invite/testtoken"}`))
+		strings.NewReader(`{"username":"inviteeuser","next":"/invite/testtoken"}`))
 	finishRec := runCeremony(t, h.PasskeyRegisterBegin, h.PasskeyRegisterFinish, beginReq, registerBuilder(rp, authenticator, cred))
 
 	if finishRec.Code != http.StatusSeeOther {
@@ -171,12 +175,12 @@ func TestPasskeyRegisterFinishAssignsInvitedOrganization(t *testing.T) {
 
 	var found sqlcgen.User
 	for _, u := range listAllUsers(t, queries) {
-		if u.Email == "invitee-passkey@example.com" {
+		if u.Name == "inviteeuser" {
 			found = u
 		}
 	}
 	if found.ID == "" {
-		t.Fatalf("expected a user with email invitee-passkey@example.com to have been created")
+		t.Fatalf("expected a user named inviteeuser to have been created")
 	}
 	if found.OrganizationID != org.ID {
 		t.Errorf("OrganizationID = %q, want the invited organization %q", found.OrganizationID, org.ID)
@@ -194,15 +198,31 @@ func TestPasskeyRegisterFinishAssignsInvitedOrganization(t *testing.T) {
 	}
 }
 
-// TestPasskeyRegisterBeginRejectsMissingEmail verifies the (only)
+// TestPasskeyRegisterBeginRejectsInvalidUsername verifies the username
 // validation PasskeyRegisterBegin performs itself.
-func TestPasskeyRegisterBeginRejectsMissingEmail(t *testing.T) {
-	h, _ := newTestHandlers(t)
-	req := httptest.NewRequest(http.MethodPost, "/api/passkey/register/begin", strings.NewReader(`{}`))
-	rec := httptest.NewRecorder()
-	h.PasskeyRegisterBegin(rec, req)
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body)
+func TestPasskeyRegisterBeginRejectsInvalidUsername(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"missing", `{}`},
+		{"empty", `{"username":""}`},
+		{"too short", `{"username":"a"}`},
+		{"starts with digit", `{"username":"1alice"}`},
+		{"bad char", `{"username":"al ice"}`},
+		{"has at", `{"username":"alice@x"}`},
+		{"reserved", `{"username":"devbox"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, _ := newTestHandlers(t)
+			req := httptest.NewRequest(http.MethodPost, "/api/passkey/register/begin", strings.NewReader(tt.body))
+			rec := httptest.NewRecorder()
+			h.PasskeyRegisterBegin(rec, req)
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body)
+			}
+		})
 	}
 }
 
@@ -406,4 +426,85 @@ func listAllUsers(t *testing.T, queries interface {
 		})
 	}
 	return out
+}
+
+// passkeySignup drives a full passkey registration ceremony for username
+// into the org the invite token points at, returning the finish recorder.
+func passkeySignup(t *testing.T, h *Handlers, username, token string) *httptest.ResponseRecorder {
+	t.Helper()
+	rp := testRelyingParty(testBaseDomain)
+	body := `{"username":"` + username + `","next":"/invite/` + token + `"}`
+	beginReq := httptest.NewRequest(http.MethodPost, "/api/passkey/register/begin", strings.NewReader(body))
+	return runCeremony(t, h.PasskeyRegisterBegin, h.PasskeyRegisterFinish, beginReq,
+		registerBuilder(rp, vwa.NewAuthenticator(), vwa.NewCredential(vwa.KeyTypeEC2)))
+}
+
+// inviteInto creates an invite with the given token into org, by creator.
+func inviteInto(t *testing.T, queries *dbpkg.TxQueries, org, creator, token string) {
+	t.Helper()
+	if _, err := queries.CreateInvite(t.Context(), sqlcgen.CreateInviteParams{
+		ID:             "invite-" + token,
+		OrganizationID: org,
+		Role:           RoleMember,
+		Token:          token,
+		CreatedBy:      creator,
+		ExpiresAt:      time.Now().Add(24 * time.Hour),
+	}); err != nil {
+		t.Fatalf("CreateInvite(%q): %v", token, err)
+	}
+}
+
+// TestPasskeyUsernameUniquePerOrg: a username can be taken only once within
+// an organization, but the same username is free in a different one.
+func TestPasskeyUsernameUniquePerOrg(t *testing.T) {
+	setupSessions()
+	h, queries := newTestHandlersWithBaseDomain(t, testBaseDomain)
+
+	ownerA := insertUser(t, queries)
+	inviteInto(t, queries, ownerA.OrganizationID, ownerA.ID, "a1token")
+	inviteInto(t, queries, ownerA.OrganizationID, ownerA.ID, "a2token")
+
+	if rec := passkeySignup(t, h, "alice", "a1token"); rec.Code != http.StatusSeeOther {
+		t.Fatalf("first signup status = %d, want 303: %s", rec.Code, rec.Body)
+	}
+	if rec := passkeySignup(t, h, "alice", "a2token"); rec.Code != http.StatusConflict {
+		t.Fatalf("duplicate signup status = %d, want 409: %s", rec.Code, rec.Body)
+	}
+
+	ownerB := insertUser(t, queries)
+	inviteInto(t, queries, ownerB.OrganizationID, ownerB.ID, "b1token")
+	if rec := passkeySignup(t, h, "alice", "b1token"); rec.Code != http.StatusSeeOther {
+		t.Fatalf("same username in another org status = %d, want 303: %s", rec.Code, rec.Body)
+	}
+}
+
+func TestValidatePasskeyUsername(t *testing.T) {
+	tests := []struct {
+		in     string
+		want   string
+		wantOK bool
+	}{
+		{"alice", "alice", true},
+		{"al", "al", true},
+		{"Alice", "alice", true},
+		{"  bob_1.2-3  ", "bob_1.2-3", true},
+		{"a", "", false},
+		{"", "", false},
+		{"1alice", "", false},
+		{"al ice", "", false},
+		{"alice@x", "", false},
+		{"devbox", "", false},
+		{"user", "", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.in, func(t *testing.T) {
+			got, msg := validatePasskeyUsername(tt.in)
+			if (msg == "") != tt.wantOK {
+				t.Fatalf("validatePasskeyUsername(%q) msg = %q, wantOK = %v", tt.in, msg, tt.wantOK)
+			}
+			if tt.wantOK && got != tt.want {
+				t.Errorf("normalized = %q, want %q", got, tt.want)
+			}
+		})
+	}
 }

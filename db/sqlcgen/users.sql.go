@@ -11,6 +11,24 @@ import (
 	"time"
 )
 
+const countOrgProviderEmail = `-- name: CountOrgProviderEmail :one
+SELECT COUNT(*) FROM users
+WHERE organization_id = ? AND provider = ? AND email = ?
+`
+
+type CountOrgProviderEmailParams struct {
+	OrganizationID string
+	Provider       string
+	Email          string
+}
+
+func (q *Queries) CountOrgProviderEmail(ctx context.Context, arg CountOrgProviderEmailParams) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countOrgProviderEmail, arg.OrganizationID, arg.Provider, arg.Email)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const countOrgUsers = `-- name: CountOrgUsers :one
 SELECT COUNT(*) FROM users WHERE organization_id = ?
 `

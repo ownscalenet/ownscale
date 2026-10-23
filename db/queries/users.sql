@@ -6,6 +6,10 @@ RETURNING *;
 -- name: GetUserByProvider :one
 SELECT * FROM users WHERE provider = ? AND provider_user_id = ?;
 
+-- name: CountOrgProviderEmail :one
+SELECT COUNT(*) FROM users
+WHERE organization_id = ? AND provider = ? AND email = ?;
+
 -- name: GetUserByID :one
 SELECT * FROM users WHERE id = ?;
 

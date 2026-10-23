@@ -95,7 +95,7 @@ test('creating an account from an invite joins the inviting organization', async
   await dialog.getByRole('button', { name: 'Done' }).click()
 
   // Unique per run: the account outlives the membership removed below.
-  const email = `invite-signup-${Date.now()}@ownscale.test`
+  const username = `invitee${Date.now()}`
   const inviteeContext = await browser.newContext({ storageState: { cookies: [], origins: [] } })
   try {
     const inviteePage = await inviteeContext.newPage()
@@ -105,7 +105,7 @@ test('creating an account from an invite joins the inviting organization', async
     await expect(inviteePage).toHaveURL(/\/signup\?next=%2Finvite%2F/)
     await expect(inviteePage.getByRole('heading', { name: 'Create account' })).toBeVisible()
 
-    await inviteePage.locator('#passkey-email').fill(email)
+    await inviteePage.locator('#passkey-username').fill(username)
     await inviteePage.getByRole('button', { name: 'Continue with passkey' }).click()
 
     await expect(inviteePage.getByRole('link', { name: 'Machines' })).toBeVisible({
@@ -116,11 +116,11 @@ test('creating an account from an invite joins the inviting organization', async
   }
 
   await page.reload()
-  const memberRow = page.getByRole('row').filter({ hasText: email })
+  const memberRow = page.getByRole('row').filter({ hasText: username })
   await expect(memberRow).toBeVisible()
 
   await memberRow.getByRole('button', { name: 'Remove' }).click()
-  await confirmDialog(page, 'Remove member', email)
+  await confirmDialog(page, 'Remove member', username)
   await expect(memberRow).toBeHidden()
 })
 

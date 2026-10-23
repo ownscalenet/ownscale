@@ -21,7 +21,7 @@ export default function Signup() {
   const [passkeySupported] = useState(() => browserSupportsWebAuthn())
   const [passkeyBusy, setPasskeyBusy] = useState(false)
   const [passkeyError, setPasskeyError] = useState<string | null>(null)
-  const [email, setEmail] = useState('')
+  const [username, setUsername] = useState('')
 
   // `next` may be a backend-only route, which needs a full navigation.
   useEffect(() => {
@@ -42,7 +42,7 @@ export default function Signup() {
     setPasskeyError(null)
     setPasskeyBusy(true)
     try {
-      const options = await passkeyRegisterBegin(email, next ?? undefined)
+      const options = await passkeyRegisterBegin(username, next ?? undefined)
       const response = await createPasskey(options)
       await passkeyRegisterFinish(response)
       goToNext(next)
@@ -69,20 +69,23 @@ export default function Signup() {
               >
                 <p className="text-sm text-base-content/70">
                   Passkeys are recommended: they don't share any personal information with Ownscale,
-                  but you won't be able to recover your account in case you lose access to your password manager.
+                  but you won't be able to recover your account in case you lose access to your
+                  password manager.
                 </p>
-                <label className="fieldset-label" htmlFor="passkey-email">
-                  Email
+                <label className="fieldset-label" htmlFor="passkey-username">
+                  Username
                 </label>
                 <input
-                  id="passkey-email"
-                  type="email"
+                  id="passkey-username"
+                  type="text"
                   required
-                  autoComplete="email"
+                  autoComplete="username"
+                  pattern="[A-Za-z][A-Za-z0-9._\-]{1,31}"
+                  title="2–32 characters, starting with a letter; letters, digits, '.', '-' and '_' only"
                   className="input input-bordered w-full"
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  placeholder="your-username"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
                 />
                 <button type="submit" className="btn btn-primary" disabled={passkeyBusy}>
                   Continue with passkey

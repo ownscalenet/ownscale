@@ -3,7 +3,11 @@ package handlers
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
+	"time"
+
+	vwa "github.com/descope/virtualwebauthn"
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/hscl"
@@ -26,55 +30,63 @@ func nodesOf(t *testing.T, client *hscl.Client, headscaleUserID string) []string
 	return names
 }
 
-// TestUnverifiedEmailCannotAdoptHeadscaleUser: the victim's tailnet login
-// left a headscale user carrying their identity, verified email and
-// machine, while the console links them to another one. A member who just
-// typed the victim's email, e.g. at passkey sign-up, must not be linked to
-// it by any of the paths that link members.
-func TestUnverifiedEmailCannotAdoptHeadscaleUser(t *testing.T) {
-	tests := []struct {
-		name string
-		link func(t *testing.T, h *Handlers, o realOrg, owner, attacker sqlcgen.User)
-	}{
-		{"session", func(t *testing.T, h *Handlers, o realOrg, _, attacker sqlcgen.User) {
-			rec := httptest.NewRecorder()
-			h.Session(rec, withTestUser(httptest.NewRequest(http.MethodGet, "/api/session", nil), attacker))
-			if rec.Code != http.StatusOK {
-				t.Fatalf("Session status = %d: %s", rec.Code, rec.Body)
-			}
-		}},
-		{"members list", func(t *testing.T, h *Handlers, o realOrg, owner, _ sqlcgen.User) {
-			rec := httptest.NewRecorder()
-			h.ListMembers(rec, withTestUser(httptest.NewRequest(http.MethodGet, "/api/members", nil), owner))
-			if rec.Code != http.StatusOK {
-				t.Fatalf("ListMembers status = %d: %s", rec.Code, rec.Body)
-			}
-		}},
-		{"machine registration", func(t *testing.T, h *Handlers, o realOrg, _, attacker sqlcgen.User) {
-			if _, err := h.memberHeadscaleUser(t.Context(), o.client, o.org, attacker.ID); err != nil {
-				t.Fatalf("memberHeadscaleUser: %v", err)
-			}
-		}},
+// TestPasskeySignupCannotClaimAnothersEmail: a passkey sign-up can't assert
+// an email at all (it only picks a username, stored as username@passkey), so
+// it can never match -- and therefore adopt -- a victim's headscale user,
+// which carries the victim's real verified email. The attacker signs up
+// through the real registration flow, into the victim's org via an invite.
+func TestPasskeySignupCannotClaimAnothersEmail(t *testing.T) {
+	setupSessions()
+	h, o := newRealOrgTestHandlers(t)
+
+	owner := o.createMember(t, h, RoleOwner, "oidc", "owner@corp.com", true)
+	victim := o.createMember(t, h, RoleMember, "oidc", "victim@corp.com", true)
+	stolen := o.headscaleUserWithIdentity(t, h, "victim", "victim@corp.com", victim, "victim-laptop")
+
+	if _, err := h.queries.CreateInvite(t.Context(), sqlcgen.CreateInviteParams{
+		ID:             "invite-steal-1",
+		OrganizationID: o.org.ID,
+		Role:           RoleMember,
+		Token:          "ste0token",
+		CreatedBy:      owner.ID,
+		ExpiresAt:      time.Now().Add(24 * time.Hour),
+	}); err != nil {
+		t.Fatalf("CreateInvite: %v", err)
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			h, o := newRealOrgTestHandlers(t)
-			owner := o.createMember(t, h, RoleOwner, "oidc", "owner@corp.com", true)
-			victim := o.createMember(t, h, RoleMember, "oidc", "victim@corp.com", true)
-			stolen := o.headscaleUserWithIdentity(t, h, "victim", "victim@corp.com", victim, "victim-laptop")
-			other, err := o.client.CreateUser(t.Context(), hscl.CreateUserParams{Name: "victim-oidc"})
-			if err != nil {
-				t.Fatalf("CreateUser: %v", err)
-			}
-			link(t, h, victim, other.ID)
-			attacker := o.createMember(t, h, RoleMember, passkeyProvider, "victim@corp.com", false)
 
-			tt.link(t, h, o, owner, attacker)
+	// The attacker tries to take the victim's identity by choosing a
+	// username matching the victim's email local part.
+	rp := testRelyingParty(testBaseDomain)
+	beginReq := httptest.NewRequest(http.MethodPost, "/api/passkey/register/begin",
+		strings.NewReader(`{"username":"victim","next":"/invite/ste0token"}`))
+	finishRec := runCeremony(t, h.PasskeyRegisterBegin, h.PasskeyRegisterFinish, beginReq,
+		registerBuilder(rp, vwa.NewAuthenticator(), vwa.NewCredential(vwa.KeyTypeEC2)))
+	if finishRec.Code != http.StatusSeeOther {
+		t.Fatalf("finish status = %d, want %d: %s", finishRec.Code, http.StatusSeeOther, finishRec.Body)
+	}
 
-			if got := headscaleUserOf(t, h, attacker); got == stolen.ID {
-				t.Errorf("attacker linked to the victim's headscale user %s, owning machines %v", got, nodesOf(t, o.client, got))
-			}
-		})
+	var attacker sqlcgen.User
+	for _, u := range listAllUsers(t, h.queries) {
+		if u.Provider == passkeyProvider && u.Name == "victim" {
+			attacker = u
+		}
+	}
+	if attacker.ID == "" {
+		t.Fatal("expected the passkey attacker account to be created")
+	}
+	if attacker.Email != "victim@passkey" {
+		t.Errorf("attacker email = %q, want victim@passkey (no real email can be asserted)", attacker.Email)
+	}
+
+	// Linking the attacker (as /api/session does) must not hand them the
+	// victim's headscale user and its machines.
+	rec := httptest.NewRecorder()
+	h.Session(rec, withTestUser(httptest.NewRequest(http.MethodGet, "/api/session", nil), attacker))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("Session status = %d: %s", rec.Code, rec.Body)
+	}
+	if got := headscaleUserOf(t, h, attacker); got == stolen.ID {
+		t.Errorf("attacker linked to the victim's headscale user %s, owning machines %v", got, nodesOf(t, o.client, got))
 	}
 }
 

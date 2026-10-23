@@ -11,6 +11,7 @@ import {
   errorMessage,
   listInvites,
   listMembers,
+  isPasskeyEmail,
   removeMember,
   transferOwnership,
   updateMemberRole,
@@ -278,7 +279,7 @@ function MemberRow({
                   ],
                   confirmLabel: 'Remove member',
                   tone: 'danger',
-                  typeToConfirm: m.email,
+                  typeToConfirm: isPasskeyEmail(m.email) ? m.name : m.email,
                 })
                 if (ok) run(() => removeMember(m.id))
               }}

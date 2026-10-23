@@ -4,6 +4,7 @@ import (
 	"database/sql"
 	"errors"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/auth/passkey"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/funnelproxy"
 )
 
 const passkeyProvider = "passkey"
@@ -86,23 +88,58 @@ func (h *Handlers) takePasskeyCeremony(w http.ResponseWriter, r *http.Request) (
 	return ceremony, true
 }
 
+// passkeyEmailDomain is the synthetic domain passkey accounts' emails live
+// in. It's not a real email domain, so a passkey username can never collide
+// with an SSO user's verified email.
+const passkeyEmailDomain = "passkey"
+
+func passkeyEmail(username string) string {
+	return username + "@" + passkeyEmailDomain
+}
+
+// It's a subset of headscale's util.ValidateUsername so the derived headscale
+// user name is always valid.
+var validPasskeyUsername = regexp.MustCompile(`^[a-z][a-z0-9._-]{1,31}$`)
+
+// reservedPasskeyUsernames can't be chosen, as they name headscale users
+// ownscale manages itself.
+var reservedPasskeyUsernames = map[string]bool{
+	funnelproxy.AgentHeadscaleUserName: true,
+	"devbox":                           true,
+	"user":                             true,
+}
+
+// validatePasskeyUsername normalizes and checks username, returning the
+// normalized form or a message explaining why it's rejected.
+func validatePasskeyUsername(username string) (string, string) {
+	u := strings.ToLower(strings.TrimSpace(username))
+	if !validPasskeyUsername.MatchString(u) {
+		return "", "username must be 2-32 characters, start with a letter, and use only letters, digits, '.', '-' or '_'"
+	}
+	if reservedPasskeyUsernames[u] {
+		return "", "that username is reserved"
+	}
+	return u, ""
+}
+
 // PasskeyRegisterBegin is the first step of self-service account creation via passkey.
 func (h *Handlers) PasskeyRegisterBegin(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		Email string `json:"email"`
-		Next  string `json:"next"`
+		Username string `json:"username"`
+		Next     string `json:"next"`
 	}
 	if !h.decodeJSONBody(w, r, &req) {
 		return
 	}
-	email := strings.TrimSpace(req.Email)
-	if email == "" || !strings.Contains(email, "@") {
-		h.writeError(w, http.StatusBadRequest, "a valid email is required")
+	username, msg := validatePasskeyUsername(req.Username)
+	if msg != "" {
+		h.writeError(w, http.StatusBadRequest, msg)
 		return
 	}
+	email := passkeyEmail(username)
 
 	pendingID := xid.New().String()
-	user := passkey.User{Row: sqlcgen.User{ID: pendingID, Email: email}}
+	user := passkey.User{Row: sqlcgen.User{ID: pendingID, Name: username, Email: email}}
 
 	creation, session, err := h.webauthn.BeginRegistration(user,
 		webauthn.WithResidentKeyRequirement(protocol.ResidentKeyRequirementRequired))
@@ -113,6 +150,7 @@ func (h *Handlers) PasskeyRegisterBegin(w http.ResponseWriter, r *http.Request) 
 
 	tok, err := h.passkeySessions.save(passkeyCeremony{
 		Session:       session,
+		Username:      username,
 		Email:         email,
 		PendingUserID: pendingID,
 		Name:          defaultPasskeyName,
@@ -139,7 +177,7 @@ func (h *Handlers) PasskeyRegisterFinish(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	pendingUser := passkey.User{Row: sqlcgen.User{ID: ceremony.PendingUserID, Email: ceremony.Email}}
+	pendingUser := passkey.User{Row: sqlcgen.User{ID: ceremony.PendingUserID, Name: ceremony.Username, Email: ceremony.Email}}
 	cred, err := h.webauthn.FinishRegistration(pendingUser, *ceremony.Session, r)
 	if err != nil {
 		h.writeError(w, http.StatusBadRequest, "could not verify passkey: "+err.Error())
@@ -152,13 +190,17 @@ func (h *Handlers) PasskeyRegisterFinish(w http.ResponseWriter, r *http.Request)
 		Provider:       passkeyProvider,
 		ProviderUserID: ceremony.PendingUserID,
 		Email:          ceremony.Email,
-		Name:           "",
+		Name:           ceremony.Username,
 		AvatarUrl:      "",
 		EmailVerified:  0,
 	}, ceremony.Next)
 	if err != nil {
 		if invErr, ok := errors.AsType[*inviteInvalidError](err); ok {
 			h.writeError(w, http.StatusGone, invErr.Error())
+			return
+		}
+		if errors.Is(err, errUsernameTaken) {
+			h.writeError(w, http.StatusConflict, "that username is already taken in this organization")
 			return
 		}
 		h.serverError(w, r, err)

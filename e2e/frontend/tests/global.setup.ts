@@ -13,7 +13,7 @@ const STORAGE_STATE = 'tests/.auth/admin.json'
 // below but via passkey self-registration instead of Dex SSO, so it lands
 // on the next fixed subdomain (see orgs.Service.NextSubdomain)
 // deterministically rather than racing other specs for it.
-const PASSKEY_IDENTITY = 'passkey@ownscale.test'
+const PASSKEY_IDENTITY = 'passkey'
 
 // Persists the WebAuthn credential minted the first time PASSKEY_IDENTITY
 // self-registers, so later runs (and passkey.spec.ts's "sign in again"
@@ -27,7 +27,7 @@ const PASSKEY_CREDENTIAL_STATE = 'tests/.auth/passkey-credential.json'
 async function registerFreshPasskey(page: Page) {
   await page.getByRole('link', { name: 'Create an account' }).click()
   await expect(page).toHaveURL(/\/signup/)
-  await page.locator('#passkey-email').fill(PASSKEY_IDENTITY)
+  await page.locator('#passkey-username').fill(PASSKEY_IDENTITY)
   await page.getByRole('button', { name: 'Continue with passkey' }).click()
 }
 
@@ -110,14 +110,14 @@ setup.describe.serial('bootstrap fixed dev identities', () => {
       await expect(page.getByRole('button', { name: 'Logout' })).toBeVisible({ timeout: 60_000 })
 
       const session = await page.request.get('/api/session').then(r => r.json())
-      if (session.user?.Email !== PASSKEY_IDENTITY) {
-        throw new Error(`expected: ${PASSKEY_IDENTITY}; got: ${session.user?.Email}`)
+      if (session.user?.Name !== PASSKEY_IDENTITY) {
+        throw new Error(`expected: ${PASSKEY_IDENTITY}; got: ${session.user?.Name}`)
       }
 
       if (registeredFresh) {
         const credential = await exportCredential(auth, consoleDomain)
         mkdirSync(dirname(PASSKEY_CREDENTIAL_STATE), { recursive: true })
-        writeFileSync(PASSKEY_CREDENTIAL_STATE, JSON.stringify({ email: PASSKEY_IDENTITY, org: session.organization?.Domain, credential }))
+        writeFileSync(PASSKEY_CREDENTIAL_STATE, JSON.stringify({ username: PASSKEY_IDENTITY, org: session.organization?.Domain, credential }))
       }
 
       await resetAuthRestrictions(page)

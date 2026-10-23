@@ -13,7 +13,7 @@ import {
   Users,
 } from 'lucide-react'
 import { useAuth } from './authContext'
-import { logout } from './api'
+import { displayName, isPasskeyEmail, logout } from './api'
 import { CopyIcon } from './components/CopyButton'
 import Logo from './components/Logo'
 import ThemeToggle from './components/ThemeToggle'
@@ -181,11 +181,13 @@ export default function Layout() {
                   className="size-8 shrink-0 rounded-full bg-base-300 grid place-items-center text-xs font-semibold"
                   aria-hidden="true"
                 >
-                  {initials(user.Name || user.Email)}
+                  {initials(displayName(user))}
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium truncate">{user.Name}</p>
-                  <p className="text-xs text-base-content/60 truncate">{user.Email}</p>
+                  <p className="text-sm font-medium truncate">{displayName(user)}</p>
+                  {!isPasskeyEmail(user.Email) && (
+                    <p className="text-xs text-base-content/60 truncate">{user.Email}</p>
+                  )}
                 </div>
                 <ThemeToggle />
                 <button

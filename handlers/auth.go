@@ -54,6 +54,10 @@ type inviteInvalidError struct{ msg string }
 
 func (e *inviteInvalidError) Error() string { return e.msg }
 
+// errUsernameTaken means a passkey sign-up chose a username already used by
+// another passkey account in the same organization.
+var errUsernameTaken = errors.New("username is already taken in this organization")
+
 // createNewUser creates a brand-new user row, always with a resolved
 // organization and role: either the invite's organization+role (when next
 // points at an invite-accept path, consuming the invite atomically with
@@ -97,6 +101,24 @@ func (h *Handlers) createNewUser(ctx context.Context, params sqlcgen.CreateUserP
 		return sqlcgen.User{}, err
 	}
 	defer rollback()
+
+	// Passkey usernames (stored as username@passkey emails) must be unique
+	// within the organization. A new-org signup can't collide (its org is
+	// empty), so only the invite path needs this, in the same tx as the
+	// insert.
+	if params.Provider == passkeyProvider {
+		taken, err := txQueries.CountOrgProviderEmail(ctx, sqlcgen.CountOrgProviderEmailParams{
+			OrganizationID: params.OrganizationID,
+			Provider:       passkeyProvider,
+			Email:          params.Email,
+		})
+		if err != nil {
+			return sqlcgen.User{}, err
+		}
+		if taken > 0 {
+			return sqlcgen.User{}, errUsernameTaken
+		}
+	}
 
 	// The user row must exist before accepted_by_user_id can reference
 	// it, so create the user first.

@@ -3,7 +3,7 @@ import { expect, test } from './support/account'
 import { confirmDialog } from './support/confirm'
 import { addVirtualAuthenticator, importCredential } from './support/webauthn'
 
-const PASSKEY_IDENTITY_EMAIL = 'passkey@ownscale.test'
+const PASSKEY_IDENTITY_NAME = 'passkey'
 const PASSKEY_CREDENTIAL_STATE = 'tests/.auth/passkey-credential.json'
 
 // This test adds a passkey to the worker's already-provisioned account from
@@ -78,6 +78,6 @@ test.describe('signing back in with the bootstrapped passkey', () => {
     }
 
     const session = await page.request.get('/api/session').then(r => r.json())
-    expect(session.user?.Email).toBe(PASSKEY_IDENTITY_EMAIL)
+    expect(session.user?.Name).toBe(PASSKEY_IDENTITY_NAME)
   })
 })

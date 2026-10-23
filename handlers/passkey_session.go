@@ -20,6 +20,7 @@ const passkeyCeremonyCookie = "__Host-ownscale_webauthn_session"
 // path) across the ceremony, the same way nextCookieName does for OAuth.
 type passkeyCeremony struct {
 	Session       *webauthn.SessionData
+	Username      string
 	Email         string
 	PendingUserID string
 	UserID        string

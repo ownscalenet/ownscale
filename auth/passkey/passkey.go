@@ -36,8 +36,14 @@ type User struct {
 // handle needs to be minted or stored.
 func (u User) WebAuthnID() []byte { return []byte(u.Row.ID) }
 
-// WebAuthnName returns the user's email, shown by browser passkey UIs.
-func (u User) WebAuthnName() string { return u.Row.Email }
+// WebAuthnName returns the user's name, shown by browser passkey UIs,
+// falling back to their email when no name is set.
+func (u User) WebAuthnName() string {
+	if u.Row.Name != "" {
+		return u.Row.Name
+	}
+	return u.Row.Email
+}
 
 // WebAuthnDisplayName returns the user's display name, falling back to
 // their email when no name is set.

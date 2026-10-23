@@ -22,6 +22,20 @@ export interface User {
   Role: string
 }
 
+// isPasskeyEmail reports whether email is the synthetic address a passkey
+// account carries instead of a real one (see handlers.passkeyEmail), which
+// shouldn't be shown to the user.
+export function isPasskeyEmail(email: string): boolean {
+  return email.endsWith('@passkey')
+}
+
+// displayName is how a user should be labelled in the UI: their name, or
+// their email when they have no name (and it isn't the synthetic passkey one).
+export function displayName(user: Pick<User, 'Name' | 'Email'>): string {
+  if (user.Name) return user.Name
+  return isPasskeyEmail(user.Email) ? '' : user.Email
+}
+
 export interface Organization {
   ID: string
   Domain: string
@@ -531,10 +545,10 @@ export function deletePasskey(id: string) {
 // The passkey begin/finish endpoints use go-webauthn's JSON shapes (options
 // wrapped in "publicKey"), which lib/webauthn.ts adapts for the browser.
 
-export function passkeyRegisterBegin(email: string, next?: string) {
+export function passkeyRegisterBegin(username: string, next?: string) {
   return request<{ publicKey: PublicKeyCredentialCreationOptionsJSON }>(
     '/api/passkey/register/begin',
-    { method: 'POST', body: JSON.stringify({ email, next }) },
+    { method: 'POST', body: JSON.stringify({ username, next }) },
   )
 }
 
