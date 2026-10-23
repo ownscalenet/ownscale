@@ -686,6 +686,8 @@ func (s *Service) launch(ctx context.Context, subdomain string, port int, hsCfg 
 		return nil, nil
 	}
 
+	// TODO: it's not nice to call this internal state method. hscl has the same
+	// function to set&get the policy over API.
 	if _, err := app.GetState().GetPolicy(); err != nil {
 		if _, err := app.GetState().SetPolicyInDB(DefaultACLPolicy); err != nil {
 			s.logger.Warn("seed default ACL policy", "subdomain", subdomain, "error", err)
