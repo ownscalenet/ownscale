@@ -22,10 +22,11 @@ const PASSKEY_IDENTITY = 'passkey@ownscale.test'
 // STORAGE_STATE (see e2e/frontend's tests/.auth/ entry in .gitignore).
 const PASSKEY_CREDENTIAL_STATE = 'tests/.auth/passkey-credential.json'
 
-// Drives the "New here? Create an account with a passkey" self-registration
-// flow for PASSKEY_IDENTITY, starting from a fresh /login page.
+// Drives the "Create an account" passkey self-registration flow for
+// PASSKEY_IDENTITY, starting from a fresh /login page.
 async function registerFreshPasskey(page: Page) {
-  await page.getByRole('button', { name: 'New here? Create an account with a passkey' }).click()
+  await page.getByRole('link', { name: 'Create an account' }).click()
+  await expect(page).toHaveURL(/\/signup/)
   await page.locator('#passkey-email').fill(PASSKEY_IDENTITY)
   await page.getByRole('button', { name: 'Continue with passkey' }).click()
 }

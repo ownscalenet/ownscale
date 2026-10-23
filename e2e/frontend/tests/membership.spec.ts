@@ -11,19 +11,20 @@ async function signIn(browser: Browser, email: string, startURL: string): Promis
   const context = await browser.newContext({ storageState: { cookies: [], origins: [] }, ignoreHTTPSErrors: true })
   const page = await context.newPage()
   await page.goto(startURL)
-  const joinLink = page.getByRole('link', { name: 'Sign in to join' })
+  const joinLink = page.getByRole('link', { name: 'Create account to join' })
   const ssoLink = page.getByRole('link', { name: 'Sign in with SSO' })
   // An invite URL shows a brief loading spinner while it fetches the invite
-  // preview before deciding whether to render "Sign in to join" (invite
-  // flow) or nothing extra (direct SSO flow). Wait for whichever actually
-  // shows up instead of an instant, racy isVisible() snapshot right after
-  // goto, which can run before that fetch resolves.
+  // preview before deciding whether to render "Create account to join"
+  // (invite flow) or nothing extra (direct SSO flow). Wait for whichever
+  // actually shows up instead of an instant, racy isVisible() snapshot right
+  // after goto, which can run before that fetch resolves.
   await joinLink.or(ssoLink).first().waitFor({ state: 'visible' })
   if (await joinLink.isVisible().catch(() => false)) {
     await joinLink.click()
-    await ssoLink.waitFor({ state: 'visible' })
+    await page.getByRole('link', { name: 'Sign up with SSO' }).click()
+  } else {
+    await ssoLink.click()
   }
-  await ssoLink.click()
   await page.locator('#login').fill(email)
   await page.locator('#password').fill('ownscale')
   await page.locator('#submit-login').click()

@@ -4,6 +4,7 @@ import { useAuth } from './authContext'
 import Layout from './Layout'
 import ConfirmProvider from './components/ConfirmProvider'
 import Login from './pages/Login'
+import Signup from './pages/Signup'
 import Machines from './pages/Machines'
 import MachineDetail from './pages/MachineDetail'
 import SSH from './pages/SSH'
@@ -35,6 +36,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/login" element={<Login />} />
+      <Route path="/signup" element={<Signup />} />
       <Route path="/invite/:token" element={<AcceptInvite />} />
       <Route
         path="/"

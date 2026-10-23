@@ -1,5 +1,6 @@
 import { expect, test } from './support/account'
 import { confirmDialog } from './support/confirm'
+import { addVirtualAuthenticator } from './support/webauthn'
 
 // delete existing invites because tests rely on having zero pre-existing invites.
 test.beforeEach(async ({ page }) => {
@@ -52,10 +53,10 @@ test('accepting an invite adds a member, whose role can be changed and who can b
   try {
     const inviteePage = await inviteeContext.newPage()
     await inviteePage.goto(inviteLink)
-    await inviteePage.getByRole('link', { name: 'Sign in to join' }).click()
-    await expect(inviteePage).toHaveURL(/\/login\?next=/)
+    await inviteePage.getByRole('link', { name: 'Create account to join' }).click()
+    await expect(inviteePage).toHaveURL(/\/signup\?next=/)
 
-    await inviteePage.getByRole('link', { name: 'Sign in with SSO' }).click()
+    await inviteePage.getByRole('link', { name: 'Sign up with SSO' }).click()
     await inviteePage.locator('#login').fill(account.invitee)
     await inviteePage.locator('#password').fill('ownscale')
     await inviteePage.locator('#submit-login').click()
@@ -82,6 +83,47 @@ test('accepting an invite adds a member, whose role can be changed and who can b
   await expect(memberRow).toBeHidden()
 })
 
+test('creating an account from an invite joins the inviting organization', async ({
+  page,
+  browser,
+}) => {
+  await page.goto('/users')
+  await page.getByRole('button', { name: 'Invite member' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('button', { name: 'Create invite link' }).click()
+  const inviteLink = await dialog.getByRole('textbox').inputValue()
+  await dialog.getByRole('button', { name: 'Done' }).click()
+
+  // Unique per run: the account outlives the membership removed below.
+  const email = `invite-signup-${Date.now()}@ownscale.test`
+  const inviteeContext = await browser.newContext({ storageState: { cookies: [], origins: [] } })
+  try {
+    const inviteePage = await inviteeContext.newPage()
+    await addVirtualAuthenticator(inviteePage)
+    await inviteePage.goto(inviteLink)
+    await inviteePage.getByRole('link', { name: 'Create account to join' }).click()
+    await expect(inviteePage).toHaveURL(/\/signup\?next=%2Finvite%2F/)
+    await expect(inviteePage.getByRole('heading', { name: 'Create account' })).toBeVisible()
+
+    await inviteePage.locator('#passkey-email').fill(email)
+    await inviteePage.getByRole('button', { name: 'Continue with passkey' }).click()
+
+    await expect(inviteePage.getByRole('link', { name: 'Machines' })).toBeVisible({
+      timeout: 15_000,
+    })
+  } finally {
+    await inviteeContext.close()
+  }
+
+  await page.reload()
+  const memberRow = page.getByRole('row').filter({ hasText: email })
+  await expect(memberRow).toBeVisible()
+
+  await memberRow.getByRole('button', { name: 'Remove' }).click()
+  await confirmDialog(page, 'Remove member', email)
+  await expect(memberRow).toBeHidden()
+})
+
 test('transferring ownership promotes the member and demotes the caller to admin', async ({
   page,
   browser,
@@ -101,8 +143,8 @@ test('transferring ownership promotes the member and demotes the caller to admin
   try {
     const memberPage = await memberContext.newPage()
     await memberPage.goto(inviteLink)
-    await memberPage.getByRole('link', { name: 'Sign in to join' }).click()
-    await memberPage.getByRole('link', { name: 'Sign in with SSO' }).click()
+    await memberPage.getByRole('link', { name: 'Create account to join' }).click()
+    await memberPage.getByRole('link', { name: 'Sign up with SSO' }).click()
     await memberPage.locator('#login').fill(account.invitee)
     await memberPage.locator('#password').fill('ownscale')
     await memberPage.locator('#submit-login').click()
@@ -184,8 +226,8 @@ test('a plain member cannot see owner/admin-only management controls', async ({
   const memberPage = await memberContext.newPage()
   try {
     await memberPage.goto(inviteLink)
-    await memberPage.getByRole('link', { name: 'Sign in to join' }).click()
-    await memberPage.getByRole('link', { name: 'Sign in with SSO' }).click()
+    await memberPage.getByRole('link', { name: 'Create account to join' }).click()
+    await memberPage.getByRole('link', { name: 'Sign up with SSO' }).click()
     await memberPage.locator('#login').fill(account.invitee)
     await memberPage.locator('#password').fill('ownscale')
     await memberPage.locator('#submit-login').click()

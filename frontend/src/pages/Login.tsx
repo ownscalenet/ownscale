@@ -1,25 +1,12 @@
 import { useEffect, useState } from 'react'
-import { Navigate } from 'react-router-dom'
-import { useQuery } from '@tanstack/react-query'
+import { Link, Navigate } from 'react-router-dom'
 import { useAuth } from '../authContext'
-import {
-  errorMessage,
-  getAuthProviders,
-  passkeyLoginBegin,
-  passkeyLoginFinish,
-  passkeyRegisterBegin,
-  passkeyRegisterFinish,
-  type AuthProviders,
-} from '../api'
-import { createPasskey, getPasskey, browserSupportsWebAuthn } from '../lib/webauthn'
+import { errorMessage, passkeyLoginBegin, passkeyLoginFinish } from '../api'
+import { getPasskey, browserSupportsWebAuthn } from '../lib/webauthn'
+import { goToNext, isSafeRelativeNext, nextQuery } from '../lib/authRedirect'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { ErrorAlert } from '../components/ui'
-
-// isSafeRelativeNext guards against open redirects: only a same-origin,
-// path-absolute URL (no scheme-relative "//host" tricks) is followed.
-function isSafeRelativeNext(next: string | null): next is string {
-  return !!next && next.startsWith('/') && !next.startsWith('//')
-}
+import SSOButtons from '../components/SSOButtons'
 
 // isAuthorizeCallback reports whether next finishes another organization's
 // headscale SSO login. The provider only sends a signed-in user here with such
@@ -28,75 +15,16 @@ function isAuthorizeCallback(next: string | null): boolean {
   return !!next && next.startsWith('/authorize/callback')
 }
 
-// goToNext makes the same next-or-home redirect as handlers.finishLogin. The
-// passkey finish endpoints redirect only the fetch(), not the browser.
-function goToNext(next: string | null) {
-  window.location.assign(isSafeRelativeNext(next) ? next : '/')
-}
-
-// ssoLabels maps each AuthProviders key to its button copy.
-const ssoLabels: Record<keyof AuthProviders, string> = {
-  oidc: 'SSO',
-  google: 'Google',
-  microsoft: 'Microsoft',
-}
-
-// SSOButton renders a provider's sign-in link, or (when `enabled` is false
-// or still loading) a disabled button with a tooltip explaining it needs to
-// be enabled by the admin, instead of a dead link.
-function SSOButton({
-  provider,
-  enabled,
-  href,
-}: {
-  provider: keyof AuthProviders
-  enabled: boolean | undefined
-  href: string
-}) {
-  const label = ssoLabels[provider]
-  if (!enabled) {
-    return (
-      <button
-        type="button"
-        className="btn btn-outline btn-disabled"
-        disabled
-        title={`${label} sign-in is not enabled for this deployment.`}
-      >
-        Sign in with {label}
-      </button>
-    )
-  }
-  return (
-    <a href={href} className="btn btn-outline">
-      Sign in with {label}
-    </a>
-  )
-}
-
 export default function Login() {
   usePageTitle('Login')
   const { user, loading } = useAuth()
   const next = new URLSearchParams(window.location.search).get('next')
-  const nextParam = next ? `?next=${encodeURIComponent(next)}` : ''
-  const href = `/auth/oidc${nextParam}`
-  const googleHref = `/auth/google${nextParam}`
-  const microsoftHref = `/auth/microsoft${nextParam}`
   const switchAccount = !loading && !!user && isAuthorizeCallback(next)
   const alreadyAuthed = !loading && !!user && !switchAccount
 
   const [passkeySupported] = useState(() => browserSupportsWebAuthn())
   const [passkeyBusy, setPasskeyBusy] = useState(false)
   const [passkeyError, setPasskeyError] = useState<string | null>(null)
-  const [showRegister, setShowRegister] = useState(false)
-  const [email, setEmail] = useState('')
-
-  // Unconfigured providers get disabled buttons rather than broken links; a
-  // failed fetch counts as nothing configured.
-  const { data: authProviders } = useQuery({
-    queryKey: ['authProviders'],
-    queryFn: getAuthProviders,
-    retry: false,
-  })
 
   // `next` may be a backend-only route such as /authorize/callback, which the
   // SPA router doesn't know, so it needs a full navigation, not <Navigate>.
@@ -127,21 +55,6 @@ export default function Login() {
     }
   }
 
-  const handlePasskeyRegister = async (e: React.FormEvent) => {
-    e.preventDefault()
-    setPasskeyError(null)
-    setPasskeyBusy(true)
-    try {
-      const options = await passkeyRegisterBegin(email, next ?? undefined)
-      const response = await createPasskey(options)
-      await passkeyRegisterFinish(response)
-      goToNext(next)
-    } catch (err) {
-      setPasskeyError(errorMessage(err))
-      setPasskeyBusy(false)
-    }
-  }
-
   return (
     <div className="hero min-h-screen bg-base-200">
       <div className="hero-content text-center">
@@ -163,9 +76,6 @@ export default function Login() {
           <div className="flex flex-col gap-2">
             {passkeySupported && (
               <>
-                <p className="text-sm text-base-content/70 text-left">
-                  Passkeys are recommended: they don't share any personal information with Ownscale.
-                </p>
                 <button
                   type="button"
                   className="btn btn-primary"
@@ -176,50 +86,15 @@ export default function Login() {
                 </button>
               </>
             )}
-            <SSOButton provider="oidc" enabled={authProviders?.oidc} href={href} />
-            <SSOButton provider="google" enabled={authProviders?.google} href={googleHref} />
-            <SSOButton
-              provider="microsoft"
-              enabled={authProviders?.microsoft}
-              href={microsoftHref}
-            />
+            <SSOButtons verb="Sign in" next={next} />
           </div>
 
-          {passkeySupported && (
-            <div className="mt-6 text-left">
-              {!showRegister ? (
-                <button
-                  type="button"
-                  className="btn btn-link btn-sm"
-                  onClick={() => setShowRegister(true)}
-                >
-                  New here? Create an account with a passkey
-                </button>
-              ) : (
-                <form
-                  className="flex flex-col gap-2"
-                  onSubmit={(e) => void handlePasskeyRegister(e)}
-                >
-                  <label className="fieldset-label" htmlFor="passkey-email">
-                    Email
-                  </label>
-                  <input
-                    id="passkey-email"
-                    type="email"
-                    required
-                    autoComplete="email"
-                    className="input input-bordered w-full"
-                    placeholder="you@example.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                  />
-                  <button type="submit" className="btn btn-primary" disabled={passkeyBusy}>
-                    Continue with passkey
-                  </button>
-                </form>
-              )}
-            </div>
-          )}
+          <p className="mt-6 text-sm">
+            New here?{' '}
+            <Link to={`/signup${nextQuery(next)}`} className="link link-primary">
+              Create an account
+            </Link>
+          </p>
         </div>
       </div>
     </div>

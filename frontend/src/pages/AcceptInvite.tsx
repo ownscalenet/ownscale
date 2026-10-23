@@ -1,4 +1,4 @@
-import { Navigate, useParams } from 'react-router-dom'
+import { Link, Navigate, useParams } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import { useAuth } from '../authContext'
 import { errorMessage, getInvitePreview } from '../api'
@@ -6,8 +6,9 @@ import { usePageTitle } from '../hooks/usePageTitle'
 import { ErrorAlert, PageSpinner } from '../components/ui'
 
 // AcceptInvite is the /invite/:token landing page. An unauthenticated
-// visitor sees a preview and a login link (next=/invite/:token), so they
-// come back here once signed in.
+// visitor sees a preview and a sign-up link (next=/invite/:token), so they
+// come back here once the account exists. Invites only apply to new
+// accounts, so there's no sign-in option.
 export default function AcceptInvite() {
   usePageTitle('Accept Invite')
   const { token } = useParams<{ token: string }>()
@@ -25,7 +26,9 @@ export default function AcceptInvite() {
     return <PageSpinner fullScreen />
   }
 
-  const loginHref = `/login?next=${encodeURIComponent(`/invite/${token}`)}`
+  const nextParam = `?next=${encodeURIComponent(`/invite/${token}`)}`
+  const loginHref = `/login${nextParam}`
+  const signupHref = `/signup${nextParam}`
   const signedOut = !user
 
   // Without a valid invite there is nothing to preview, so go straight to login.
@@ -66,9 +69,9 @@ export default function AcceptInvite() {
                   <dd className="capitalize">{preview.role.replace(/_/g, ' ')}</dd>
                 </dl>
                 {signedOut ? (
-                  <a href={loginHref} className="btn btn-primary">
-                    Sign in to join
-                  </a>
+                  <Link to={signupHref} className="btn btn-primary">
+                    Create account to join
+                  </Link>
                 ) : (
                   <p className="text-sm text-base-content/70">
                     This invite doesn&rsquo;t apply to your account (it may be for a different
