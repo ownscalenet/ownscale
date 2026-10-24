@@ -189,6 +189,50 @@ func TestAuthCallbackNoNextCookieFallsBackToRoot(t *testing.T) {
 	}
 }
 
+// TestAuthCallbackDisplayName verifies the account's name falls back to the
+// provider login when the provider reports no display name, as GitHub does
+// for accounts without one.
+func TestAuthCallbackDisplayName(t *testing.T) {
+	tests := []struct {
+		name, gothName, nickName, want string
+	}{
+		{"display name", "Mona Lisa", "octocat", "Mona Lisa"},
+		{"login only", "", "octocat", "octocat"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupSessions()
+			h, queries := newTestHandlers(t)
+			user := insertUser(t, queries)
+
+			orig := gothic.CompleteUserAuth
+			t.Cleanup(func() { gothic.CompleteUserAuth = orig })
+			gothic.CompleteUserAuth = func(w http.ResponseWriter, r *http.Request) (goth.User, error) {
+				return goth.User{
+					Provider: user.Provider,
+					UserID:   user.ProviderUserID,
+					Email:    user.Email,
+					Name:     tt.gothName,
+					NickName: tt.nickName,
+				}, nil
+			}
+
+			rec := httptest.NewRecorder()
+			h.AuthCallback(rec, httptest.NewRequest(http.MethodGet, "/auth/github/callback", nil))
+			if rec.Code != http.StatusSeeOther {
+				t.Fatalf("status = %d, want %d: %s", rec.Code, http.StatusSeeOther, rec.Body)
+			}
+			got, err := queries.GetUserByID(t.Context(), user.ID)
+			if err != nil {
+				t.Fatalf("GetUserByID: %v", err)
+			}
+			if got.Name != tt.want {
+				t.Errorf("Name = %q, want %q", got.Name, tt.want)
+			}
+		})
+	}
+}
+
 var randomSubdomainRe = regexp.MustCompile(`^[a-z0-9]+$`)
 
 func TestAuthCallbackAutoAssignsOrganization(t *testing.T) {
@@ -500,6 +544,7 @@ func TestAuthProviders(t *testing.T) {
 		Auth: config.AuthConfig{
 			UpstreamOIDC: config.UpstreamOIDCConfig{Issuer: "https://idp.example.com", ClientID: "oidc-id"},
 			Google:       config.GoogleConfig{ClientID: "google-id"},
+			GitHub:       config.GitHubConfig{ClientID: "github-id"},
 			// Microsoft left unset: Enabled() should report false.
 		},
 	}, nil, slog.New(slog.DiscardHandler), nil)
@@ -518,7 +563,7 @@ func TestAuthProviders(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	want := map[string]bool{"oidc": true, "google": true, "microsoft": false}
+	want := map[string]bool{"oidc": true, "google": true, "microsoft": false, "github": true}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("AuthProviders response = %+v, want %+v", got, want)
 	}

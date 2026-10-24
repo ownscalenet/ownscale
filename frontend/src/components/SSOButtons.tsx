@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query'
 import { KeyRound } from 'lucide-react'
 import { getAuthProviders, type AuthProviders } from '../api'
 import { nextQuery } from '../lib/authRedirect'
-import { GoogleIcon, MicrosoftIcon } from './ProviderIcons'
+import { GitHubIcon, GoogleIcon, MicrosoftIcon } from './ProviderIcons'
 
 // ssoButtons maps each AuthProviders key to its button copy and icon.
 const ssoButtons: Record<
@@ -13,9 +13,10 @@ const ssoButtons: Record<
   oidc: { label: 'SSO', Icon: KeyRound },
   google: { label: 'Google', Icon: GoogleIcon },
   microsoft: { label: 'Microsoft', Icon: MicrosoftIcon },
+  github: { label: 'GitHub', Icon: GitHubIcon },
 }
 
-const providers: (keyof AuthProviders)[] = ['oidc', 'google', 'microsoft']
+const providers: (keyof AuthProviders)[] = ['oidc', 'google', 'microsoft', 'github']
 
 // SSOButtons renders a link per upstream login provider. Signing in and
 // signing up are the same flow (the account is created on first login), so

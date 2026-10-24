@@ -197,6 +197,7 @@ func (h *Handlers) AuthProviders(w http.ResponseWriter, r *http.Request) {
 		"oidc":      h.authProviders.OIDC,
 		"google":    h.authProviders.Google,
 		"microsoft": h.authProviders.Microsoft,
+		"github":    h.authProviders.GitHub,
 	})
 }
 
@@ -241,6 +242,10 @@ func (h *Handlers) AuthCallback(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		h.serverError(w, r, err)
 		return
+	}
+	// GitHub accounts may have no display name, only a login.
+	if gothUser.Name == "" {
+		gothUser.Name = gothUser.NickName
 	}
 
 	var next string

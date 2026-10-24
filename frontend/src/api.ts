@@ -131,6 +131,7 @@ export interface AuthProviders {
   oidc: boolean
   google: boolean
   microsoft: boolean
+  github: boolean
 }
 
 // getAuthProviders reports which upstream login providers are configured,

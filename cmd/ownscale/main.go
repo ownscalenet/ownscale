@@ -193,6 +193,14 @@ func run() error {
 			return err
 		}
 	}
+	if cfg.Auth.GitHub.Enabled() {
+		if err := auth.RegisterGitHub(
+			cfg.Auth.GitHub.ClientID,
+			cfg.Auth.GitHub.ClientSecret,
+			cfg.Auth.GitHub.CallbackURL); err != nil {
+			return err
+		}
+	}
 
 	select {
 	case err := <-serveErr:

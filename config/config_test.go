@@ -136,9 +136,6 @@ func TestLoadGoogleConfig(t *testing.T) {
 	}
 }
 
-// TestLoadMicrosoftConfig covers auth.microsoft (OWNSCALE_AUTH_MICROSOFT_*),
-// which follows the same "disabled when unset, enabled with these fields
-// when configured" shape as TestLoadGoogleConfig.
 func TestLoadMicrosoftConfig(t *testing.T) {
 	cases := []struct {
 		name string
@@ -178,6 +175,50 @@ func TestLoadMicrosoftConfig(t *testing.T) {
 			}
 			if cfg.Auth.Microsoft != tc.want {
 				t.Errorf("Auth.Microsoft = %+v, want %+v", cfg.Auth.Microsoft, tc.want)
+			}
+		})
+	}
+}
+
+func TestLoadGitHubConfig(t *testing.T) {
+	cases := []struct {
+		name string
+		env  map[string]string
+		want GitHubConfig
+	}{
+		{
+			name: "unset is disabled",
+		},
+		{
+			name: "configured",
+			env: map[string]string{
+				"OWNSCALE_AUTH_GITHUB_CLIENT_ID":     "github-client-id",
+				"OWNSCALE_AUTH_GITHUB_CLIENT_SECRET": "github-client-secret",
+				"OWNSCALE_AUTH_GITHUB_CALLBACK_URL":  "https://example.com/auth/github/callback",
+			},
+			want: GitHubConfig{
+				ClientID:     "github-client-id",
+				ClientSecret: "github-client-secret",
+				CallbackURL:  "https://example.com/auth/github/callback",
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			wantEnabled := tc.want != GitHubConfig{}
+			if got := cfg.Auth.GitHub.Enabled(); got != wantEnabled {
+				t.Errorf("Auth.GitHub.Enabled() = %v, want %v", got, wantEnabled)
+			}
+			if cfg.Auth.GitHub != tc.want {
+				t.Errorf("Auth.GitHub = %+v, want %+v", cfg.Auth.GitHub, tc.want)
 			}
 		})
 	}

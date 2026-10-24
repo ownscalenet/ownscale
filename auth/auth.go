@@ -10,6 +10,7 @@ import (
 	"github.com/gorilla/sessions"
 	"github.com/markbates/goth"
 	"github.com/markbates/goth/gothic"
+	"github.com/markbates/goth/providers/github"
 	"github.com/markbates/goth/providers/google"
 	"github.com/markbates/goth/providers/microsoftonline"
 	"github.com/markbates/goth/providers/openidConnect"
@@ -26,6 +27,7 @@ const SessionMaxAge = 30 * 24 * 60 * 60 // 30 days, in seconds
 const UpstreamProviderName = "oidc"
 const GoogleProviderName = "google"
 const MicrosoftProviderName = "microsoft"
+const GitHubProviderName = "github"
 
 // Setup configures gothic's cookie-backed session store, keyed by
 // sessionSecret. It must be called once at startup, before any auth routes
@@ -80,6 +82,17 @@ func RegisterMicrosoft(clientID, clientSecret, callbackURL string) (err error) {
 	defer derrors.Wrap(&err, "auth.RegisterMicrosoft(%s)", clientID)
 	provider := microsoftonline.New(clientID, clientSecret, callbackURL)
 	provider.SetName(MicrosoftProviderName)
+
+	goth.UseProviders(provider)
+	return nil
+}
+
+// RegisterGitHub enables GitHub login. The user:email scope lets goth fetch
+// the primary verified email of users who keep theirs private.
+func RegisterGitHub(clientID, clientSecret, callbackURL string) (err error) {
+	defer derrors.Wrap(&err, "auth.RegisterGitHub(%s)", clientID)
+	provider := github.New(clientID, clientSecret, callbackURL, "user:email")
+	provider.SetName(GitHubProviderName)
 
 	goth.UseProviders(provider)
 	return nil

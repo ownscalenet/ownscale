@@ -220,6 +220,7 @@ type AuthConfig struct {
 	UpstreamOIDC  UpstreamOIDCConfig
 	Google        GoogleConfig
 	Microsoft     MicrosoftConfig
+	GitHub        GitHubConfig
 	OIDCProvider  OIDCProviderConfig
 }
 
@@ -247,7 +248,7 @@ func (g GoogleConfig) Enabled() bool { return g.ClientID != "" }
 // MicrosoftConfig configures a direct "Sign in with Microsoft" button on
 // the login page, using goth's microsoftonline provider (multi-tenant:
 // supports both personal Microsoft accounts and work/school Azure AD
-// accounts). Entirely optional, like GoogleConfig.
+// accounts). Optional.
 type MicrosoftConfig struct {
 	// Leave ClientID empty to disable Microsoft login.
 	ClientID     string `env:"OWNSCALE_AUTH_MICROSOFT_CLIENT_ID"`
@@ -256,6 +257,17 @@ type MicrosoftConfig struct {
 }
 
 func (m MicrosoftConfig) Enabled() bool { return m.ClientID != "" }
+
+// GitHubConfig configures a direct "Sign in with GitHub" button on the
+// login page, using goth's github provider. Optional.
+type GitHubConfig struct {
+	// Leave ClientID empty to disable GitHub login.
+	ClientID     string `env:"OWNSCALE_AUTH_GITHUB_CLIENT_ID"`
+	ClientSecret string `env:"OWNSCALE_AUTH_GITHUB_CLIENT_SECRET"`
+	CallbackURL  string `env:"OWNSCALE_AUTH_GITHUB_CALLBACK_URL"`
+}
+
+func (g GitHubConfig) Enabled() bool { return g.ClientID != "" }
 
 type OIDCProviderConfig struct {
 	Issuer              string `env:"OWNSCALE_AUTH_OIDC_PROVIDER_ISSUER"`
