@@ -238,6 +238,9 @@ func createHeadscale(p headscaleParams) (_ *hscontrol.Headscale, err error) {
 			AllowedDomains: hsCfg.OIDC.AllowedDomains,
 			AllowedGroups:  hsCfg.OIDC.AllowedGroups,
 			AllowedUsers:   hsCfg.OIDC.AllowedUsers,
+			// ownscale trusts the email each login provider reports, which
+			// ownscale's OIDC provider passes on, verified or not.
+			EmailVerifiedRequired: false,
 			PKCE: types.PKCEConfig{
 				Enabled: true,
 				Method:  "S256",

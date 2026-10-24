@@ -34,31 +34,31 @@ func nodesOf(t *testing.T, client *hscl.Client, headscaleUserID string) []string
 
 // TestSignupCreatesHeadscaleUserWithIdentity: every new user gets its own
 // headscale user, carrying the OIDC identity headscale matches the
-// person's tailnet logins by, and an email only if it's verified, as
-// headscale ACL rules can name users by email.
+// person's tailnet logins by, and the email their login provider reported,
+// verified or not.
 func TestSignupCreatesHeadscaleUserWithIdentity(t *testing.T) {
 	tests := []struct {
-		name      string
-		provider  string
-		verified  bool
-		wantEmail string
+		name     string
+		provider string
+		email    string
+		verified bool
 	}{
-		{"sso verified", "google", true, "alice@corp.com"},
-		{"sso unverified", "oidc", false, ""},
-		{"microsoft", "microsoft", false, ""},
-		{"passkey", passkeyProvider, false, ""},
+		{"sso verified", "google", "alice@corp.com", true},
+		{"sso unverified", "oidc", "alice@corp.com", false},
+		{"microsoft", "microsoft", "alice@corp.com", false},
+		{"passkey", passkeyProvider, passkeyEmail("alice"), false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			h, o := newRealOrgTestHandlers(t)
-			member := o.createMember(t, h, RoleMember, tt.provider, "alice@corp.com", tt.verified)
+			member := o.createMember(t, h, RoleMember, tt.provider, tt.email, tt.verified)
 
 			hsUser := o.headscaleUser(t, member.HeadscaleUserID)
 			if want := h.orgs.Identifier(member.ID); hsUser.ProviderID != want {
 				t.Errorf("headscale user identity = %q, want %q", hsUser.ProviderID, want)
 			}
-			if hsUser.Email != tt.wantEmail {
-				t.Errorf("headscale user email = %q, want %q", hsUser.Email, tt.wantEmail)
+			if hsUser.Email != tt.email {
+				t.Errorf("headscale user email = %q, want %q", hsUser.Email, tt.email)
 			}
 		})
 	}

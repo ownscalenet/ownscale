@@ -62,9 +62,8 @@ func uniqueHeadscaleName(candidate, provider, userID string, existing []hscl.Use
 
 // createHeadscaleUser creates the headscale user of the ownscale user
 // about to be created with params, carrying the OIDC identity of params.ID
-// so that person's tailnet logins land on it. It only gets the email if
-// it's verified, as headscale ACL rules can name users by email. A user
-// whose identity can't be set is deleted again.
+// so that person's tailnet logins land on it, and the email their login
+// provider reported. A user whose identity can't be set is deleted again.
 func (h *Handlers) createHeadscaleUser(ctx context.Context, subdomain string, client *hscl.Client, params sqlcgen.CreateUserParams) (string, error) {
 	hsUsers, err := client.ListUsers(ctx)
 	if err != nil {
@@ -74,15 +73,12 @@ func (h *Handlers) createHeadscaleUser(ctx context.Context, subdomain string, cl
 	if candidate == "" {
 		candidate = "user"
 	}
-	create := hscl.CreateUserParams{
+	created, err := client.CreateUser(ctx, hscl.CreateUserParams{
 		Name:        uniqueHeadscaleName(candidate, params.Provider, params.ID, hsUsers),
+		Email:       params.Email,
 		DisplayName: params.Name,
 		PictureURL:  params.AvatarUrl,
-	}
-	if params.EmailVerified != 0 {
-		create.Email = params.Email
-	}
-	created, err := client.CreateUser(ctx, create)
+	})
 	if err != nil {
 		return "", err
 	}

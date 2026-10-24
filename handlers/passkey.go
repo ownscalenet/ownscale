@@ -89,8 +89,8 @@ func (h *Handlers) takePasskeyCeremony(w http.ResponseWriter, r *http.Request) (
 }
 
 // passkeyEmailDomain is the synthetic domain passkey accounts' emails live
-// in. It's not a real email domain, so a passkey username can never collide
-// with an SSO user's verified email.
+// in. It's not a real email domain, so passkey usernames don't collide with
+// SSO users' emails.
 const passkeyEmailDomain = "passkey"
 
 func passkeyEmail(username string) string {
