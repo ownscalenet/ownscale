@@ -105,7 +105,7 @@ test('creating an account from an invite joins the inviting organization', async
     await inviteePage.goto(inviteLink)
     await inviteePage.getByRole('link', { name: 'Create account to join' }).click()
     await expect(inviteePage).toHaveURL(/\/signup\?next=%2Finvite%2F/)
-    await expect(inviteePage.getByRole('heading', { name: 'Create account' })).toBeVisible()
+    await expect(inviteePage.getByText('Create an account to continue.')).toBeVisible()
 
     await inviteePage.locator('#passkey-username').fill(username)
     await inviteePage.getByRole('button', { name: 'Continue with passkey' }).click()
