@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
+import { UserKey } from 'lucide-react'
 import { useAuth } from '../authContext'
 import { errorMessage, passkeyRegisterBegin, passkeyRegisterFinish } from '../api'
 import { createPasskey, browserSupportsWebAuthn } from '../lib/webauthn'
@@ -88,6 +89,7 @@ export default function Signup() {
                   onChange={(e) => setUsername(e.target.value)}
                 />
                 <button type="submit" className="btn btn-primary" disabled={passkeyBusy}>
+                  <UserKey className="size-4" aria-hidden="true" />
                   Continue with passkey
                 </button>
               </form>

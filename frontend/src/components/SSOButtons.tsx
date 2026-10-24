@@ -1,12 +1,18 @@
+import type { ComponentType } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { KeyRound } from 'lucide-react'
 import { getAuthProviders, type AuthProviders } from '../api'
 import { nextQuery } from '../lib/authRedirect'
+import { GoogleIcon, MicrosoftIcon } from './ProviderIcons'
 
-// ssoLabels maps each AuthProviders key to its button copy.
-const ssoLabels: Record<keyof AuthProviders, string> = {
-  oidc: 'SSO',
-  google: 'Google',
-  microsoft: 'Microsoft',
+// ssoButtons maps each AuthProviders key to its button copy and icon.
+const ssoButtons: Record<
+  keyof AuthProviders,
+  { label: string; Icon: ComponentType<{ className?: string }> }
+> = {
+  oidc: { label: 'SSO', Icon: KeyRound },
+  google: { label: 'Google', Icon: GoogleIcon },
+  microsoft: { label: 'Microsoft', Icon: MicrosoftIcon },
 }
 
 const providers: (keyof AuthProviders)[] = ['oidc', 'google', 'microsoft']
@@ -30,7 +36,7 @@ export default function SSOButtons({
   })
 
   return providers.map((provider) => {
-    const label = ssoLabels[provider]
+    const { label, Icon } = ssoButtons[provider]
     if (!authProviders?.[provider]) {
       return (
         <button
@@ -40,12 +46,15 @@ export default function SSOButtons({
           disabled
           title={`${label} sign-in is not enabled for this deployment.`}
         >
+          {/* The brand marks' own colors would ignore the disabled look. */}
+          <Icon className="size-4 grayscale opacity-50" />
           {verb} with {label}
         </button>
       )
     }
     return (
       <a key={provider} href={`/auth/${provider}${nextQuery(next)}`} className="btn btn-outline">
+        <Icon className="size-4" />
         {verb} with {label}
       </a>
     )

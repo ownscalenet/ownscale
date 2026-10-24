@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
+import { UserKey } from 'lucide-react'
 import { useAuth } from '../authContext'
 import { errorMessage, passkeyLoginBegin, passkeyLoginFinish } from '../api'
 import { getPasskey, browserSupportsWebAuthn } from '../lib/webauthn'
@@ -82,6 +83,7 @@ export default function Login() {
                   disabled={passkeyBusy}
                   onClick={() => void handlePasskeyLogin()}
                 >
+                  <UserKey className="size-4" aria-hidden="true" />
                   Sign in with a passkey
                 </button>
               </>
