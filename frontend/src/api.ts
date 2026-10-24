@@ -154,10 +154,25 @@ export interface MachinesResponse {
   canManage: boolean
 }
 
-export function listMachines(
+// sshLogoutSettlesAt is when the browser SSH page's last logout should have
+// reached headscale, which then deletes its ephemeral node. The wasm
+// client's logout is fire-and-forget, so listings wait until then instead of
+// showing the node.
+// This is needed to avoid showing the already deleted ephemeral node created
+// by the browser ssh page when navigating away from it.
+let sshLogoutSettlesAt = 0
+
+// noteSSHLogout records that the browser SSH page just logged out.
+export function noteSSHLogout() {
+  sshLogoutSettlesAt = Date.now() + 1000
+}
+
+export async function listMachines(
   params: { q?: string; user?: string; status?: string },
   signal?: AbortSignal,
 ) {
+  const wait = sshLogoutSettlesAt - Date.now()
+  if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait))
   const qs = new URLSearchParams()
   if (params.q) qs.set('q', params.q)
   if (params.user) qs.set('user', params.user)

@@ -2,7 +2,13 @@ import { useEffect, useRef, useState } from 'react'
 import type { IPN } from '@tailscale/connect'
 import { Link, useParams } from 'react-router-dom'
 import { TerminalSquare } from 'lucide-react'
-import { createSSHSession, deleteAuthKey, errorMessage, type SSHSession } from '../api'
+import {
+  createSSHSession,
+  deleteAuthKey,
+  errorMessage,
+  noteSSHLogout,
+  type SSHSession,
+} from '../api'
 import { useAuth } from '../authContext'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { ErrorAlert, PageHeader } from '../components/ui'
@@ -75,6 +81,7 @@ export default function SSH() {
   const cleanupRef = useRef<(() => void)[]>([])
   const startedRef = useRef(false)
   const keyDeletedRef = useRef(false)
+  const leavingRef = useRef(false)
 
   // The terminal can only be attached once its container exists, which is
   // one render after the client reports Running.
@@ -143,10 +150,16 @@ export default function SSH() {
       wasmURL: '/assets/main.wasm',
       panicHandler: (err) => setError(`Tailscale client stopped: ${err}`),
     })
-    cleanupRef.current.push(() => ipn.logout())
+    cleanupRef.current.push(() => {
+      leavingRef.current = true
+      ipn.logout()
+      noteSSHLogout()
+    })
     setProgress('Joining the tailnet...')
     ipn.run({
       notifyState: (state) => {
+        // Logging out reports NeedsLogin, which mustn't log in again.
+        if (leavingRef.current) return
         if (state === 'NeedsLogin') {
           ipn.login()
           return
