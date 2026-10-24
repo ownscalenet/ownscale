@@ -107,7 +107,7 @@ export class OrgUI {
       throw new Error(`${this.org}: ${endpoint} request failed`)
     }
     try {
-      if ([409, 502, 503, 504].includes(response.status())) {
+      if ([502, 503, 504].includes(response.status())) {
         throw new Transitional(`${endpoint}: HTTP ${response.status()}`)
       }
       if (!response.ok()) throw new Error(`${this.org}: ${endpoint} HTTP ${response.status()}; check authentication, authorization and server health`)

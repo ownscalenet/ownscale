@@ -15,7 +15,7 @@ import (
 // their own for members), the headscale users for filtering, and the
 // members the caller may create keys for.
 func (h *Handlers) ListAuthKeys(w http.ResponseWriter, r *http.Request) {
-	client, _, _ := headscaleClientFromContext(r)
+	client, _ := headscaleClientFromContext(r)
 	caller, _ := auth.UserFromContext(r.Context())
 
 	assignable, err := h.assignableUsers(r.Context(), caller)
@@ -55,7 +55,7 @@ func (h *Handlers) ListAuthKeys(w http.ResponseWriter, r *http.Request) {
 // keys for themselves. RequireHeadscaleClient guarantees the client is
 // reachable.
 func (h *Handlers) CreateAuthKey(w http.ResponseWriter, r *http.Request) {
-	client, org, _ := headscaleClientFromContext(r)
+	client, org := headscaleClientFromContext(r)
 
 	var req struct {
 		MemberID   string   `json:"memberId"`
@@ -105,9 +105,9 @@ func (h *Handlers) CreateAuthKey(w http.ResponseWriter, r *http.Request) {
 }
 
 // ExpireAuthKey handles POST /api/auth-keys/{id}/expire.
-// requireHeadscaleClient guarantees the client is reachable.
+// RequireHeadscaleClient guarantees the client is reachable.
 func (h *Handlers) ExpireAuthKey(w http.ResponseWriter, r *http.Request) {
-	client, _, _ := headscaleClientFromContext(r)
+	client, _ := headscaleClientFromContext(r)
 	id := r.PathValue("id")
 	if !h.requireKeyAccess(w, r, client, id) {
 		return
@@ -121,9 +121,9 @@ func (h *Handlers) ExpireAuthKey(w http.ResponseWriter, r *http.Request) {
 }
 
 // DeleteAuthKey handles DELETE /api/auth-keys/{id}.
-// requireHeadscaleClient guarantees the client is reachable.
+// RequireHeadscaleClient guarantees the client is reachable.
 func (h *Handlers) DeleteAuthKey(w http.ResponseWriter, r *http.Request) {
-	client, _, _ := headscaleClientFromContext(r)
+	client, _ := headscaleClientFromContext(r)
 	id := r.PathValue("id")
 	if !h.requireKeyAccess(w, r, client, id) {
 		return

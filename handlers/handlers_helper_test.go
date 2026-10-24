@@ -84,8 +84,7 @@ func withTestUser(req *http.Request, user sqlcgen.User) *http.Request {
 }
 
 // withHeadscaleClient attaches client to req's context, as
-// RequireHeadscaleClient would for an authenticated request whose
-// organization's headscale is reachable. Handlers that only read the
+// RequireHeadscaleClient would for an authenticated request. Handlers that only read the
 // client (not org) from context are fine with org's zero value.
 func withHeadscaleClient(req *http.Request, client *hscl.Client) *http.Request {
 	ctx := context.WithValue(req.Context(), headscaleClientContextKey, headscaleContext{client: client})

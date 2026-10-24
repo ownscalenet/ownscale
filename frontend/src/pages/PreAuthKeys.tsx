@@ -9,7 +9,6 @@ import {
   deleteAuthKey,
   expireAuthKey,
   errorMessage,
-  isNotConfigured,
   listAuthKeys,
   type AssignableUser,
   type PreAuthKey,
@@ -70,9 +69,10 @@ export default function PreAuthKeys() {
   const users = query.data?.users ?? []
   const assignableUsers = query.data?.assignableUsers ?? []
   const canManage = query.data?.canManage ?? false
-  const notConfigured = isNotConfigured(query.error)
+  // Without data the page has nothing to show but the error.
+  const failed = query.data == null && query.error != null
   const [actionError, setActionError] = useState<string | null>(null)
-  const error = actionError ?? (query.error && !notConfigured ? errorMessage(query.error) : null)
+  const error = actionError ?? (query.error ? errorMessage(query.error) : null)
   const reload = () => {
     setActionError(null)
     void queryClient.invalidateQueries({ queryKey: ['authKeys'] })
@@ -101,14 +101,7 @@ export default function PreAuthKeys() {
 
       <ErrorAlert error={error} />
 
-      {notConfigured ? (
-        <div className="alert alert-warning">
-          <span>
-            Headscale isn&rsquo;t reachable for this organization right now. This happens briefly
-            while it restarts to apply saved settings &mdash; try again in a moment.
-          </span>
-        </div>
-      ) : (
+      {!failed && (
         <>
           <p className="text-sm opacity-60 mb-4">
             Pre-authentication keys let a new machine join this tailnet without an interactive

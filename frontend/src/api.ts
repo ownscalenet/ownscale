@@ -105,12 +105,6 @@ export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err)
 }
 
-// isNotConfigured reports whether err means the organization's headscale
-// isn't reachable yet, e.g. while it restarts to apply settings.
-export function isNotConfigured(err: unknown): boolean {
-  return err instanceof ApiError && err.status === 409
-}
-
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   // Spread init first: its own headers would otherwise replace the merged ones.
   const headers = new Headers(init?.body ? { 'Content-Type': 'application/json' } : undefined)

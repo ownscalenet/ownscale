@@ -18,7 +18,7 @@ func (h *Handlers) GetAccessControlPolicy(w http.ResponseWriter, r *http.Request
 		h.writeError(w, http.StatusUnauthorized, "unauthenticated")
 		return
 	}
-	client, _, _ := headscaleClientFromContext(r)
+	client, _ := headscaleClientFromContext(r)
 
 	content, err := client.GetPolicy(r.Context())
 	if err != nil {
@@ -51,7 +51,7 @@ func (h *Handlers) UpdateAccessControlPolicy(w http.ResponseWriter, r *http.Requ
 		h.writeError(w, http.StatusForbidden, "only owners and admins can edit the access control policy")
 		return
 	}
-	client, _, _ := headscaleClientFromContext(r)
+	client, _ := headscaleClientFromContext(r)
 
 	var req struct {
 		Content string `json:"content"`
@@ -85,7 +85,7 @@ func (h *Handlers) CheckAccessControlPolicy(w http.ResponseWriter, r *http.Reque
 		h.writeError(w, http.StatusForbidden, "only owners and admins can edit the access control policy")
 		return
 	}
-	client, _, _ := headscaleClientFromContext(r)
+	client, _ := headscaleClientFromContext(r)
 
 	var req struct {
 		Content string `json:"content"`

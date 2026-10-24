@@ -191,10 +191,9 @@ func newFakeHeadscaleServer(t *testing.T) (*hscl.Client, *[]*http.Request, *stri
 }
 
 // activeOrgUser inserts the owner of a new active organization and points
-// h.hs at a fake headscale (used by handlers that call
-// resolveHeadscaleClient directly, e.g. Session/ListMembers's best-effort
-// linking). Returns the user, a client for the middleware-based handlers
-// to attach via withHeadscaleClient, and the recorded requests slice.
+// h.hs at a fake headscale, for RequireHeadscaleClient. Returns the user, a
+// client for handlers called without the middleware to attach via
+// withHeadscaleClient, and the recorded requests slice.
 func activeOrgUser(t *testing.T, h *Handlers, queries *dbpkg.TxQueries) (sqlcgen.User, *hscl.Client, *[]*http.Request) {
 	t.Helper()
 	user, client, requests, _, _ := activeOrgUserWithPolicy(t, h, queries)

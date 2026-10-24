@@ -136,7 +136,7 @@ func TestRemoveMember(t *testing.T) {
 
 	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/members/x", nil), owner), "id", target.ID)
 	rec := httptest.NewRecorder()
-	h.RemoveMember(rec, req)
+	h.RequireHeadscaleClient(h.RemoveMember)(rec, req)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200: %s", rec.Code, rec.Body)
 	}
@@ -179,7 +179,7 @@ func TestRemoveMemberDeletesHeadscaleUser(t *testing.T) {
 		wantAccount bool
 	}{
 		{"headscale reachable", false, http.StatusOK, []string{"other"}, []string{"other-laptop"}, false},
-		{"headscale unreachable", true, http.StatusConflict, []string{"member", "other"}, []string{"member-laptop", "other-laptop"}, true},
+		{"headscale unreachable", true, http.StatusServiceUnavailable, []string{"member", "other"}, []string{"member-laptop", "other-laptop"}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -194,7 +194,7 @@ func TestRemoveMemberDeletesHeadscaleUser(t *testing.T) {
 
 			req := withPathValue(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/members/x", nil), owner), "id", target.ID)
 			rec := httptest.NewRecorder()
-			h.RemoveMember(rec, req)
+			h.RequireHeadscaleClient(h.RemoveMember)(rec, req)
 
 			if rec.Code != tt.wantStatus {
 				t.Fatalf("status = %d, want %d: %s", rec.Code, tt.wantStatus, rec.Body)
@@ -233,11 +233,12 @@ func TestRemoveMemberDeletesHeadscaleUser(t *testing.T) {
 
 func TestRemoveMemberRefusesOwner(t *testing.T) {
 	h, _, users := newOrgTestHandlers(t, RoleOwner, RoleAdmin)
+	h.hs = fakeHeadscaleClients{}
 	owner, admin := users[0], users[1]
 
 	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/members/x", nil), admin), "id", owner.ID)
 	rec := httptest.NewRecorder()
-	h.RemoveMember(rec, req)
+	h.RequireHeadscaleClient(h.RemoveMember)(rec, req)
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400: %s", rec.Code, rec.Body)
 	}
@@ -245,11 +246,12 @@ func TestRemoveMemberRefusesOwner(t *testing.T) {
 
 func TestRemoveMemberRequiresManager(t *testing.T) {
 	h, _, users := newOrgTestHandlers(t, RoleMember, RoleMember)
+	h.hs = fakeHeadscaleClients{}
 	plainMember, target := users[0], users[1]
 
 	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/members/x", nil), plainMember), "id", target.ID)
 	rec := httptest.NewRecorder()
-	h.RemoveMember(rec, req)
+	h.RequireHeadscaleClient(h.RemoveMember)(rec, req)
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403: %s", rec.Code, rec.Body)
 	}
@@ -260,11 +262,12 @@ func TestRemoveMemberRequiresManager(t *testing.T) {
 
 func TestRemoveMemberNotFound(t *testing.T) {
 	h, _, users := newOrgTestHandlers(t, RoleOwner)
+	h.hs = fakeHeadscaleClients{}
 	owner := users[0]
 
 	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/members/x", nil), owner), "id", "nonexistent-id")
 	rec := httptest.NewRecorder()
-	h.RemoveMember(rec, req)
+	h.RequireHeadscaleClient(h.RemoveMember)(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404: %s", rec.Code, rec.Body)
 	}
@@ -272,12 +275,13 @@ func TestRemoveMemberNotFound(t *testing.T) {
 
 func TestRemoveMemberNotFoundForDifferentOrg(t *testing.T) {
 	h, _, users := newOrgTestHandlers(t, RoleOwner)
+	h.hs = fakeHeadscaleClients{}
 	owner := users[0]
 	other := insertUser(t, h.queries)
 
 	req := withPathValue(withTestUser(httptest.NewRequest(http.MethodDelete, "/api/members/x", nil), owner), "id", other.ID)
 	rec := httptest.NewRecorder()
-	h.RemoveMember(rec, req)
+	h.RequireHeadscaleClient(h.RemoveMember)(rec, req)
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("status = %d, want 404: %s", rec.Code, rec.Body)
 	}

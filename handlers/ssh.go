@@ -42,7 +42,7 @@ type sshSessionResponse struct {
 // single-use ephemeral pre-auth. Whether that session is allowed is
 // decided by the organization's access control policy, not here.
 func (h *Handlers) CreateSSHSession(w http.ResponseWriter, r *http.Request) {
-	client, org, _ := headscaleClientFromContext(r)
+	client, org := headscaleClientFromContext(r)
 	id := r.PathValue("id")
 
 	caller, ok := auth.UserFromContext(r.Context())

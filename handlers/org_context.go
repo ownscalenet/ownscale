@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/hscl"
 )
@@ -26,9 +27,9 @@ type headscaleContext struct {
 
 // headscaleClientFromContext returns the client and org attached by
 // RequireHeadscaleClient.
-func headscaleClientFromContext(r *http.Request) (client *hscl.Client, org sqlcgen.Organization, ok bool) {
-	c, ok := r.Context().Value(headscaleClientContextKey).(headscaleContext)
-	return c.client, c.org, ok
+func headscaleClientFromContext(r *http.Request) (*hscl.Client, sqlcgen.Organization) {
+	c, _ := r.Context().Value(headscaleClientContextKey).(headscaleContext)
+	return c.client, c.org
 }
 
 // withOrgLogger returns ctx carrying a logger annotated with the
@@ -49,21 +50,29 @@ func (h *Handlers) loggerFromContext(ctx context.Context) *slog.Logger {
 	return h.logger
 }
 
-// RequireHeadscaleClient wraps next so it only runs once the caller's
-// organization's headscale client is resolved, starting headscale first if
-// it's asleep. It answers 409+notConfigured if headscale isn't running.
+// RequireHeadscaleClient wraps next so it only runs with the caller's
+// organization's running headscale client, starting headscale first if it's
+// asleep. If headscale can't run, it answers 503.
 func (h *Handlers) RequireHeadscaleClient(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		client, org, err := h.resolveHeadscale(r)
-		r = r.WithContext(h.withOrgLogger(r.Context(), org.Subdomain))
-		switch {
-		case errors.Is(err, errNoHeadscale):
-			h.writeJSON(w, http.StatusConflict, map[string]bool{"notConfigured": true})
-		case err != nil:
-			h.serverError(w, r, err)
-		default:
-			next(w, withHeadscaleContext(r, client, org))
+		user, ok := auth.UserFromContext(r.Context())
+		if !ok {
+			h.serverError(w, r, errors.New("RequireHeadscaleClient needs an authenticated user"))
+			return
 		}
+		org, err := h.queries.GetOrganization(r.Context(), user.OrganizationID)
+		if err != nil {
+			h.serverError(w, r, err)
+			return
+		}
+		r = r.WithContext(h.withOrgLogger(r.Context(), org.Subdomain))
+		client, err := h.hs.Ensure(r.Context(), org.Subdomain)
+		if err != nil {
+			h.loggerFromContext(r.Context()).Warn("get headscale client", "error", err)
+			h.writeError(w, http.StatusServiceUnavailable, "headscale is unavailable right now, try again in a moment")
+			return
+		}
+		next(w, withHeadscaleContext(r, client, org))
 	}
 }
 

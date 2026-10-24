@@ -75,7 +75,7 @@ func (h *Handlers) ListFunnelRoutes(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusUnauthorized, "unauthenticated")
 		return
 	}
-	client, org, _ := headscaleClientFromContext(r)
+	client, org := headscaleClientFromContext(r)
 
 	routes, err := h.queries.ListFunnelRoutesByOrg(r.Context(), org.ID)
 	if err != nil {
@@ -125,7 +125,7 @@ func (h *Handlers) CreateFunnelRoute(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusForbidden, "only owners and admins can create funnel routes")
 		return
 	}
-	client, org, _ := headscaleClientFromContext(r)
+	client, org := headscaleClientFromContext(r)
 
 	var req struct {
 		Label        string `json:"label"`

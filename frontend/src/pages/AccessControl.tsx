@@ -7,7 +7,6 @@ import {
   checkAccessControlPolicy,
   errorMessage,
   formatHuJSON,
-  isNotConfigured,
   type AccessControlResponse,
 } from '../api'
 import DiffModal from '../components/DiffModal'
@@ -155,7 +154,6 @@ export default function AccessControl() {
   })
   const savedContent = query.data?.content ?? ''
   const canManage = query.data?.canManage ?? false
-  const notConfigured = isNotConfigured(query.error)
   // draft holds unsaved edits, so a refetch never overwrites them.
   const [draft, setDraft] = useState<string | null>(null)
   const content = draft ?? savedContent
@@ -180,7 +178,7 @@ export default function AccessControl() {
   const saving = save.isPending
   const formatting = format.isPending
   const success = save.isSuccess
-  const failure = save.error ?? check.error ?? format.error ?? (notConfigured ? null : query.error)
+  const failure = save.error ?? check.error ?? format.error ?? query.error
   const error = failure ? errorMessage(failure) : null
 
   const handleSave = () => {
@@ -218,14 +216,6 @@ export default function AccessControl() {
     <div>
       <PageHeader title="Access Control" subtitle={dirty ? 'Unsaved changes' : 'Policy is saved'} />
 
-      {notConfigured && (
-        <div className="alert alert-warning mb-4">
-          <span>
-            Your organization isn't active yet, so its access control policy can't be edited.
-          </span>
-        </div>
-      )}
-
       <ErrorAlert error={error} />
       {check.isSuccess && (
         <div role="alert" className="alert alert-success mb-4">
@@ -259,7 +249,7 @@ export default function AccessControl() {
                     <button
                       type="button"
                       className="btn btn-ghost btn-sm"
-                      disabled={formatting || notConfigured}
+                      disabled={formatting}
                       onClick={handleFormat}
                     >
                       {formatting ? (
@@ -273,7 +263,7 @@ export default function AccessControl() {
                     <button
                       type="button"
                       className="btn btn-ghost btn-sm"
-                      disabled={checking || notConfigured}
+                      disabled={checking}
                       onClick={handleCheck}
                     >
                       {checking ? (
@@ -287,7 +277,7 @@ export default function AccessControl() {
                     <button
                       type="button"
                       className="btn btn-primary btn-sm"
-                      disabled={saving || notConfigured || !dirty}
+                      disabled={saving || !dirty}
                       onClick={handleSave}
                     >
                       {saving ? <span className="loading loading-spinner loading-xs"></span> : null}

@@ -156,15 +156,7 @@ func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
 	// Headscale goes first: if the account were deleted first, a failure
 	// here would leave their machines on the tailnet with nothing in the
 	// console to retry from.
-	client, _, notConfigured, err := h.resolveHeadscaleClient(r)
-	if err != nil {
-		h.serverError(w, r, err)
-		return
-	}
-	if notConfigured {
-		h.writeError(w, http.StatusConflict, "headscale is unavailable right now, try again in a moment")
-		return
-	}
+	client, _ := headscaleClientFromContext(r)
 	if err := client.DeleteUserAndNodes(r.Context(), target.HeadscaleUserID); err != nil {
 		h.serverError(w, r, err)
 		return
