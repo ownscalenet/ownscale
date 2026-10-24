@@ -11,7 +11,7 @@ test('signing in via SSO reaches the app, and logout returns to /login', async (
   test.setTimeout(90_000)
 
   await page.goto('/login')
-  await expect(page.getByRole('heading', { name: 'Ownscale console' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Ownscale' })).toBeVisible()
 
   await page.getByRole('link', { name: 'Sign in with SSO' }).click()
   await page.locator('#login').fill(account.email)

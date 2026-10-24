@@ -79,7 +79,7 @@ test('accepting an invite adds a member, whose role can be changed and who can b
   await expect(memberRow.getByRole('combobox')).toHaveValue('auditor')
 
   await memberRow.getByRole('button', { name: 'Remove' }).click()
-  await confirmDialog(page, 'Remove member', account.invitee)
+  await confirmDialog(page, 'Remove member')
   await expect(memberRow).toBeHidden()
 })
 
@@ -122,7 +122,7 @@ test('creating an account from an invite joins the inviting organization', async
   await expect(memberRow).toBeVisible()
 
   await memberRow.getByRole('button', { name: 'Remove' }).click()
-  await confirmDialog(page, 'Remove member', username)
+  await confirmDialog(page, 'Remove member')
   await expect(memberRow).toBeHidden()
 })
 
@@ -183,7 +183,7 @@ test('transferring ownership promotes the member and demotes the caller to admin
   await page.reload()
   const memberRow = page.getByRole('row').filter({ hasText: account.invitee })
   await memberRow.getByRole('button', { name: 'Remove' }).click()
-  await confirmDialog(page, 'Remove member', account.invitee)
+  await confirmDialog(page, 'Remove member')
   await expect(memberRow).toBeHidden()
 })
 
@@ -260,6 +260,6 @@ test('a plain member cannot see owner/admin-only management controls', async ({
   await page.goto('/users')
   const memberRow = page.getByRole('row').filter({ hasText: account.invitee })
   await memberRow.getByRole('button', { name: 'Remove' }).click()
-  await confirmDialog(page, 'Remove member', account.invitee)
+  await confirmDialog(page, 'Remove member')
   await expect(memberRow).toBeHidden()
 })

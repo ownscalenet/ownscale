@@ -96,7 +96,7 @@ test("removing a member removes their machines from the tailnet", async ({ page,
       await page.goto('/users')
       const memberRow = page.getByRole('row').filter({ hasText: account.invitee })
       await memberRow.getByRole('button', { name: 'Remove' }).click()
-      await confirmDialog(page, 'Remove member', account.invitee)
+      await confirmDialog(page, 'Remove member')
       await expect(memberRow).toBeHidden()
 
       expect(await machineNames()).not.toContain(machine.hostname)

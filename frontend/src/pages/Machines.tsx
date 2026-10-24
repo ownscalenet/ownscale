@@ -690,7 +690,6 @@ function MachineRow({
                       ],
                       confirmLabel: 'Remove',
                       tone: 'danger',
-                      typeToConfirm: m.givenName,
                     })
                     if (ok) run(() => deleteMachine(m.id))
                   }}

@@ -28,7 +28,6 @@ const tones = {
 // The confirm button has the initial focus, matching the other modals' order.
 export default function ConfirmProvider({ children }: { children: ReactNode }) {
   const [pending, setPending] = useState<ConfirmOptions | null>(null)
-  const [typed, setTyped] = useState('')
   const resolveRef = useRef<((ok: boolean) => void) | null>(null)
 
   const confirm = useCallback<Confirm>(
@@ -37,7 +36,6 @@ export default function ConfirmProvider({ children }: { children: ReactNode }) {
         // A newer request replaces one still open, which counts as cancelled.
         resolveRef.current?.(false)
         resolveRef.current = resolve
-        setTyped('')
         setPending(options)
       }),
     [],
@@ -50,8 +48,6 @@ export default function ConfirmProvider({ children }: { children: ReactNode }) {
   }
 
   const tone = tones[pending?.tone ?? 'default']
-  const required = pending?.typeToConfirm
-  const matches = required === undefined || typed === required
 
   return (
     <ConfirmContext.Provider value={confirm}>
@@ -78,33 +74,11 @@ export default function ConfirmProvider({ children }: { children: ReactNode }) {
             ))}
           </ul>
         )}
-        {required !== undefined && (
-          <form
-            className="mt-4"
-            onSubmit={(e) => {
-              e.preventDefault()
-              if (matches) finish(true)
-            }}
-          >
-            <label className="text-sm" htmlFor="confirm-typed">
-              Type <code className="font-mono font-semibold">{required}</code> to confirm
-            </label>
-            <input
-              id="confirm-typed"
-              type="text"
-              className="input input-bordered input-sm w-full mt-1 font-mono"
-              autoComplete="off"
-              value={typed}
-              onChange={(e) => setTyped(e.target.value)}
-            />
-          </form>
-        )}
         <div className="modal-action">
           <button
             type="button"
             className={`btn ${tone.button}`}
             autoFocus
-            disabled={!matches}
             onClick={() => finish(true)}
           >
             {pending?.confirmLabel}

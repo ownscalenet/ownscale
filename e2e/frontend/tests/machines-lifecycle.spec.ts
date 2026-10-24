@@ -62,7 +62,7 @@ test('registering a real device and managing it from the Machines page', async (
     // Delete.
     await renamedRow.getByRole('button', { name: 'Actions', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Remove', exact: true }).click()
-    await confirmDialog(page, 'Remove', newName)
+    await confirmDialog(page, 'Remove')
     await expect(renamedRow).toBeHidden()
   } finally {
     await teardownRealMachine(machine)

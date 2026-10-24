@@ -290,7 +290,7 @@ export class OrgUI {
         const row = this.page.getByRole('row').filter({ has: this.page.getByText(machine.givenName, { exact: true }) })
         await row.getByRole('button', { name: 'Actions', exact: true }).click()
         await this.page.getByRole('menuitem', { name: 'Remove', exact: true }).click()
-        await confirmDialog(this.page, 'Remove', machine.givenName)
+        await confirmDialog(this.page, 'Remove')
         await poll(`${this.org} machine removal`, 15_000, async () =>
           (await this.read<MachinesResponse>('/api/machines')).machines.some(m => String(m.id) === resource.id) ? undefined : true)
       }

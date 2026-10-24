@@ -10,8 +10,6 @@ export interface ConfirmOptions {
   // tone styles the dialog: "danger" for destructive actions, "public" for
   // ones that expose something to the internet.
   tone?: 'default' | 'danger' | 'public'
-  // typeToConfirm is text the user must type before the action is enabled.
-  typeToConfirm?: string
 }
 
 // Confirm asks the user to confirm an action and resolves to their answer.
