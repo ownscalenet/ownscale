@@ -145,7 +145,6 @@ export default function DNS() {
     <div>
       <PageHeader
         title="DNS"
-        subtitle={dns ? <span className="font-mono">{dns.baseDomain}</span> : undefined}
       />
 
       {!canManage && (
@@ -444,7 +443,11 @@ function TailnetName({ dns, certsAvailable }: { dns: DNSConfig; certsAvailable: 
           <p className="text-sm text-base-content/70">
             Enabled: devices can get a Let&apos;s Encrypt certificate with{' '}
             <code>tailscale cert</code> or <code>tailscale serve</code>. Certificate names are
-            published in public Certificate Transparency logs.
+            published in public{' '}
+            <a className="link" href="https://crt.sh/" target="_blank" rel="noreferrer">
+              Certificate Transparency logs
+            </a>
+            .
           </p>
         )}
       </div>

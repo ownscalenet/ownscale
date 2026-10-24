@@ -8,6 +8,8 @@ import { goToNext, isSafeRelativeNext, nextQuery } from '../lib/authRedirect'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { ErrorAlert } from '../components/ui'
 import SSOButtons from '../components/SSOButtons'
+import Logo from '../components/Logo'
+import { siteURL } from '../lib/faq'
 
 // isAuthorizeCallback reports whether next finishes another organization's
 // headscale SSO login. The provider only sends a signed-in user here with such
@@ -60,7 +62,12 @@ export default function Login() {
     <div className="hero min-h-screen bg-base-200">
       <div className="hero-content w-full text-center">
         <div className="w-full max-w-md">
-          <h1 className="text-3xl font-bold mb-2">Ownscale console</h1>
+          <h1 className="text-2xl font-bold mb-2">
+            <a href={siteURL()} className="inline-flex items-center gap-2.5">
+              <Logo className="size-7" />
+              Ownscale
+            </a>
+          </h1>
           {switchAccount ? (
             <div className="alert alert-warning mb-6 text-left">
               <span>

@@ -10,13 +10,13 @@ const ssoButtons: Record<
   keyof AuthProviders,
   { label: string; Icon: ComponentType<{ className?: string }> }
 > = {
-  oidc: { label: 'SSO', Icon: KeyRound },
+  github: { label: 'GitHub', Icon: GitHubIcon },
   google: { label: 'Google', Icon: GoogleIcon },
   microsoft: { label: 'Microsoft', Icon: MicrosoftIcon },
-  github: { label: 'GitHub', Icon: GitHubIcon },
+  oidc: { label: 'SSO', Icon: KeyRound },
 }
 
-const providers: (keyof AuthProviders)[] = ['oidc', 'google', 'microsoft', 'github']
+const providers: (keyof AuthProviders)[] = ['github', 'google', 'microsoft', 'oidc']
 
 // SSOButtons renders a link per upstream login provider. Signing in and
 // signing up are the same flow (the account is created on first login), so

@@ -8,6 +8,8 @@ import { goToNext, isSafeRelativeNext, nextQuery } from '../lib/authRedirect'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { ErrorAlert } from '../components/ui'
 import SSOButtons from '../components/SSOButtons'
+import Logo from '../components/Logo'
+import { siteURL } from '../lib/faq'
 
 // Signup is the /signup page. It keeps `next` through every flow, so e.g. an
 // invitee lands back on /invite/:token once the account exists.
@@ -57,8 +59,13 @@ export default function Signup() {
     <div className="hero min-h-screen bg-base-200">
       <div className="hero-content w-full text-center">
         <div className="w-full max-w-md">
-          <h1 className="text-3xl font-bold mb-2">Create account</h1>
-          <p className="mb-6 text-base-content/70">Create an Ownscale account to continue.</p>
+          <h1 className="text-2xl font-bold mb-2">
+            <a href={siteURL()} className="inline-flex items-center gap-2.5">
+              <Logo className="size-7" />
+              Ownscale
+            </a>
+          </h1>
+          <p className="mb-6 text-base-content/70">Create an account to continue.</p>
 
           <ErrorAlert error={passkeyError} />
 
@@ -69,9 +76,7 @@ export default function Signup() {
                 onSubmit={(e) => void handlePasskeyRegister(e)}
               >
                 <p className="text-sm text-base-content/70">
-                  Passkeys are recommended: they don't share any personal information with Ownscale,
-                  but you won't be able to recover your account in case you lose access to your
-                  password manager.
+                  Passkeys are recommended: they don't share any personal information with Ownscale.
                 </p>
                 <label className="fieldset-label" htmlFor="passkey-username">
                   Username
@@ -84,7 +89,7 @@ export default function Signup() {
                   pattern="[A-Za-z][A-Za-z0-9._\-]{1,31}"
                   title="2–32 characters, starting with a letter; letters, digits, '.', '-' and '_' only"
                   className="input input-bordered w-full"
-                  placeholder="your-username"
+                  placeholder="Choose any username"
                   value={username}
                   onChange={(e) => setUsername(e.target.value)}
                 />
