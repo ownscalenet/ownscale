@@ -55,9 +55,7 @@ func (h *Handlers) loggerFromContext(ctx context.Context) *slog.Logger {
 func (h *Handlers) RequireHeadscaleClient(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		client, org, err := h.resolveHeadscale(r)
-		if org.Subdomain != "" {
-			r = r.WithContext(h.withOrgLogger(r.Context(), org.Subdomain))
-		}
+		r = r.WithContext(h.withOrgLogger(r.Context(), org.Subdomain))
 		switch {
 		case errors.Is(err, errNoHeadscale):
 			h.writeJSON(w, http.StatusConflict, map[string]bool{"notConfigured": true})
