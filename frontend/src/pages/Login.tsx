@@ -57,8 +57,8 @@ export default function Login() {
 
   return (
     <div className="hero min-h-screen bg-base-200">
-      <div className="hero-content text-center">
-        <div className="max-w-md">
+      <div className="hero-content w-full text-center">
+        <div className="w-full max-w-md">
           <h1 className="text-3xl font-bold mb-2">Ownscale console</h1>
           {switchAccount ? (
             <div className="alert alert-warning mb-6 text-left">

@@ -54,7 +54,7 @@ export default function Signup() {
 
   return (
     <div className="hero min-h-screen bg-base-200">
-      <div className="hero-content text-center">
+      <div className="hero-content w-full text-center">
         <div className="w-full max-w-md">
           <h1 className="text-3xl font-bold mb-2">Create account</h1>
           <p className="mb-6 text-base-content/70">Create an Ownscale account to continue.</p>
