@@ -4,7 +4,7 @@ import { dirname } from 'node:path'
 import { expect, test as setup, type Page } from '@playwright/test'
 import { baseDomain, baseURL, consoleDomain } from './connectivity/environment'
 import { identities, OrgUI } from './connectivity/ui'
-import { accountNames, accountsFile, emailOf, resetAuthRestrictions, signIn, storageStateOf } from './support/account'
+import { accountNames, accountsFile, emailOf, removeInvitee, resetAuthRestrictions, signIn, storageStateOf, workerAccounts } from './support/account'
 import { addVirtualAuthenticator, clearCredentials, exportCredential, importCredential } from './support/webauthn'
 
 const STORAGE_STATE = 'tests/.auth/admin.json'
@@ -144,6 +144,8 @@ setup.describe.serial('bootstrap fixed dev identities', () => {
         writeFileSync(accountsFile, JSON.stringify(orgs, null, 2))
         await checkHost(org)
         await resetAuthRestrictions(page)
+        const invitee = workerAccounts.find(a => a.name === name)?.invitee
+        if (invitee) await removeInvitee(page, invitee)
       } finally {
         await context.close()
       }

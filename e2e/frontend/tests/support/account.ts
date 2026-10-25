@@ -72,6 +72,19 @@ export async function resetAuthRestrictions(page: Page): Promise<void> {
   throw new Error(`resetAuthRestrictions: /api/auth-restrictions PUT failed after retries, last HTTP ${lastStatus}`)
 }
 
+// removeInvitee removes invitee from page's signed-in org if a previous run
+// left them there. Invites only apply to brand-new accounts, so a leftover
+// invitee would join the next test's org with their old role instead.
+export async function removeInvitee(page: Page, invitee: string): Promise<void> {
+  const response = await page.request.get('/api/members')
+  if (!response.ok()) throw new Error(`removeInvitee: /api/members GET failed with HTTP ${response.status()}`)
+  const { members } = (await response.json()) as { members: { id: string; email: string }[] }
+  for (const m of members.filter(m => m.email === invitee)) {
+    const removed = await page.request.delete(`/api/members/${m.id}`)
+    if (!removed.ok()) throw new Error(`removeInvitee: removing ${invitee} failed with HTTP ${removed.status()}`)
+  }
+}
+
 function loadAccount(name: string): Account {
   let orgs: Record<string, string>
   try {
