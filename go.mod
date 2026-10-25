@@ -26,10 +26,10 @@ require (
 	golang.org/x/time v0.16.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.61.0
-	tailscale.com v1.105.0-pre.0.20261014225612-b83f28ebfbd9
+	tailscale.com v1.105.0-pre.0.20261022061721-37fc7a7a7260
 )
 
-replace github.com/juanfont/headscale => github.com/ownscalenet/headscale v0.29.4-10
+replace github.com/juanfont/headscale => github.com/ownscalenet/headscale v0.29.6-1
 
 require (
 	cel.dev/expr v0.25.2 // indirect
@@ -114,7 +114,7 @@ require (
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/gorilla/securecookie v1.1.2 // indirect
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
-	github.com/hashicorp/golang-lru/v2 v2.0.8-0.20260903152128-9c13c57de0be // indirect
+	github.com/hashicorp/golang-lru/v2 v2.0.8-0.20261012062354-235099c106fc // indirect
 	github.com/hdevalence/ed25519consensus v0.2.0 // indirect
 	github.com/hetznercloud/hcloud-go/v2 v2.52.0 // indirect
 	github.com/huin/goupnp v1.3.0 // indirect

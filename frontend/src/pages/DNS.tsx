@@ -143,9 +143,7 @@ export default function DNS() {
 
   return (
     <div>
-      <PageHeader
-        title="DNS"
-      />
+      <PageHeader title="DNS" />
 
       {!canManage && (
         <div className="alert alert-warning mb-4">
