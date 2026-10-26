@@ -423,12 +423,10 @@ function RemoveInternalDialog({
 
   return (
     <Modal open onClose={onClose} title={`Remove ${m.givenName}`} className="whitespace-normal">
-      <div role="alert" className="alert alert-warning mb-4">
         <span>
           This machine is used internally by the funnel feature. The following funnels will be
           deleted and no longer accessible:
         </span>
-      </div>
       {funnelsError ? (
         <ErrorAlert error={funnelsError} />
       ) : funnels === null ? (
@@ -682,8 +680,7 @@ function MachineRow({
                     const ok = await confirm({
                       title: `Permanently remove ${m.givenName}?`,
                       consequences: [
-                        'It is removed from the tailnet and disconnected.',
-                        "This can't be undone.",
+                        `${m.givenName} will not be accesible anymore on the tailnet.`,
                       ],
                       confirmLabel: 'Remove',
                       tone: 'danger',
