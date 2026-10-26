@@ -147,7 +147,7 @@ export default function Layout() {
                     className={`size-1.5 rounded-full ${statusDot[organization.Status] ?? 'bg-base-content/30'}`}
                     aria-hidden="true"
                   />
-                  Tailnet
+                  Login server
                 </div>
                 <div className="mt-1 flex items-center gap-1">
                   <span

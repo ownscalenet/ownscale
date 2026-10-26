@@ -101,7 +101,6 @@ function downloadCsv(filename: string, csv: string) {
 
 export default function Machines() {
   usePageTitle('Machines')
-  const { organization } = useAuth()
   const [searchParams, setSearchParams] = useSearchParams()
   const q = searchParams.get('q') ?? ''
   const userFilter = searchParams.get('user') ?? ''
@@ -161,19 +160,7 @@ export default function Machines() {
 
   return (
     <>
-      <PageHeader
-        title="Machines"
-        subtitle={
-          organization && (
-            <>
-              Login server{' '}
-              <span className="font-mono text-base-content">
-                {window.location.protocol}//{organization.Domain}
-              </span>
-            </>
-          )
-        }
-      >
+      <PageHeader title="Machines">
         {!failed && (
           <button
             type="button"
@@ -333,6 +320,7 @@ function RegisterMachineDialog({
     void refresh()
   })
   const loginServer = `${window.location.protocol}//${organization?.Domain}`
+  const command = `tailscale up --login-server=${loginServer}`
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
@@ -350,12 +338,21 @@ function RegisterMachineDialog({
 
   return (
     <Modal open onClose={onClose} title="Register machine">
-      <p className="text-sm opacity-60 mb-2">Run this on the device you want to add:</p>
-      <div className="mockup-code text-xs mb-4 overflow-x-auto">
-        <pre data-prefix="$">
-          <code>tailscale up --login-server={loginServer}</code>
-        </pre>
+      <p className="text-sm opacity-60 mb-2">1. Run this on the device you want to add:</p>
+      <div className="relative mb-4">
+        <div className="mockup-code text-xs overflow-x-auto">
+          <pre data-prefix="$">
+            <code>{command}</code>
+          </pre>
+        </div>
+        {/* The code block is neutral in every theme; the ghost button colors itself with base-content. */}
+        <span className="absolute top-2 right-2 [--color-base-content:var(--color-neutral-content)]">
+          <CopyIcon text={command} label="command" />
+        </span>
       </div>
+      <p className="text-sm opacity-60 mb-2">2. Follow the instructions from the device.</p>
+      <div className="divider my-2">or</div>
+      <p className="text-sm opacity-60 mb-2">2. Finish registration from this session.</p>
       <ErrorAlert error={validation ?? error} />
       <form className="space-y-4" onSubmit={handleSubmit}>
         <fieldset className="fieldset">
