@@ -81,16 +81,30 @@ bookSearchExclude: true
     return `${prefix}${before}<mark>${match}</mark>${after}${suffix}`;
   }
 
+  // exactQuery requires each word to appear as typed. Fuzzy matching over
+  // whole pages matches scattered letters (e.g. "still" for "split"), and
+  // reports them as matches, which the excerpt would highlight. So it's only
+  // the fallback, for typos.
+  function exactQuery(term) {
+    return term.split(/\s+/).map((word) => `'${word}`).join(' ');
+  }
+
   function render(term) {
     results.replaceChildren();
     if (!term) {
       status.textContent = '';
       return;
     }
-    const hits = fuse.search(term).slice(0, 20);
-    status.textContent = hits.length
-      ? `${hits.length} result${hits.length === 1 ? '' : 's'} for "${term}"`
-      : `No results for "${term}"`;
+    let hits = fuse.search(exactQuery(term));
+    const fuzzy = !hits.length;
+    if (fuzzy) hits = fuse.search(term);
+    hits = hits.slice(0, 20);
+    const count = `${hits.length} result${hits.length === 1 ? '' : 's'}`;
+    status.textContent = !hits.length
+      ? `No results for "${term}"`
+      : fuzzy
+        ? `No exact matches for "${term}"; ${count} for similar words`
+        : `${count} for "${term}"`;
     for (const hit of hits) {
       const li = document.createElement('li');
       const a = document.createElement('a');
