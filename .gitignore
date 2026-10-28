@@ -19,7 +19,7 @@ e2e/.connectivity-private/
 /docs/resources/_gen/
 /docs/.hugo_build.lock
 
-# hugo --source site --destination ../etc/caddy/site
+# hugo --source docs --destination ../etc/caddy/site
 /etc/caddy/site
 
 

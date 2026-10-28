@@ -2,7 +2,7 @@
 # app that builds directly into webui/dist, which is embedded into
 # the Go binary via go:embed.
 
-.PHONY: build frontend frontend-check backend osa restore test coverage archive
+.PHONY: build frontend backend osa restore test coverage archive
 .PHONY: docker-image caddy-image purge ci docs load-cert dev-up devbox stress
 .PHONY: e2e e2e-deps e2e-setup e2e-ssh
 .PHONY: e2e-frontend e2e-frontend-run e2e-connectivity
@@ -37,12 +37,6 @@ frontend: docs
 docs:
 	rm -rf etc/caddy/site
 	hugo --source docs --destination ../etc/caddy/site --minify
-
-# Lint, formatting and type checks for the frontend, as run in CI.
-frontend-check:
-	npm --prefix frontend run lint
-	npm --prefix frontend run format:check
-	cd frontend && npx tsc -b
 
 ifneq ($(filter osa restore,$(MAKECMDGOALS)),)
 %:
@@ -211,14 +205,29 @@ load-cert:
 	sudo update-ca-certificates
 	@echo "done -- firefox and os certs are updated to trust our local certificate"
 
+# worktree_state hashes uncommitted changes, untracked files included, so ci
+# can tell whether its formatters and fixers rewrote anything.
+worktree_state = { git diff HEAD --binary; git ls-files -o --exclude-standard -z | xargs -0 -r sha256sum; } | sha256sum
+
 # Run the same checks as .github/workflows/ci.yml, for local sanity-checking
-# before pushing. Requires golangci-lint and govulncheck.
-ci: frontend-check
-	go build ./...
-	go vet ./...
+# before pushing. Formatting and auto-fixable lint issues are fixed in place
+# instead of failing; ci then fails only if that changed files, so they can be
+# reviewed and committed.
+ci:
+	@mkdir -p bin && $(worktree_state) > bin/ci-worktree-state
+	npm --prefix frontend run lint -- --fix
+	npm --prefix frontend run format
+	cd frontend && npx tsc -b
 	go fix ./...
-	go test -shuffle=on -covermode=atomic -coverprofile=coverage.out ./...
 	go mod tidy
 	go run golang.org/x/tools/cmd/goimports@latest -w .
-	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest run ./...
+	go run github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest run --fix ./...
+	go build ./...
+	go vet ./...
+	go test -shuffle=on -covermode=atomic -coverprofile=coverage.out ./...
 	go run golang.org/x/tools/cmd/deadcode@latest ./cmd/...
+	@if [ "$$($(worktree_state))" != "$$(cat bin/ci-worktree-state)" ]; then \
+		echo "ci: formatters/linters changed files, review and commit them:"; \
+		git status --short; \
+		exit 1; \
+	fi

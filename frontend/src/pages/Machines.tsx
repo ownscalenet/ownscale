@@ -423,10 +423,10 @@ function RemoveInternalDialog({
 
   return (
     <Modal open onClose={onClose} title={`Remove ${m.givenName}`} className="whitespace-normal">
-        <span>
-          This machine is used internally by the funnel feature. The following funnels will be
-          deleted and no longer accessible:
-        </span>
+      <span>
+        This machine is used internally by the funnel feature. The following funnels will be deleted
+        and no longer accessible:
+      </span>
       {funnelsError ? (
         <ErrorAlert error={funnelsError} />
       ) : funnels === null ? (
