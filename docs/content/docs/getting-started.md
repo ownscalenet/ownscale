@@ -3,8 +3,6 @@ title: Getting Started
 weight: 1
 ---
 
-# Getting Started
-
 ownscale is a self-hosted control plane and web console for
 [Headscale](https://github.com/juanfont/headscale), the open-source
 implementation of the Tailscale coordination server. Ownscale comes packaged

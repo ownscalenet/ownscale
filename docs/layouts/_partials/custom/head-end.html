@@ -1,0 +1,12 @@
+{{/*
+  The console lives on its own subdomain, so point the navbar's Login link
+  there. Hextra's menu items can't carry a class, so match by href.
+*/}}
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var consoleURL = 'https://console.' + window.location.hostname + '/login';
+  document.querySelectorAll('a[href="/login"]').forEach(function (link) {
+    link.href = consoleURL;
+  });
+});
+</script>

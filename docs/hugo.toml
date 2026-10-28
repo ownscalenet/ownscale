@@ -1,48 +1,73 @@
 baseURL = "/"
 locale = "en-US"
-title = "ownscale Documentation"
+title = "ownscale"
 
 [module]
+  # Fetch the theme through the Go module proxy rather than git.
+  proxy = "https://proxy.golang.org,direct"
   [[module.imports]]
-    path = "github.com/alex-shpak/hugo-book"
+    path = "github.com/imfing/hextra"
 
 [markup]
   [markup.goldmark]
     [markup.goldmark.renderer]
       unsafe = true
-
-[outputFormats]
-  [outputFormats.search]
-    mediaType = "application/json"
-    baseName = "search-index"
-    isPlainText = true
-    notAlternative = true
-
-[outputs]
-  home = ["HTML", "search"]
+  [markup.highlight]
+    noClasses = false
 
 [params]
-  BookTheme = "auto"
-  BookToC = true
-  BookSection = "docs"
-  BookRepo = "https://github.com/ownscalenet/ownscale"
-  # {{ .Path }} already includes the leading "/content/..." segment, see
-  # hugo-book's exampleSite config for the same pattern.
-  BookEditLink = "{{ .Site.Params.BookRepo }}/edit/main/docs{{ .Path }}"
-  BookViewLink = "{{ .Site.Params.BookRepo }}/raw/main/docs{{ .Path }}"
-  BookSearch = false
-  BookComments = false
-  BookPortableLinks = true
+  # Repository for the edit and view-source buttons next to page titles.
+  repo = "https://github.com/ownscalenet/ownscale"
+
+  [params.navbar]
+    displayTitle = true
+    displayLogo = false
+
+  [params.theme]
+    default = "system"
+    displayToggle = true
+
+  [params.footer]
+    enable = true
+    displayCopyright = false
+    displayPoweredBy = false
+
+  [params.search]
+    enable = true
+    type = "flexsearch"
+    [params.search.flexsearch]
+      index = "content"
+      tokenize = "forward"
+
+  # The edit and view-source buttons next to page titles replace the
+  # theme's "Edit this page" link.
+  [params.editURL]
+    enable = false
+
+  [params.highlight.copy]
+    enable = true
+    display = "hover"
 
 [menu]
-  [[menu.after]]
+  [[menu.main]]
+    name = "Documentation"
+    pageRef = "/docs"
+    weight = 1
+
+  [[menu.main]]
+    name = "Search"
+    weight = 2
+    [menu.main.params]
+      type = "search"
+
+  [[menu.main]]
     name = "GitHub"
     url = "https://github.com/ownscalenet/ownscale"
-    weight = 10
+    weight = 3
+    [menu.main.params]
+      icon = "github"
 
-  [[menu.after]]
+  [[menu.main]]
     name = "Login"
     url = "/login"
-    weight = 20
-    [menu.after.params]
-      class = "ownscale-login-link"
+    weight = 4

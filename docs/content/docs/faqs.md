@@ -3,8 +3,6 @@ title: FAQs
 weight: 3
 ---
 
-# FAQs
-
 ## ownscale-agent user & machine
 
 When creating a funnel, ownscale automatically creates an `ownscale-agent`

@@ -6,7 +6,7 @@ build:
 ---
 
 This section holds short redirect links served at `/s/<slug>` (e.g.
-`/s/agent`). To add one, create `site/content/s/<slug>.md` with:
+`/s/agent`). To add one, create `docs/content/s/<slug>.md` with:
 
 ```
 ---
@@ -15,4 +15,4 @@ redirect_to: "/docs/some-page/#optional-anchor"
 ---
 ```
 
-See `site/layouts/s/single.html` for the redirect template.
+See `docs/layouts/s/single.html` for the redirect template.

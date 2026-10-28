@@ -1,9 +1,6 @@
 ---
-title: Introduction
-type: docs
+title: ownscale
 ---
-
-# ownscale
 
 Ownscale is a self-hosted Tailscale control plane with a web console, built on
 [Headscale](https://github.com/juanfont/headscale). Ownscale users are grouped
