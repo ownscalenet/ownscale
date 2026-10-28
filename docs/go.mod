@@ -1,4 +1,4 @@
-module github.com/ownscalenet/ownscale/site
+module github.com/ownscalenet/ownscale/docs
 
 go 1.26.5
 

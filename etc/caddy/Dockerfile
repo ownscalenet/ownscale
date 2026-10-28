@@ -1,4 +1,4 @@
-# Built from the repository root (see compose.yaml) so the docs site in site/
+# Built from the repository root (see compose.yaml) so the docs site in docs/
 # can be rendered here.
 
 FROM caddy:2-builder AS builder
@@ -11,8 +11,8 @@ RUN xcaddy build \
 	--with github.com/caddy-dns/rfc2136@v1.0.0
 
 FROM ghcr.io/gohugoio/hugo:v0.165.0 AS site
-COPY --chown=hugo:hugo site /project
-# site/go.mod may need a newer Go than the image ships.
+COPY --chown=hugo:hugo docs /project
+# docs/go.mod may need a newer Go than the image ships.
 ENV GOTOOLCHAIN=auto
 RUN hugo --source /project --destination /tmp/site --minify
 

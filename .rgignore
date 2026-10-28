@@ -10,9 +10,9 @@ node_modules/
 *.min.js.map
 *.min.css.map
 
-# Hugo build artifacts for the site/ docs module.
-/site/public/
-/site/resources/_gen/
+# Hugo build artifacts for the docs/ Hugo module.
+/docs/public/
+/docs/resources/_gen/
 
 webui/dist/*
 webui/dist/assets/*

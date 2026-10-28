@@ -1,4 +1,4 @@
-# site/ — ownscale documentation portal
+# docs/ — ownscale documentation portal
 
 This is a [Hugo](https://gohugo.io) site using the
 [hugo-book](https://github.com/alex-shpak/hugo-book) theme, imported as a
@@ -16,10 +16,10 @@ the site's home page.
 From the repository root, run:
 
 ```sh
-make site
+make docs
 ```
 
-This runs Hugo (`hugo --source site --destination ../etc/caddy/site
+This runs Hugo (`hugo --source docs --destination ../etc/caddy/site
 --minify`), regenerating `etc/caddy/site/`. `etc/caddy/Dockerfile`'s
 production image build does the same.
 

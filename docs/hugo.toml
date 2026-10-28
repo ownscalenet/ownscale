@@ -28,8 +28,8 @@ title = "ownscale Documentation"
   BookRepo = "https://github.com/ownscalenet/ownscale"
   # {{ .Path }} already includes the leading "/content/..." segment, see
   # hugo-book's exampleSite config for the same pattern.
-  BookEditLink = "{{ .Site.Params.BookRepo }}/edit/main/site{{ .Path }}"
-  BookViewLink = "{{ .Site.Params.BookRepo }}/raw/main/site{{ .Path }}"
+  BookEditLink = "{{ .Site.Params.BookRepo }}/edit/main/docs{{ .Path }}"
+  BookViewLink = "{{ .Site.Params.BookRepo }}/raw/main/docs{{ .Path }}"
   BookSearch = false
   BookComments = false
   BookPortableLinks = true

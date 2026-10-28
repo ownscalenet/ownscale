@@ -32,7 +32,7 @@ subnet routers, exit nodes, ACLs, Grants, Tailscale SSH and
 - See the [FAQs]({{< relref "docs/faqs.md" >}}) for answers to common
   questions.
 - Add more pages under `content/docs/`, and rebuild this site with
-  `make site` from the repository root whenever you change content.
+  `make docs` from the repository root whenever you change content.
 
 
 ## Organizations

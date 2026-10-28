@@ -2,7 +2,7 @@
 # app that builds directly into webui/dist, which is embedded into
 # the Go binary via go:embed.
 
-.PHONY: build frontend site frontend-check backend osa restore test coverage archive
+.PHONY: build frontend frontend-check backend osa restore test coverage archive
 .PHONY: docker-image caddy-image purge ci docs load-cert dev-up devbox stress
 .PHONY: e2e e2e-deps e2e-setup e2e-ssh
 .PHONY: e2e-frontend e2e-frontend-run e2e-connectivity
@@ -24,7 +24,7 @@ BASE_DOMAIN := $(if $(BASE_DOMAIN),$(BASE_DOMAIN),ownscale.test)
 
 build: frontend backend
 
-frontend: site
+frontend: docs
 	npm --prefix frontend ci
 	npm --prefix frontend run build
 	# Tailscale client compiled to WASM; needed for browser SSH page.
@@ -34,9 +34,9 @@ frontend: site
 
 # Docs site for the dev stack, which bind-mounts it over the copy that
 # etc/caddy/Dockerfile renders into the Caddy image.
-site:
+docs:
 	rm -rf etc/caddy/site
-	hugo --source site --destination ../etc/caddy/site --minify
+	hugo --source docs --destination ../etc/caddy/site --minify
 
 # Lint, formatting and type checks for the frontend, as run in CI.
 frontend-check:
