@@ -5,30 +5,23 @@ type: docs
 
 # ownscale
 
-**ownscale is a self-hosted control plane and web console for Headscale.**
-It runs and manages one Headscale instance per organization for you, and
-gives every user in that organization a browser-based console to manage
-their network.
+Ownscale is a self-hosted Tailscale control plane with a web console, built on
+[Headscale](https://github.com/juanfont/headscale). Ownscale users are grouped
+into organizations, each with its own set machines, routers and settings.
 
 ## Features
 
-- **Multi-tenant organizations**: provision any number of independent
-  tailnets (organizations), each with its own Headscale instance and
-  subdomain, from a single ownscale deployment.
-- **Web console**: manage machines, users, access control policies and
-  DNS settings from a browser.
-- **Funnel**: expose an internal service on your tailnet to the public
-  internet over HTTPS, without a public IP or port-forwarding.
-- **Invite-based onboarding**: invite teammates to an organization by
-  email; they self-register through the console.
-- **Single sign-on**: ownscale federates login to any standard OIDC
-  provider (Google, Okta, a self-hosted Dex instance, etc.).
-- **Access control (ACLs)**: edit each organization's ACL policy
-  directly from the console.
-- **Custom DNS**: configure per-organization DNS settings (MagicDNS,
-  nameservers, search domains).
+- multiple tailnets on the same ownscale instance
+- web UI for headscale
+- login with OIDC, passkeys, Google, Github, etc.
+- funnels: expose local running servers through the internet
+- all headscale features: MagicDNS, Split DNS, Taildrive, Taildrop, tags,
+subnet routers, exit nodes, ACLs, Grants, Tailscale SSH and
+[many more](https://headscale.net/stable/about/features/).
 
-This is the documentation portal for ownscale. Head over to
-[Getting Started]({{< relref "docs/getting-started.md" >}}) to begin, or
-jump straight to [Installation]({{< relref "docs/installation.md" >}}) if
-you're ready to self-host it.
+## Next steps
+
+- Try it on the demo instance: ownscale.net
+- Try it on your server. See [Installation]({{< relref "docs/installation.md" >}})
+  for prerequisites and a Docker Compose quick start.
+
