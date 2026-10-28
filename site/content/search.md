@@ -1,6 +1,7 @@
 ---
 title: Search
 bookSearchExclude: true
+pageActions: false
 ---
 
 <div class="book-search">

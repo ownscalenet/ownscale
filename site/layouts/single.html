@@ -1,6 +1,7 @@
 {{/* The theme's default is empty, so render the page content ourselves. */}}
 {{ define "main" }}
 <article class="markdown book-article">
+  {{ partial "docs/page-actions" . }}
   {{ .Content }}
 </article>
 {{ end }}
