@@ -31,6 +31,7 @@ func main() {
 		newRestoreCommand(rootFlags),
 		newVerifyCommand(rootFlags),
 		newDevboxKeyCommand(rootFlags),
+		newHeadscaleCommand(rootFlags),
 	)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
