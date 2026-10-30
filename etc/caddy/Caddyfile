@@ -51,6 +51,8 @@
 }
 
 console.{$BASE_DOMAIN} {
+	# The console's JS/CSS bundles are served uncompressed by ownscale.
+	encode zstd gzip
 	reverse_proxy ownscale:8080
 }
 

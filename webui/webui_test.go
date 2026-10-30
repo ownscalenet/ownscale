@@ -72,7 +72,7 @@ func TestHandlerCacheControl(t *testing.T) {
 		development bool
 		want        string
 	}{
-		{"production omits header", false, ""},
+		{"production requires revalidation", false, "no-cache"},
 		{"development disables caching", true, "no-store"},
 	}
 	for _, tc := range cases {
@@ -85,6 +85,40 @@ func TestHandlerCacheControl(t *testing.T) {
 
 			if got := rec.Header().Get("Cache-Control"); got != tc.want {
 				t.Errorf("Cache-Control = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
+func TestHandlerRevalidation(t *testing.T) {
+	h := Handler(false)
+
+	tests := []struct {
+		name string
+		path string
+	}{
+		{"index", "/"},
+		{"real asset", "/favicon.svg"},
+		{"spa fallback", "/machines"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, tt.path, nil))
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+			}
+			etag := rec.Header().Get("ETag")
+			if etag == "" {
+				t.Fatal("ETag is empty")
+			}
+
+			req := httptest.NewRequest(http.MethodGet, tt.path, nil)
+			req.Header.Set("If-None-Match", etag)
+			rec = httptest.NewRecorder()
+			h.ServeHTTP(rec, req)
+			if rec.Code != http.StatusNotModified {
+				t.Errorf("revalidation status = %d, want %d", rec.Code, http.StatusNotModified)
 			}
 		})
 	}
