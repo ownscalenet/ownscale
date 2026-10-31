@@ -1,10 +1,12 @@
 package handlers
 
 import (
+	"context"
 	"net/http"
 
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
+	"github.com/ownscalenet/ownscale/hscl"
 )
 
 // member is the JSON shape of an org member returned by ListMembers. The
@@ -153,19 +155,54 @@ func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
 		h.writeError(w, http.StatusBadRequest, "transfer ownership before removing the owner")
 		return
 	}
-	// Headscale goes first: if the account were deleted first, a failure
-	// here would leave their machines on the tailnet with nothing in the
-	// console to retry from.
 	client, _ := headscaleClientFromContext(r)
-	if err := client.DeleteUserAndNodes(r.Context(), target.HeadscaleUserID); err != nil {
-		h.serverError(w, r, err)
-		return
-	}
-	if err := h.queries.DeleteUser(r.Context(), target.ID); err != nil {
+	if err := h.deleteAccount(r.Context(), client, target); err != nil {
 		h.serverError(w, r, err)
 		return
 	}
 	h.writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+}
+
+// DeleteAccount handles DELETE /api/account: the caller deletes their own
+// account, and is logged out. An owner can only do so once they're the
+// organization's last member, so it's never left without an owner.
+func (h *Handlers) DeleteAccount(w http.ResponseWriter, r *http.Request) {
+	caller, org, r, ok := h.callerAndOrg(w, r)
+	if !ok {
+		return
+	}
+	if caller.Role == RoleOwner {
+		members, err := h.queries.ListUsersByOrganization(r.Context(), org.ID)
+		if err != nil {
+			h.serverError(w, r, err)
+			return
+		}
+		if len(members) > 1 {
+			h.writeError(w, http.StatusConflict, "transfer ownership or remove all other members before deleting your account")
+			return
+		}
+	}
+	client, _ := headscaleClientFromContext(r)
+	if err := h.deleteAccount(r.Context(), client, *caller); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	if err := auth.ClearUserSession(w, r); err != nil {
+		h.serverError(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
+// deleteAccount removes u's headscale user and machines, then the account.
+// Headscale goes first: if the account were deleted first, a failure there
+// would leave the machines on the tailnet with nothing in the console to
+// retry from.
+func (h *Handlers) deleteAccount(ctx context.Context, client *hscl.Client, u sqlcgen.User) error {
+	if err := client.DeleteUserAndNodes(ctx, u.HeadscaleUserID); err != nil {
+		return err
+	}
+	return h.queries.DeleteUser(ctx, u.ID)
 }
 
 // TransferOwnership handles POST /api/members/transfer-ownership. Only the

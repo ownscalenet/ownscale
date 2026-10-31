@@ -1,9 +1,12 @@
 import { RelativeTime } from '../components/RelativeTime'
-import { KeyRound, Trash2 } from 'lucide-react'
+import { KeyRound, Trash2, UserX } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   listPasskeys,
+  listMembers,
+  deleteAccount,
   deletePasskey,
   errorMessage,
   passkeyAddBegin,
@@ -13,6 +16,7 @@ import {
 import { createPasskey, browserSupportsWebAuthn } from '../lib/webauthn'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { useConfirm } from '../lib/confirm'
+import { useAuth } from '../authContext'
 import Modal from '../components/Modal'
 import { ErrorAlert, PageHeader } from '../components/ui'
 
@@ -21,9 +25,10 @@ export default function UserSettings() {
 
   return (
     <>
-      <PageHeader title="User settings" subtitle="For now just passkeys" />
+      <PageHeader title="User settings" />
 
       <PasskeysCard />
+      <DeleteAccountCard />
     </>
   )
 }
@@ -141,6 +146,73 @@ function PasskeysCard() {
         ) : (
           <div className="p-8 text-center opacity-60">No passkeys yet.</div>
         )}
+      </div>
+    </div>
+  )
+}
+
+// DeleteAccountCard lets the user delete their own account. Owners must
+// first hand over or empty the organization, which the server enforces too.
+function DeleteAccountCard() {
+  const confirm = useConfirm()
+  const { refresh } = useAuth()
+  const members = useQuery({ queryKey: ['members'], queryFn: ({ signal }) => listMembers(signal) })
+  const remove = useMutation({ mutationFn: deleteAccount, onSuccess: () => void refresh() })
+  const ownerWithMembers =
+    members.data?.callerRole === 'owner' && (members.data?.members.length ?? 0) > 1
+  const failure = remove.error ?? members.error
+  const error = failure ? errorMessage(failure) : null
+
+  const handleDelete = async () => {
+    const ok = await confirm({
+      title: 'Delete your account?',
+      consequences: [
+        'All your machines are removed from the tailnet.',
+        'Your passkeys are deleted.',
+        "This can't be undone.",
+      ],
+      confirmLabel: 'Delete account',
+      tone: 'danger',
+    })
+    if (ok) remove.mutate()
+  }
+
+  return (
+    <div className="card bg-base-100 shadow mt-6">
+      <div className="card-body">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h2 className="card-title">Delete account</h2>
+            <p className="text-sm opacity-60 -mt-1">
+              Permanently delete your account and remove your machines from the tailnet.
+            </p>
+          </div>
+          <button
+            type="button"
+            className="btn btn-sm btn-error"
+            disabled={!members.data || ownerWithMembers || remove.isPending}
+            onClick={() => void handleDelete()}
+          >
+            <UserX className="size-3.5" aria-hidden="true" />
+            Delete account
+          </button>
+        </div>
+
+        {ownerWithMembers && (
+          <div className="alert alert-info mt-2">
+            <span>
+              You own this organization and it still has other members. Before deleting your
+              account, either transfer ownership to another member or remove all other members on
+              the{' '}
+              <Link to="/users" className="link">
+                Users
+              </Link>{' '}
+              page.
+            </span>
+          </div>
+        )}
+
+        <ErrorAlert error={error} className="mt-2" />
       </div>
     </div>
   )

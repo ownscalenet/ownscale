@@ -103,3 +103,61 @@ test("removing a member removes their machines from the tailnet", async ({ page,
     await member.context().close()
   }
 })
+
+test('a member deletes their own account, which the owner can only do once alone', async ({ page, browser, account }) => {
+  test.setTimeout(300_000)
+
+  await page.goto('/users')
+  await page.getByRole('button', { name: 'Invite member' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('combobox').selectOption('member')
+  await dialog.getByRole('button', { name: 'Create invite link' }).click()
+  await expect(dialog.getByText(/expires in 7 days/i)).toBeVisible()
+  const inviteLink = await dialog.getByRole('textbox').inputValue()
+  expect(inviteLink).toContain('/invite/')
+  await dialog.getByRole('button', { name: 'Done' }).click()
+
+  const member = await signIn(browser, account.invitee, inviteLink)
+  try {
+    await expect(member.getByRole('link', { name: 'Machines' })).toBeVisible({ timeout: 15_000 })
+
+    // With a member in the org, the owner is pointed at the Users page
+    // instead, and the server refuses too.
+    await page.goto('/user-settings')
+    const deleteButton = page.getByRole('button', { name: 'Delete account' })
+    await expect(page.getByText('You own this organization and it still has other members.')).toBeVisible()
+    await expect(page.getByRole('main').getByRole('link', { name: 'Users' })).toHaveAttribute('href', '/users')
+    await expect(deleteButton).toBeDisabled()
+    expect((await page.request.delete('/api/account')).status()).toBe(409)
+
+    const machine = await registerRealMachine(member, account.org)
+    try {
+      const machineNames = async () => {
+        const res = await page.request.get('/api/machines')
+        expect(res.ok()).toBe(true)
+        return ((await res.json()) as { machines: { givenName: string }[] }).machines.map((m) => m.givenName)
+      }
+      expect(await machineNames()).toContain(machine.hostname)
+
+      await member.goto('/user-settings')
+      await member.getByRole('button', { name: 'Delete account' }).click()
+      await confirmDialog(member, 'Delete account')
+      await expect(member).toHaveURL(/\/login/, { timeout: 15_000 })
+      expect((await member.request.get('/api/session')).status()).toBe(401)
+
+      const members = (await page.request.get('/api/members').then((r) => r.json())) as { members: { email: string }[] }
+      expect(members.members.map((m) => m.email)).not.toContain(account.invitee)
+      expect(await machineNames()).not.toContain(machine.hostname)
+
+      // Alone again, the owner may delete their account. Not clicked: the
+      // worker's account is shared with the other tests.
+      await page.reload()
+      await expect(deleteButton).toBeEnabled()
+      await expect(page.getByText('You own this organization and it still has other members.')).toBeHidden()
+    } finally {
+      await teardownRealMachine(machine)
+    }
+  } finally {
+    await member.context().close()
+  }
+})

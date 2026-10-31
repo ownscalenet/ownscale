@@ -45,6 +45,7 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	mux.HandleFunc("POST /api/members/transfer-ownership", requireAuthAPI(h.TransferOwnership))
 	mux.HandleFunc("POST /api/members/{id}/role", requireAuthAPI(h.UpdateMemberRole))
 	mux.HandleFunc("DELETE /api/members/{id}", requireAuthAPI(h.RequireHeadscaleClient(h.RemoveMember)))
+	mux.HandleFunc("DELETE /api/account", requireAuthAPI(h.RequireHeadscaleClient(h.DeleteAccount)))
 
 	mux.HandleFunc("GET /api/invites", requireAuthAPI(h.ListInvites))
 	mux.HandleFunc("POST /api/invites", requireAuthAPI(h.CreateInvite))

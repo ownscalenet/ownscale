@@ -318,6 +318,11 @@ export function removeMember(id: string) {
   return request<{ ok: boolean }>(`/api/members/${id}`, { method: 'DELETE' })
 }
 
+// deleteAccount deletes the caller's own account and ends their session.
+export function deleteAccount() {
+  return request<void>('/api/account', { method: 'DELETE' })
+}
+
 export function transferOwnership(memberId: string) {
   return request<{ ok: boolean }>('/api/members/transfer-ownership', {
     method: 'POST',

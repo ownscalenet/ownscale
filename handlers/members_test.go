@@ -372,3 +372,90 @@ func TestTransferOwnershipTargetNotFound(t *testing.T) {
 		t.Fatalf("status = %d, want 404: %s", rec.Code, rec.Body)
 	}
 }
+
+// TestDeleteAccount checks that callers can delete their own account, with
+// its headscale user and machines, except an owner who still has members.
+func TestDeleteAccount(t *testing.T) {
+	tests := []struct {
+		name        string
+		callerRole  string
+		withOther   bool // another member, "other", is in the organization
+		unreachable bool
+		wantStatus  int
+		wantUsers   []string
+		wantNodes   []string
+		wantAccount bool
+	}{
+		{"member", RoleMember, true, false, http.StatusNoContent, []string{"other"}, []string{"other-laptop"}, false},
+		{"owner alone", RoleOwner, false, false, http.StatusNoContent, []string{"other"}, []string{"other-laptop"}, false},
+		{"owner with members", RoleOwner, true, false, http.StatusConflict, []string{"caller", "other"}, []string{"caller-laptop", "other-laptop"}, true},
+		{"headscale unreachable", RoleMember, true, true, http.StatusServiceUnavailable, []string{"caller", "other"}, []string{"caller-laptop", "other-laptop"}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h, org, _ := newOrgTestHandlers(t)
+			client, hsUserIDs := headscaleWithUsers(t, "caller", "other")
+			caller := dbtest.CreateUserWithHeadscaleUser(t, h.queries.Queries, org.ID, tt.callerRole, hsUserIDs["caller"])
+			if tt.withOther {
+				otherRole := RoleOwner
+				if tt.callerRole == RoleOwner {
+					otherRole = RoleMember
+				}
+				dbtest.CreateUserWithHeadscaleUser(t, h.queries.Queries, org.ID, otherRole, hsUserIDs["other"])
+			}
+			h.hs = fakeHeadscaleClients{client: client}
+			if tt.unreachable {
+				h.hs = fakeHeadscaleClients{err: errors.New("not running")}
+			}
+
+			req := httptest.NewRequest(http.MethodDelete, "/api/account", nil)
+			req = withTestUser(authenticatedRequest(t, req, caller.ID), caller)
+			rec := httptest.NewRecorder()
+			h.RequireHeadscaleClient(h.DeleteAccount)(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d: %s", rec.Code, tt.wantStatus, rec.Body)
+			}
+			hsUsers, err := client.ListUsers(t.Context())
+			if err != nil {
+				t.Fatalf("ListUsers: %v", err)
+			}
+			var gotUsers []string
+			for _, u := range hsUsers {
+				gotUsers = append(gotUsers, u.Name)
+			}
+			nodes, err := client.ListNodes(t.Context())
+			if err != nil {
+				t.Fatalf("ListNodes: %v", err)
+			}
+			var gotNodes []string
+			for _, n := range nodes {
+				gotNodes = append(gotNodes, n.Name)
+			}
+			slices.Sort(gotUsers)
+			slices.Sort(gotNodes)
+			if !slices.Equal(gotUsers, tt.wantUsers) {
+				t.Errorf("headscale users = %v, want %v", gotUsers, tt.wantUsers)
+			}
+			if !slices.Equal(gotNodes, tt.wantNodes) {
+				t.Errorf("headscale nodes = %v, want %v", gotNodes, tt.wantNodes)
+			}
+			_, err = h.queries.GetUserByID(t.Context(), caller.ID)
+			if gotAccount := err == nil; gotAccount != tt.wantAccount {
+				t.Errorf("account exists = %v, want %v (err %v)", gotAccount, tt.wantAccount, err)
+			}
+			if _, err := h.queries.GetOrganization(t.Context(), org.ID); err != nil {
+				t.Errorf("GetOrganization: %v, want the organization to remain", err)
+			}
+			if rec.Code == http.StatusNoContent {
+				cleared := false
+				for _, c := range rec.Result().Cookies() {
+					cleared = cleared || c.MaxAge < 0
+				}
+				if !cleared {
+					t.Errorf("response doesn't clear the session cookie: %v", rec.Result().Cookies())
+				}
+			}
+		})
+	}
+}
