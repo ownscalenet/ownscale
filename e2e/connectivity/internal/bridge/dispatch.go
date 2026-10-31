@@ -40,6 +40,7 @@ type dispatcher struct {
 	services map[string]*tscl.HTTPService
 	requests int
 	newNode  func(context.Context, tscl.Config) (node, error)
+	newLogin func(context.Context, tscl.Config) (node, error)
 
 	shutdownRequested atomic.Bool
 }
@@ -47,7 +48,8 @@ type dispatcher struct {
 func newDispatcher() *dispatcher {
 	return &dispatcher{
 		nodes: make(map[string]*ownedNode), services: make(map[string]*tscl.HTTPService),
-		newNode: func(ctx context.Context, cfg tscl.Config) (node, error) { return tscl.New(ctx, cfg) },
+		newNode:  func(ctx context.Context, cfg tscl.Config) (node, error) { return tscl.New(ctx, cfg) },
+		newLogin: func(ctx context.Context, cfg tscl.Config) (node, error) { return tscl.StartLogin(ctx, cfg) },
 	}
 }
 
@@ -71,6 +73,9 @@ type nodeResult struct {
 	Hostname     string   `json:"hostname"`
 	Addresses    []string `json:"addresses"`
 	BackendState string   `json:"backendState"`
+	// AuthURL is the interactive login a node started by "login" waits on.
+	// It changes when control forgets the login, e.g. on a restart.
+	AuthURL string `json:"authURL,omitempty"`
 }
 
 type dnsRecordResult struct {
@@ -143,19 +148,11 @@ func (d *dispatcher) dispatch(parent context.Context, op string, params json.Raw
 		}
 		ctx, cancel := context.WithTimeout(parent, time.Duration(args.Timeout))
 		defer cancel()
-		u, err := url.Parse(args.ControlURL)
-		if !handlePattern.MatchString(args.Node) || !handlePattern.MatchString(args.Hostname) ||
-			strings.TrimSpace(args.AuthKey) == "" || len(args.AuthKey) > 4096 ||
-			len(args.ControlURL) > 2048 || err != nil || u.Hostname() == "" ||
-			(u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.Fragment != "" ||
-			u.RawQuery != "" {
+		if strings.TrimSpace(args.AuthKey) == "" || len(args.AuthKey) > 4096 {
 			return nil, failure("invalid_command")
 		}
-		if d.reserved(args.Node) {
-			return nil, failure("duplicate_handle")
-		}
-		if len(d.nodes) >= maxNodes {
-			return nil, failure("invalid_command")
+		if err := d.checkNewNode(args.Node, args.Hostname, args.ControlURL); err != nil {
+			return nil, err
 		}
 		client, err := d.newNode(ctx, tscl.Config{
 			Hostname: args.Hostname, ControlURL: args.ControlURL, AuthKey: args.AuthKey,
@@ -176,6 +173,31 @@ func (d *dispatcher) dispatch(parent context.Context, op string, params json.Raw
 			return nil, err
 		}
 		return result, nil
+	case "login":
+		var args struct {
+			Timeout    timeout `json:"timeout"`
+			Node       string  `json:"node"`
+			Hostname   string  `json:"hostname"`
+			ControlURL string  `json:"controlURL"`
+		}
+		if err := decode(params, &args); err != nil {
+			return nil, err
+		}
+		ctx, cancel := context.WithTimeout(parent, time.Duration(args.Timeout))
+		defer cancel()
+		if err := d.checkNewNode(args.Node, args.Hostname, args.ControlURL); err != nil {
+			return nil, err
+		}
+		client, err := d.newLogin(ctx, tscl.Config{
+			Hostname: args.Hostname, ControlURL: args.ControlURL,
+			StartupTimeout: time.Duration(args.Timeout),
+			Logger:         slog.New(slog.NewTextHandler(io.Discard, nil)),
+		})
+		if err != nil {
+			return nil, err
+		}
+		d.nodes[args.Node] = &ownedNode{client: client, hostname: args.Hostname}
+		return d.status(ctx, args.Node)
 	case "status", "close", "dns":
 		var args struct {
 			Timeout timeout `json:"timeout"`
@@ -287,6 +309,24 @@ func (d *dispatcher) dispatch(parent context.Context, op string, params json.Raw
 	}
 }
 
+// checkNewNode validates the arguments shared by the ops that start a node.
+func (d *dispatcher) checkNewNode(handle, hostname, controlURL string) error {
+	u, err := url.Parse(controlURL)
+	if !handlePattern.MatchString(handle) || !handlePattern.MatchString(hostname) ||
+		len(controlURL) > 2048 || err != nil || u.Hostname() == "" ||
+		(u.Scheme != "http" && u.Scheme != "https") || u.User != nil || u.Fragment != "" ||
+		u.RawQuery != "" {
+		return failure("invalid_command")
+	}
+	if d.reserved(handle) {
+		return failure("duplicate_handle")
+	}
+	if len(d.nodes) >= maxNodes {
+		return failure("invalid_command")
+	}
+	return nil
+}
+
 func (d *dispatcher) reserved(handle string) bool {
 	_, exists := d.nodes[handle]
 	_, serviceExists := d.services[handle]
@@ -316,7 +356,10 @@ func (d *dispatcher) status(ctx context.Context, handle string) (nodeResult, err
 	if status == nil {
 		return nodeResult{}, failure("bridge_failure")
 	}
-	result := nodeResult{Node: handle, Hostname: n.hostname, Addresses: []string{}, BackendState: status.BackendState}
+	result := nodeResult{
+		Node: handle, Hostname: n.hostname, Addresses: []string{},
+		BackendState: status.BackendState, AuthURL: status.AuthURL,
+	}
 	for _, ip := range status.TailscaleIPs {
 		result.Addresses = append(result.Addresses, ip.String())
 	}

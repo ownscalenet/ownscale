@@ -28,6 +28,7 @@ type testNode struct {
 	statusErr error
 	dns       tailcfg.DNSConfig
 	dnsErr    error
+	authURL   string
 }
 
 func (n *testNode) DNS(context.Context) (_ tailcfg.DNSConfig, err error) {
@@ -39,6 +40,7 @@ func (n *testNode) Status(context.Context) (_ *ipnstate.Status, err error) {
 	defer derrors.Wrap(&err, "n.Status()")
 	return &ipnstate.Status{
 		BackendState: "Running", TailscaleIPs: []netip.Addr{netip.MustParseAddr("100.64.0.1")},
+		AuthURL: n.authURL,
 	}, n.statusErr
 }
 
@@ -78,6 +80,9 @@ func TestDispatchValidation(t *testing.T) {
 		{"missing hostname", "create", `{"timeout":"5000ms","node":"n","controlURL":"http://control","authKey":"secret"}`, "invalid_command"},
 		{"missing key", "create", `{"timeout":"5000ms","node":"n","hostname":"host","controlURL":"http://control"}`, "invalid_command"},
 		{"control credentials", "create", `{"timeout":"5000ms","node":"n","hostname":"host","controlURL":"******control","authKey":"secret"}`, "invalid_command"},
+		{"login missing hostname", "login", `{"timeout":"5000ms","node":"n","controlURL":"http://control"}`, "invalid_command"},
+		{"login with key", "login", `{"timeout":"5000ms","node":"n","hostname":"host","controlURL":"http://control","authKey":"secret"}`, "invalid_command"},
+		{"login control query", "login", `{"timeout":"5000ms","node":"n","hostname":"host","controlURL":"http://control/?a=b"}`, "invalid_command"},
 		{"negative port", "serve", `{"timeout":"5000ms","node":"n","service":"s","port":-1}`, "invalid_command"},
 		{"missing port", "serve", `{"timeout":"5000ms","node":"n","service":"s"}`, "invalid_command"},
 		{"excess port", "serve", `{"timeout":"5000ms","node":"n","service":"s","port":65536}`, "invalid_command"},
@@ -129,6 +134,31 @@ func TestNodeLifecycle(t *testing.T) {
 	}
 	if _, err := d.dispatch(t.Context(), "create", json.RawMessage(create)); err == nil || classify(err).Code != "duplicate_handle" {
 		t.Fatalf("reused handle = %v", err)
+	}
+}
+
+func TestLoginLifecycle(t *testing.T) {
+	d := newDispatcher()
+	n := &testNode{authURL: "https://control/register/id"}
+	d.newLogin = func(ctx context.Context, cfg tscl.Config) (node, error) {
+		if cfg.AuthKey != "" || cfg.ControlURL != "https://control" {
+			t.Errorf("config = %+v", cfg)
+		}
+		return n, nil
+	}
+	login := json.RawMessage(`{"timeout":"5000ms","node":"n","hostname":"host","controlURL":"https://control"}`)
+	result, err := d.dispatch(t.Context(), "login", login)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := result.(nodeResult); got.Node != "n" || got.AuthURL != "https://control/register/id" {
+		t.Fatalf("result = %+v", got)
+	}
+	if _, err := d.dispatch(t.Context(), "login", login); err == nil || classify(err).Code != "duplicate_handle" {
+		t.Fatalf("duplicate login = %v", err)
+	}
+	if _, err := d.dispatch(t.Context(), "close", json.RawMessage(`{"timeout":"5000ms","node":"n"}`)); err != nil || !n.closed {
+		t.Fatalf("close = %v, closed %t", err, n.closed)
 	}
 }
 

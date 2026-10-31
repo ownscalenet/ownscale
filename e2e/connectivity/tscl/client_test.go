@@ -21,29 +21,32 @@ func discardLogger() *slog.Logger {
 
 func TestValidateConfig(t *testing.T) {
 	for _, tt := range []struct {
-		name   string
-		change func(*Config)
-		valid  bool
+		name        string
+		change      func(*Config)
+		interactive bool
+		valid       bool
 	}{
-		{"defaults", func(*Config) {}, true},
-		{"HTTP control", func(c *Config) { c.ControlURL = "http://localhost:8080" }, true},
-		{"IPv6 control", func(c *Config) { c.ControlURL = "https://[::1]:443" }, true},
-		{"empty hostname", func(c *Config) { c.Hostname = " " }, false},
-		{"empty key", func(c *Config) { c.AuthKey = " " }, false},
-		{"empty control", func(c *Config) { c.ControlURL = "" }, false},
-		{"relative control", func(c *Config) { c.ControlURL = "/control" }, false},
-		{"missing host", func(c *Config) { c.ControlURL = "https://" }, false},
-		{"invalid scheme", func(c *Config) { c.ControlURL = "ftp://control" }, false},
-		{"credentials", func(c *Config) { c.ControlURL = "https://user:pass@control" }, false},
-		{"fragment", func(c *Config) { c.ControlURL = "https://control/#fragment" }, false},
-		{"malformed URL", func(c *Config) { c.ControlURL = "https://%zz" }, false},
-		{"startup timeout", func(c *Config) { c.StartupTimeout = -time.Second }, false},
-		{"probe timeout", func(c *Config) { c.ProbeTimeout = -time.Second }, false},
+		{"defaults", func(*Config) {}, false, true},
+		{"interactive without key", func(c *Config) { c.AuthKey = "" }, true, true},
+		{"interactive with key", func(*Config) {}, true, false},
+		{"HTTP control", func(c *Config) { c.ControlURL = "http://localhost:8080" }, false, true},
+		{"IPv6 control", func(c *Config) { c.ControlURL = "https://[::1]:443" }, false, true},
+		{"empty hostname", func(c *Config) { c.Hostname = " " }, false, false},
+		{"empty key", func(c *Config) { c.AuthKey = " " }, false, false},
+		{"empty control", func(c *Config) { c.ControlURL = "" }, false, false},
+		{"relative control", func(c *Config) { c.ControlURL = "/control" }, false, false},
+		{"missing host", func(c *Config) { c.ControlURL = "https://" }, false, false},
+		{"invalid scheme", func(c *Config) { c.ControlURL = "ftp://control" }, false, false},
+		{"credentials", func(c *Config) { c.ControlURL = "https://user:pass@control" }, false, false},
+		{"fragment", func(c *Config) { c.ControlURL = "https://control/#fragment" }, false, false},
+		{"malformed URL", func(c *Config) { c.ControlURL = "https://%zz" }, false, false},
+		{"startup timeout", func(c *Config) { c.StartupTimeout = -time.Second }, false, false},
+		{"probe timeout", func(c *Config) { c.ProbeTimeout = -time.Second }, false, false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg := Config{Hostname: "test", ControlURL: "https://control.test", AuthKey: "secret"}
 			tt.change(&cfg)
-			if err := validateConfig(cfg); (err == nil) != tt.valid {
+			if err := validateConfig(cfg, tt.interactive); (err == nil) != tt.valid {
 				t.Fatalf("validateConfig() = %v, valid = %v", err, tt.valid)
 			}
 		})
@@ -100,13 +103,20 @@ func TestNewFailureCleanup(t *testing.T) {
 		http.Error(w, "unavailable", http.StatusServiceUnavailable)
 	}))
 	defer control.Close()
+	enroll := func(ctx context.Context, cfg Config) (*Client, error) {
+		cfg.AuthKey = "test-key-not-a-real-key"
+		return New(ctx, cfg)
+	}
 	for _, tt := range []struct {
 		name     string
+		start    func(context.Context, Config) (*Client, error)
 		canceled bool
 		wantErr  error
 	}{
-		{"canceled before initialization", true, context.Canceled},
-		{"enrollment timeout", false, context.DeadlineExceeded},
+		{"canceled before initialization", enroll, true, context.Canceled},
+		{"enrollment timeout", enroll, false, context.DeadlineExceeded},
+		{"login canceled before initialization", StartLogin, true, context.Canceled},
+		{"login timeout", StartLogin, false, context.DeadlineExceeded},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			ctx, cancel := context.WithCancel(t.Context())
@@ -114,8 +124,8 @@ func TestNewFailureCleanup(t *testing.T) {
 			if tt.canceled {
 				cancel()
 			}
-			c, err := New(ctx, Config{
-				Hostname: "tscl-failure", ControlURL: control.URL, AuthKey: "test-key-not-a-real-key",
+			c, err := tt.start(ctx, Config{
+				Hostname: "tscl-failure", ControlURL: control.URL,
 				StartupTimeout: 250 * time.Millisecond, Logger: discardLogger(),
 			})
 			if c != nil {
@@ -123,7 +133,7 @@ func TestNewFailureCleanup(t *testing.T) {
 				t.Fatal("failed enrollment returned a client")
 			}
 			if !errors.Is(err, tt.wantErr) {
-				t.Fatalf("New() = %v, want %v", err, tt.wantErr)
+				t.Fatalf("start() = %v, want %v", err, tt.wantErr)
 			}
 			entries, err := os.ReadDir(root)
 			if err != nil || len(entries) != 0 {

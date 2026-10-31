@@ -28,7 +28,8 @@ const (
 	defaultProbeTimeout   = 5 * time.Second
 )
 
-// Config describes a single machine enrolled using a caller-supplied key.
+// Config describes a single machine, enrolled with AuthKey or, for StartLogin,
+// interactively.
 type Config struct {
 	Hostname       string
 	ControlURL     string
@@ -63,19 +64,81 @@ func New(ctx context.Context, cfg Config) (_ *Client, err error) {
 			err = &redactedError{err, cfg.AuthKey}
 		}
 	}()
-	if err = validateConfig(cfg); err != nil {
+	if err = validateConfig(cfg, false); err != nil {
 		return nil, err
 	}
+	ctx, cancel := startupContext(ctx, cfg)
+	defer cancel()
+	c, err := start(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, c.Close())
+		}
+	}()
+	status, err := c.server.Up(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if status.BackendState != "Running" || len(status.TailscaleIPs) == 0 {
+		return nil, errors.New("machine is not running with assigned addresses")
+	}
+	return c, nil
+}
+
+// StartLogin starts a machine without an auth key and returns once control
+// has given it the URL of an interactive login, which Status reports as
+// AuthURL. The login stays pending until the caller closes the client.
+// cfg.AuthKey must be empty.
+func StartLogin(ctx context.Context, cfg Config) (_ *Client, err error) {
+	defer derrors.Wrap(&err, "StartLogin()")
+	if err = validateConfig(cfg, true); err != nil {
+		return nil, err
+	}
+	ctx, cancel := startupContext(ctx, cfg)
+	defer cancel()
+	c, err := start(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, c.Close())
+		}
+	}()
+	lc, err := c.server.LocalClient()
+	if err != nil {
+		return nil, err
+	}
+	// tsnet starts the interactive login itself; the URL arrives once control answers.
+	for {
+		status, err := lc.StatusWithoutPeers(ctx)
+		if err == nil && status.AuthURL != "" {
+			return c, nil
+		}
+		select {
+		case <-ctx.Done():
+			return nil, errors.Join(ctx.Err(), err)
+		case <-time.After(250 * time.Millisecond):
+		}
+	}
+}
+
+func startupContext(ctx context.Context, cfg Config) (context.Context, context.CancelFunc) {
+	timeout := cfg.StartupTimeout
+	if timeout == 0 {
+		timeout = defaultStartupTimeout
+	}
+	return context.WithTimeout(ctx, timeout)
+}
+
+// start starts a tsnet server for cfg; on failure it cleans up after itself.
+func start(ctx context.Context, cfg Config) (_ *Client, err error) {
 	if err = ctx.Err(); err != nil {
 		return nil, err
 	}
-	startupTimeout := cfg.StartupTimeout
-	if startupTimeout == 0 {
-		startupTimeout = defaultStartupTimeout
-	}
-	ctx, cancel := context.WithTimeout(ctx, startupTimeout)
-	defer cancel()
-
 	c := &Client{identity: rand.Text(), probeTimeout: cfg.ProbeTimeout}
 	if c.probeTimeout == 0 {
 		c.probeTimeout = defaultProbeTimeout
@@ -96,7 +159,11 @@ func New(ctx context.Context, cfg Config) (_ *Client, err error) {
 	}
 	c.logger = logger
 	logf := func(format string, args ...any) {
-		logger.Debug(strings.ReplaceAll(fmt.Sprintf(format, args...), cfg.AuthKey, "[REDACTED]"))
+		msg := fmt.Sprintf(format, args...)
+		if cfg.AuthKey != "" {
+			msg = strings.ReplaceAll(msg, cfg.AuthKey, "[REDACTED]")
+		}
+		logger.Debug(msg)
 	}
 	server := &tsnet.Server{
 		Dir: c.dir, Hostname: cfg.Hostname, ControlURL: cfg.ControlURL,
@@ -107,19 +174,17 @@ func New(ctx context.Context, cfg Config) (_ *Client, err error) {
 		return nil, err
 	}
 	c.server = server
-	status, err := server.Up(ctx)
-	if err != nil {
-		return nil, err
-	}
-	if status.BackendState != "Running" || len(status.TailscaleIPs) == 0 {
-		return nil, errors.New("machine is not running with assigned addresses")
-	}
 	return c, nil
 }
 
-func validateConfig(cfg Config) error {
-	if strings.TrimSpace(cfg.Hostname) == "" || strings.TrimSpace(cfg.AuthKey) == "" {
-		return errors.New("hostname and auth key are required")
+// validateConfig checks cfg; an interactive login must not carry an auth key,
+// any other machine must.
+func validateConfig(cfg Config, interactive bool) error {
+	if strings.TrimSpace(cfg.Hostname) == "" {
+		return errors.New("hostname is required")
+	}
+	if interactive != (strings.TrimSpace(cfg.AuthKey) == "") {
+		return errors.New("an auth key is required, except for an interactive login")
 	}
 	if _, err := parseHTTPURL(cfg.ControlURL); err != nil {
 		return errors.New("control URL must be an absolute HTTP(S) URL without credentials or a fragment")

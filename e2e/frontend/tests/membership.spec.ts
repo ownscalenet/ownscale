@@ -1,8 +1,8 @@
-import { randomBytes } from 'node:crypto'
 import type { Browser, Page } from '@playwright/test'
 import { expect, test } from './support/account'
 import { confirmDialog } from './support/confirm'
 import { baseDomain } from './connectivity/environment'
+import { startPendingLogin } from './support/pendingLogin'
 import { registerRealMachine, teardownRealMachine } from './support/realMachine'
 
 // signIn signs a fresh, logged-out browser context in through Dex as email
@@ -31,22 +31,17 @@ async function signIn(browser: Browser, email: string, startURL: string): Promis
   return page
 }
 
-// registerURL starts a tailnet login for org with an auth ID nobody is
-// waiting on; see registerLoginStatus in settings-apply.spec.ts.
-function registerURL(org: string): string {
-  return `https://${org}.${baseDomain}/register/hskey-authreq-${randomBytes(12).toString('hex')}`
-}
-
 test("a user of another organization can't sign in to its tailnet until switching to a member account", async ({ browser, account }) => {
+  const login = await startPendingLogin(account.org)
   // user1 owns bbbb (see global.setup.ts). Signing in from the tailnet's
   // login page is refused by the console...
-  const page = await signIn(browser, 'user1@ownscale.test', registerURL(account.org))
+  const page = await signIn(browser, 'user1@ownscale.test', await login.authURL())
   try {
     await expect(page.getByText("You aren't a member of this organization")).toBeVisible({ timeout: 15_000 })
 
     // ...and with a console session already in place, the OIDC provider
     // asks to sign in with another account instead of failing.
-    await page.goto(registerURL(account.org))
+    await page.goto(await login.authURL())
     await expect(page.getByText("You're signed in as user1@ownscale.test")).toBeVisible()
 
     // Switching to a member (the worker's account owns its org) hands
@@ -62,6 +57,7 @@ test("a user of another organization can't sign in to its tailnet until switchin
     expect(new URL((await callback).url()).searchParams.get('code')).toBeTruthy()
   } finally {
     await page.context().close()
+    await login.close()
   }
 })
 

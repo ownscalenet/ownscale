@@ -8,6 +8,8 @@ export interface NodeInfo {
   hostname: string
   addresses: string[]
   backendState: string
+  // authURL is the interactive login a node started by login waits on.
+  authURL?: string
 }
 
 /** The DNS configuration a node received from its control server. */
@@ -73,8 +75,9 @@ const protocolError = (v: unknown): v is { code: string; message: string } =>
   object(v) && keys(v, ['code', 'message']) && typeof v.code === 'string' &&
   Object.hasOwn(messages, v.code) && text(v.message, 256)
 const nodeInfo = (v: unknown): v is NodeInfo => object(v) &&
-  keys(v, ['node', 'hostname', 'addresses', 'backendState']) &&
+  keys(v, ['node', 'hostname', 'addresses', 'backendState'], ['authURL']) &&
   handle(v.node) && handle(v.hostname) && text(v.backendState, 64) &&
+  (v.authURL === undefined || (text(v.authURL, 2048) && URL.canParse(v.authURL))) &&
   Array.isArray(v.addresses) && v.addresses.length <= 16 &&
   v.addresses.every(a => typeof a === 'string' && isIP(a) !== 0)
 const textList = (v: unknown): v is string[] =>
@@ -181,6 +184,12 @@ export class Bridge {
   create(args: { node: string; hostname: string; controlURL: string; authKey: string },
     timeoutMs = enrollmentTimeoutMs): Promise<NodeInfo> {
     return this.call('create', args, timeoutMs, v => nodeInfo(v) && v.node === args.node && v.hostname === args.hostname)
+  }
+
+  /** login starts a node without an auth key, waiting at its authURL until close. */
+  login(args: { node: string; hostname: string; controlURL: string },
+    timeoutMs = enrollmentTimeoutMs): Promise<NodeInfo> {
+    return this.call('login', args, timeoutMs, v => nodeInfo(v) && v.node === args.node && !!v.authURL)
   }
 
   status(node: string): Promise<NodeInfo> {

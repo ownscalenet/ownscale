@@ -1,7 +1,7 @@
-import { randomBytes } from 'node:crypto'
 import type { Page } from '@playwright/test'
 import { expect, test } from './support/account'
 import { baseDomain } from './connectivity/environment'
+import { startPendingLogin } from './support/pendingLogin'
 import { registerRealMachine, teardownRealMachine } from './support/realMachine'
 import { dnsPageLoaded, snapshotDns } from './support/dnsPage'
 import { retryUntil } from './support/retry'
@@ -149,26 +149,24 @@ test('DNS settings reach a running device', async ({ page, account }) => {
   }
 })
 
-// Headscale checks the OIDC allowlist in its /oidc/callback before it looks
-// up the pending registration. Starting a registration login with an auth ID
-// nobody is waiting on therefore ends in 401 when the signed-in user is
-// excluded by the allowlist, and in 410 ("login session expired") when the
-// user is admitted -- without needing a real device to register. The console
-// finishes its part of the login client-side, so the outcome is the status of
-// the callback navigation, not of the first page load.
-async function registerLoginStatus(page: Page, org: string): Promise<number> {
+// Headscale checks the OIDC allowlist in its /oidc/callback: an excluded user
+// gets 401, an admitted one a 303 to the page confirming the registration.
+// The test never confirms, so no device is registered and the login stays
+// pending for the next attempt. The console finishes its part of the login
+// client-side, so the outcome is the status of the callback navigation, not
+// of the first page load.
+async function registerLoginStatus(page: Page, org: string, authURL: string): Promise<number> {
   // A separate tab (sharing the signed-in session), so the console's
   // client-side redirects can't interfere with the page the test drives.
   const tab = await page.context().newPage()
   try {
-    const authID = `hskey-authreq-${randomBytes(12).toString('hex')}`
     const callback = tab.waitForResponse(
       r => r.request().isNavigationRequest() && r.url().startsWith(`https://${org}.${baseDomain}/oidc/callback`),
       { timeout: 30_000 },
     )
     // goto itself may report "interrupted by another navigation" as the
     // console redirects client-side; only the callback's status matters.
-    void tab.goto(`https://${org}.${baseDomain}/register/${authID}`).catch(() => {})
+    void tab.goto(authURL).catch(() => {})
     return (await callback).status()
   } finally {
     void tab.close().catch(() => {})
@@ -192,12 +190,6 @@ test('login restrictions are enforced by headscale', async ({ page, account }) =
     return body.users.map(u => u.name).sort()
   }
 
-  // Baseline: the current allowlist admits this user. This login also
-  // starts the org's headscale if nothing used it yet, which links its
-  // members to headscale users, so the users are counted after it.
-  await expect.poll(() => registerLoginStatus(page, account.org), converge).toBe(410)
-  const usersBefore = await headscaleUsers()
-
   const save = async (content: string, marker: string) => {
     await page.goto('/auth-restrictions')
     await retryUntil(
@@ -210,21 +202,34 @@ test('login restrictions are enforced by headscale', async ({ page, account }) =
     )
   }
 
+  // The pending login also starts the org's headscale if nothing used it
+  // yet, which links its members to headscale users, so the users are
+  // counted after the baseline login.
+  const login = await startPendingLogin(account.org)
+  const status = async () => registerLoginStatus(page, account.org, await login.authURL())
   try {
-    await save('{"domains": ["example.org"], "groups": [], "users": []}', 'example\\.org')
-    await expect.poll(() => registerLoginStatus(page, account.org), converge).toBe(401)
-  } finally {
-    await page.goto('/auth-restrictions')
-    await retryUntil(
-      page,
-      async () => {
-        await editor.fill(original)
-        await page.getByRole('button', { name: 'Save' }).click()
-      },
-      async () => expect(editor).not.toHaveValue(/example\.org/, { timeout: 8_000 }),
-    )
-  }
-  await expect.poll(() => registerLoginStatus(page, account.org), converge).toBe(410)
+    // Baseline: the current allowlist admits this user.
+    await expect.poll(status, converge).toBe(303)
+    const usersBefore = await headscaleUsers()
 
-  expect(await headscaleUsers()).toEqual(usersBefore)
+    try {
+      await save('{"domains": ["example.org"], "groups": [], "users": []}', 'example\\.org')
+      await expect.poll(status, converge).toBe(401)
+    } finally {
+      await page.goto('/auth-restrictions')
+      await retryUntil(
+        page,
+        async () => {
+          await editor.fill(original)
+          await page.getByRole('button', { name: 'Save' }).click()
+        },
+        async () => expect(editor).not.toHaveValue(/example\.org/, { timeout: 8_000 }),
+      )
+    }
+    await expect.poll(status, converge).toBe(303)
+
+    expect(await headscaleUsers()).toEqual(usersBefore)
+  } finally {
+    await login.close()
+  }
 })
