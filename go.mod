@@ -26,10 +26,10 @@ require (
 	golang.org/x/time v0.16.0
 	gopkg.in/yaml.v3 v3.0.1
 	modernc.org/sqlite v1.61.0
-	tailscale.com v1.105.0-pre.0.20261022061721-37fc7a7a7260
+	tailscale.com v1.105.0-pre.0.20261028221719-f7c1b8e52600
 )
 
-replace github.com/juanfont/headscale => github.com/ownscalenet/headscale v0.29.6-1
+replace github.com/juanfont/headscale => github.com/ownscalenet/headscale v0.29.7-1
 
 require (
 	atomicgo.dev/cursor v0.2.0 // indirect
@@ -78,7 +78,7 @@ require (
 	github.com/caddyserver/zerossl v0.1.6 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
 	github.com/cespare/xxhash/v2 v2.3.0 // indirect
-	github.com/chasefleming/elem-go v0.36.0 // indirect
+	github.com/chasefleming/elem-go v0.37.0 // indirect
 	github.com/clipperhouse/uax29/v2 v2.7.0 // indirect
 	github.com/cncf/xds/go v0.0.0-20260202195803-dba9d589def2 // indirect
 	github.com/coder/websocket v1.8.15 // indirect
@@ -86,7 +86,7 @@ require (
 	github.com/coreos/go-oidc/v3 v3.21.0 // indirect
 	github.com/creachadair/mds v0.31.0 // indirect
 	github.com/creachadair/msync v0.10.1 // indirect
-	github.com/danielgtaylor/huma/v2 v2.39.1 // indirect
+	github.com/danielgtaylor/huma/v2 v2.40.0 // indirect
 	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dblohm7/wingoes v0.0.0-20260526185140-fb298caac7ca // indirect
 	github.com/dgryski/go-metro v0.0.0-20261008173524-5059e0b1da03 // indirect
@@ -122,6 +122,7 @@ require (
 	github.com/gorilla/mux v1.8.1 // indirect
 	github.com/gorilla/securecookie v1.1.2 // indirect
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674 // indirect
+	github.com/hashicorp/go-uuid v1.0.3 // indirect
 	github.com/hashicorp/go-version v1.9.0 // indirect
 	github.com/hashicorp/golang-lru/v2 v2.0.8-0.20261012062354-235099c106fc // indirect
 	github.com/hdevalence/ed25519consensus v0.2.0 // indirect
@@ -166,8 +167,9 @@ require (
 	github.com/muhlemmer/httpforwarded v0.1.0 // indirect
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/ncruces/go-strftime v1.1.0 // indirect
-	github.com/oapi-codegen/runtime v1.7.0 // indirect
+	github.com/oapi-codegen/runtime v1.8.0 // indirect
 	github.com/oauth2-proxy/mockoidc v0.0.0-20240214162133-caebfff84d25 // indirect
+	github.com/pandatix/go-abnf v0.5.1 // indirect
 	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
 	github.com/petermattis/goid v0.0.0-20260918085751-abfca077860b // indirect
 	github.com/philhofer/fwd v1.2.1 // indirect
@@ -177,7 +179,7 @@ require (
 	github.com/pkg/profile v1.7.0 // indirect
 	github.com/prometheus/client_golang v1.25.0 // indirect
 	github.com/prometheus/client_model v0.6.3 // indirect
-	github.com/prometheus/common v0.72.1 // indirect
+	github.com/prometheus/common v0.73.0 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/psanford/sqlite3vfs v0.0.0-20260519004904-f9180fa2acc9 // indirect
 	github.com/pterm/pterm v0.12.84 // indirect
@@ -205,7 +207,7 @@ require (
 	github.com/tailscale/squibble v0.0.0-20260831233316-9a4c8961e6f5 // indirect
 	github.com/tailscale/tailsql v0.0.0-20261014183241-aae04fb51be7 // indirect
 	github.com/tailscale/web-client-prebuilt v0.0.0-20260917222731-e0ed2d0d0fea // indirect
-	github.com/tailscale/wireguard-go v0.0.0-20260928213353-e61b6b78110b // indirect
+	github.com/tailscale/wireguard-go v0.0.0-20261002162406-18e99eba5393 // indirect
 	github.com/tcnksm/go-latest v0.0.0-20170313132115-e3007ae9052e // indirect
 	github.com/tinylib/msgp v1.6.5 // indirect
 	github.com/wasilibs/go-re2 v1.13.0 // indirect
