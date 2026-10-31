@@ -1,6 +1,7 @@
 import { useRef, type ReactNode } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
 import {
+  BookOpen,
   GlobeLock,
   ListChecks,
   LogOut,
@@ -17,6 +18,7 @@ import { displayName, isPasskeyEmail, logout } from './api'
 import { CopyIcon } from './components/CopyButton'
 import Logo from './components/Logo'
 import ThemeToggle from './components/ThemeToggle'
+import { docsURL } from './lib/faq'
 
 // navGroups are the sidebar's pages. NavLink marks the current one active.
 const navGroups: { title: string; links: { to: string; label: string; icon: ReactNode }[] }[] = [
@@ -174,7 +176,20 @@ export default function Layout() {
           </nav>
 
           <div className="border-t border-base-300 p-3">
-            <ul onClick={closeDrawer}>{navItem(userSettingsLink)}</ul>
+            <ul onClick={closeDrawer} className="flex flex-col gap-0.5">
+              {navItem(userSettingsLink)}
+              <li>
+                <a
+                  href={docsURL()}
+                  target="_blank"
+                  rel="noreferrer"
+                  className={`${iconClass} flex items-center gap-2.5 rounded-field px-2.5 py-1.5 text-sm font-medium border border-transparent text-base-content/70 hover:text-base-content hover:bg-base-200`}
+                >
+                  <BookOpen />
+                  Documentation
+                </a>
+              </li>
+            </ul>
             {user && (
               <div className="mt-3 flex items-center gap-2.5 px-1">
                 <div

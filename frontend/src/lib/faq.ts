@@ -10,6 +10,11 @@ export function siteURL(): string {
   return `https://${baseDomain()}/`
 }
 
+// docsURL is the documentation's start page.
+export function docsURL(): string {
+  return `https://${baseDomain()}/docs/`
+}
+
 // faqURL builds a link to the FAQ entry identified by anchor.
 export function faqURL(anchor: string): string {
   return `https://${baseDomain()}/docs/faqs/#${anchor}`
