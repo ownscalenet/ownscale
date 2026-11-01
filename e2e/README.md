@@ -10,9 +10,11 @@ Playwright and its browser binaries never weigh down the production
 
 ## Prerequisites
 
-1. `make dev-up` running (see the repository README's "Local development" /
-   "Deployment" sections) with `BASE_DOMAIN=ownscale.test` (the default in
-   `example.env`), including the `/etc/hosts` entries it documents.
+1. `make dev-up` running. It needs no `.env` setup: `compose.dev.yaml` sets
+   the dev domain, `ownscale.test`. Map its names in `/etc/hosts`:
+   `127.0.0.1 ownscale.test console.ownscale.test dex.ownscale.test` plus
+   `aaaa.ownscale.test`, `bbbb.ownscale.test` and so on for the
+   organizations.
 2. Node.js (matching `frontend/`'s toolchain).
 3. Go and the repository's Go dependencies, plus `/etc/hosts` entries for
    the e2e accounts' organizations, which tests that register real devices

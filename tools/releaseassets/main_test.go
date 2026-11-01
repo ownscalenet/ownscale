@@ -36,9 +36,6 @@ const testEnv = `# Copy to .env and configure.
 #
 BASE_DOMAIN=example.com
 SESSION_SECRET=changeme
-# --- Local development (uncomment) ---
-# COMPOSE_FILE=compose.yaml:compose.dev.yaml
-# DEV_SECRET=dev-only
 `
 
 func TestGenerate(t *testing.T) {
@@ -100,7 +97,7 @@ func TestGenerate(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			for _, forbidden := range []string{"private-secret", "COMPOSE_FILE", "DEV_SECRET"} {
+			for _, forbidden := range []string{"private-secret", "Local development instructions"} {
 				if strings.Contains(string(compose)+string(env), forbidden) {
 					t.Fatalf("unexpected content %q", forbidden)
 				}
@@ -133,8 +130,7 @@ func TestRenderInvalid(t *testing.T) {
 		{"relative bind", strings.Replace(testCompose, "${OWNSCALE_DATA_DIR:-./data}:/data", "./data:/data", 1), testEnv},
 		{"external env", strings.Replace(testCompose, "    build: .", "    build: .\n    env_file: .env", 1), testEnv},
 		{"include", testCompose + "\ninclude: other.yaml", testEnv},
-		{"missing dev boundary", testCompose, "BASE_DOMAIN=example.com"},
-		{"missing intro boundary", testCompose, "# --- Local development (uncomment) ---"},
+		{"missing intro boundary", testCompose, "BASE_DOMAIN=example.com"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if _, _, err := render("v1.2.3", []byte(tc.compose), []byte(tc.env)); err == nil {

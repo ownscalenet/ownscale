@@ -1,5 +1,6 @@
 # Local development overlay for compose.yaml: adds a local root CA and Dex
-# as the upstream OIDC provider. Enabled via COMPOSE_FILE in .env.
+# as the upstream OIDC provider, and sets every dev value on top of .env.
+# Enabled via COMPOSE_FILE, which `make dev-up` writes into .env.
 services:
   # One-shot: idempotently generates the local development root CA (see
   # localca) that Caddy signs all its local certs from (see
@@ -31,7 +32,7 @@ services:
         sed "s/\$$BASE_DOMAIN/$$BASE_DOMAIN/g" /etc/dex/config.yaml > /tmp/dex-config.yaml &&
         exec dex serve /tmp/dex-config.yaml
     environment:
-      BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
+      BASE_DOMAIN: ownscale.test
     volumes:
       - ./etc/dex/config.yaml:/etc/dex/config.yaml:ro
     restart: unless-stopped
@@ -49,6 +50,17 @@ services:
       dex:
         condition: service_healthy
     environment:
+      OWNSCALE_BASE_DOMAIN: ownscale.test
+      OWNSCALE_CONTENT_DOMAIN: ownscale.test
+      OWNSCALE_DEVELOPMENT: "true"
+      OWNSCALE_LOG_FORMAT: text
+      OWNSCALE_DNS_PROVIDER: none
+      OWNSCALE_AUTH_SESSION_SECRET: dev-session-secret
+      # Dex, with the test login admin@ownscale.test / ownscale.
+      OWNSCALE_AUTH_UPSTREAM_OIDC_ISSUER: https://dex.ownscale.test
+      OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_ID: ownscale
+      OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_SECRET: ownscale-dev-secret
+      OWNSCALE_AUTH_UPSTREAM_OIDC_CALLBACK_URL: https://console.ownscale.test/auth/oidc/callback
       SSL_CERT_DIR: /etc/ssl/certs:/etc/pki/tls/certs:/data/local-ca
       # The first organizations get predictable subdomains, which the e2e
       # setup relies on.
@@ -58,6 +70,12 @@ services:
     depends_on:
       local-ca-init:
         condition: service_completed_successfully
+    environment:
+      BASE_DOMAIN: ownscale.test
+      CONTENT_DOMAIN: ownscale.test
+      DNS_PROVIDER: none
+      CADDY_LOG_LEVEL: debug
+      OWNSCALE_DEVELOPMENT: "true"
     # Bind mounts override the baked-in Caddyfile and docs site so edits only
     # need a restart; dev/ holds the local_certs, PKI and Dex snippets.
     volumes:
@@ -72,5 +90,5 @@ services:
         # to Caddy: Dex (auth.upstream_oidc.issuer) and the console itself
         # (the OIDC issuer the in-process headscale instances discover).
         aliases:
-          - dex.${BASE_DOMAIN:-ownscale.test}
-          - console.${BASE_DOMAIN:-ownscale.test}
+          - dex.ownscale.test
+          - console.ownscale.test

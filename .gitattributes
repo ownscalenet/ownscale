@@ -1,0 +1,3 @@
+# Keep LF everywhere, so shell scripts and Makefile recipes work in
+# containers even when checked out on Windows.
+* text=auto eol=lf

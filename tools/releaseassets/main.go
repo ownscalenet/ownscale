@@ -119,12 +119,7 @@ func render(tag string, compose, env []byte) ([]byte, []byte, error) {
 	if err := encoder.Close(); err != nil {
 		return nil, nil, err
 	}
-	const marker = "# --- Local development (uncomment) ---"
-	production, _, found := strings.Cut(string(env), marker)
-	if !found {
-		return nil, nil, errors.New("missing local development boundary in environment template")
-	}
-	_, production, found = strings.Cut(production, "\n#\n")
+	_, production, found := strings.Cut(string(env), "\n#\n")
 	if !found {
 		return nil, nil, errors.New("missing introduction boundary in environment template")
 	}

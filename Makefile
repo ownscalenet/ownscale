@@ -16,9 +16,8 @@ DEVBOX_IMAGE := ownscale-devbox:latest
 export HOST_UID := $(shell id -u)
 export HOST_GID := $(shell id -g)
 
-# read env
-BASE_DOMAIN := $(shell grep -m1 '^BASE_DOMAIN=' .env 2>/dev/null | cut -d= -f2)
-BASE_DOMAIN := $(if $(BASE_DOMAIN),$(BASE_DOMAIN),ownscale.test)
+# Dev stack domain, set in compose.dev.yaml.
+BASE_DOMAIN := ownscale.test
 
 build: frontend backend
 
@@ -47,12 +46,12 @@ osa:
 # Build the images, start the full stack, then stream logs from all
 # containers. Organizations are created on each new user's first login.
 #
-# Requires the local development block of example.env to be uncommented in
-# .env, so COMPOSE_FILE layers compose.dev.yaml on top of compose.yaml.
-#
-# Also upserts HOST_UID/HOST_GID into .env: compose.yaml's
-# user: "${HOST_UID:-0}:${HOST_GID:-0}" only sees these if they're in the shell
-# env or in .env
+# Upserts into .env what compose.dev.yaml can't set itself, so plain
+# `docker compose` commands see the same stack:
+#  - COMPOSE_FILE, which layers compose.dev.yaml on top of compose.yaml;
+#  - HOST_UID/HOST_GID, for compose.yaml's user: "${HOST_UID:-0}:${HOST_GID:-0}";
+#  - a session secret, if none is set, for compose.yaml's required check
+#    (compose.dev.yaml overrides the value the container gets).
 #
 # Pass `make dev-up BUILD=1` to forward --build to `docker compose up`.
 BUILD ?=

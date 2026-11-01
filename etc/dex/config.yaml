@@ -1,8 +1,7 @@
 # dexidp/dex configuration for local development only (see compose.dev.yaml's
 # "dex" service and etc/caddy/dev/sites.caddyfile).
 #
-# If you change BASE_DOMAIN away from the "ownscale.test" default in .env,
-# update "issuer" and "redirectURIs" below to match.
+# $BASE_DOMAIN is replaced with the dev domain set in compose.dev.yaml.
 issuer: https://dex.$BASE_DOMAIN
 
 storage:
