@@ -1,24 +1,51 @@
 ---
 title: ownscale
+layout: hextra-home
 ---
 
-Ownscale is a self-hosted Tailscale control plane with a web console, built on
-[Headscale](https://github.com/juanfont/headscale). Ownscale users are grouped
-into organizations, each with its own set machines, routers and settings.
+<div class="hx:mt-6 hx:mb-6">
+{{< hextra/hero-headline >}}
+    Simple Mesh VPN connectivity
+{{< /hextra/hero-headline >}}
+</div>
 
-## Features
+<div class="hx:mb-12">
+{{< hextra/hero-subtitle >}}
+  ownscale is a self-hosted coordination server and web console for Tailscale clients,&nbsp;<br class="hx:sm:block hx:hidden" />built on Headscale. Run many private networks from one server.
+{{< /hextra/hero-subtitle >}}
+</div>
 
-- multiple tailnets on the same ownscale instance
-- web UI for headscale
-- login with OIDC, passkeys, Google, Github, etc.
-- funnels: expose local running servers through the internet
-- all headscale features: MagicDNS, Split DNS, Taildrive, Taildrop, tags,
-subnet routers, exit nodes, ACLs, Grants, Tailscale SSH and
-[many more](https://headscale.net/stable/about/features/).
+<div class="hx:mb-6 hx:flex hx:flex-wrap hx:gap-4">
+{{< hextra/hero-button text="Try online" link="https://console.ownscale.net" >}}
+{{< hextra/hero-button text="Self-host" link="/docs/self-hosting/installation/" >}}
+{{< hextra/hero-button text="Read docs" link="/docs/" >}}
+</div>
 
-## Next steps
+<div class="hx:mt-6"></div>
 
-- Try it on the demo instance: ownscale.net
-- Try it on your server. See [Installation]({{< relref "docs/installation.md" >}})
-  for prerequisites and a Docker Compose quick start.
-
+{{< hextra/feature-grid >}}
+  {{< hextra/feature-card
+    title="Many tailnets, one server"
+    subtitle="Each organization gets its own tailnet, backed by its own Headscale instance and subdomain."
+  >}}
+  {{< hextra/feature-card
+    title="Web console"
+    subtitle="Manage machines, users, access control, DNS and auth keys from the browser."
+  >}}
+  {{< hextra/feature-card
+    title="Single sign-on and passkeys"
+    subtitle="Log in with OIDC, Google, Microsoft, GitHub or a passkey."
+  >}}
+  {{< hextra/feature-card
+    title="Funnels"
+    subtitle="Expose a service running on a machine in your tailnet to the public internet."
+  >}}
+  {{< hextra/feature-card
+    title="Tailscale features"
+    subtitle="MagicDNS, split DNS, subnet routers, exit nodes, tags, ACLs, grants, Tailscale SSH, Taildrop and HTTPS certificates."
+  >}}
+  {{< hextra/feature-card
+    title="Simple to operate"
+    subtitle="One process, SQLite databases and continuous Litestream backups. Deployed with Docker Compose."
+  >}}
+{{< /hextra/feature-grid >}}

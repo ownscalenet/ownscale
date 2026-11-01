@@ -63,6 +63,8 @@ jobs:
         working-directory: deployment
         run: |
           cp example.env .env
+          # example.env leaves the secret empty on purpose; compose requires one.
+          echo OWNSCALE_AUTH_SESSION_SECRET=ci >> .env
           docker compose config --format json > "$RUNNER_TEMP/compose.json"
           jq -e --arg tag "$TAG" '
             (.services | keys) == ["caddy", "ownscale"] and

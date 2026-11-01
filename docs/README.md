@@ -8,8 +8,28 @@ It is built and served as the landing page at `{$BASE_DOMAIN}` by Caddy
 
 ## Editing docs
 
-Add or edit Markdown files under `content/docs/`. `content/_index.md` is
-the site's home page.
+`content/_index.md` is the site's home page. Pages live in sections under
+`content/docs/`, modeled on Tailscale's and Headscale's docs:
+
+| Section | Holds |
+| --- | --- |
+| `get-started/` | what ownscale is, quickstart, connecting clients |
+| `concepts/` | how it works, terminology glossary, organizations, architecture |
+| `features/` | one page per console feature: what, who can use it, limits |
+| `self-hosting/` | requirements, installation |
+| `reference/` | `osa` CLI, domains, limitations |
+| `faqs.md` | FAQs |
+
+Conventions:
+
+- Order pages with `weight` in front matter; each section's `_index.md` has
+  a cards overview.
+- Link between pages with `relref`, so a broken link fails the build.
+- When moving a page, add its old URL to `aliases` in front matter.
+- The console links to `/docs/faqs/#ownscale-agent-user--machine` (via
+  `/s/agent`): keep that heading unchanged.
+- Check facts against the code. Link to tailscale.com/kb for client and
+  CLI details instead of copying them.
 
 ## Building
 
