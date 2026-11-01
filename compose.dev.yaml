@@ -50,6 +50,9 @@ services:
         condition: service_healthy
     environment:
       SSL_CERT_DIR: /etc/ssl/certs:/etc/pki/tls/certs:${OWNSCALE_DATA_DIR}/local-ca
+      # The first organizations get predictable subdomains, which the e2e
+      # setup relies on.
+      OWNSCALE_FIXED_SUBDOMAINS: aaaa,bbbb,cccc,dddd,eeee,ffff,gggg,hhhh,iiii,jjjj
 
   caddy:
     depends_on:

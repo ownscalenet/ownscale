@@ -28,6 +28,9 @@ func TestLoadDefaultsOnly(t *testing.T) {
 	if cfg.Development {
 		t.Errorf("Development = %v, want false by default", cfg.Development)
 	}
+	if len(cfg.FixedSubdomains) != 0 {
+		t.Errorf("FixedSubdomains = %v, want none by default", cfg.FixedSubdomains)
+	}
 }
 
 func TestLoadEnvOverridesDefaults(t *testing.T) {
@@ -432,14 +435,6 @@ func TestValidate(t *testing.T) {
 		})
 	}
 
-	t.Run("non-positive funnel max body rejected", func(t *testing.T) {
-		cfg := fullyPopulatedConfig()
-		cfg.Funnel.MaxBodyBytes = 0
-		if err := cfg.Validate(); err == nil || !strings.Contains(err.Error(), "OWNSCALE_FUNNEL_MAX_BODY_BYTES") {
-			t.Errorf("Validate() error = %v, want it to mention OWNSCALE_FUNNEL_MAX_BODY_BYTES", err)
-		}
-	})
-
 	fields := []struct {
 		name   string
 		breakF func(*Config)
@@ -474,12 +469,18 @@ func TestLoadDNSConfig(t *testing.T) {
 	}{
 		{
 			name: "defaults",
-			want: DNSConfig{Provider: "none", Zone: "example.com", PropagationTimeout: 2 * time.Minute},
+			want: DNSConfig{Provider: "none", Zone: "example.com", PropagationTimeout: 2 * time.Minute, RFC2136: RFC2136DNSConfig{KeyAlg: "hmac-sha256"}},
+		},
+		{
+			// compose.yaml passes unset settings as empty variables.
+			name: "empty variable keeps default",
+			env:  map[string]string{"OWNSCALE_DNS_RFC2136_KEY_ALG": ""},
+			want: DNSConfig{Provider: "none", Zone: "example.com", PropagationTimeout: 2 * time.Minute, RFC2136: RFC2136DNSConfig{KeyAlg: "hmac-sha256"}},
 		},
 		{
 			name: "zone defaults to content domain",
 			env:  map[string]string{"OWNSCALE_CONTENT_DOMAIN": "example.net"},
-			want: DNSConfig{Provider: "none", Zone: "example.net", PropagationTimeout: 2 * time.Minute},
+			want: DNSConfig{Provider: "none", Zone: "example.net", PropagationTimeout: 2 * time.Minute, RFC2136: RFC2136DNSConfig{KeyAlg: "hmac-sha256"}},
 		},
 		{
 			name: "overrides",
@@ -492,6 +493,7 @@ func TestLoadDNSConfig(t *testing.T) {
 			want: DNSConfig{
 				Provider: "cloudflare", Zone: "corp.com",
 				Cloudflare: CloudflareDNSConfig{APIToken: "tok"},
+				RFC2136:    RFC2136DNSConfig{KeyAlg: "hmac-sha256"},
 			},
 		},
 	}

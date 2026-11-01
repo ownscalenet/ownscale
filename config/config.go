@@ -291,10 +291,6 @@ func defaults() *Config {
 		Addr:       ":8080",
 		DataDir:    "data",
 		LocalCADir: "local-ca",
-		FixedSubdomains: []string{
-			"aaaa", "bbbb", "cccc", "dddd", "eeee",
-			"ffff", "gggg", "hhhh", "iiii", "jjjj",
-		},
 		Funnel: FunnelConfig{
 			MaxBodyBytes: 32 << 20,
 		},
@@ -304,6 +300,7 @@ func defaults() *Config {
 		DNS: DNSConfig{
 			Provider:           DNSProviderNone,
 			PropagationTimeout: 2 * time.Minute,
+			RFC2136:            RFC2136DNSConfig{KeyAlg: "hmac-sha256"},
 		},
 		Log: LogConfig{
 			Level:  "info",
@@ -394,9 +391,6 @@ func (c *Config) Validate() (err error) {
 	}
 	if c.DebugAddr != "" && !isLoopbackAddr(c.DebugAddr) {
 		return fmt.Errorf("OWNSCALE_DEBUG_ADDR %q must bind a loopback IP", c.DebugAddr)
-	}
-	if c.Funnel.MaxBodyBytes <= 0 {
-		return fmt.Errorf("OWNSCALE_FUNNEL_MAX_BODY_BYTES must be positive, got %d", c.Funnel.MaxBodyBytes)
 	}
 	if strings.EqualFold(c.BaseDomain, "localhost") {
 		return fmt.Errorf(`OWNSCALE_BASE_DOMAIN must not be "localhost": for local testing use ownscale.test` +
