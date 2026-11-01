@@ -56,11 +56,13 @@ osa:
 # Pass `make dev-up BUILD=1` to forward --build to `docker compose up`.
 BUILD ?=
 dev-up:
-	@grep -q '^COMPOSE_FILE=.*compose.dev.yaml' .env 2>/dev/null || { echo ".env has no COMPOSE_FILE with compose.dev.yaml -- uncomment the local development block from example.env"; exit 1; }
-	@for kv in HOST_UID=$(HOST_UID) HOST_GID=$(HOST_GID); do \
-		key=$${kv%%=*}; \
-		grep -q "^$$key=" .env && sed -i "s|^$$key=.*|$$kv|" .env || echo "$$kv" >> .env; \
-	done
+	@touch .env
+	@{ grep -vE '^(COMPOSE_FILE|HOST_UID|HOST_GID)=|^OWNSCALE_AUTH_SESSION_SECRET=$$' .env; \
+		echo COMPOSE_FILE=compose.yaml:compose.dev.yaml; \
+		echo HOST_UID=$(HOST_UID); \
+		echo HOST_GID=$(HOST_GID); \
+		grep -q '^OWNSCALE_AUTH_SESSION_SECRET=.' .env || echo OWNSCALE_AUTH_SESSION_SECRET=dev-session-secret; \
+	} > .env.tmp && cat .env.tmp > .env && rm .env.tmp
 	docker compose up $(if $(BUILD),--build)
 
 # devbox opens up a shell in a container that has joined a tailnet.
