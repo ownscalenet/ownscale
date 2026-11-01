@@ -45,12 +45,11 @@ Edit `.env`. At minimum, set:
 | --- | --- |
 | `BASE_DOMAIN` | your wildcard domain, e.g. `example.com` |
 | `CONTENT_DOMAIN` | optional separate domain for user content |
-| `OWNSCALE_DATA_DIR` | absolute path for all databases, e.g. `/opt/ownscale/data` |
 | `OWNSCALE_AUTH_SESSION_SECRET` | a long random string, e.g. from `openssl rand -hex 32` |
 | `DNS_PROVIDER` | `azure`, `cloudflare`, `hetzner` or `rfc2136`, plus its credentials |
 
-Then add at least one login provider, if you want more than passkeys. The
-comments in `example.env` document every setting.
+Then add at least one login provider, if you want more
+than passkeys.
 
 ### Log in to the registry
 

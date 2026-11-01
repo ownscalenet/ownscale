@@ -10,7 +10,7 @@ services:
     environment:
       OWNSCALE_BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
       OWNSCALE_CONTENT_DOMAIN: ${CONTENT_DOMAIN:-${BASE_DOMAIN:-ownscale.test}}
-      OWNSCALE_DATA_DIR: ${OWNSCALE_DATA_DIR:?set OWNSCALE_DATA_DIR to an absolute host path in .env}
+      OWNSCALE_DATA_DIR: /data
       OWNSCALE_DEVELOPMENT: ${OWNSCALE_DEVELOPMENT:-}
       OWNSCALE_AUTH_SESSION_SECRET: ${OWNSCALE_AUTH_SESSION_SECRET:?set OWNSCALE_AUTH_SESSION_SECRET in .env}
       OWNSCALE_AUTH_UPSTREAM_OIDC_ISSUER: ${OWNSCALE_AUTH_UPSTREAM_OIDC_ISSUER:-}
@@ -56,7 +56,7 @@ services:
       OWNSCALE_BACKUP_AZURE_ACCOUNT_KEY: ${OWNSCALE_BACKUP_AZURE_ACCOUNT_KEY:-}
       OWNSCALE_BACKUP_SYNC_INTERVAL: ${OWNSCALE_BACKUP_SYNC_INTERVAL:-10s}
     volumes:
-      - ${OWNSCALE_DATA_DIR}:${OWNSCALE_DATA_DIR}
+      - ${OWNSCALE_DATA_DIR:-./data}:/data
     restart: unless-stopped
     stop_grace_period: 40s # close connections, close replication
     healthcheck:

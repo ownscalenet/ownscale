@@ -18,7 +18,7 @@ services:
     environment:
       SECRET: ${SESSION_SECRET:?required}
     volumes:
-      - ${OWNSCALE_DATA_DIR}:${OWNSCALE_DATA_DIR}
+      - ${OWNSCALE_DATA_DIR:-./data}:/data
   caddy:
     image: ownscale-caddy:latest
     build:
@@ -93,7 +93,7 @@ func TestGenerate(t *testing.T) {
 					t.Fatal("build field retained")
 				}
 			}
-			if !strings.Contains(string(compose), "${SESSION_SECRET:?required}") || !strings.Contains(string(compose), "${OWNSCALE_DATA_DIR}:${OWNSCALE_DATA_DIR}") {
+			if !strings.Contains(string(compose), "${SESSION_SECRET:?required}") || !strings.Contains(string(compose), "${OWNSCALE_DATA_DIR:-./data}:/data") {
 				t.Fatal("interpolation was changed")
 			}
 			env, err := os.ReadFile(filepath.Join(output, "example.env"))
@@ -130,7 +130,7 @@ func TestRenderInvalid(t *testing.T) {
 		{"extra service", strings.Replace(testCompose, "services:", "services:\n  extra: {}", 1), testEnv},
 		{"missing image", strings.Replace(testCompose, "    image: ownscale:latest\n", "", 1), testEnv},
 		{"missing build", strings.Replace(testCompose, "    build: .\n", "", 1), testEnv},
-		{"relative bind", strings.Replace(testCompose, "${OWNSCALE_DATA_DIR}:${OWNSCALE_DATA_DIR}", "./data:/data", 1), testEnv},
+		{"relative bind", strings.Replace(testCompose, "${OWNSCALE_DATA_DIR:-./data}:/data", "./data:/data", 1), testEnv},
 		{"external env", strings.Replace(testCompose, "    build: .", "    build: .\n    env_file: .env", 1), testEnv},
 		{"include", testCompose + "\ninclude: other.yaml", testEnv},
 		{"missing dev boundary", testCompose, "BASE_DOMAIN=example.com"},

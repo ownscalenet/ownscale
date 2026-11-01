@@ -9,7 +9,7 @@ weight: 1
 - **linux/amd64**: release images are only built for this architecture.
 - A public IP address with inbound **TCP 80**, **TCP 443** and **UDP 443**
   open. Caddy uses all three.
-- Persistent disk for `OWNSCALE_DATA_DIR`. ownscale's own database and every
+- Persistent disk for `OWNSCALE_DATA_DIR` (default `./data`). ownscale's own database and every
   organization's database live there.
 
 ownscale is designed to run many organizations on a small server. Each

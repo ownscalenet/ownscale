@@ -17,8 +17,6 @@ export HOST_UID := $(shell id -u)
 export HOST_GID := $(shell id -g)
 
 # read env
-DATA_DIR := $(shell grep -m1 '^OWNSCALE_DATA_DIR=' .env 2>/dev/null | cut -d= -f2)
-DATA_DIR := $(if $(DATA_DIR),$(DATA_DIR),$(CURDIR)/data)
 BASE_DOMAIN := $(shell grep -m1 '^BASE_DOMAIN=' .env 2>/dev/null | cut -d= -f2)
 BASE_DOMAIN := $(if $(BASE_DOMAIN),$(BASE_DOMAIN),ownscale.test)
 

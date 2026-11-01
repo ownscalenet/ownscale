@@ -3,7 +3,7 @@
 services:
   # One-shot: idempotently generates the local development root CA (see
   # localca) that Caddy signs all its local certs from (see
-  # etc/caddy/dev/global.caddyfile), under ${OWNSCALE_DATA_DIR}/local-ca.
+  # etc/caddy/dev/global.caddyfile), under the data directory's local-ca/.
   local-ca-init:
     image: ownscale:latest
     build: .
@@ -13,9 +13,9 @@ services:
         osa gen-local-ca --caddy-data-dir /caddy-data &&
         chown -R "${HOST_UID:-0}:${HOST_GID:-0}" "$$OWNSCALE_DATA_DIR/local-ca"
     environment:
-      OWNSCALE_DATA_DIR: ${OWNSCALE_DATA_DIR:?set OWNSCALE_DATA_DIR to an absolute host path in .env}
+      OWNSCALE_DATA_DIR: /data
     volumes:
-      - ${OWNSCALE_DATA_DIR}:${OWNSCALE_DATA_DIR}
+      - ${OWNSCALE_DATA_DIR:-./data}:/data
       - caddy-data:/caddy-data
 
   dex:
@@ -49,7 +49,7 @@ services:
       dex:
         condition: service_healthy
     environment:
-      SSL_CERT_DIR: /etc/ssl/certs:/etc/pki/tls/certs:${OWNSCALE_DATA_DIR}/local-ca
+      SSL_CERT_DIR: /etc/ssl/certs:/etc/pki/tls/certs:/data/local-ca
       # The first organizations get predictable subdomains, which the e2e
       # setup relies on.
       OWNSCALE_FIXED_SUBDOMAINS: aaaa,bbbb,cccc,dddd,eeee,ffff,gggg,hhhh,iiii,jjjj
@@ -64,7 +64,7 @@ services:
       - ./etc/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
       - ./etc/caddy/site:/srv/site:ro
       - ./etc/caddy/dev:/etc/caddy/dev:ro
-      - ${OWNSCALE_DATA_DIR}/local-ca:/etc/ownscale-local-ca:ro
+      - ${OWNSCALE_DATA_DIR:-./data}/local-ca:/etc/ownscale-local-ca:ro
     networks:
       default:
         # Non-public BASE_DOMAINs (e.g. "ownscale.test") have no real DNS, so
