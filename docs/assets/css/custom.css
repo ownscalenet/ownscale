@@ -59,3 +59,57 @@
   color: inherit;
   background-color: transparent;
 }
+
+/* "On this page": mark the section being read with the primary colour and a
+   bar, instead of Hextra's barely visible darker gray. */
+.hextra-toc a {
+  transition: padding-left 0.15s;
+}
+
+/* The TOC scrolls, which clips anything outside the link, so the bar is an
+   inset shadow and the text moves right to make room. */
+.hextra-toc a.hextra-toc-active {
+  font-weight: 600;
+  color: hsl(var(--primary-hue) var(--primary-saturation) 40%) !important;
+  padding-left: 0.625rem;
+  box-shadow: inset 2px 0 0 currentColor;
+  border-radius: 0;
+}
+
+.dark .hextra-toc a.hextra-toc-active {
+  color: hsl(var(--primary-hue) var(--primary-saturation) 70%) !important;
+}
+
+/* The heading a link points to (e.g. /docs/faqs/#some-question). Hextra puts
+   the anchor id on a span inside the heading, hence :has(). The highlight
+   fades out, leaving a bar that marks the heading while it's the target. */
+:is(h2, h3, h4, h5, h6):has(> span:target) {
+  position: relative;
+  border-radius: 0.375rem;
+  animation: ownscale-target 3s ease-out;
+}
+
+:is(h2, h3, h4, h5, h6):has(> span:target)::before {
+  content: "";
+  position: absolute;
+  left: -0.875rem;
+  top: 0.15em;
+  height: 1.1em;
+  width: 3px;
+  border-radius: 2px;
+  background: hsl(var(--primary-hue) var(--primary-saturation) 50%);
+}
+
+@keyframes ownscale-target {
+  0%,
+  40% {
+    background: hsl(var(--primary-hue) var(--primary-saturation) 50% / 0.18);
+    box-shadow: 0 0 0 0.5rem hsl(var(--primary-hue) var(--primary-saturation) 50% / 0.18);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(h2, h3, h4, h5, h6):has(> span:target) {
+    animation: none;
+  }
+}
