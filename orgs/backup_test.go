@@ -55,6 +55,7 @@ func TestBackup(t *testing.T) {
 	dataDir := t.TempDir()
 	r, cfg, replicaDir := newReplicator(t, dataDir)
 	svcCfg := &config.Config{
+		FastOrgs:        true,
 		BaseDomain:      "example.com",
 		DataDir:         dataDir,
 		FixedSubdomains: testFixedSubdomains,

@@ -40,6 +40,7 @@ func newRealService(t *testing.T) *Service {
 	t.Helper()
 	_, queries := dbtest.New(t)
 	cfg := &config.Config{
+		FastOrgs:        true,
 		BaseDomain:      "example.com",
 		DataDir:         t.TempDir(),
 		FixedSubdomains: testFixedSubdomains,

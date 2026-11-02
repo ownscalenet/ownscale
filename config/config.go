@@ -44,6 +44,10 @@ type Config struct {
 	Funnel FunnelConfig
 	Backup BackupConfig
 	DNS    DNSConfig
+
+	// FastOrgs makes organizations cheaper to create and write to, so tests
+	// don't idle. It has no env var so it can't be turned on in prod.
+	FastOrgs bool
 }
 
 // DNSConfig selects the DNS provider that publishes ACME DNS-01 challenges

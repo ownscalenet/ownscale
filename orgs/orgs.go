@@ -517,7 +517,11 @@ func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organ
 	if err != nil {
 		return sqlcgen.Organization{}, err
 	}
-	clientSecretHash, err := bcrypt.GenerateFromPassword([]byte(clientSecret), bcrypt.DefaultCost)
+	cost := bcrypt.DefaultCost
+	if s.cfg.FastOrgs {
+		cost = bcrypt.MinCost
+	}
+	clientSecretHash, err := bcrypt.GenerateFromPassword([]byte(clientSecret), cost)
 	if err != nil {
 		return sqlcgen.Organization{}, err
 	}
@@ -574,7 +578,10 @@ func newTailnetLabel() string {
 	return "net" + strings.ToLower(rand.Text()[:6])
 }
 
-func (s *Service) insertOrganization(ctx context.Context, subdomain, tailnetLabel, clientID, clientSecretHash, redirectURIsJSON, hsConfig string) (_ sqlcgen.Organization, err error) {
+func (s *Service) insertOrganization(
+	ctx context.Context,
+	subdomain, tailnetLabel, clientID string,
+	clientSecretHash, redirectURIsJSON, hsConfig string) (_ sqlcgen.Organization, err error) {
 	txQueries, commit, rollback, err := s.queries.StartTx(ctx)
 	if err != nil {
 		return sqlcgen.Organization{}, err
@@ -684,6 +691,7 @@ func (s *Service) launch(ctx context.Context, subdomain string, port int, hsCfg 
 		hsCfg:      hsCfg,
 		derpMap:    derpMap,
 		certs:      s.certs,
+		fast:       s.cfg.FastOrgs,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("create headscale instance for %q: %w", subdomain, err)

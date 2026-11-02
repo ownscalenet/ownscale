@@ -381,7 +381,7 @@ func TestEnsureFunnelAuthKey(t *testing.T) {
 func TestGetOrCreateServerConcurrentDedup(t *testing.T) {
 	client, f := newFakeUserPreAuthKeyServer(t, `{"users":[]}`)
 	pool := NewPool(&fakeQueries{}, &fakeOrgs{client: client}, testConfig(t, 1<<20), slog.New(slog.DiscardHandler))
-	pool.upTimeout = 2 * time.Second
+	pool.upTimeout = 200 * time.Millisecond
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
 	defer cancel()

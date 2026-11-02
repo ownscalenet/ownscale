@@ -144,6 +144,8 @@ type headscaleParams struct {
 	derpMap *tailcfg.DERPMap
 	// certs is nil when node certificates are disabled.
 	certs *nodeCerts
+	// fast is config.Config.FastOrgs.
+	fast bool
 }
 
 // nodeCerts configures the DNS provider publishing ACME DNS-01 challenges
@@ -169,6 +171,12 @@ func createHeadscale(p headscaleParams) (_ *hscontrol.Headscale, err error) {
 	dataDir, subdomain, hsCfg := p.dataDir, p.subdomain, p.hsCfg
 	pv4 := netip.MustParsePrefix("100.64.0.0/10")
 	pv6 := netip.MustParsePrefix("fd7a:115c:a1e0::/48")
+
+	// Node writes block until the next tick of this timeout.
+	nodeStoreBatchTimeout := 500 * time.Millisecond
+	if p.fast {
+		nodeStoreBatchTimeout = time.Millisecond
+	}
 
 	orgDir := filepath.Dir(noisePath(dataDir, subdomain))
 	if err := os.Mkdir(orgDir, 0o755); err != nil && !errors.Is(err, fs.ErrExist) {
@@ -252,7 +260,7 @@ func createHeadscale(p headscaleParams) (_ *hscontrol.Headscale, err error) {
 			NotifierSendTimeout:            800 * time.Millisecond,
 			NodeMapSessionBufferedChanSize: 30,
 			NodeStoreBatchSize:             100,
-			NodeStoreBatchTimeout:          500 * time.Millisecond,
+			NodeStoreBatchTimeout:          nodeStoreBatchTimeout,
 		},
 	}
 

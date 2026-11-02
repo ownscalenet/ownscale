@@ -60,7 +60,8 @@ func Headscale(t testing.TB) string {
 			NotifierSendTimeout:            800 * time.Millisecond,
 			NodeMapSessionBufferedChanSize: 30,
 			NodeStoreBatchSize:             100,
-			NodeStoreBatchTimeout:          500 * time.Millisecond,
+			// Node writes block until the next tick of this timeout.
+			NodeStoreBatchTimeout: time.Millisecond,
 		},
 	})
 	if err != nil {

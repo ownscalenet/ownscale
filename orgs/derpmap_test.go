@@ -82,6 +82,7 @@ func TestCurrentDERPMap(t *testing.T) {
 			_, queries := dbtest.New(t)
 			derpCfg := config.DerpConfig{MapURL: derpMapServer(t, tt.status, mustJSON(t, testDERPMap(2)))}
 			cfg := &config.Config{
+				FastOrgs:        true,
 				BaseDomain:      "example.com",
 				DataDir:         t.TempDir(),
 				Derp:            derpCfg,

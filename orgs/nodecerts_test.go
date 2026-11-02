@@ -42,6 +42,7 @@ func TestTailscaleCert(t *testing.T) {
 
 	_, queries := dbtest.New(t)
 	cfg := &config.Config{
+		FastOrgs:        true,
 		BaseDomain:      "example.com",
 		ContentDomain:   "example.com",
 		DataDir:         t.TempDir(),

@@ -64,6 +64,7 @@ func newTestHandlersWithDataDir(t *testing.T, baseDomain, dataDir string) (*Hand
 	t.Cleanup(derpMap.Close)
 	derpCfg := config.DerpConfig{MapURL: derpMap.URL}
 	h, err := New(queries, &config.Config{
+		FastOrgs:      true,
 		BaseDomain:    baseDomain,
 		DataDir:       dataDir,
 		Derp:          derpCfg,
