@@ -63,10 +63,12 @@ the [FAQ]({{< relref "/docs/faqs.md#ownscale-agent-user--machine" >}}).
 - The target receives **plain HTTP**. TLS to the target and raw TCP aren't
   supported.
 - The original `Host` header is passed through.
-- Request bodies are limited to 32 MiB by default.
+- Request bodies are limited to 32 MiB.
 - Each organization's funnels together accept up to 100 requests per second
-  (bursts of 200) and 256 concurrent requests. Requests above that get
-  `429` or `503`.
+  (bursts of 200) and 256 concurrent requests.
+- Visitors over a limit get an error page with status `413`, `429` or `503`.
+  These numbers are defaults: the server administrator can change them with
+  the `FUNNEL_*` settings in `example.env`.
 - If the target machine is offline, or the organization is
   [asleep]({{< relref "/docs/concepts/organizations.md#sleeping-organizations" >}}),
   visitors get `503`.

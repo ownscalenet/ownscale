@@ -201,10 +201,33 @@ func (b BackupConfig) Validate() error {
 	return nil
 }
 
-// FunnelConfig configures public funnels.
+// FunnelConfig configures public funnels. The rate and concurrency limits
+// apply to each organization's funnels together.
 type FunnelConfig struct {
 	// MaxBodyBytes limits the size of funnel request bodies.
 	MaxBodyBytes int64 `env:"OWNSCALE_FUNNEL_MAX_BODY_BYTES"`
+	// RatePerSecond is the sustained number of requests accepted per second.
+	RatePerSecond float64 `env:"OWNSCALE_FUNNEL_RATE_PER_SECOND"`
+	// RateBurst is how many requests may arrive at once above RatePerSecond.
+	RateBurst int `env:"OWNSCALE_FUNNEL_RATE_BURST"`
+	// MaxConcurrent limits requests being proxied at the same time.
+	MaxConcurrent int `env:"OWNSCALE_FUNNEL_MAX_CONCURRENT"`
+}
+
+// Validate checks that every limit lets some requests through, since a
+// zero would silently reject all funnel traffic.
+func (f FunnelConfig) Validate() error {
+	switch {
+	case f.MaxBodyBytes <= 0:
+		return fmt.Errorf("OWNSCALE_FUNNEL_MAX_BODY_BYTES must be positive, got %d", f.MaxBodyBytes)
+	case !(f.RatePerSecond > 0): // also rejects NaN
+		return fmt.Errorf("OWNSCALE_FUNNEL_RATE_PER_SECOND must be positive, got %v", f.RatePerSecond)
+	case f.RateBurst <= 0:
+		return fmt.Errorf("OWNSCALE_FUNNEL_RATE_BURST must be positive, got %d", f.RateBurst)
+	case f.MaxConcurrent <= 0:
+		return fmt.Errorf("OWNSCALE_FUNNEL_MAX_CONCURRENT must be positive, got %d", f.MaxConcurrent)
+	}
+	return nil
 }
 
 // LogConfig configures the application's structured (slog) logger.
@@ -292,7 +315,10 @@ func defaults() *Config {
 		DataDir:    "data",
 		LocalCADir: "local-ca",
 		Funnel: FunnelConfig{
-			MaxBodyBytes: 32 << 20,
+			MaxBodyBytes:  32 << 20,
+			RatePerSecond: 100,
+			RateBurst:     200,
+			MaxConcurrent: 256,
 		},
 		Backup: BackupConfig{
 			SyncInterval: 10 * time.Second,
@@ -407,6 +433,9 @@ EOF`)
 		return fmt.Errorf("OWNSCALE_DATA_DIR must resolve to an absolute path, got %q", c.DataDir)
 	}
 	if err := c.Backup.Validate(); err != nil {
+		return err
+	}
+	if err := c.Funnel.Validate(); err != nil {
 		return err
 	}
 	if c.ContentDomain != strings.ToLower(c.ContentDomain) || dnsname.ValidHostname(c.ContentDomain) != nil {

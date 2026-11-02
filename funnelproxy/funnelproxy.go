@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"html/template"
 	"log/slog"
 	"net"
 	"net/http"
@@ -29,6 +30,7 @@ import (
 	"tailscale.com/tailcfg"
 	"tailscale.com/tsnet"
 
+	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/derrors"
 	"github.com/ownscalenet/ownscale/hscl"
@@ -63,7 +65,7 @@ type Pool struct {
 	dataDir string
 	logger  *slog.Logger
 
-	maxBody int64
+	cfg config.FunnelConfig
 
 	mu      sync.Mutex
 	servers map[string]*tunnel    // keyed by organization subdomain
@@ -130,9 +132,9 @@ type PortLookup interface {
 // a stable on-disk state directory (funnel-tsnet/<subdomain>) so it
 // registers as a stable tailnet node across process restarts instead of
 // re-registering on every request. portLookup maps subdomains to the TCP
-// port where their in-process headscale instance is listening. maxBody
-// limits request body sizes.
-func NewPool(queries Queries, hs HeadscaleClients, dataDir string, logger *slog.Logger, portLookup PortLookup, maxBody int64) *Pool {
+// port where their in-process headscale instance is listening. limits sets
+// the request body size and each organization's rate and concurrency limits.
+func NewPool(queries Queries, hs HeadscaleClients, dataDir string, logger *slog.Logger, portLookup PortLookup, limits config.FunnelConfig) *Pool {
 	// The symptoms of having this enabled: only funnels from one org work,
 	// all others timeout.
 	netns.SetEnabled(false)
@@ -142,7 +144,7 @@ func NewPool(queries Queries, hs HeadscaleClients, dataDir string, logger *slog.
 		hs:        hs,
 		dataDir:   dataDir,
 		logger:    logger,
-		maxBody:   maxBody,
+		cfg:       limits,
 		servers:   make(map[string]*tunnel),
 		limits:    make(map[string]*orgLimits),
 		upTimeout: funnelUpTimeout,
@@ -259,23 +261,24 @@ func (p *Pool) ServeHTTP(w http.ResponseWriter, r *http.Request, label, subdomai
 	lim := p.limitsFor(subdomain)
 	if !lim.rate.Allow() {
 		w.Header().Set("Retry-After", "1")
-		http.Error(w, "too many requests", http.StatusTooManyRequests)
+		writeErrorPage(w, http.StatusTooManyRequests, msgTooManyRequests)
 		return
 	}
 	select {
 	case lim.inFlight <- struct{}{}:
 		defer func() { <-lim.inFlight }()
 	default:
-		http.Error(w, "too many concurrent requests", http.StatusServiceUnavailable)
+		w.Header().Set("Retry-After", "1")
+		writeErrorPage(w, http.StatusTooManyRequests, msgTooManyRequests)
 		return
 	}
 
-	if r.ContentLength > p.maxBody {
-		http.Error(w, "request body too large", http.StatusRequestEntityTooLarge)
+	if r.ContentLength > p.cfg.MaxBodyBytes {
+		writeErrorPage(w, http.StatusRequestEntityTooLarge, msgBodyTooLarge)
 		return
 	}
 	if r.Body != nil {
-		r.Body = http.MaxBytesReader(w, r.Body, p.maxBody)
+		r.Body = http.MaxBytesReader(w, r.Body, p.cfg.MaxBodyBytes)
 	}
 
 	// A sleeping org has no online machines, so its funnel target is offline
@@ -316,7 +319,7 @@ func (p *Pool) ServeHTTP(w http.ResponseWriter, r *http.Request, label, subdomai
 		// Same as the default ErrorHandler, except it uses our logger.
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-				w.WriteHeader(http.StatusRequestEntityTooLarge)
+				writeErrorPage(w, http.StatusRequestEntityTooLarge, msgBodyTooLarge)
 				return
 			}
 			p.logger.Warn("funnel: proxy to target failed", "subdomain", subdomain, "label", label, "target", targetAddr, "error", err)
@@ -551,13 +554,8 @@ func ensureFunnelAuthKey(ctx context.Context, client *hscl.Client) (hscl.PreAuth
 	})
 }
 
-// Per-org funnel limits, so one org's funnel can't exhaust ownscale.
-const (
-	funnelRatePerSecond = 100
-	funnelRateBurst     = 200
-	funnelMaxInFlight   = 256
-)
-
+// orgLimits are an org's funnel limits, so one org's funnel can't exhaust
+// ownscale.
 type orgLimits struct {
 	rate     *rate.Limiter
 	inFlight chan struct{}
@@ -571,10 +569,63 @@ func (p *Pool) limitsFor(subdomain string) *orgLimits {
 	lim, ok := p.limits[subdomain]
 	if !ok {
 		lim = &orgLimits{
-			rate:     rate.NewLimiter(funnelRatePerSecond, funnelRateBurst),
-			inFlight: make(chan struct{}, funnelMaxInFlight),
+			rate:     rate.NewLimiter(rate.Limit(p.cfg.RatePerSecond), p.cfg.RateBurst),
+			inFlight: make(chan struct{}, p.cfg.MaxConcurrent),
 		}
 		p.limits[subdomain] = lim
 	}
 	return lim
+}
+
+// Messages shown to funnel visitors when a limit is hit.
+const (
+	ownership = `If you are the owner of this funnel,
+you should aknowledge the ownscale.net funnel limits.`
+	// TODO: more user friendly messages and link to docs
+	msgTooManyRequests = "This site is receiving too many requests. Try again in a moment. " + ownership
+	msgBodyTooLarge    = "The request body is too large. " + ownership
+)
+
+var errorPage = template.Must(template.New("error").Parse(`<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Status}} {{.Title}}</title>
+<style>
+body { font-family: system-ui, sans-serif; margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f5f5f5; color: #222; }
+main { max-width: 32rem; padding: 2rem; text-align: center; }
+.brand { display: inline-flex; align-items: center; gap: .5rem; margin-bottom: 1.5rem; font-weight: 600; font-size: 1.125rem; color: #111827; }
+.brand svg { width: 1.75rem; height: 1.75rem; }
+h1 { font-size: 1.5rem; margin: 0 0 .5rem; }
+p { margin: 0; color: #555; }
+</style>
+</head>
+<body>
+<main>
+<div class="brand">
+<svg viewBox="0 0 64 64" aria-hidden="true"><g fill="currentColor"><circle cx="12" cy="12" r="8"/><circle cx="32" cy="12" r="8"/><circle cx="52" cy="12" r="8"/><circle cx="12" cy="32" r="8"/><circle cx="52" cy="32" r="8"/><circle cx="12" cy="52" r="8"/><circle cx="32" cy="52" r="8"/><circle cx="52" cy="52" r="8"/></g><circle cx="32" cy="32" r="8" fill="currentColor" opacity="0.4"/></svg>
+ownscale
+</div>
+<h1>{{.Status}} {{.Title}}</h1>
+<p>{{.Message}}</p>
+</main>
+</body>
+</html>
+`))
+
+// writeErrorPage responds with a small HTML page, since funnel visitors are
+// usually people with a browser.
+func writeErrorPage(w http.ResponseWriter, status int, message string) {
+	h := w.Header()
+	h.Set("Content-Type", "text/html; charset=utf-8")
+	h.Set("X-Content-Type-Options", "nosniff")
+	h.Set("Cache-Control", "no-store")
+	// Replaces the console's CSP, which would block the inline <style>.
+	h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'")
+	w.WriteHeader(status)
+	_ = errorPage.Execute(w, struct {
+		Status         int
+		Title, Message string
+	}{status, http.StatusText(status), message})
 }

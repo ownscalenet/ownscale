@@ -103,7 +103,7 @@ func New(
 		logger:          logger,
 		orgs:            orgSvc,
 		hs:              orgSvc,
-		funnel:          funnelproxy.NewPool(queries, orgSvc, cfg.DataDir, logger, orgSvc, cfg.Funnel.MaxBodyBytes),
+		funnel:          funnelproxy.NewPool(queries, orgSvc, cfg.DataDir, logger, orgSvc, cfg.Funnel),
 		webauthn:        wa,
 		passkeySessions: newPasskeyCeremonyStore(),
 		authProviders: authProvidersStatus{
