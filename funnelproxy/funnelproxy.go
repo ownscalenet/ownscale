@@ -66,6 +66,8 @@ type Pool struct {
 	logger  *slog.Logger
 
 	cfg config.FunnelConfig
+	// limitsURL is the docs section on funnel limits, linked from error pages.
+	limitsURL string
 
 	mu      sync.Mutex
 	servers map[string]*tunnel    // keyed by organization subdomain
@@ -134,7 +136,8 @@ type PortLookup interface {
 // re-registering on every request. portLookup maps subdomains to the TCP
 // port where their in-process headscale instance is listening. limits sets
 // the request body size and each organization's rate and concurrency limits.
-func NewPool(queries Queries, hs HeadscaleClients, dataDir string, logger *slog.Logger, portLookup PortLookup, limits config.FunnelConfig) *Pool {
+// baseDomain is where the docs are served, linked from the error pages.
+func NewPool(queries Queries, hs HeadscaleClients, dataDir string, logger *slog.Logger, portLookup PortLookup, limits config.FunnelConfig, baseDomain string) *Pool {
 	// The symptoms of having this enabled: only funnels from one org work,
 	// all others timeout.
 	netns.SetEnabled(false)
@@ -145,6 +148,7 @@ func NewPool(queries Queries, hs HeadscaleClients, dataDir string, logger *slog.
 		dataDir:   dataDir,
 		logger:    logger,
 		cfg:       limits,
+		limitsURL: "https://" + baseDomain + "/docs/features/funnels/#limits",
 		servers:   make(map[string]*tunnel),
 		limits:    make(map[string]*orgLimits),
 		upTimeout: funnelUpTimeout,
@@ -261,7 +265,7 @@ func (p *Pool) ServeHTTP(w http.ResponseWriter, r *http.Request, label, subdomai
 	lim := p.limitsFor(subdomain)
 	if !lim.rate.Allow() {
 		w.Header().Set("Retry-After", "1")
-		writeErrorPage(w, http.StatusTooManyRequests, msgTooManyRequests)
+		p.writeErrorPage(w, http.StatusTooManyRequests, msgTooManyRequests)
 		return
 	}
 	select {
@@ -269,12 +273,12 @@ func (p *Pool) ServeHTTP(w http.ResponseWriter, r *http.Request, label, subdomai
 		defer func() { <-lim.inFlight }()
 	default:
 		w.Header().Set("Retry-After", "1")
-		writeErrorPage(w, http.StatusTooManyRequests, msgTooManyRequests)
+		p.writeErrorPage(w, http.StatusTooManyRequests, msgTooManyRequests)
 		return
 	}
 
 	if r.ContentLength > p.cfg.MaxBodyBytes {
-		writeErrorPage(w, http.StatusRequestEntityTooLarge, msgBodyTooLarge)
+		p.writeErrorPage(w, http.StatusRequestEntityTooLarge, msgBodyTooLarge)
 		return
 	}
 	if r.Body != nil {
@@ -319,7 +323,7 @@ func (p *Pool) ServeHTTP(w http.ResponseWriter, r *http.Request, label, subdomai
 		// Same as the default ErrorHandler, except it uses our logger.
 		ErrorHandler: func(w http.ResponseWriter, r *http.Request, err error) {
 			if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
-				writeErrorPage(w, http.StatusRequestEntityTooLarge, msgBodyTooLarge)
+				p.writeErrorPage(w, http.StatusRequestEntityTooLarge, msgBodyTooLarge)
 				return
 			}
 			p.logger.Warn("funnel: proxy to target failed", "subdomain", subdomain, "label", label, "target", targetAddr, "error", err)
@@ -579,11 +583,8 @@ func (p *Pool) limitsFor(subdomain string) *orgLimits {
 
 // Messages shown to funnel visitors when a limit is hit.
 const (
-	ownership = `If you are the owner of this funnel,
-you should aknowledge the ownscale.net funnel limits.`
-	// TODO: more user friendly messages and link to docs
-	msgTooManyRequests = "This site is receiving too many requests. Try again in a moment. " + ownership
-	msgBodyTooLarge    = "The request body is too large. " + ownership
+	msgTooManyRequests = "This site is receiving too many requests. Try again in a moment."
+	msgBodyTooLarge    = "The request body is too large."
 )
 
 var errorPage = template.Must(template.New("error").Parse(`<!DOCTYPE html>
@@ -598,7 +599,8 @@ main { max-width: 32rem; padding: 2rem; text-align: center; }
 .brand { display: inline-flex; align-items: center; gap: .5rem; margin-bottom: 1.5rem; font-weight: 600; font-size: 1.125rem; color: #111827; }
 .brand svg { width: 1.75rem; height: 1.75rem; }
 h1 { font-size: 1.5rem; margin: 0 0 .5rem; }
-p { margin: 0; color: #555; }
+p { margin: 0 0 .75rem; color: #555; }
+a { color: #2563eb; }
 </style>
 </head>
 <body>
@@ -609,6 +611,7 @@ ownscale
 </div>
 <h1>{{.Status}} {{.Title}}</h1>
 <p>{{.Message}}</p>
+<p>If you own this funnel, see the <a href="{{.LimitsURL}}">funnel limits</a>.</p>
 </main>
 </body>
 </html>
@@ -616,7 +619,7 @@ ownscale
 
 // writeErrorPage responds with a small HTML page, since funnel visitors are
 // usually people with a browser.
-func writeErrorPage(w http.ResponseWriter, status int, message string) {
+func (p *Pool) writeErrorPage(w http.ResponseWriter, status int, message string) {
 	h := w.Header()
 	h.Set("Content-Type", "text/html; charset=utf-8")
 	h.Set("X-Content-Type-Options", "nosniff")
@@ -625,7 +628,7 @@ func writeErrorPage(w http.ResponseWriter, status int, message string) {
 	h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'")
 	w.WriteHeader(status)
 	_ = errorPage.Execute(w, struct {
-		Status         int
-		Title, Message string
-	}{status, http.StatusText(status), message})
+		Status                    int
+		Title, Message, LimitsURL string
+	}{status, http.StatusText(status), message, p.limitsURL})
 }
