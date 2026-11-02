@@ -49,10 +49,13 @@ type Queries interface {
 	GetFunnelRouteBySubdomainAndLabel(ctx context.Context, arg sqlcgen.GetFunnelRouteBySubdomainAndLabelParams) (sqlcgen.FunnelRoute, error)
 }
 
-// HeadscaleClients returns a running organization's headscale client,
-// without waking it. Implemented by *orgs.Service.
-type HeadscaleClients interface {
+// Orgs gives access to running organizations' headscale instances, without
+// waking them. Implemented by *orgs.Service.
+type Orgs interface {
 	Client(subdomain string) (*hscl.Client, error)
+	// LookupPort returns the TCP port of subdomain's headscale instance, or
+	// false if none is running.
+	LookupPort(subdomain string) (int, bool)
 }
 
 // Pool proxies incoming funnel HTTP requests into the target
@@ -61,7 +64,7 @@ type HeadscaleClients interface {
 // received a funnel request.
 type Pool struct {
 	queries Queries
-	hs      HeadscaleClients
+	orgs    Orgs
 	dataDir string
 	logger  *slog.Logger
 
@@ -124,36 +127,26 @@ func (t *tunnel) close() error {
 	return t.srv.Close()
 }
 
-// PortLookup returns the TCP port for subdomain's headscale instance, or
-// false if no instance is running. Implemented by *orgs.Service.
-type PortLookup interface {
-	LookupPort(subdomain string) (int, bool)
-}
-
-// NewPool builds a Pool. dataDir is used to give each org's tsnet.Server
-// a stable on-disk state directory (funnel-tsnet/<subdomain>) so it
-// registers as a stable tailnet node across process restarts instead of
-// re-registering on every request. portLookup maps subdomains to the TCP
-// port where their in-process headscale instance is listening. limits sets
-// the request body size and each organization's rate and concurrency limits.
-// baseDomain is where the docs are served, linked from the error pages.
-func NewPool(queries Queries, hs HeadscaleClients, dataDir string, logger *slog.Logger, portLookup PortLookup, limits config.FunnelConfig, baseDomain string) *Pool {
+// NewPool builds a Pool. Each org's tsnet.Server keeps its state under
+// cfg.DataDir, so it stays the same tailnet node across restarts. cfg.Funnel
+// sets the limits, and the error pages link to the docs on cfg.BaseDomain.
+func NewPool(queries Queries, orgs Orgs, cfg *config.Config, logger *slog.Logger) *Pool {
 	// The symptoms of having this enabled: only funnels from one org work,
 	// all others timeout.
 	netns.SetEnabled(false)
 
 	return &Pool{
 		queries:   queries,
-		hs:        hs,
-		dataDir:   dataDir,
+		orgs:      orgs,
+		dataDir:   cfg.DataDir,
 		logger:    logger,
-		cfg:       limits,
-		limitsURL: "https://" + baseDomain + "/docs/features/funnels/#limits",
+		cfg:       cfg.Funnel,
+		limitsURL: "https://" + cfg.BaseDomain + "/docs/features/funnels/#limits",
 		servers:   make(map[string]*tunnel),
 		limits:    make(map[string]*orgLimits),
 		upTimeout: funnelUpTimeout,
 		controlURL: func(subdomain string) (string, error) {
-			port, ok := portLookup.LookupPort(subdomain)
+			port, ok := orgs.LookupPort(subdomain)
 			if !ok {
 				return "", fmt.Errorf("no headscale instance running for %q", subdomain)
 			}
@@ -287,7 +280,7 @@ func (p *Pool) ServeHTTP(w http.ResponseWriter, r *http.Request, label, subdomai
 
 	// A sleeping org has no online machines, so its funnel target is offline
 	// too. Waking it would only let anyone keep orgs awake.
-	client, err := p.hs.Client(subdomain)
+	client, err := p.orgs.Client(subdomain)
 	if err != nil {
 		http.Error(w, "funnel target offline", http.StatusServiceUnavailable)
 		return

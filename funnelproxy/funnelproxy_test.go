@@ -32,14 +32,6 @@ import (
 	"tailscale.com/types/key"
 )
 
-// fakePortLookup satisfies PortLookup for tests; returns a fixed port for
-// any subdomain.
-type fakePortLookup struct{ port int }
-
-func (f *fakePortLookup) LookupPort(_ string) (int, bool) { return f.port, f.port != 0 }
-
-func defaultPortLookup() *fakePortLookup { return &fakePortLookup{port: 19999} }
-
 func TestParseHost(t *testing.T) {
 	const base = "example.com"
 	tests := []struct {
@@ -89,13 +81,16 @@ func (f *fakeQueries) GetFunnelRouteBySubdomainAndLabel(_ context.Context, arg s
 	return route, nil
 }
 
-// fakeHeadscaleClients is a funnelproxy.HeadscaleClients test double.
-type fakeHeadscaleClients struct {
+// fakeOrgs is an Orgs test double; every organization's headscale runs on
+// the same port.
+type fakeOrgs struct {
 	client *hscl.Client
 	err    error
 }
 
-func (f *fakeHeadscaleClients) Client(string) (*hscl.Client, error) {
+func (f *fakeOrgs) LookupPort(string) (int, bool) { return 19999, true }
+
+func (f *fakeOrgs) Client(string) (*hscl.Client, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -103,7 +98,7 @@ func (f *fakeHeadscaleClients) Client(string) (*hscl.Client, error) {
 }
 
 func TestServeHTTPRouteNotFound(t *testing.T) {
-	pool := NewPool(&fakeQueries{routes: map[string]sqlcgen.FunnelRoute{}}, &fakeHeadscaleClients{}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup(), testLimits(1<<20), "example.com")
+	pool := NewPool(&fakeQueries{routes: map[string]sqlcgen.FunnelRoute{}}, &fakeOrgs{}, testConfig(t, 1<<20), slog.New(slog.DiscardHandler))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -115,7 +110,7 @@ func TestServeHTTPRouteNotFound(t *testing.T) {
 }
 
 func TestServeHTTPQueriesError(t *testing.T) {
-	pool := NewPool(&fakeQueries{err: errors.New("boom")}, &fakeHeadscaleClients{}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup(), testLimits(1<<20), "example.com")
+	pool := NewPool(&fakeQueries{err: errors.New("boom")}, &fakeOrgs{}, testConfig(t, 1<<20), slog.New(slog.DiscardHandler))
 
 	req := httptest.NewRequest(http.MethodGet, "/", nil)
 	rec := httptest.NewRecorder()
@@ -214,11 +209,11 @@ func TestServeHTTP(t *testing.T) {
 			queries := &fakeQueries{routes: map[string]sqlcgen.FunnelRoute{
 				"acme/web": {ID: "1", Label: "web", TargetNodeID: tt.targetID, TargetPort: 8080},
 			}}
-			hs := &fakeHeadscaleClients{}
+			hs := &fakeOrgs{}
 			if tt.asleep {
 				hs.err = errors.New("organization not running")
 			}
-			pool := NewPool(queries, hs, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup(), testLimits(maxBody), "example.com")
+			pool := NewPool(queries, hs, testConfig(t, maxBody), slog.New(slog.DiscardHandler))
 			pool.servers["acme"] = fakeTunnel(backend)
 			if tt.limits != nil {
 				pool.limits["acme"] = tt.limits
@@ -251,9 +246,13 @@ func TestServeHTTP(t *testing.T) {
 	}
 }
 
-// testLimits returns funnel limits that only restrict the body size.
-func testLimits(maxBody int64) config.FunnelConfig {
-	return config.FunnelConfig{MaxBodyBytes: maxBody, RatePerSecond: float64(rate.Inf), RateBurst: 1, MaxConcurrent: 1024}
+// testConfig returns a config whose funnel limits only restrict the body size.
+func testConfig(t *testing.T, maxBody int64) *config.Config {
+	return &config.Config{
+		DataDir:    t.TempDir(),
+		BaseDomain: "example.com",
+		Funnel:     config.FunnelConfig{MaxBodyBytes: maxBody, RatePerSecond: float64(rate.Inf), RateBurst: 1, MaxConcurrent: 1024},
+	}
 }
 
 func TestServeHTTPLimitsFromConfig(t *testing.T) {
@@ -264,8 +263,10 @@ func TestServeHTTPLimitsFromConfig(t *testing.T) {
 	queries := &fakeQueries{routes: map[string]sqlcgen.FunnelRoute{
 		"acme/web": {ID: "1", Label: "web", TargetNodeID: "1", TargetPort: 8080},
 	}}
-	limits := config.FunnelConfig{MaxBodyBytes: 1 << 20, RatePerSecond: 0.001, RateBurst: 1, MaxConcurrent: 1}
-	pool := NewPool(queries, &fakeHeadscaleClients{}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup(), limits, "example.com")
+	cfg := testConfig(t, 1<<20)
+	cfg.Funnel.RatePerSecond = 0.001
+	cfg.Funnel.MaxConcurrent = 1
+	pool := NewPool(queries, &fakeOrgs{}, cfg, slog.New(slog.DiscardHandler))
 	pool.servers["acme"] = fakeTunnel(backend)
 
 	for i, want := range []int{http.StatusOK, http.StatusTooManyRequests} {
@@ -379,7 +380,7 @@ func TestEnsureFunnelAuthKey(t *testing.T) {
 // same on-disk state directory.
 func TestGetOrCreateServerConcurrentDedup(t *testing.T) {
 	client, f := newFakeUserPreAuthKeyServer(t, `{"users":[]}`)
-	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{client: client}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup(), testLimits(1<<20), "example.com")
+	pool := NewPool(&fakeQueries{}, &fakeOrgs{client: client}, testConfig(t, 1<<20), slog.New(slog.DiscardHandler))
 	pool.upTimeout = 2 * time.Second
 
 	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
@@ -417,7 +418,7 @@ func TestGetOrCreateServerUpTimeout(t *testing.T) {
 	t.Cleanup(blockServer.Close)
 
 	client, f := newFakeUserPreAuthKeyServer(t, `{"users":[]}`)
-	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{client: client}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup(), testLimits(1<<20), "example.com")
+	pool := NewPool(&fakeQueries{}, &fakeOrgs{client: client}, testConfig(t, 1<<20), slog.New(slog.DiscardHandler))
 	pool.upTimeout = 200 * time.Millisecond
 	pool.controlURL = func(string) (string, error) { return blockServer.URL, nil }
 
@@ -453,7 +454,7 @@ func TestEvict(t *testing.T) {
 		return srv
 	}
 
-	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup(), testLimits(1<<20), "example.com")
+	pool := NewPool(&fakeQueries{}, &fakeOrgs{}, testConfig(t, 1<<20), slog.New(slog.DiscardHandler))
 	pool.servers["aaaa"] = newTunnel(newServer())
 	pool.servers["bbbb"] = newTunnel(newServer())
 
@@ -472,7 +473,7 @@ func TestForget(t *testing.T) {
 	control := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { <-r.Context().Done() }))
 	t.Cleanup(control.Close)
 
-	pool := NewPool(&fakeQueries{}, &fakeHeadscaleClients{}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup(), testLimits(1<<20), "example.com")
+	pool := NewPool(&fakeQueries{}, &fakeOrgs{}, testConfig(t, 1<<20), slog.New(slog.DiscardHandler))
 	for _, sub := range []string{"aaaa", "bbbb"} {
 		srv := &tsnet.Server{Dir: pool.stateDir(sub), ControlURL: control.URL, AuthKey: "tskey-test", Hostname: "forget-test"}
 		if err := srv.Start(); err != nil {
@@ -519,7 +520,7 @@ func TestServeHTTPReusesConnections(t *testing.T) {
 	queries := &fakeQueries{routes: map[string]sqlcgen.FunnelRoute{
 		"acme/web": {ID: "1", Label: "web", TargetNodeID: "1", TargetPort: 8080},
 	}}
-	pool := NewPool(queries, &fakeHeadscaleClients{}, t.TempDir(), slog.New(slog.DiscardHandler), defaultPortLookup(), testLimits(1<<20), "example.com")
+	pool := NewPool(queries, &fakeOrgs{}, testConfig(t, 1<<20), slog.New(slog.DiscardHandler))
 	pool.servers["acme"] = fakeTunnel(backend)
 	t.Cleanup(pool.Close)
 
