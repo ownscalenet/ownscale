@@ -254,13 +254,3 @@ func (o realOrg) headscaleUser(t *testing.T, id string) hscl.User {
 	t.Fatalf("headscale user %s not found in %+v", id, users)
 	return hscl.User{}
 }
-
-// headscaleUserOf returns member's headscale user ID, re-read from the database.
-func headscaleUserOf(t *testing.T, h *Handlers, member sqlcgen.User) string {
-	t.Helper()
-	got, err := h.queries.GetUserByID(t.Context(), member.ID)
-	if err != nil {
-		t.Fatalf("GetUserByID: %v", err)
-	}
-	return got.HeadscaleUserID
-}

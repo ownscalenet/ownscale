@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net"
 	"net/netip"
 	"reflect"
@@ -320,41 +319,4 @@ type rpcErrorObject struct {
 	Code    int             `json:"code"`
 	Message string          `json:"message"`
 	Data    json.RawMessage `json:"data,omitempty"`
-}
-
-// appCode extracts the application-level protocolError code carried in the
-// error's Data field, or "" if there is none (e.g. a transport-level error
-// reported directly by the jrpc2 library, such as a JSON parse failure).
-func (e *rpcErrorObject) appCode() string {
-	if e == nil || len(e.Data) == 0 {
-		return ""
-	}
-	var data protocolError
-	if err := json.Unmarshal(e.Data, &data); err != nil {
-		return ""
-	}
-	return data.Code
-}
-
-func encodeLine(t *testing.T, w io.Writer, req rpcRequest) {
-	t.Helper()
-	body, err := json.Marshal(req)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if _, err := w.Write(append(body, '\n')); err != nil {
-		t.Fatal(err)
-	}
-}
-
-// encodeLineAsync is encodeLine's counterpart for use from a background
-// goroutine, where calling (*testing.T).Fatal is not allowed; marshal
-// failures here would be a test bug (static literals), so they panic
-// instead, and write failures are surfaced by the reading side timing out.
-func encodeLineAsync(w io.Writer, req rpcRequest) {
-	body, err := json.Marshal(req)
-	if err != nil {
-		panic(err)
-	}
-	_, _ = w.Write(append(body, '\n'))
 }
