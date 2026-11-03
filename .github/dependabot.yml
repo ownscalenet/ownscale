@@ -20,6 +20,9 @@ updates:
     groups:
       npm:
         patterns: ["*"]
+        # Bumps ship a prebuilt wasm that has been broken upstream before;
+        # keep them in their own PR so CI's check:wasm gates them alone.
+        exclude-patterns: ["@tailscale/connect"]
 
   - package-ecosystem: docker
     directories:

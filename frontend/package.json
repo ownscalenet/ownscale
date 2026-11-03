@@ -9,6 +9,7 @@
     "lint": "oxlint",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
+    "check:wasm": "node scripts/check-wasm.mjs",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -16,7 +17,7 @@
     "@fontsource-variable/geist-mono": "^5.3.0",
     "@headlessui/react": "^2.2.10",
     "@simplewebauthn/browser": "^14.0.0",
-    "@tailscale/connect": "1.103.179-t316b22b77-gc7c420e02",
+    "@tailscale/connect": "1.104.4-t938213198-g700acb35f",
     "@tanstack/react-query": "^5.105.0",
     "diff": "^9.0.0",
     "lucide-react": "^1.65.0",

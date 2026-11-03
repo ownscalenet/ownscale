@@ -25,9 +25,7 @@ frontend: docs
 	npm --prefix frontend ci
 	npm --prefix frontend run build
 	# Tailscale client compiled to WASM; needed for browser SSH page.
-	cp frontend/node_modules/@tailscale/connect/main.wasm.br \
-	   frontend/node_modules/@tailscale/connect/main.wasm.gz \
-	   webui/dist/assets/
+	cp frontend/node_modules/@tailscale/connect/main.wasm.zst webui/dist/assets/
 
 # Docs site for the dev stack, which bind-mounts it over the copy that
 # etc/caddy/Dockerfile renders into the Caddy image.

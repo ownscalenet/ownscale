@@ -6,30 +6,23 @@
 package webui
 
 import (
-	"bytes"
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
+	"errors"
 	"io/fs"
 	"net/http"
-	"strings"
-	"time"
+
+	"tailscale.com/tsweb/compserve"
 )
 
 //go:embed all:dist
 var distFS embed.FS
 
 // wasmPath is the Tailscale WebAssembly client the browser SSH page loads.
-// Only its precompressed copies are shipped (the raw module is 27MB), so
-// it is served straight from them, picked by the request's Accept-Encoding.
+// Only its zstd copy (wasmPath + ".zst") is embedded, because the raw module
+// is 27MB. Clients that don't accept zstd are served it decompressed.
 const wasmPath = "assets/main.wasm"
-
-// wasmEncodings maps a Content-Encoding to the embedded file holding the
-// module in that encoding, best first.
-var wasmEncodings = []struct{ encoding, file string }{
-	{"br", wasmPath + ".br"},
-	{"gzip", wasmPath + ".gz"},
-}
 
 // Handler returns an http.Handler serving the embedded frontend build. When
 // development is true, every response gets "Cache-Control: no-store";
@@ -82,30 +75,25 @@ func Handler(development bool) http.Handler {
 	})
 }
 
-// serveWasm answers the Tailscale WebAssembly module from the embedded
-// precompressed copy matching the request's Accept-Encoding. A client that
-// accepts neither encoding gets a 404: every browser that can run the
-// module supports at least gzip.
+// serveWasm answers the Tailscale WebAssembly module from the embedded zstd
+// copy, passed through to clients that accept zstd and decompressed for the
+// rest.
 func serveWasm(w http.ResponseWriter, r *http.Request, sub fs.FS, etags map[string]string) {
-	w.Header().Add("Vary", "Accept-Encoding")
-	accept := r.Header.Get("Accept-Encoding")
-	for _, e := range wasmEncodings {
-		if !strings.Contains(accept, e.encoding) {
-			continue
-		}
-		// TODO: better not to load the whole file into memory and
-		// instead read twice.
-		body, err := fs.ReadFile(sub, e.file)
-		if err != nil {
-			continue
-		}
-		w.Header().Set("Content-Type", "application/wasm")
-		w.Header().Set("Content-Encoding", e.encoding)
-		w.Header().Set("ETag", etags[e.file])
-		http.ServeContent(w, r, "", time.Time{}, bytes.NewReader(body))
+	w.Header().Set("Content-Type", "application/wasm")
+	w.Header().Set("ETag", etags[wasmPath+compserve.Zstd.Ext])
+	err := compserve.ServeFile(w, r, sub, wasmPath, compserve.Options{
+		Encodings: []compserve.Encoding{compserve.Zstd},
+	})
+	if err == nil {
 		return
 	}
-	http.NotFound(w, r)
+	w.Header().Del("ETag")
+	w.Header().Del("Content-Encoding")
+	if errors.Is(err, fs.ErrNotExist) {
+		http.NotFound(w, r)
+		return
+	}
+	http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
 }
 
 // contentETags returns the ETag of every file in fsys, keyed by its path.

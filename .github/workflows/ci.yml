@@ -72,7 +72,12 @@ jobs:
           node-version: 24
           cache: npm
           cache-dependency-path: frontend/package-lock.json
+      # Go's Node runner executes the Tailscale WASM client in check:wasm.
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
       - run: npm ci
       - run: npm run lint
       - run: npm run format:check
       - run: npx tsc -b
+      - run: npm run check:wasm

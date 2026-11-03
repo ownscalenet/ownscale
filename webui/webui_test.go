@@ -1,10 +1,13 @@
 package webui
 
 import (
+	"bytes"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"tailscale.com/util/zstdframe"
 )
 
 func TestAssetPath(t *testing.T) {
@@ -125,39 +128,44 @@ func TestHandlerRevalidation(t *testing.T) {
 }
 
 // TestHandlerServesWasm covers the Tailscale WebAssembly module, which is
-// only shipped precompressed. It is copied into dist by the Makefile's
+// only embedded zstd-compressed. It is copied into dist by the Makefile's
 // "frontend" target, so skip when the frontend hasn't been built.
 func TestHandlerServesWasm(t *testing.T) {
-	if _, err := distFS.ReadFile("dist/" + wasmPath + ".gz"); err != nil {
+	compressed, err := distFS.ReadFile("dist/" + wasmPath + ".zst")
+	if err != nil {
 		t.Skip("frontend not built: no embedded wasm module")
+	}
+	raw, err := zstdframe.AppendDecode(nil, compressed)
+	if err != nil {
+		t.Fatalf("decoding embedded wasm: %v", err)
 	}
 	h := Handler(false)
 
 	tests := []struct {
 		name         string
 		accept       string
-		wantCode     int
 		wantEncoding string
+		wantBody     []byte
 	}{
-		{"brotli preferred", "br, gzip", http.StatusOK, "br"},
-		{"gzip only", "gzip", http.StatusOK, "gzip"},
-		{"no supported encoding", "identity", http.StatusNotFound, ""},
+		{"zstd", "gzip, deflate, br, zstd", "zstd", compressed},
+		{"no zstd", "gzip, br", "", raw},
+		{"no Accept-Encoding", "", "", raw},
+		{"zstd rejected", "zstd;q=0, gzip", "", raw},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			req := httptest.NewRequest(http.MethodGet, "/"+wasmPath, nil)
-			req.Header.Set("Accept-Encoding", tt.accept)
+			if tt.accept != "" {
+				req.Header.Set("Accept-Encoding", tt.accept)
+			}
 			rec := httptest.NewRecorder()
 			h.ServeHTTP(rec, req)
 
-			if rec.Code != tt.wantCode {
-				t.Fatalf("status = %d, want %d", rec.Code, tt.wantCode)
+			if rec.Code != http.StatusOK {
+				t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
 			}
 			if got := rec.Header().Get("Content-Encoding"); got != tt.wantEncoding {
 				t.Errorf("Content-Encoding = %q, want %q", got, tt.wantEncoding)
-			}
-			if tt.wantCode != http.StatusOK {
-				return
 			}
 			if got := rec.Header().Get("Content-Type"); got != "application/wasm" {
 				t.Errorf("Content-Type = %q, want application/wasm", got)
@@ -165,8 +173,8 @@ func TestHandlerServesWasm(t *testing.T) {
 			if rec.Header().Get("ETag") == "" {
 				t.Error("ETag is empty")
 			}
-			if rec.Body.Len() == 0 {
-				t.Error("body is empty")
+			if !bytes.Equal(rec.Body.Bytes(), tt.wantBody) {
+				t.Errorf("body differs: got %d bytes, want %d", rec.Body.Len(), len(tt.wantBody))
 			}
 		})
 	}

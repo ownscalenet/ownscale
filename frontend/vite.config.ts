@@ -5,8 +5,8 @@ import fs from 'node:fs'
 import path from 'node:path'
 
 // wasmPath is where the browser SSH page loads the Tailscale WebAssembly
-// client from. The production build copies the module's precompressed
-// copies there (see the Makefile's "frontend" target), so the dev server
+// client from. The production build copies the module's zstd
+// copy there (see the Makefile's "frontend" target), so the dev server
 // has to serve the uncompressed one itself.
 const wasmPath = '/assets/main.wasm'
 

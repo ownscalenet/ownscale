@@ -66,12 +66,11 @@ jobs:
           npm ci
           npm run build
           # Tailscale WASM client for browser SSH; same as `make frontend`.
-          cp node_modules/@tailscale/connect/main.wasm.br \
-             node_modules/@tailscale/connect/main.wasm.gz \
-             ../webui/dist/assets/
+          cp node_modules/@tailscale/connect/main.wasm.zst ../webui/dist/assets/
           test -s ../webui/dist/assets/index.js
-          test -s ../webui/dist/assets/main.wasm.br
-          test -s ../webui/dist/assets/main.wasm.gz
+          test -s ../webui/dist/assets/main.wasm.zst
+          # Fails on a wasm client that panics at startup (uses the runner's Go).
+          npm run check:wasm
 
       - name: Resolve source revision
         id: revision
@@ -144,9 +143,14 @@ jobs:
             "http://$address/assets/index.js" -o "$RUNNER_TEMP/index.js"
           cmp source/webui/dist/assets/index.js "$RUNNER_TEMP/index.js"
           curl --fail --silent --show-error -H 'Host: console.example.com' \
+            -H 'Accept-Encoding: zstd' \
+            "http://$address/assets/main.wasm" -o "$RUNNER_TEMP/main.wasm.zst"
+          cmp source/webui/dist/assets/main.wasm.zst "$RUNNER_TEMP/main.wasm.zst"
+          # Clients without zstd get the module decompressed.
+          curl --fail --silent --show-error -H 'Host: console.example.com' \
             -H 'Accept-Encoding: gzip' \
-            "http://$address/assets/main.wasm" -o "$RUNNER_TEMP/main.wasm.gz"
-          cmp source/webui/dist/assets/main.wasm.gz "$RUNNER_TEMP/main.wasm.gz"
+            "http://$address/assets/main.wasm" -o "$RUNNER_TEMP/main.wasm"
+          zstd -dc source/webui/dist/assets/main.wasm.zst | cmp - "$RUNNER_TEMP/main.wasm"
       - name: Publish release tags
         run: |
           for image in ownscale ownscale-caddy; do
