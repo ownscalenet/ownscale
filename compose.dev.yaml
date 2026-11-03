@@ -44,6 +44,8 @@ services:
       start_period: 5s
 
   ownscale:
+    image: ownscale:latest
+    build: .
     depends_on:
       local-ca-init:
         condition: service_completed_successfully
@@ -67,6 +69,10 @@ services:
       OWNSCALE_FIXED_SUBDOMAINS: aaaa,bbbb,cccc,dddd,eeee,ffff,gggg,hhhh,iiii,jjjj
 
   caddy:
+    image: ownscale-caddy:latest
+    build:
+      context: .
+      dockerfile: etc/caddy/Dockerfile
     depends_on:
       local-ca-init:
         condition: service_completed_successfully

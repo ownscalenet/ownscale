@@ -21,17 +21,12 @@ Check the [requirements]({{< relref "requirements.md" >}}) first.
 ### Download the release files
 
 ```sh
-gh auth login  # an account with access to the private ownscale repository
 mkdir ownscale && cd ownscale
-TAG=v0.1.0     # a release whose deployment assets were published successfully
-gh release download "$TAG" --repo ownscalenet/ownscale \
-  --pattern compose.yaml --pattern example.env
+TAG=v0.1.0     # pick a release from github.com/ownscalenet/ownscale/releases
+for f in compose.yaml example.env; do
+  curl -fsSLO "https://raw.githubusercontent.com/ownscalenet/ownscale/$TAG/$f"
+done
 ```
-
-The release's `compose.yaml` pins both images to that version, so no source
-checkout is needed. Assets appear after the release deployment workflow
-succeeds, so a newly published release may still be building. Latest-release
-shortcuts skip prereleases.
 
 ### Configure
 
@@ -46,22 +41,11 @@ Edit `.env`. At minimum, set:
 | `BASE_DOMAIN` | your wildcard domain, e.g. `example.com` |
 | `CONTENT_DOMAIN` | optional separate domain for user content |
 | `OWNSCALE_AUTH_SESSION_SECRET` | a long random string, e.g. from `openssl rand -hex 32` |
+| `OWNSCALE_VERSION` | the release you downloaded, e.g. `v0.1.0` |
 | `DNS_PROVIDER` | `azure`, `cloudflare`, `hetzner` or `rfc2136`, plus its credentials |
 
 Then add at least one login provider, if you want more
 than passkeys.
-
-### Log in to the registry
-
-Both GHCR packages are private. Use a token with `read:packages` and access
-to `ownscale` and `ownscale-caddy`, authorized for organization SSO if
-required:
-
-```sh
-printf '%s' "$GHCR_READ_TOKEN" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
-```
-
-Don't put tokens in `.env` or in shell command arguments.
 
 ### Start
 
@@ -80,12 +64,26 @@ creates your organization, and you become its owner.
 
 {{% /steps %}}
 
-## Installing from source
+## Upgrading
 
-Clone the repository, copy `example.env` to `.env`, configure it, then run:
+Download `compose.yaml` and `example.env` for the new release as above,
+compare `example.env` with your `.env` for new settings, set
+`OWNSCALE_VERSION` to the new release, then run:
 
 ```sh
-docker compose up -d --build
+docker compose pull
+docker compose up -d
+```
+
+## Installing from source
+
+Clone the repository, copy `example.env` to `.env`, configure it, then build
+the images and run them:
+
+```sh
+docker build -t ghcr.io/ownscalenet/ownscale:dev .
+docker build -t ghcr.io/ownscalenet/ownscale-caddy:dev -f etc/caddy/Dockerfile .
+OWNSCALE_VERSION=dev docker compose up -d
 ```
 
 ## Next steps

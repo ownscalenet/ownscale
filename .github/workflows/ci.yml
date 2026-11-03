@@ -27,14 +27,12 @@ jobs:
       - run: go vet ./...
       - run: go fix ./...
       - run: go test -race -shuffle=on -covermode=atomic -coverprofile=coverage.out ./...
-      - name: Validate release deployment files
+      - name: Validate Compose files
+        env:
+          OWNSCALE_AUTH_SESSION_SECRET: ci
         run: |
-          go run ./tools/releaseassets -tag v0.0.0-ci -source . -output "$RUNNER_TEMP/deployment"
-          cp "$RUNNER_TEMP/deployment/example.env" "$RUNNER_TEMP/deployment/.env"
-          # example.env leaves the secret empty on purpose; compose requires one.
-          echo OWNSCALE_AUTH_SESSION_SECRET=ci >> "$RUNNER_TEMP/deployment/.env"
-          cd "$RUNNER_TEMP/deployment"
-          docker compose config --quiet
+          docker compose -f compose.yaml config --quiet
+          docker compose -f compose.yaml -f compose.dev.yaml config --quiet
       - uses: actions/upload-artifact@v4
         with:
           name: coverage

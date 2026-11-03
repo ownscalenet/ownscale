@@ -1,11 +1,11 @@
-# Production stack: ownscale behind Caddy.
-# Local development layers compose.dev.yaml on top (run `make dev-up`).
+# Production stack: ownscale behind Caddy, using the published images.
+# Local development layers compose.dev.yaml on top (run `make dev-up`), which
+# builds the images from source instead.
 name: ownscale
 
 services:
   ownscale:
-    image: ownscale:latest
-    build: .
+    image: ghcr.io/ownscalenet/ownscale:${OWNSCALE_VERSION:-latest}
     user: "${HOST_UID:-0}:${HOST_GID:-0}"
     environment:
       OWNSCALE_BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
@@ -71,10 +71,7 @@ services:
       start_period: 5s
 
   caddy:
-    image: ownscale-caddy:latest
-    build:
-      context: .
-      dockerfile: etc/caddy/Dockerfile
+    image: ghcr.io/ownscalenet/ownscale-caddy:${OWNSCALE_VERSION:-latest}
     environment:
       BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
       CONTENT_DOMAIN: ${CONTENT_DOMAIN:-${BASE_DOMAIN:-ownscale.test}}

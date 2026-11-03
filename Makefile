@@ -2,7 +2,7 @@
 # app that builds directly into webui/dist, which is embedded into
 # the Go binary via go:embed.
 
-.PHONY: build frontend backend osa restore test coverage archive
+.PHONY: build frontend backend osa restore test coverage deploy
 .PHONY: docker-image caddy-image purge ci docs load-cert dev-up devbox stress
 .PHONY: e2e e2e-deps e2e-setup e2e-ssh
 .PHONY: e2e-frontend e2e-frontend-run e2e-connectivity
@@ -149,22 +149,23 @@ coverage:
 	BROWSER=$(BROWSER) go tool cover -html=coverage.out
 
 # Build the ownscale Docker image locally, tagged to match the "image:"
-# name compose.yaml expects for the ownscale service.
+# name compose.dev.yaml expects for the ownscale service.
 docker-image:
 	docker build -t $(DOCKER_IMAGE) .
 
 caddy-image:
 	docker build -t $(CADDY_IMAGE) -f etc/caddy/Dockerfile .
 
-# ghetto deploy script
-# Send the ownscale and caddy images and compose.yaml to remote; the remote
-# only needs those plus its own .env.
-archive: docker-image caddy-image
-	docker save $(DOCKER_IMAGE) $(CADDY_IMAGE) | gzip | ssh az 'gzip -d | docker load'
+# Deploy a published release to the az host: make deploy VERSION=v0.1.0.
+# The remote keeps its own .env; etc/ is baked into the Caddy image.
+VERSION ?=
+deploy:
+	@test -n "$(VERSION)" || { echo "usage: make deploy VERSION=vX.Y.Z"; exit 1; }
 	ssh az mkdir -p ownscale
-	scp compose.yaml az:ownscale/compose.yaml
-	scp -r etc az:ownscale
-	scp Makefile az:ownscale
+	scp compose.yaml Makefile az:ownscale/
+	ssh az 'cd ownscale && touch .env && sed -i "/^OWNSCALE_VERSION=/d" .env && \
+		echo OWNSCALE_VERSION=$(VERSION) >> .env && \
+		docker compose pull && docker compose up -d'
 
 purge:
 	docker compose down

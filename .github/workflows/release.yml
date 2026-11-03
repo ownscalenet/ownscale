@@ -37,42 +37,23 @@ jobs:
           gh release view "$TAG" --json isDraft --jq '.isDraft' > "$RUNNER_TEMP/is-draft"
           test "$(cat "$RUNNER_TEMP/is-draft")" = false
 
-      # Automation can be newer than the tag when backfilling old releases.
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event.repository.default_branch }}
-          path: automation
-          persist-credentials: false
       - uses: actions/checkout@v4
         with:
           ref: refs/tags/${{ env.TAG }}
           path: source
           persist-credentials: false
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: automation/go.mod
-          cache-dependency-path: automation/go.sum
 
-      - name: Generate deployment assets
-        working-directory: automation
+      - name: Validate Compose images
+        working-directory: source
         run: |
-          go test ./tools/releaseassets
-          go run ./tools/releaseassets -tag "$TAG" -source ../source -output ../deployment
-
-      - name: Validate standalone Compose deployment
-        working-directory: deployment
-        run: |
-          cp example.env .env
-          # example.env leaves the secret empty on purpose; compose requires one.
-          echo OWNSCALE_AUTH_SESSION_SECRET=ci >> .env
-          docker compose config --format json > "$RUNNER_TEMP/compose.json"
+          OWNSCALE_VERSION="$TAG" OWNSCALE_AUTH_SESSION_SECRET=ci \
+            docker compose -f compose.yaml config --format json > "$RUNNER_TEMP/compose.json"
           jq -e --arg tag "$TAG" '
             (.services | keys) == ["caddy", "ownscale"] and
             .services.ownscale.image == ("ghcr.io/ownscalenet/ownscale:" + $tag) and
             .services.caddy.image == ("ghcr.io/ownscalenet/ownscale-caddy:" + $tag) and
             ([.services[] | has("build")] | any | not)
           ' "$RUNNER_TEMP/compose.json"
-          rm .env
 
       - uses: actions/setup-node@v4
         with:
@@ -156,31 +137,15 @@ jobs:
           curl --fail --silent --show-error -H 'Host: console.example.com' \
             "http://$address/assets/index.js" -o "$RUNNER_TEMP/index.js"
           cmp source/webui/dist/assets/index.js "$RUNNER_TEMP/index.js"
-      - name: Publish exact release tags
+      - name: Publish release tags
         run: |
-          docker push "ghcr.io/ownscalenet/ownscale:$TAG"
-          docker push "ghcr.io/ownscalenet/ownscale-caddy:$TAG"
-      - uses: actions/upload-artifact@v4
-        with:
-          name: deployment
-          path: |
-            deployment/compose.yaml
-            deployment/example.env
-          if-no-files-found: error
-
-  attach:
-    needs: build
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: deployment
-          path: deployment
-      - name: Attach deployment files
-        env:
-          GH_TOKEN: ${{ github.token }}
-          GH_REPO: ${{ github.repository }}
-          TAG: ${{ github.event.release.tag_name || inputs.tag }}
-        run: gh release upload "$TAG" deployment/compose.yaml deployment/example.env --clobber
+          for image in ownscale ownscale-caddy; do
+            docker push "ghcr.io/ownscalenet/$image:$TAG"
+          done
+          # Prereleases and backfills of older tags don't move latest.
+          if [ "$(gh release view --json tagName --jq .tagName)" = "$TAG" ]; then
+            for image in ownscale ownscale-caddy; do
+              docker tag "ghcr.io/ownscalenet/$image:$TAG" "ghcr.io/ownscalenet/$image:latest"
+              docker push "ghcr.io/ownscalenet/$image:latest"
+            done
+          fi

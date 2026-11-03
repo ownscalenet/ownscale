@@ -1,4 +1,4 @@
-# Built from the repository root (see compose.yaml) so the docs site in docs/
+# Built from the repository root (see compose.dev.yaml) so the docs site in docs/
 # can be rendered here.
 
 FROM caddy:2-builder AS builder
