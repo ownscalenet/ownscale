@@ -453,8 +453,8 @@ github.com/onsi/ginkgo v1.6.0/go.mod h1:lLunBs/Ym6LB5Z9jYTR76FiuTmxDTDusOGeTQH+W
 github.com/onsi/ginkgo v1.7.0/go.mod h1:lLunBs/Ym6LB5Z9jYTR76FiuTmxDTDusOGeTQH+WWjE=
 github.com/onsi/gomega v1.4.3/go.mod h1:ex+gbHU/CVuBBDIJjb2X0qEXbFg53c61hWP/1CpauHY=
 github.com/orisano/pixelmatch v0.0.0-20220722002657-fb0b55479cde/go.mod h1:nZgzbfBr3hhjoZnS66nKrHmduYNpc34ny7RK4z5/HM0=
-github.com/ownscalenet/headscale v0.29.7-1 h1:ReSSjbpOgA25T8pRBS5qXoyRrjattslGLxZ5P2L1L90=
-github.com/ownscalenet/headscale v0.29.7-1/go.mod h1:K1cO9s2exBluP0+xri4TbzGSw1pePQthymksh+htkJY=
+github.com/ownscalenet/headscale v0.29.7-2 h1:2OTOeAZui92WOZnoVbPYEJJKBKlHnphwFhJeae14hKQ=
+github.com/ownscalenet/headscale v0.29.7-2/go.mod h1:K1cO9s2exBluP0+xri4TbzGSw1pePQthymksh+htkJY=
 github.com/pandatix/go-abnf v0.5.1 h1:iyLvSu2Aq12iE0r4n948Qw21BHDuckLq/8WIXAAF+HI=
 github.com/pandatix/go-abnf v0.5.1/go.mod h1:VBmbtpFgQNEaQpyAvmi+Ecd9wAYJKzA3TmiB3L93sVg=
 github.com/pelletier/go-toml/v2 v2.4.3 h1:GTRvJQutkOSftxIFD5xw9aepkYNuPWmVJpffdDPYVpY=

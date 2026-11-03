@@ -29,7 +29,7 @@ require (
 	tailscale.com v1.105.0-pre.0.20261028221719-f7c1b8e52600
 )
 
-replace github.com/juanfont/headscale => github.com/ownscalenet/headscale v0.29.7-1
+replace github.com/juanfont/headscale => github.com/ownscalenet/headscale v0.29.7-2
 
 require (
 	atomicgo.dev/cursor v0.2.0 // indirect
