@@ -7,7 +7,7 @@ require (
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/creachadair/jrpc2 v1.3.6
 	github.com/descope/virtualwebauthn v1.0.5
-	github.com/go-jose/go-jose/v4 v4.1.6
+	github.com/go-jose/go-jose/v4 v4.1.7
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/gorilla/sessions v1.4.0
 	github.com/juanfont/headscale v0.29.4
