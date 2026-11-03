@@ -113,3 +113,21 @@
     animation: none;
   }
 }
+
+/* Deployed version, in the sidebar under the theme toggle and in the
+   homepage footer, right of it. */
+.ownscale-version {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  color: #6b7280;
+  user-select: text;
+}
+
+.dark .ownscale-version {
+  color: #9ca3af;
+}
+
+.ownscale-footer-version {
+  margin-left: auto;
+  align-self: center;
+}

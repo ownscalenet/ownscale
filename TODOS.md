@@ -12,4 +12,4 @@ http request logs. Should logs have a "component" field to filter by?
 - derp selection function in admin
 - advertised routes tags in machine listing
 - clarify tainet name, login server in frontend they are mixed
-
+- --help for makefile

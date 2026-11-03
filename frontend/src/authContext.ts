@@ -4,6 +4,7 @@ import type { Organization, User } from './api'
 export interface AuthState {
   user: User | null
   organization: Organization | null
+  version: string | null
   loading: boolean
   error: string | null
   refresh: () => Promise<void>
