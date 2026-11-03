@@ -319,7 +319,7 @@ func (h *Handlers) AuthCallback(w http.ResponseWriter, r *http.Request) {
 // redirect to. Browsers read a backslash as a slash, so `/\host` and `//host`
 // both point at another host. Backslashes and control characters are rejected.
 func isSafeNext(next string) bool {
-	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
+	if !strings.HasPrefix(next, "/") || (len(next) > 1 && (next[1] == '/' || next[1] == '\\')) {
 		return false
 	}
 	for _, c := range next {
