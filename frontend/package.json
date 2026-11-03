@@ -16,7 +16,7 @@
     "@fontsource-variable/geist-mono": "^5.3.0",
     "@headlessui/react": "^2.2.10",
     "@simplewebauthn/browser": "^14.0.0",
-    "@tailscale/connect": "1.103.179-t316b22b77-g1ca42dc9f",
+    "@tailscale/connect": "1.103.179-t316b22b77-gc7c420e02",
     "@tanstack/react-query": "^5.104.1",
     "diff": "^9.0.0",
     "lucide-react": "^1.55.0",
