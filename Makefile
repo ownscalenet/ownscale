@@ -18,6 +18,9 @@ export HOST_GID := $(shell id -g)
 
 # Dev stack domain, set in compose.dev.yaml.
 BASE_DOMAIN := ownscale.test
+# Shown in the console sidebar and the docs navbar.
+# Same <tag>-<sha> shape as the release workflow; -dirty marks uncommitted changes.
+export BUILD_VERSION := $(shell git describe --tags --abbrev=0 2>/dev/null || echo dev)-$(shell git rev-parse --short HEAD 2>/dev/null)$(shell git diff --quiet HEAD 2>/dev/null || echo -dirty)
 
 build: frontend backend
 
@@ -31,7 +34,7 @@ frontend: docs
 # etc/caddy/Dockerfile renders into the Caddy image.
 docs:
 	rm -rf etc/caddy/site
-	hugo --source docs --destination ../etc/caddy/site --minify
+	HUGO_PARAMS_VERSION=$(BUILD_VERSION) hugo --source docs --destination ../etc/caddy/site --minify
 
 ifneq ($(filter osa restore,$(MAKECMDGOALS)),)
 %:
@@ -149,10 +152,10 @@ coverage:
 # Build the ownscale Docker image locally, tagged to match the "image:"
 # name compose.dev.yaml expects for the ownscale service.
 docker-image:
-	docker build -t $(DOCKER_IMAGE) .
+	docker build --build-arg VERSION=$(BUILD_VERSION) -t $(DOCKER_IMAGE) .
 
 caddy-image:
-	docker build -t $(CADDY_IMAGE) -f etc/caddy/Dockerfile .
+	docker build --build-arg VERSION=$(BUILD_VERSION) -t $(CADDY_IMAGE) -f etc/caddy/Dockerfile .
 
 # Deploy a published release to the az host: make deploy VERSION=v0.1.0.
 # The remote keeps its own .env; etc/ is baked into the Caddy image.

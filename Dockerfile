@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1
 
 FROM golang:1.27-alpine AS build
+ARG VERSION=dev
 WORKDIR /src
 
 COPY go.mod go.sum ./
@@ -10,8 +11,8 @@ RUN --mount=type=cache,target=/go/pkg/mod \
 COPY . .
 RUN --mount=type=cache,target=/go/pkg/mod \
     --mount=type=cache,target=/root/.cache/go-build \
-    CGO_ENABLED=0 go build -o /out/ownscale ./cmd/ownscale && \
-    CGO_ENABLED=0 go build -o /out/osa ./cmd/osa
+    CGO_ENABLED=0 go build -ldflags "-X github.com/ownscalenet/ownscale/utils.Version=$VERSION" -o /out/ownscale ./cmd/ownscale && \
+    CGO_ENABLED=0 go build -ldflags "-X github.com/ownscalenet/ownscale/utils.Version=$VERSION" -o /out/osa ./cmd/osa
 
 FROM alpine:3
 RUN apk add --no-cache ca-certificates

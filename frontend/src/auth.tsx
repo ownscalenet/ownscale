@@ -16,6 +16,7 @@ const pendingPollMs = 3_000
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null)
   const [organization, setOrganization] = useState<Organization | null>(null)
+  const [version, setVersion] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -24,8 +25,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refresh = async () => {
     setError(null)
     try {
-      const { user, organization } = await getSession()
+      const { user, organization, version } = await getSession()
       setUser(user)
+      setVersion(version)
       setOrganization(organization)
     } catch (err) {
       if (err instanceof ApiError && err.status === 401) {
@@ -69,7 +71,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [])
 
   return (
-    <AuthContext.Provider value={{ user, organization, loading, error, refresh }}>
+    <AuthContext.Provider value={{ user, organization, version, loading, error, refresh }}>
       {children}
     </AuthContext.Provider>
   )

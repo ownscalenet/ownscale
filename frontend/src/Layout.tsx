@@ -63,7 +63,7 @@ function initials(name: string): string {
 const iconClass = '[&_svg]:size-4 [&_svg]:shrink-0'
 
 export default function Layout() {
-  const { user, organization, refresh } = useAuth()
+  const { user, organization, version, refresh } = useAuth()
   const drawerToggleRef = useRef<HTMLInputElement>(null)
   const { pathname } = useLocation()
 
@@ -190,6 +190,11 @@ export default function Layout() {
                 </a>
               </li>
             </ul>
+            {version && (
+              <p className="mt-2 px-2.5 font-mono text-xs text-base-content/50 select-text truncate">
+                {version}
+              </p>
+            )}
             {user && (
               <div className="mt-3 flex items-center gap-2.5 px-1">
                 <div

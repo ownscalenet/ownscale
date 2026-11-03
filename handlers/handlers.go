@@ -20,6 +20,7 @@ import (
 	"github.com/ownscalenet/ownscale/funnelproxy"
 	"github.com/ownscalenet/ownscale/hscl"
 	"github.com/ownscalenet/ownscale/orgs"
+	"github.com/ownscalenet/ownscale/utils"
 )
 
 // headscaleClients reaches organizations' headscale instances. Implemented
@@ -215,5 +216,6 @@ func (h *Handlers) Session(w http.ResponseWriter, r *http.Request) {
 	h.writeJSON(w, http.StatusOK, map[string]any{
 		"user":         user,
 		"organization": h.toOrganizationResponse(org),
+		"version":      utils.Version,
 	})
 }

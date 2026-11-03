@@ -124,7 +124,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export function getSession() {
-  return request<{ user: User; organization: Organization | null }>('/api/session')
+  return request<{ user: User; organization: Organization | null; version: string }>('/api/session')
 }
 
 export interface AuthProviders {

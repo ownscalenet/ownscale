@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/ownscalenet/ownscale/auth"
+	"github.com/ownscalenet/ownscale/utils"
 )
 
 // TestSessionOmitsHeadscaleUserID checks that the session response leaves
@@ -48,8 +49,10 @@ func TestSessionAuthenticated(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want %d; body=%s", rec.Code, http.StatusOK, rec.Body.String())
 	}
-	if !strings.Contains(rec.Body.String(), user.ID) {
-		t.Errorf("body = %q, want it to contain user id %q", rec.Body.String(), user.ID)
+	for _, want := range []string{user.ID, `"version":"` + utils.Version + `"`} {
+		if !strings.Contains(rec.Body.String(), want) {
+			t.Errorf("body = %q, want it to contain %q", rec.Body.String(), want)
+		}
 	}
 }
 

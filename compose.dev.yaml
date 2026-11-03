@@ -7,7 +7,10 @@ services:
   # etc/caddy/dev/global.caddyfile), under the data directory's local-ca/.
   local-ca-init:
     image: ownscale:latest
-    build: .
+    build:
+      context: .
+      args:
+        VERSION: ${BUILD_VERSION:-dev}
     entrypoint: ["/bin/sh", "-c"]
     command:
       - >
@@ -45,7 +48,10 @@ services:
 
   ownscale:
     image: ownscale:latest
-    build: .
+    build:
+      context: .
+      args:
+        VERSION: ${BUILD_VERSION:-dev}
     depends_on:
       local-ca-init:
         condition: service_completed_successfully
@@ -73,6 +79,8 @@ services:
     build:
       context: .
       dockerfile: etc/caddy/Dockerfile
+      args:
+        VERSION: ${BUILD_VERSION:-dev}
     depends_on:
       local-ca-init:
         condition: service_completed_successfully

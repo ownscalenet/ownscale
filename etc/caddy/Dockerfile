@@ -11,6 +11,9 @@ RUN xcaddy build \
 	--with github.com/caddy-dns/rfc2136@v1.0.0
 
 FROM ghcr.io/gohugoio/hugo:v0.169.0 AS site
+ARG VERSION=dev
+# Hugo reads HUGO_PARAMS_* as site params; the navbar shows it.
+ENV HUGO_PARAMS_VERSION=$VERSION
 COPY --chown=hugo:hugo docs /project
 # docs/go.mod may need a newer Go than the image ships.
 ENV GOTOOLCHAIN=auto
