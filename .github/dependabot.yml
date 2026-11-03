@@ -1,0 +1,46 @@
+version: 2
+
+updates:
+  - package-ecosystem: gomod
+    directories:
+      - /
+      - /docs
+    schedule:
+      interval: weekly
+    groups:
+      go-minor-patch:
+        update-types: [major, minor, patch]
+
+  - package-ecosystem: npm
+    directories:
+      - /frontend
+      - /e2e/frontend
+    schedule:
+      interval: weekly
+    groups:
+      npm-minor-patch:
+        update-types: [major, minor, patch]
+
+  - package-ecosystem: docker
+    directories:
+      - /
+      - /deploy/derper
+      - /e2e/devbox
+      - /etc/caddy
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: docker-compose
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: nix
+    directory: /
+    schedule:
+      interval: weekly
