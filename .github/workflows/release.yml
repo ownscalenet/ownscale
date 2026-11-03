@@ -65,7 +65,13 @@ jobs:
         run: |
           npm ci
           npm run build
+          # Tailscale WASM client for browser SSH; same as `make frontend`.
+          cp node_modules/@tailscale/connect/main.wasm.br \
+             node_modules/@tailscale/connect/main.wasm.gz \
+             ../webui/dist/assets/
           test -s ../webui/dist/assets/index.js
+          test -s ../webui/dist/assets/main.wasm.br
+          test -s ../webui/dist/assets/main.wasm.gz
 
       - name: Resolve source revision
         id: revision
@@ -137,6 +143,10 @@ jobs:
           curl --fail --silent --show-error -H 'Host: console.example.com' \
             "http://$address/assets/index.js" -o "$RUNNER_TEMP/index.js"
           cmp source/webui/dist/assets/index.js "$RUNNER_TEMP/index.js"
+          curl --fail --silent --show-error -H 'Host: console.example.com' \
+            -H 'Accept-Encoding: gzip' \
+            "http://$address/assets/main.wasm" -o "$RUNNER_TEMP/main.wasm.gz"
+          cmp source/webui/dist/assets/main.wasm.gz "$RUNNER_TEMP/main.wasm.gz"
       - name: Publish release tags
         run: |
           for image in ownscale ownscale-caddy; do
