@@ -91,8 +91,11 @@ Other useful commands (from `e2e/frontend/`):
 - `playwright.config.ts` points at `https://console.ownscale.test` by
   default; override with `E2E_BASE_URL` if your `.env` uses a different
   `BASE_DOMAIN`.
-- `ignoreHTTPSErrors: true` is set instead of requiring every contributor
-  to trust the local dev CA (see `make load-cert`).
+- On the local stack `ignoreHTTPSErrors` is on (`localTLS` in
+  `tests/connectivity/environment.ts`) instead of requiring every contributor
+  to trust the local dev CA (see `make load-cert`). With `E2E_CA_FILE=`
+  (the `e2e-remote*` targets) certificates are validated against the system
+  store. Node clients such as the funnel request trust the CA file directly.
 - A `setup` project (`tests/global.setup.ts`) logs in once as the Dex
   seeded `admin@ownscale.test` user and caches the session in
   `tests/.auth/admin.json` (gitignored); every other spec starts already

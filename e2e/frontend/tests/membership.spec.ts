@@ -1,14 +1,14 @@
 import type { Browser, Page } from '@playwright/test'
 import { expect, test } from './support/account'
 import { confirmDialog } from './support/confirm'
-import { baseDomain } from './connectivity/environment'
+import { baseDomain, localTLS } from './connectivity/environment'
 import { startPendingLogin } from './support/pendingLogin'
 import { registerRealMachine, teardownRealMachine } from './support/realMachine'
 
 // signIn signs a fresh, logged-out browser context in through Dex as email
 // and returns its page, left wherever the login flow ends.
 async function signIn(browser: Browser, email: string, startURL: string): Promise<Page> {
-  const context = await browser.newContext({ storageState: { cookies: [], origins: [] }, ignoreHTTPSErrors: true })
+  const context = await browser.newContext({ storageState: { cookies: [], origins: [] }, ignoreHTTPSErrors: localTLS })
   const page = await context.newPage()
   await page.goto(startURL)
   const joinLink = page.getByRole('link', { name: 'Create account to join' })

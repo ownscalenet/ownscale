@@ -131,7 +131,7 @@ REMOTE_CONTENT_DOMAIN ?= "ownsc.net"
 e2e-remote: e2e-remote-frontend e2e-remote-connectivity
 
 e2e-remote-frontend:
-	E2E_BASE_URL=https://console.$(REMOTE_BASE_DOMAIN) E2E_BASE_DOMAIN=$(REMOTE_BASE_DOMAIN) E2E_CONTENT_DOMAIN=$(REMOTE_CONTENT_DOMAIN) $(MAKE) e2e-frontend
+	E2E_BASE_URL=https://console.$(REMOTE_BASE_DOMAIN) E2E_BASE_DOMAIN=$(REMOTE_BASE_DOMAIN) E2E_CONTENT_DOMAIN=$(REMOTE_CONTENT_DOMAIN) E2E_CA_FILE= $(MAKE) e2e-frontend
 
 e2e-remote-connectivity:
 	mkdir -p bin/connectivity-work

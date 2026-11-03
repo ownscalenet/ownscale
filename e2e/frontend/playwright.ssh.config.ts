@@ -1,5 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
-import { baseURL } from './tests/connectivity/environment'
+import { baseURL, localTLS } from './tests/connectivity/environment'
 
 // Tailscale SSH, split DNS and subnet routing between real tailscaled containers. Needs docker on top of
 // `make dev-up` (see README.md), so it's kept out of the default config.
@@ -13,7 +13,7 @@ export default defineConfig({
   outputDir: 'test-results/ssh',
   use: {
     baseURL,
-    ignoreHTTPSErrors: true,
+    ignoreHTTPSErrors: localTLS,
     trace: 'retain-on-failure',
   },
   projects: [

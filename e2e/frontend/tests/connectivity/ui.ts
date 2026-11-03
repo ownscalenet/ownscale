@@ -3,7 +3,7 @@ import type {
   AccessControlResponse, AuthKeysResponse, FunnelRoute, FunnelRoutesResponse,
   Machine, MachinesResponse, User,
 } from '../../../../frontend/src/api'
-import { baseDomain, baseURL, contentDomain } from './environment'
+import { baseDomain, baseURL, contentDomain, localTLS } from './environment'
 import { Recovery, type OwnedResource } from './recovery'
 import { confirmDialog } from '../support/confirm'
 
@@ -68,7 +68,7 @@ export class OrgUI {
   get org(): string { return this.identity.org }
 
   static async login(browser: Browser, identity: Identity): Promise<OrgUI> {
-    const context = await browser.newContext({ baseURL, ignoreHTTPSErrors: true })
+    const context = await browser.newContext({ baseURL, ignoreHTTPSErrors: localTLS })
     const page = await context.newPage()
     const ui = new OrgUI(identity, context, page)
     const deadline = Date.now() + 300_000

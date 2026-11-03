@@ -1,4 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
+import { localTLS } from './tests/connectivity/environment'
 
 // baseURL matches the dev domain set in compose.dev.yaml ("ownscale.test"),
 // with the console served at its "console." subdomain; override with
@@ -22,8 +23,8 @@ export default defineConfig({
     baseURL,
     // The dev stack's TLS cert is signed by ownscale's own local-dev CA
     // (see `make load-cert`); rather than requiring every contributor to
-    // trust it, the test client simply tolerates it.
-    ignoreHTTPSErrors: true,
+    // trust it, the test client tolerates it there. Remote stacks are validated.
+    ignoreHTTPSErrors: localTLS,
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',
   },

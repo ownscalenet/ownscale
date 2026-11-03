@@ -1,8 +1,9 @@
+import { readFileSync } from 'node:fs'
 import { lookup } from 'node:dns/promises'
 import { request } from 'node:https'
 import type { Page } from '@playwright/test'
 import { expect, test } from './support/account'
-import { baseURL } from './connectivity/environment'
+import { baseURL, caFile } from './connectivity/environment'
 import { confirmDialog } from './support/confirm'
 import { registerRealMachine, teardownRealMachine, type RealMachine } from './support/realMachine'
 
@@ -43,7 +44,8 @@ test('creating and deleting a funnel route', async ({ page, account }) => {
 
 // getFunnel GETs a public funnel URL. It connects to the console's address
 // with the funnel's name as SNI and Host, so the per-org funnel hostnames
-// don't need /etc/hosts entries.
+// don't need /etc/hosts entries. The certificate is validated against the
+// local dev CA, or the system store on public stacks (no caFile).
 async function getFunnel(hostname: string): Promise<{ status: number; body: string }> {
   const consoleURL = new URL(baseURL)
   const { address } = await lookup(consoleURL.hostname)
@@ -55,7 +57,7 @@ async function getFunnel(hostname: string): Promise<{ status: number; body: stri
         path: '/',
         servername: hostname,
         headers: { Host: hostname },
-        rejectUnauthorized: false,
+        ca: caFile ? readFileSync(caFile) : undefined,
         timeout: 15_000,
       },
       (res) => {

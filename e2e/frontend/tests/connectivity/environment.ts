@@ -14,6 +14,10 @@ export const caFile = process.env.E2E_CA_FILE === ''
   ? undefined
   : resolve(root, process.env.E2E_CA_FILE ??
       `${process.env.OWNSCALE_DATA_DIR ?? 'data'}/local-ca/root.crt`)
+// localTLS is true for a stack whose certificates come from the local dev CA
+// (caFile set). Browsers can't be pointed at that CA, so only they skip
+// certificate validation, and only here; public stacks are always validated.
+export const localTLS = caFile !== undefined
 export const bridgeBinary = resolve(root, 'bin/tscl-bridge')
 export const scratchDir = resolve(root, 'bin/connectivity-work')
 export const dexURL = process.env.E2E_DEX_URL ?? `https://dex.${baseDomain}`

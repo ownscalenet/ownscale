@@ -1,4 +1,5 @@
 import { expect, test } from './support/account'
+import { localTLS } from './connectivity/environment'
 import { confirmDialog } from './support/confirm'
 import { addVirtualAuthenticator } from './support/webauthn'
 
@@ -142,7 +143,7 @@ test('transferring ownership promotes the member and demotes the caller to admin
 
   const memberContext = await browser.newContext({
     storageState: { cookies: [], origins: [] },
-    ignoreHTTPSErrors: true,
+    ignoreHTTPSErrors: localTLS,
   })
   try {
     const memberPage = await memberContext.newPage()
@@ -225,7 +226,7 @@ test('a plain member cannot see owner/admin-only management controls', async ({
 
   const memberContext = await browser.newContext({
     storageState: { cookies: [], origins: [] },
-    ignoreHTTPSErrors: true,
+    ignoreHTTPSErrors: localTLS,
   })
   const memberPage = await memberContext.newPage()
   try {

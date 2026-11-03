@@ -1,5 +1,6 @@
 import type { ProbeResult, ServiceInfo } from './bridge'
 import { test, expect, type Endpoint, type Harness } from './fixtures'
+import { localTLS } from './environment'
 import { poll } from './ui'
 
 const allowPolicy = JSON.stringify({ acls: [{ action: 'accept', src: ['*'], dst: ['*:*'] }] }, null, 2)
@@ -129,7 +130,7 @@ test('real tailnets: bidirectional connectivity, ordered isolation, ACL transiti
     const target = pairs[0][1]
     if (!target.resource.id) throw new Error('Real machine ID is required for funnel target')
     const route = await orgs[0].createFunnel(target.resource.id, target.service.port, recovery)
-    const publicContext = await browser.newContext({ ignoreHTTPSErrors: true })
+    const publicContext = await browser.newContext({ ignoreHTTPSErrors: localTLS })
     try {
       expect(await publicContext.cookies()).toEqual([])
       const publicURL = `https://${route.hostname}/`

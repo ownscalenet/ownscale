@@ -2,7 +2,7 @@ import { lookup } from 'node:dns/promises'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { expect, test as setup, type Page } from '@playwright/test'
-import { baseDomain, baseURL, consoleDomain } from './connectivity/environment'
+import { baseDomain, baseURL, consoleDomain, localTLS } from './connectivity/environment'
 import { identities, OrgUI } from './connectivity/ui'
 import { accountNames, accountsFile, emailOf, passkeyCredentialFile, removeInvitee, resetAuthRestrictions, signIn, storageStateOf, workerAccounts } from './support/account'
 import { addVirtualAuthenticator, clearCredentials, exportCredential, importCredential } from './support/webauthn'
@@ -64,7 +64,7 @@ setup.describe.serial('bootstrap fixed dev identities', () => {
   setup(`passkey user claims an org}`, async ({ browser }) => {
     setup.setTimeout(90_000)
 
-    const context = await browser.newContext({ baseURL, ignoreHTTPSErrors: true })
+    const context = await browser.newContext({ baseURL, ignoreHTTPSErrors: localTLS })
     const page = await context.newPage()
     try {
       const auth = await addVirtualAuthenticator(page)
@@ -123,7 +123,7 @@ setup.describe.serial('bootstrap fixed dev identities', () => {
   // above, so on a fresh stack they get the next fixed subdomains.
   for (const name of accountNames) {
     setup(`${name} claims an org`, async ({ browser }) => {
-      const context = await browser.newContext({ baseURL, ignoreHTTPSErrors: true })
+      const context = await browser.newContext({ baseURL, ignoreHTTPSErrors: localTLS })
       try {
         const page = await context.newPage()
         await signIn(page, emailOf(name))

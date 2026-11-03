@@ -1,4 +1,5 @@
 import { expect, test } from './support/account'
+import { localTLS } from './connectivity/environment'
 
 test('visiting an unknown route while signed in shows the not-found page', async ({ page }) => {
   await page.goto('/this-route-does-not-exist')
@@ -12,7 +13,7 @@ test('visiting an unknown route while signed in shows the not-found page', async
 test('visiting an unknown route while signed out shows the not-found page', async ({ browser }) => {
   const context = await browser.newContext({
     storageState: { cookies: [], origins: [] },
-    ignoreHTTPSErrors: true,
+    ignoreHTTPSErrors: localTLS,
   })
   try {
     const page = await context.newPage()

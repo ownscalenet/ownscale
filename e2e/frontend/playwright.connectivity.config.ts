@@ -1,5 +1,5 @@
 import { defineConfig, devices } from '@playwright/test'
-import { baseURL } from './tests/connectivity/environment'
+import { baseURL, localTLS } from './tests/connectivity/environment'
 
 export default defineConfig({
   testDir: './tests/connectivity',
@@ -15,7 +15,7 @@ export default defineConfig({
   use: {
     ...devices['Desktop Chrome'],
     baseURL,
-    ignoreHTTPSErrors: true,
+    ignoreHTTPSErrors: localTLS,
     trace: 'off',
     screenshot: 'off',
     video: 'off',
