@@ -5,6 +5,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/signal"
@@ -37,7 +38,13 @@ func main() {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 
-	if err := rootCmd.ParseAndRun(ctx, os.Args[1:]); err != nil {
+	err := rootCmd.ParseAndRun(ctx, os.Args[1:])
+	if errors.Is(err, ff.ErrHelp) {
+		// Asking for help is not a failure.
+		fmt.Fprintf(os.Stdout, "%s\n", ffhelp.Command(rootCmd))
+		return
+	}
+	if err != nil {
 		fmt.Fprintf(os.Stderr, "%s\n", ffhelp.Command(rootCmd))
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
