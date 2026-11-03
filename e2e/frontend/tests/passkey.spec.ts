@@ -1,3 +1,4 @@
+import { randomBytes } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { expect, passkeyCredentialFile, test } from './support/account'
 import { confirmDialog } from './support/confirm'
@@ -16,6 +17,9 @@ const PASSKEY_IDENTITY_NAME = 'passkey'
 // another). The invite-skip-provisioning case is covered at the Go handler
 // level in handlers/passkey_test.go.
 test('adding a passkey in User settings and signing in with it', async ({ page }) => {
+  // Unique per run: an interrupted run leaves its passkey behind on a
+  // persistent (remote) stack, and a shared name would then match several rows.
+  const passkeyName = `E2E test passkey ${randomBytes(3).toString('hex')}`
   await addVirtualAuthenticator(page)
 
   await page.goto('/user-settings')
@@ -23,10 +27,10 @@ test('adding a passkey in User settings and signing in with it', async ({ page }
 
   await page.getByRole('button', { name: 'Add a passkey' }).click()
   const nameDialog = page.getByRole('dialog')
-  await nameDialog.getByRole('textbox').fill('E2E test passkey')
+  await nameDialog.getByRole('textbox').fill(passkeyName)
   await nameDialog.getByRole('button', { name: 'Add passkey', exact: true }).click()
 
-  const row = page.getByRole('row').filter({ hasText: 'E2E test passkey' })
+  const row = page.getByRole('row').filter({ hasText: passkeyName })
   await expect(row).toBeVisible({ timeout: 15_000 })
 
   await page.getByRole('button', { name: 'Logout' }).click()
