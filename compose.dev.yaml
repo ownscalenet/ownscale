@@ -20,7 +20,7 @@ services:
       - caddy-data:/caddy-data
 
   dex:
-    image: dexidp/dex:v2.45.1
+    image: dexidp/dex:v2.46.1
     # dex's config loader has no env-var interpolation of its own (unlike
     # Caddy's Caddyfile), so this sed-renders
     # config.yaml's $BASE_DOMAIN placeholder into a real config file
