@@ -568,3 +568,29 @@ func TestAuthProviders(t *testing.T) {
 		t.Errorf("AuthProviders response = %+v, want %+v", got, want)
 	}
 }
+
+func TestIsSafeNext(t *testing.T) {
+	tests := []struct {
+		next string
+		want bool
+	}{
+		{"/", true},
+		{"/machines?filter=online", true},
+		{"/invite/testtoken", true},
+		{"/authorize/callback?id=1", true},
+		{"", false},
+		{"machines", false},
+		{"//evil.com", false},
+		{`/\evil.com`, false},
+		{`\\evil.com`, false},
+		{`/a\b`, false},
+		{"https://evil.com", false},
+		{"/a\nb", false},
+		{"/a\tb", false},
+	}
+	for _, tt := range tests {
+		if got := isSafeNext(tt.next); got != tt.want {
+			t.Errorf("isSafeNext(%q) = %v, want %v", tt.next, got, tt.want)
+		}
+	}
+}

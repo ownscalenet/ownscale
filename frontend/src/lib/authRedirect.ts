@@ -1,7 +1,10 @@
 // isSafeRelativeNext guards against open redirects: only a same-origin,
-// path-absolute URL (no scheme-relative "//host" tricks) is followed.
+// path-absolute URL is followed. Browsers read a backslash as a slash, so
+// "//host" and "/\host" are both rejected, like control characters. Keep in
+// sync with isSafeNext in handlers/auth.go.
 export function isSafeRelativeNext(next: string | null): next is string {
-  return !!next && next.startsWith('/') && !next.startsWith('//')
+  if (!next || !next.startsWith('/') || next.startsWith('//')) return false
+  return ![...next].some((c) => c === '\\' || c.charCodeAt(0) < 0x20 || c.charCodeAt(0) === 0x7f)
 }
 
 // goToNext makes the same next-or-home redirect as handlers.finishLogin. The

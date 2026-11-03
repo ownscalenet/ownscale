@@ -315,6 +315,21 @@ func (h *Handlers) AuthCallback(w http.ResponseWriter, r *http.Request) {
 	h.finishLogin(w, r, user, next)
 }
 
+// isSafeNext reports whether next is a same-origin path that is safe to
+// redirect to. Browsers read a backslash as a slash, so `/\host` and `//host`
+// both point at another host. Backslashes and control characters are rejected.
+func isSafeNext(next string) bool {
+	if !strings.HasPrefix(next, "/") || strings.HasPrefix(next, "//") {
+		return false
+	}
+	for _, c := range next {
+		if c == '\\' || c < 0x20 || c == 0x7f {
+			return false
+		}
+	}
+	return true
+}
+
 // finishLogin completes a login/registration for user, regardless of which
 // auth method produced it: OAuth callback, passkey registration, or passkey login.
 func (h *Handlers) finishLogin(w http.ResponseWriter, r *http.Request, user sqlcgen.User, next string) {
@@ -331,7 +346,7 @@ func (h *Handlers) finishLogin(w http.ResponseWriter, r *http.Request, user sqlc
 			return
 		}
 	}
-	if strings.HasPrefix(next, "/") && !strings.HasPrefix(next, "//") {
+	if isSafeNext(next) {
 		http.Redirect(w, r, next, http.StatusSeeOther)
 		return
 	}
