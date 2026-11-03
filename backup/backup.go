@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/url"
 	"path/filepath"
+	"time"
 
 	"github.com/benbjohnson/litestream"
 	"github.com/benbjohnson/litestream/abs"
@@ -50,6 +51,8 @@ func New(ctx context.Context, cfg config.BackupConfig, dataDir string, logger *s
 	}
 
 	r.store = litestream.NewStore(nil, litestream.DefaultCompactionLevels)
+	r.store.SnapshotInterval = time.Hour
+	r.store.SnapshotRetention = time.Hour
 	// Litestream logs every sync at info level.
 	r.store.Logger = slog.New(minLevelHandler{Handler: logger.Handler(), min: slog.LevelWarn}).With("component", "backup")
 	r.done = make(chan struct{})
