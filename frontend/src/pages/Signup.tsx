@@ -4,7 +4,7 @@ import { UserKey } from 'lucide-react'
 import { useAuth } from '../authContext'
 import { errorMessage, passkeyRegisterBegin, passkeyRegisterFinish } from '../api'
 import { createPasskey, browserSupportsWebAuthn } from '../lib/webauthn'
-import { goToNext, isSafeRelativeNext, nextQuery } from '../lib/authRedirect'
+import { goToNext, safeNextPath, nextQuery } from '../lib/authRedirect'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { ErrorAlert } from '../components/ui'
 import SSOButtons from '../components/SSOButtons'
@@ -27,14 +27,15 @@ export default function Signup() {
   const [username, setUsername] = useState('')
 
   // `next` may be a backend-only route, which needs a full navigation.
+  const nextPath = safeNextPath(next)
   useEffect(() => {
-    if (alreadyAuthed && isSafeRelativeNext(next)) {
-      window.location.replace(next)
+    if (alreadyAuthed && nextPath) {
+      window.location.replace(nextPath)
     }
-  }, [alreadyAuthed, next])
+  }, [alreadyAuthed, nextPath])
 
   if (alreadyAuthed) {
-    if (isSafeRelativeNext(next)) {
+    if (nextPath) {
       return null
     }
     return <Navigate to="/" replace />
