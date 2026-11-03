@@ -4,7 +4,7 @@ import { dirname } from 'node:path'
 import { expect, test as setup, type Page } from '@playwright/test'
 import { baseDomain, baseURL, consoleDomain } from './connectivity/environment'
 import { identities, OrgUI } from './connectivity/ui'
-import { accountNames, accountsFile, emailOf, removeInvitee, resetAuthRestrictions, signIn, storageStateOf, workerAccounts } from './support/account'
+import { accountNames, accountsFile, emailOf, passkeyCredentialFile, removeInvitee, resetAuthRestrictions, signIn, storageStateOf, workerAccounts } from './support/account'
 import { addVirtualAuthenticator, clearCredentials, exportCredential, importCredential } from './support/webauthn'
 
 const STORAGE_STATE = 'tests/.auth/admin.json'
@@ -14,13 +14,6 @@ const STORAGE_STATE = 'tests/.auth/admin.json'
 // on the next fixed subdomain (see orgs.Service.NextSubdomain)
 // deterministically rather than racing other specs for it.
 const PASSKEY_IDENTITY = 'passkey'
-
-// Persists the WebAuthn credential minted the first time PASSKEY_IDENTITY
-// self-registers, so later runs (and passkey.spec.ts's "sign in again"
-// test) can replay the *same* passkey via importCredential instead of
-// registering another brand-new user/org. Gitignored alongside
-// STORAGE_STATE (see e2e/frontend's tests/.auth/ entry in .gitignore).
-const PASSKEY_CREDENTIAL_STATE = 'tests/.auth/passkey-credential.json'
 
 // Drives the "Create an account" passkey self-registration flow for
 // PASSKEY_IDENTITY, starting from a fresh /login page.
@@ -78,12 +71,12 @@ setup.describe.serial('bootstrap fixed dev identities', () => {
       // Tracks whether *this run* freshly registered the passkey identity
       // (as opposed to successfully signing back in with a previously
       // saved credential), so we know whether to (over)write
-      // PASSKEY_CREDENTIAL_STATE below.
+      // passkeyCredentialFile below.
       let registeredFresh = false
 
       await page.goto('/login')
-      if (existsSync(PASSKEY_CREDENTIAL_STATE)) {
-        const saved = JSON.parse(readFileSync(PASSKEY_CREDENTIAL_STATE, 'utf-8'))
+      if (existsSync(passkeyCredentialFile)) {
+        const saved = JSON.parse(readFileSync(passkeyCredentialFile, 'utf-8'))
         await importCredential(auth, saved.credential)
         await page.getByRole('button', { name: 'Sign in with a passkey' }).click()
 
@@ -116,8 +109,8 @@ setup.describe.serial('bootstrap fixed dev identities', () => {
 
       if (registeredFresh) {
         const credential = await exportCredential(auth, consoleDomain)
-        mkdirSync(dirname(PASSKEY_CREDENTIAL_STATE), { recursive: true })
-        writeFileSync(PASSKEY_CREDENTIAL_STATE, JSON.stringify({ username: PASSKEY_IDENTITY, org: session.organization?.Domain, credential }))
+        mkdirSync(dirname(passkeyCredentialFile), { recursive: true })
+        writeFileSync(passkeyCredentialFile, JSON.stringify({ username: PASSKEY_IDENTITY, org: session.organization?.Domain, credential }))
       }
 
       await resetAuthRestrictions(page)

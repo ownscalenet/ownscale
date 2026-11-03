@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
 import { test as base, expect, type BrowserContextOptions, type Page } from '@playwright/test'
+import { baseDomain } from '../connectivity/environment'
 
 // Each frontend worker signs in as its own Dex identity, which owns its own
 // organization, so workers never change each other's org-wide state
@@ -21,6 +22,10 @@ export const workerAccounts = [
 export const accountNames = [...workerAccounts.map(a => a.name), 'ssh']
 
 export const accountsFile = 'tests/.auth/accounts.json'
+
+// passkeyCredentialFile is per base domain: a credential minted on another
+// stack fails to sign in, and setup would then register another passkey org.
+export const passkeyCredentialFile = `tests/.auth/passkey-credential.${baseDomain}.json`
 
 export function emailOf(name: string): string {
   return `${name}@ownscale.test`
@@ -72,16 +77,17 @@ export async function resetAuthRestrictions(page: Page): Promise<void> {
   throw new Error(`resetAuthRestrictions: /api/auth-restrictions PUT failed after retries, last HTTP ${lastStatus}`)
 }
 
-// removeInvitee removes invitee from page's signed-in org if a previous run
-// left them there. Invites only apply to brand-new accounts, so a leftover
+// removeInvitee removes invitee, and passkey invitees (see
+// members-invites.spec.ts), from page's signed-in org if a previous run left
+// them there. Invites only apply to brand-new accounts, so a leftover
 // invitee would join the next test's org with their old role instead.
 export async function removeInvitee(page: Page, invitee: string): Promise<void> {
   const response = await page.request.get('/api/members')
   if (!response.ok()) throw new Error(`removeInvitee: /api/members GET failed with HTTP ${response.status()}`)
   const { members } = (await response.json()) as { members: { id: string; email: string }[] }
-  for (const m of members.filter(m => m.email === invitee)) {
+  for (const m of members.filter(m => m.email === invitee || /^invitee\d+@passkey$/.test(m.email))) {
     const removed = await page.request.delete(`/api/members/${m.id}`)
-    if (!removed.ok()) throw new Error(`removeInvitee: removing ${invitee} failed with HTTP ${removed.status()}`)
+    if (!removed.ok()) throw new Error(`removeInvitee: removing ${m.email} failed with HTTP ${removed.status()}`)
   }
 }
 

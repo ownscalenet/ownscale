@@ -1,10 +1,9 @@
 import { readFileSync } from 'node:fs'
-import { expect, test } from './support/account'
+import { expect, passkeyCredentialFile, test } from './support/account'
 import { confirmDialog } from './support/confirm'
 import { addVirtualAuthenticator, importCredential } from './support/webauthn'
 
 const PASSKEY_IDENTITY_NAME = 'passkey'
-const PASSKEY_CREDENTIAL_STATE = 'tests/.auth/passkey-credential.json'
 
 // This test adds a passkey to the worker's already-provisioned account from
 // User settings, then uses it to sign back in. It deliberately reuses the
@@ -60,7 +59,7 @@ test.describe('signing back in with the bootstrapped passkey', () => {
 
   test('the bootstrapped passkey user can sign back in with the same passkey', async ({ page }) => {
     const auth = await addVirtualAuthenticator(page)
-    const saved = JSON.parse(readFileSync(PASSKEY_CREDENTIAL_STATE, 'utf-8'))
+    const saved = JSON.parse(readFileSync(passkeyCredentialFile, 'utf-8'))
     await importCredential(auth, saved.credential)
 
     await page.goto('/login')
@@ -72,7 +71,7 @@ test.describe('signing back in with the bootstrapped passkey', () => {
       // registered PASSKEY_IDENTITY and saved a *currently valid* credential.
       throw new Error(
         `sign-in with the saved passkey credential failed; re-run global.setup.ts's bootstrap ` +
-        `(or delete ${PASSKEY_CREDENTIAL_STATE} to force it to re-register) if the backend's ` +
+        `(or delete ${passkeyCredentialFile} to force it to re-register) if the backend's ` +
         `database was reset since that credential was saved: ${err}`,
       )
     }

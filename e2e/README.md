@@ -100,9 +100,11 @@ Other useful commands (from `e2e/frontend/`):
   (`login.spec.ts`, `onboarding.spec.ts`) opt out of that cached state.
   That same setup also self-registers a fixed `passkey@ownscale.test`
   identity via passkey, creating org `dddd`, and caches its WebAuthn
-  credential in `tests/.auth/passkey-credential.json` (gitignored) so
-  `passkey.spec.ts` can sign back in as that identity without registering
-  another brand-new user/org.
+  credential in `tests/.auth/passkey-credential.<base-domain>.json`
+  (gitignored) so `passkey.spec.ts` and later runs can sign back in as that
+  identity without registering another brand-new user/org. The file is per
+  base domain, so local and `e2e-remote` runs don't invalidate each other's
+  credential.
 - `settings-apply.spec.ts` checks that saved settings take effect inside the
   organization's headscale (which restarts on every save). DNS changes are
   read back from a real enrolled device's netmap (via `tscl-bridge`'s `dns`
