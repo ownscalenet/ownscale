@@ -123,8 +123,8 @@ github.com/axiomhq/hyperloglog v0.3.0 h1:IQzzb1zjZiODMwCgBRHKak4oIp2Oj7K0Q0rVoAo
 github.com/axiomhq/hyperloglog v0.3.0/go.mod h1:YjX/dQqCR/7QYX0g8mu8UZAjpIenz1FKM71UEsjFoTo=
 github.com/benbjohnson/immutable v0.4.3 h1:GYHcksoJ9K6HyAUpGxwZURrbTkXA0Dh4otXGqbhdrjA=
 github.com/benbjohnson/immutable v0.4.3/go.mod h1:qJIKKSmdqz1tVzNtst1DZzvaqOU1onk1rc03IeM3Owk=
-github.com/benbjohnson/litestream v0.5.17 h1:uddXWBgoFshkZSAgOuCIA+B35P108/wCoqb0fxH0AJw=
-github.com/benbjohnson/litestream v0.5.17/go.mod h1:yfgFAx6u1Wv8zv+lxNXejNVm0wahbHpbuCoROS73Grs=
+github.com/benbjohnson/litestream v0.5.18-0.20261102170535-0eee9c64c9c3 h1:UN8b2aklinQGQn0ZrSMES86IFNyDOpNWXQh5rtoDhHo=
+github.com/benbjohnson/litestream v0.5.18-0.20261102170535-0eee9c64c9c3/go.mod h1:4qjd9UcvoyYExdJPMqpoGUjeg7th7RU6DKqn/+NclpI=
 github.com/beorn7/perks v1.0.1 h1:VlbKKnNfV8bJzeqoa4cOKqO6bYr3WgKZxO8Z16+hsOM=
 github.com/beorn7/perks v1.0.1/go.mod h1:G2ZrVWU2WbWT9wwq4/hrbKbnv/1ERSJQ0ibhJ6rlkpw=
 github.com/bmatcuk/doublestar v1.1.1/go.mod h1:UD6OnuiIn0yFxxA2le/rnRU1G4RaI4UvFv1sNto9p6w=
