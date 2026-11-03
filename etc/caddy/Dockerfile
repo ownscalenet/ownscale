@@ -10,7 +10,7 @@ RUN xcaddy build \
 	--with github.com/caddy-dns/hetzner/v2@v2.0.1 \
 	--with github.com/caddy-dns/rfc2136@v1.0.0
 
-FROM ghcr.io/gohugoio/hugo:v0.165.0 AS site
+FROM ghcr.io/gohugoio/hugo:v0.169.0 AS site
 COPY --chown=hugo:hugo docs /project
 # docs/go.mod may need a newer Go than the image ships.
 ENV GOTOOLCHAIN=auto
