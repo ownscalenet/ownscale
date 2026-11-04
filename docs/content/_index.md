@@ -16,7 +16,7 @@ layout: hextra-home
 </div>
 
 <div class="hx:mb-6 hx:flex hx:flex-wrap hx:gap-4">
-{{< hextra/hero-button text="Try online" link="https://console.ownscale.net" >}}
+{{< hextra/hero-button text="Try online" link="/login" >}}
 {{< hextra/hero-button text="Self-host" link="/docs/self-hosting/installation/" >}}
 {{< hextra/hero-button text="Read docs" link="/docs/" >}}
 </div>

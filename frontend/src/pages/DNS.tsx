@@ -127,6 +127,12 @@ export default function DNS() {
     const name = newRecordName.trim()
     const value = newRecordValue.trim()
     if (!name || !value) return
+    // Clients match record names exactly, so a wildcard never resolves.
+    if (name.includes('*')) {
+      setRecordError('Wildcard DNS records are not supported; add one record per hostname')
+      return
+    }
+    setRecordError(null)
     const record: DNSRecord = { name, type: newRecordType, value }
     save({ ...dns, extraRecords: [...dns.extraRecords, record] })
     setNewRecordName('')
