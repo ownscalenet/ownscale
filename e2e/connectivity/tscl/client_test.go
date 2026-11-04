@@ -8,11 +8,15 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
+	"reflect"
 	"strings"
 	"sync"
 	"testing"
 	"time"
+
+	"golang.org/x/net/dns/dnsmessage"
 )
 
 func discardLogger() *slog.Logger {
@@ -200,5 +204,47 @@ func TestRedactedError(t *testing.T) {
 	err := &redactedError{cause, "secret"}
 	if strings.Contains(err.Error(), "secret") || !errors.Is(err, context.Canceled) {
 		t.Fatalf("redaction lost secrecy or error identity: %v", err)
+	}
+}
+
+func TestParseAddrs(t *testing.T) {
+	build := func(rcode dnsmessage.RCode, answers ...dnsmessage.Resource) []byte {
+		raw, err := (&dnsmessage.Message{
+			Header:  dnsmessage.Header{Response: true, RCode: rcode},
+			Answers: answers,
+		}).Pack()
+		if err != nil {
+			t.Fatal(err)
+		}
+		return raw
+	}
+	name := dnsmessage.MustNewName("host.org.os.example.com.")
+	hdr := dnsmessage.ResourceHeader{Name: name, Class: dnsmessage.ClassINET}
+	for _, tt := range []struct {
+		name  string
+		raw   []byte
+		want  []string
+		valid bool
+	}{
+		{"a and aaaa", build(dnsmessage.RCodeSuccess,
+			dnsmessage.Resource{Header: hdr, Body: &dnsmessage.AResource{A: [4]byte{100, 64, 0, 2}}},
+			dnsmessage.Resource{Header: hdr, Body: &dnsmessage.AAAAResource{AAAA: netip.MustParseAddr("fd7a:115c:a1e0::2").As16()}},
+		), []string{"100.64.0.2", "fd7a:115c:a1e0::2"}, true},
+		{"nxdomain", build(dnsmessage.RCodeNameError), nil, true},
+		{"garbage", []byte{1, 2, 3}, nil, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := parseAddrs(tt.raw)
+			if (err == nil) != tt.valid {
+				t.Fatalf("parseAddrs() error = %v, valid = %v", err, tt.valid)
+			}
+			var strs []string
+			for _, a := range got {
+				strs = append(strs, a.String())
+			}
+			if !reflect.DeepEqual(strs, tt.want) {
+				t.Fatalf("parseAddrs() = %v, want %v", strs, tt.want)
+			}
+		})
 	}
 }

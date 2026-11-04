@@ -22,6 +22,13 @@ export interface DNSInfo {
   extraRecords: { name: string; type: string; value: string }[]
 }
 
+/** The addresses a node's resolver returned for name; empty if it doesn't exist. */
+export interface ResolveInfo {
+  node: string
+  name: string
+  addresses: string[]
+}
+
 export interface ServiceInfo {
   node: string
   service: string
@@ -89,6 +96,10 @@ const dnsInfo = (v: unknown): v is DNSInfo => object(v) &&
   Array.isArray(v.extraRecords) && v.extraRecords.length <= 256 &&
   v.extraRecords.every(r => object(r) && keys(r, ['name', 'type', 'value']) &&
     text(r.name, 512) && text(r.type, 16) && text(r.value, 512))
+const resolveInfo = (v: unknown): v is ResolveInfo => object(v) &&
+  keys(v, ['node', 'name', 'addresses']) && handle(v.node) && text(v.name, 253) &&
+  Array.isArray(v.addresses) && v.addresses.length <= 16 &&
+  v.addresses.every(a => typeof a === 'string' && isIP(a) !== 0)
 const serviceInfo = (v: unknown): v is ServiceInfo => object(v) &&
   keys(v, ['node', 'service', 'identity', 'addresses', 'port']) &&
   handle(v.node) && handle(v.service) && text(v.identity) && v.identity.length > 0 &&
@@ -198,6 +209,13 @@ export class Bridge {
 
   dns(node: string): Promise<DNSInfo> {
     return this.call('dns', { node }, 10_000, v => dnsInfo(v) && v.node === node)
+  }
+
+  /** resolve looks name up with node's own resolver (MagicDNS included). */
+  async resolve(node: string, name: string): Promise<string[]> {
+    const info = await this.call<ResolveInfo>('resolve', { node, name }, 10_000,
+      v => resolveInfo(v) && v.node === node && v.name === name)
+    return info.addresses
   }
 
   serve(node: string, service: string, port: number): Promise<ServiceInfo> {

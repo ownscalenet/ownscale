@@ -27,12 +27,18 @@ type testNode struct {
 	statusErr error
 	dns       tailcfg.DNSConfig
 	dnsErr    error
+	resolved  map[string][]netip.Addr
 	authURL   string
 }
 
 func (n *testNode) DNS(context.Context) (_ tailcfg.DNSConfig, err error) {
 	defer derrors.Wrap(&err, "n.DNS()")
 	return n.dns, n.dnsErr
+}
+
+func (n *testNode) Resolve(_ context.Context, name string) (_ []netip.Addr, err error) {
+	defer derrors.Wrap(&err, "n.Resolve(%q)", name)
+	return n.resolved[name], nil
 }
 
 func (n *testNode) Status(context.Context) (_ *ipnstate.Status, err error) {
@@ -192,6 +198,44 @@ func TestDNS(t *testing.T) {
 		if err == nil || classify(err).Code != tt.code {
 			t.Errorf("dns(%s) error = %v, want %s", tt.node, err, tt.code)
 		}
+	}
+}
+
+func TestResolve(t *testing.T) {
+	d := newDispatcher()
+	d.nodes["n"] = &ownedNode{client: &testNode{resolved: map[string][]netip.Addr{
+		"host.org.os.example.com": {netip.MustParseAddr("100.64.0.2")},
+	}}}
+	for _, tt := range []struct {
+		name, node string
+		want       []string
+		code       string
+	}{
+		{"host.org.os.example.com", "n", []string{"100.64.0.2"}, ""},
+		{"missing.org.os.example.com", "n", []string{}, ""},
+		{"Host.org.os.example.com", "n", nil, "invalid_command"},
+		{"host", "n", nil, "invalid_command"},
+		{"host..example.com", "n", nil, "invalid_command"},
+		{"host.example.com.", "n", nil, "invalid_command"},
+		{"host.org.os.example.com", "absent", nil, "unknown_handle"},
+	} {
+		t.Run(tt.name+"/"+tt.node, func(t *testing.T) {
+			got, err := d.dispatch(t.Context(), "resolve",
+				json.RawMessage(`{"timeout":"5000ms","node":"`+tt.node+`","name":"`+tt.name+`"}`))
+			if tt.code != "" {
+				if err == nil || classify(err).Code != tt.code {
+					t.Fatalf("error = %v, want %s", err, tt.code)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			want := resolveResult{Node: tt.node, Name: tt.name, Addresses: tt.want}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("resolve = %+v, want %+v", got, want)
+			}
+		})
 	}
 }
 

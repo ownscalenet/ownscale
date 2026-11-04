@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/ownscalenet/ownscale/derrors"
+	"golang.org/x/net/dns/dnsmessage"
 	"tailscale.com/ipn/ipnstate"
 	"tailscale.com/net/tsaddr"
 	"tailscale.com/tailcfg"
@@ -266,6 +267,55 @@ func (c *Client) DNS(ctx context.Context) (_ tailcfg.DNSConfig, err error) {
 		case <-time.After(250 * time.Millisecond):
 		}
 	}
+}
+
+// Resolve looks up the A and AAAA records of name through the machine's own
+// resolver, so MagicDNS names resolve only when the control server enabled
+// them. It returns no addresses when the name does not exist.
+func (c *Client) Resolve(ctx context.Context, name string) (_ []netip.Addr, err error) {
+	defer derrors.Wrap(&err, "c.Resolve(%q)", name)
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.closed {
+		return nil, net.ErrClosed
+	}
+	ctx, cancel := c.operationContext(ctx)
+	defer cancel()
+	lc, err := c.server.LocalClient()
+	if err != nil {
+		return nil, err
+	}
+	var addrs []netip.Addr
+	for _, qtype := range []string{"A", "AAAA"} {
+		raw, _, err := lc.QueryDNS(ctx, name, qtype)
+		if err != nil {
+			return nil, err
+		}
+		found, err := parseAddrs(raw)
+		if err != nil {
+			return nil, errors.Join(ErrInvalidResponse, err)
+		}
+		addrs = append(addrs, found...)
+	}
+	return addrs, nil
+}
+
+// parseAddrs returns the address records in a DNS response.
+func parseAddrs(raw []byte) ([]netip.Addr, error) {
+	var msg dnsmessage.Message
+	if err := msg.Unpack(raw); err != nil {
+		return nil, err
+	}
+	var addrs []netip.Addr
+	for _, a := range msg.Answers {
+		switch r := a.Body.(type) {
+		case *dnsmessage.AResource:
+			addrs = append(addrs, netip.AddrFrom4(r.A))
+		case *dnsmessage.AAAAResource:
+			addrs = append(addrs, netip.AddrFrom16(r.AAAA))
+		}
+	}
+	return addrs, nil
 }
 
 // DialContext opens TCP to a tailnet IP:port (not a DNS name). The caller must

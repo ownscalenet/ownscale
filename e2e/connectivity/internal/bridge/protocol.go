@@ -22,6 +22,9 @@ const (
 	appErrorCode jrpc2.Code = 1
 )
 
+// dnsNamePattern matches a lowercase multi-label hostname, without a trailing dot.
+var dnsNamePattern = regexp.MustCompile(`^[a-z0-9]([a-z0-9-]{0,62})(\.[a-z0-9]([a-z0-9-]{0,62}))+$`)
+
 var handlePattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$`)
 
 type timeout time.Duration

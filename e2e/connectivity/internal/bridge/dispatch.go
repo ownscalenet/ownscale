@@ -24,6 +24,7 @@ import (
 type node interface {
 	Status(context.Context) (*ipnstate.Status, error)
 	DNS(context.Context) (tailcfg.DNSConfig, error)
+	Resolve(context.Context, string) ([]netip.Addr, error)
 	ServeHTTP(uint16) (*tscl.HTTPService, error)
 	ProbeHTTP(context.Context, string, string) (tscl.ProbeResult, error)
 	Close() error
@@ -92,6 +93,12 @@ type dnsResult struct {
 	Resolvers         []string          `json:"resolvers"`
 	FallbackResolvers []string          `json:"fallbackResolvers"`
 	ExtraRecords      []dnsRecordResult `json:"extraRecords"`
+}
+
+type resolveResult struct {
+	Node      string   `json:"node"`
+	Name      string   `json:"name"`
+	Addresses []string `json:"addresses"`
 }
 
 type serviceResult struct {
@@ -226,6 +233,33 @@ func (d *dispatcher) dispatch(parent context.Context, op string, params json.Raw
 			Node   string `json:"node"`
 			Closed bool   `json:"closed"`
 		}{args.Node, true}, nil
+	case "resolve":
+		var args struct {
+			Timeout timeout `json:"timeout"`
+			Node    string  `json:"node"`
+			Name    string  `json:"name"`
+		}
+		if err := decode(params, &args); err != nil {
+			return nil, err
+		}
+		ctx, cancel := context.WithTimeout(parent, time.Duration(args.Timeout))
+		defer cancel()
+		if !dnsNamePattern.MatchString(args.Name) {
+			return nil, failure("invalid_command")
+		}
+		n, err := d.lookup(args.Node)
+		if err != nil {
+			return nil, err
+		}
+		addrs, err := n.client.Resolve(ctx, args.Name)
+		if err != nil {
+			return nil, err
+		}
+		result := resolveResult{Node: args.Node, Name: args.Name, Addresses: []string{}}
+		for _, a := range addrs {
+			result.Addresses = append(result.Addresses, a.String())
+		}
+		return result, nil
 	case "serve":
 		var args struct {
 			Timeout timeout `json:"timeout"`

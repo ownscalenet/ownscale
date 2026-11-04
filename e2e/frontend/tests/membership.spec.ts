@@ -161,3 +161,35 @@ test('a member deletes their own account, which the owner can only do once alone
     await member.context().close()
   }
 })
+
+test('a member sees the tailnet name on the DNS page but cannot change DNS settings', async ({ page, browser, account }) => {
+  await page.goto('/users')
+  await page.getByRole('button', { name: 'Invite member' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('combobox').selectOption('member')
+  await dialog.getByRole('button', { name: 'Create invite link' }).click()
+  await expect(dialog.getByText(/expires in 7 days/i)).toBeVisible()
+  const inviteLink = await dialog.getByRole('textbox').inputValue()
+  expect(inviteLink).toContain('/invite/')
+  await dialog.getByRole('button', { name: 'Done' }).click()
+
+  const ownerDNS = (await (await page.request.get('/api/dns')).json()).dns
+  const member = await signIn(browser, account.invitee, inviteLink)
+  try {
+    await expect(member.getByRole('link', { name: 'Machines' })).toBeVisible({ timeout: 15_000 })
+    await member.goto('/dns')
+    await expect(member.getByText('Only owners and admins can edit DNS settings')).toBeVisible()
+    await expect(
+      member.locator('.card', { hasText: 'Tailnet Name' }).locator('.font-mono'),
+    ).toHaveText(ownerDNS.baseDomain)
+    expect((await member.request.put('/api/dns', { data: ownerDNS })).status()).toBe(403)
+  } finally {
+    await member.context().close()
+    // Invites only apply to brand-new accounts, so remove the member again.
+    await page.goto('/users')
+    const memberRow = page.getByRole('row').filter({ hasText: account.invitee })
+    await memberRow.getByRole('button', { name: 'Remove' }).click()
+    await confirmDialog(page, 'Remove member')
+    await expect(memberRow).toBeHidden()
+  }
+})
