@@ -10,6 +10,7 @@ import { ErrorAlert } from '../components/ui'
 import SSOButtons from '../components/SSOButtons'
 import Logo from '../components/Logo'
 import { siteURL } from '../lib/faq'
+import { rawTextProps } from '../lib/inputProps'
 
 // Signup is the /signup page. It keeps `next` through every flow, so e.g. an
 // invitee lands back on /invite/:token once the account exists.
@@ -82,7 +83,7 @@ export default function Signup() {
                 <label className="fieldset-label" htmlFor="passkey-username">
                   Username
                 </label>
-                <input
+                <input {...rawTextProps}
                   id="passkey-username"
                   type="text"
                   required

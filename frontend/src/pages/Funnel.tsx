@@ -13,6 +13,7 @@ import { usePageTitle } from '../hooks/usePageTitle'
 import { useConfirm } from '../lib/confirm'
 import { EmptyRow, ErrorAlert, PageHeader, PageSpinner } from '../components/ui'
 import { CopyIcon } from '../components/CopyButton'
+import { rawTextProps } from '../lib/inputProps'
 
 export default function Funnel() {
   usePageTitle('Funnels')
@@ -178,7 +179,7 @@ export default function Funnel() {
                 <fieldset className="fieldset">
                   <legend className="fieldset-legend">Subdomain</legend>
                   <label className="input input-bordered input-sm w-full flex items-center gap-0 font-mono">
-                    <input
+                    <input {...rawTextProps}
                       id="funnel-label"
                       type="text"
                       className="grow min-w-0"

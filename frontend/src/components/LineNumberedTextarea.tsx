@@ -45,6 +45,8 @@ export default function LineNumberedTextarea({
         style={{ lineHeight: '1.25rem' }}
         wrap="off"
         spellCheck={spellCheck}
+        autoCapitalize="none"
+        autoCorrect="off"
         value={value}
         readOnly={readOnly}
         onChange={(e: ChangeEvent<HTMLTextAreaElement>) => onChange(e.target.value)}

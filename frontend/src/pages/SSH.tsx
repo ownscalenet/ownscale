@@ -12,6 +12,7 @@ import {
 import { useAuth } from '../authContext'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { ErrorAlert, PageHeader } from '../components/ui'
+import { rawTextProps } from '../lib/inputProps'
 
 // pendingSession is a tailnet-connected client waiting for the terminal
 // container to render.
@@ -213,7 +214,7 @@ export default function SSH() {
         <form onSubmit={connect} className="flex flex-wrap items-end gap-3">
           <label className="form-control">
             <span className="label-text text-sm">Username on the machine</span>
-            <input
+            <input {...rawTextProps}
               className="input input-bordered"
               value={username}
               onChange={(e) => setUsername(e.target.value)}

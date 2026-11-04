@@ -12,6 +12,7 @@ import {
 import { usePageTitle } from '../hooks/usePageTitle'
 import { EmptyRow, ErrorAlert, PageHeader, PageSpinner } from '../components/ui'
 import { CopyIcon } from '../components/CopyButton'
+import { rawTextProps } from '../lib/inputProps'
 
 const RECORD_TYPES = ['A', 'AAAA', 'CNAME']
 
@@ -62,7 +63,7 @@ function ListEditor({
       </div>
       {!disabled && (
         <div className="flex gap-2">
-          <input
+          <input {...rawTextProps}
             type="text"
             className="input input-bordered input-sm flex-1"
             placeholder={placeholder}
@@ -232,7 +233,7 @@ export default function DNS() {
             </div>
             {canManage && (
               <div className="flex flex-wrap gap-2 mt-2">
-                <input
+                <input {...rawTextProps}
                   type="text"
                   className="input input-bordered input-sm flex-1"
                   placeholder="Name (e.g. server.example.com)"
@@ -250,7 +251,7 @@ export default function DNS() {
                     </option>
                   ))}
                 </select>
-                <input
+                <input {...rawTextProps}
                   type="text"
                   className="input input-bordered input-sm flex-1"
                   placeholder="Value (e.g. 10.0.0.1)"
@@ -386,14 +387,14 @@ function SplitDNS({
         </div>
         {canManage && (
           <div className="flex flex-wrap gap-2 mt-2">
-            <input
+            <input {...rawTextProps}
               type="text"
               className="input input-bordered input-sm flex-1"
               placeholder="Domain (e.g. corp.example.com)"
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
             />
-            <input
+            <input {...rawTextProps}
               type="text"
               className="input input-bordered input-sm flex-1"
               placeholder="Nameservers (e.g. 10.0.0.53, 10.0.0.54)"

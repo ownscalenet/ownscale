@@ -18,6 +18,7 @@ import { useConfirm } from '../lib/confirm'
 import Modal from '../components/Modal'
 import CopyButton from '../components/CopyButton'
 import { ErrorAlert, PageHeader } from '../components/ui'
+import { rawTextProps } from '../lib/inputProps'
 
 const TAG_ONLY = '__tag_only__'
 
@@ -419,7 +420,7 @@ function CreateAuthKeyDialog({
             {canManage && (
               <fieldset className="fieldset">
                 <legend className="fieldset-legend">ACL tags{tagOnly && ' (required)'}</legend>
-                <input
+                <input {...rawTextProps}
                   type="text"
                   className="input input-bordered w-full font-mono"
                   placeholder="tag:server, tag:prod"

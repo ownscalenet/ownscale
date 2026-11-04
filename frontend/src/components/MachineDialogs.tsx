@@ -10,6 +10,7 @@ import {
   setMachineTags,
   type Machine,
 } from '../api'
+import { rawTextProps } from '../lib/inputProps'
 
 export function RenameDialog({
   machine: m,
@@ -32,7 +33,7 @@ export function RenameDialog({
           run(() => renameMachine(m.id, name))
         }}
       >
-        <input
+        <input {...rawTextProps}
           type="text"
           className="input input-bordered w-full"
           value={name}
@@ -78,7 +79,7 @@ export function TagsDialog({
           run(() => setMachineTags(m.id, parsed))
         }}
       >
-        <input
+        <input {...rawTextProps}
           type="text"
           className="input input-bordered w-full font-mono"
           placeholder="tag:server, tag:prod"
