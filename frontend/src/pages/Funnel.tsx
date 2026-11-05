@@ -173,7 +173,7 @@ export default function Funnel() {
         <div className="card bg-base-100 shadow">
           <div className="card-body">
             <h2 className="card-title">Create funnel route</h2>
-            <ErrorAlert error={createError} className="mb-2" />
+            <ErrorAlert error={createError} />
             <form onSubmit={handleCreate}>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <fieldset className="fieldset">

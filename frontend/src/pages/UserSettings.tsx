@@ -98,7 +98,7 @@ function PasskeysCard() {
           )}
         </div>
 
-        <ErrorAlert error={error} className="mt-2" />
+        <ErrorAlert error={error} />
 
         {!supported && (
           <div className="alert alert-warning mt-2">
@@ -212,7 +212,7 @@ function DeleteAccountCard() {
           </div>
         )}
 
-        <ErrorAlert error={error} className="mt-2" />
+        <ErrorAlert error={error} />
       </div>
     </div>
   )

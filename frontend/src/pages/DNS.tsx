@@ -97,6 +97,7 @@ export default function DNS() {
   const [newRecordName, setNewRecordName] = useState('')
   const [newRecordType, setNewRecordType] = useState(RECORD_TYPES[0])
   const [newRecordValue, setNewRecordValue] = useState('')
+  const [recordError, setRecordError] = useState<string | null>(null)
 
   // Every edit saves straight away: it shows at once and is rolled back if
   // the save fails.
@@ -113,11 +114,11 @@ export default function DNS() {
   const saving = mutation.isPending
   const success = mutation.isSuccess
   const failure = mutation.error ?? query.error
-  const error = failure ? errorMessage(failure) : null
+  const error = recordError ?? (failure ? errorMessage(failure) : null)
 
   if (!dns) {
     return query.error ? (
-      <ErrorAlert error={errorMessage(query.error)} className="" />
+      <ErrorAlert error={errorMessage(query.error)} inline />
     ) : (
       <PageSpinner />
     )
@@ -244,7 +245,10 @@ export default function DNS() {
                   className="input input-bordered input-sm flex-1"
                   placeholder="Name (e.g. server.example.com)"
                   value={newRecordName}
-                  onChange={(e) => setNewRecordName(e.target.value)}
+                  onChange={(e) => {
+                    setNewRecordName(e.target.value)
+                    setRecordError(null)
+                  }}
                 />
                 <select
                   className="select select-bordered select-sm"

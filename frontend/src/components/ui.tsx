@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import type { ExitNodeStatus } from '../api'
 
 // PageHeader is a page's title, with an optional subtitle and the page's
@@ -61,20 +61,48 @@ export function ExitNodeBadge({ status }: { status: ExitNodeStatus }) {
   )
 }
 
-// ErrorAlert shows error, and nothing when there is none.
+// ErrorAlert shows error, and nothing when there is none. It is a fixed
+// toast so it stays visible however far the page is scrolled; inline keeps it
+// in the page flow, for when the error is the page's content.
 export function ErrorAlert({
   error,
-  className = 'mb-4',
+  inline = false,
 }: {
   error: string | null
-  className?: string
+  inline?: boolean
 }) {
+  const [dismissed, setDismissed] = useState<string | null>(null)
+  // Forget the dismissal once the error is gone, so the same error shows again.
+  if (!error && dismissed !== null) setDismissed(null)
+
   if (!error) return null
+  const message = (
+    <span className={`whitespace-pre-wrap break-words ${error.includes('\n') ? 'font-mono text-sm' : ''}`}>
+      {error}
+    </span>
+  )
+  if (inline) {
+    return (
+      <div role="alert" className="alert alert-error mb-4">
+        {message}
+      </div>
+    )
+  }
+  if (dismissed === error) return null
   return (
-    <div role="alert" className={`alert alert-error ${className}`}>
-      <span className={`whitespace-pre-wrap ${error.includes('\n') ? 'font-mono text-sm' : ''}`}>
-        {error}
-      </span>
+    // Above modals, so errors raised inside a dialog are not hidden.
+    <div className="toast toast-top toast-end z-[1000]">
+      <div role="alert" className="alert alert-error max-w-md">
+        {message}
+        <button
+          type="button"
+          className="btn btn-ghost btn-xs"
+          aria-label="Dismiss error"
+          onClick={() => setDismissed(error)}
+        >
+          ✕
+        </button>
+      </div>
     </div>
   )
 }

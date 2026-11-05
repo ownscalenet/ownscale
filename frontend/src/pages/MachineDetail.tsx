@@ -89,7 +89,7 @@ export default function MachineDetail() {
     return (
       <div>
         {breadcrumb}
-        <ErrorAlert error={notFound ? 'Machine not found' : errorMessage(query.error)} />
+        <ErrorAlert error={notFound ? 'Machine not found' : errorMessage(query.error)} inline />
       </div>
     )
   }
