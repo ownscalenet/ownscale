@@ -63,7 +63,8 @@ function ListEditor({
       </div>
       {!disabled && (
         <div className="flex gap-2">
-          <input {...rawTextProps}
+          <input
+            {...rawTextProps}
             type="text"
             className="input input-bordered input-sm flex-1"
             placeholder={placeholder}
@@ -117,11 +118,7 @@ export default function DNS() {
   const error = recordError ?? (failure ? errorMessage(failure) : null)
 
   if (!dns) {
-    return query.error ? (
-      <ErrorAlert error={errorMessage(query.error)} inline />
-    ) : (
-      <PageSpinner />
-    )
+    return query.error ? <ErrorAlert error={errorMessage(query.error)} inline /> : <PageSpinner />
   }
 
   const addRecord = () => {
@@ -166,7 +163,12 @@ export default function DNS() {
       )}
 
       <div className="flex flex-col gap-6">
-        <TailnetName dns={dns} certsAvailable={certsAvailable} />
+        <TailnetName
+          dns={dns}
+          certsAvailable={certsAvailable}
+          certsThisWeek={query.data?.certsThisWeek ?? 0}
+          certsPerWeek={query.data?.certsPerWeek ?? 0}
+        />
 
         <div className="card bg-base-100 shadow">
           <div className="card-body">
@@ -240,7 +242,8 @@ export default function DNS() {
             </div>
             {canManage && (
               <div className="flex flex-wrap gap-2 mt-2">
-                <input {...rawTextProps}
+                <input
+                  {...rawTextProps}
                   type="text"
                   className="input input-bordered input-sm flex-1"
                   placeholder="Name (e.g. server.example.com)"
@@ -261,7 +264,8 @@ export default function DNS() {
                     </option>
                   ))}
                 </select>
-                <input {...rawTextProps}
+                <input
+                  {...rawTextProps}
                   type="text"
                   className="input input-bordered input-sm flex-1"
                   placeholder="Value (e.g. 10.0.0.1)"
@@ -397,14 +401,16 @@ function SplitDNS({
         </div>
         {canManage && (
           <div className="flex flex-wrap gap-2 mt-2">
-            <input {...rawTextProps}
+            <input
+              {...rawTextProps}
               type="text"
               className="input input-bordered input-sm flex-1"
               placeholder="Domain (e.g. corp.example.com)"
               value={domain}
               onChange={(e) => setDomain(e.target.value)}
             />
-            <input {...rawTextProps}
+            <input
+              {...rawTextProps}
               type="text"
               className="input input-bordered input-sm flex-1"
               placeholder="Nameservers (e.g. 10.0.0.53, 10.0.0.54)"
@@ -428,7 +434,17 @@ function SplitDNS({
   )
 }
 
-function TailnetName({ dns, certsAvailable }: { dns: DNSConfig; certsAvailable: boolean }) {
+function TailnetName({
+  dns,
+  certsAvailable,
+  certsThisWeek,
+  certsPerWeek,
+}: {
+  dns: DNSConfig
+  certsAvailable: boolean
+  certsThisWeek: number
+  certsPerWeek: number
+}) {
   return (
     <div className="card bg-base-100 shadow">
       <div className="card-body">
@@ -457,6 +473,12 @@ function TailnetName({ dns, certsAvailable }: { dns: DNSConfig; certsAvailable: 
               Certificate Transparency logs
             </a>
             .
+          </p>
+        )}
+        {certsAvailable && dns.magicDns && certsPerWeek > 0 && (
+          <p className="text-sm text-base-content/70">
+            New certificates this week: {certsThisWeek} of {certsPerWeek}. Renewals don&apos;t
+            count.
           </p>
         )}
       </div>

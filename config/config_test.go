@@ -469,18 +469,18 @@ func TestLoadDNSConfig(t *testing.T) {
 	}{
 		{
 			name: "defaults",
-			want: DNSConfig{Provider: "none", Zone: "example.com", PropagationTimeout: 2 * time.Minute, RFC2136: RFC2136DNSConfig{KeyAlg: "hmac-sha256"}},
+			want: DNSConfig{Provider: "none", Zone: "example.com", PropagationTimeout: 2 * time.Minute, CertsPerOrgPerWeek: 10, RFC2136: RFC2136DNSConfig{KeyAlg: "hmac-sha256"}},
 		},
 		{
 			// compose.yaml passes unset settings as empty variables.
 			name: "empty variable keeps default",
 			env:  map[string]string{"OWNSCALE_DNS_RFC2136_KEY_ALG": ""},
-			want: DNSConfig{Provider: "none", Zone: "example.com", PropagationTimeout: 2 * time.Minute, RFC2136: RFC2136DNSConfig{KeyAlg: "hmac-sha256"}},
+			want: DNSConfig{Provider: "none", Zone: "example.com", PropagationTimeout: 2 * time.Minute, CertsPerOrgPerWeek: 10, RFC2136: RFC2136DNSConfig{KeyAlg: "hmac-sha256"}},
 		},
 		{
 			name: "zone defaults to content domain",
 			env:  map[string]string{"OWNSCALE_CONTENT_DOMAIN": "example.net"},
-			want: DNSConfig{Provider: "none", Zone: "example.net", PropagationTimeout: 2 * time.Minute, RFC2136: RFC2136DNSConfig{KeyAlg: "hmac-sha256"}},
+			want: DNSConfig{Provider: "none", Zone: "example.net", PropagationTimeout: 2 * time.Minute, CertsPerOrgPerWeek: 10, RFC2136: RFC2136DNSConfig{KeyAlg: "hmac-sha256"}},
 		},
 		{
 			name: "overrides",
@@ -489,9 +489,10 @@ func TestLoadDNSConfig(t *testing.T) {
 				"OWNSCALE_DNS_ZONE":                 "corp.com",
 				"OWNSCALE_DNS_PROPAGATION_TIMEOUT":  "0s",
 				"OWNSCALE_DNS_CLOUDFLARE_API_TOKEN": "tok",
+				"OWNSCALE_CERTS_PER_ORG_PER_WEEK":   "3",
 			},
 			want: DNSConfig{
-				Provider: "cloudflare", Zone: "corp.com",
+				Provider: "cloudflare", Zone: "corp.com", CertsPerOrgPerWeek: 3,
 				Cloudflare: CloudflareDNSConfig{APIToken: "tok"},
 				RFC2136:    RFC2136DNSConfig{KeyAlg: "hmac-sha256"},
 			},
@@ -534,6 +535,11 @@ func TestDNSConfigValidate(t *testing.T) {
 			d.Hetzner.APIToken = "x"
 			d.PropagationTimeout = -time.Second
 		}, wantErr: "OWNSCALE_DNS_PROPAGATION_TIMEOUT"},
+		{name: "negative certs per org", change: func(d *DNSConfig) {
+			d.Provider = "hetzner"
+			d.Hetzner.APIToken = "x"
+			d.CertsPerOrgPerWeek = -1
+		}, wantErr: "OWNSCALE_CERTS_PER_ORG_PER_WEEK"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

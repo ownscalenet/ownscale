@@ -9,6 +9,12 @@ import (
 	"time"
 )
 
+type CertName struct {
+	OrganizationID string
+	Name           string
+	FirstSeenAt    time.Time
+}
+
 type FunnelRoute struct {
 	ID             string
 	OrganizationID string

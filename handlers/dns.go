@@ -18,10 +18,17 @@ func (h *Handlers) GetDNSSettings(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
+	certs, err := h.orgs.ForOrg(org).NewCertsThisWeek(r.Context())
+	if err != nil {
+		h.serverError(w, r, err)
+		return
+	}
 	h.writeJSON(w, http.StatusOK, map[string]any{
 		"dns":               dns,
 		"canManage":         isManager(caller.Role),
 		"httpsCertificates": h.orgs.CertsEnabled(), // also needs MagicDNS
+		"certsThisWeek":     certs,
+		"certsPerWeek":      h.orgs.CertsPerOrgPerWeek(),
 	})
 }
 

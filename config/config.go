@@ -62,6 +62,10 @@ type DNSConfig struct {
 	// PropagationTimeout bounds waiting for a challenge record to reach the
 	// zone's nameservers; 0 skips waiting.
 	PropagationTimeout time.Duration `env:"OWNSCALE_DNS_PROPAGATION_TIMEOUT"`
+	// CertsPerOrgPerWeek caps the new certificate names each organization
+	// gets per week, so one can't use up Let's Encrypt's limit shared by
+	// all; 0 means no cap.
+	CertsPerOrgPerWeek int `env:"OWNSCALE_CERTS_PER_ORG_PER_WEEK"`
 
 	Azure      AzureDNSConfig
 	Cloudflare CloudflareDNSConfig
@@ -175,6 +179,9 @@ func (d DNSConfig) Validate() error {
 	}
 	if d.PropagationTimeout < 0 {
 		return fmt.Errorf("OWNSCALE_DNS_PROPAGATION_TIMEOUT must not be negative, got %s", d.PropagationTimeout)
+	}
+	if d.CertsPerOrgPerWeek < 0 {
+		return fmt.Errorf("OWNSCALE_CERTS_PER_ORG_PER_WEEK must not be negative, got %d", d.CertsPerOrgPerWeek)
 	}
 	return nil
 }
@@ -330,6 +337,7 @@ func defaults() *Config {
 		DNS: DNSConfig{
 			Provider:           DNSProviderNone,
 			PropagationTimeout: 2 * time.Minute,
+			CertsPerOrgPerWeek: 10,
 			RFC2136:            RFC2136DNSConfig{KeyAlg: "hmac-sha256"},
 		},
 		Log: LogConfig{

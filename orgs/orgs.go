@@ -181,6 +181,8 @@ func NewService(queries *db.TxQueries, cfg *config.Config, issuer string,
 			providerName:       cfg.DNS.Provider,
 			zone:               cfg.DNS.Zone,
 			propagationTimeout: cfg.DNS.PropagationTimeout,
+			queries:            queries,
+			perOrgPerWeek:      cfg.DNS.CertsPerOrgPerWeek,
 		}
 	}
 	return &Service{
@@ -199,6 +201,10 @@ func NewService(queries *db.TxQueries, cfg *config.Config, issuer string,
 // CertsEnabled reports whether nodes can get HTTPS certificates, for
 // organizations with MagicDNS on.
 func (s *Service) CertsEnabled() bool { return s.certs != nil }
+
+// CertsPerOrgPerWeek is how many new certificate names an organization
+// may get per week; 0 means no limit.
+func (s *Service) CertsPerOrgPerWeek() int { return s.cfg.DNS.CertsPerOrgPerWeek }
 
 // tailnetDomain returns the MagicDNS domain of the organization with label.
 func (s *Service) tailnetDomain(label string) string {
@@ -646,7 +652,7 @@ func (s *Service) startLocked(ctx context.Context, orgID, subdomain string, hsCf
 				return err
 			}
 		}
-		inst, err := s.launch(ctx, subdomain, port, hsCfg)
+		inst, err := s.launch(ctx, orgID, subdomain, port, hsCfg)
 		if _, ok := errors.AsType[*types.ListenerBindError](err); ok && attempt < maxBindAttempts {
 			s.logger.Warn("headscale port taken, retrying on another", "subdomain", subdomain, "port", port, "error", err)
 			port = 0
@@ -678,12 +684,13 @@ func (s *Service) startLocked(ctx context.Context, orgID, subdomain string, hsCf
 // returns once the instance serves on port; otherwise it stops the instance
 // and returns why, e.g. a *types.ListenerBindError when port is taken. A
 // nil instance means createFn built none (tests).
-func (s *Service) launch(ctx context.Context, subdomain string, port int, hsCfg *HeadscaleConfig) (*instance, error) {
+func (s *Service) launch(ctx context.Context, orgID, subdomain string, port int, hsCfg *HeadscaleConfig) (*instance, error) {
 	derpMap, err := s.currentDERPMap(ctx)
 	if err != nil {
 		return nil, err
 	}
 	app, err := s.createFn(headscaleParams{
+		orgID:      orgID,
 		dataDir:    s.cfg.DataDir,
 		subdomain:  subdomain,
 		baseDomain: s.cfg.BaseDomain,

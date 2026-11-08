@@ -9,6 +9,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -22,6 +23,7 @@ import (
 	"tailscale.com/types/dnstype"
 	"tailscale.com/types/key"
 
+	"github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/derrors"
 )
@@ -134,6 +136,7 @@ const DefaultACLPolicy = `{
 // headscaleParams is what createHeadscale needs to build an organization's
 // headscale instance.
 type headscaleParams struct {
+	orgID      string
 	dataDir    string
 	subdomain  string
 	baseDomain string
@@ -155,6 +158,9 @@ type nodeCerts struct {
 	providerName       string
 	zone               string
 	propagationTimeout time.Duration
+	queries            *db.TxQueries
+	// perOrgPerWeek is config.DNSConfig.CertsPerOrgPerWeek.
+	perOrgPerWeek int
 }
 
 // challengeResolvers find a zone's nameservers when waiting for a challenge
@@ -192,7 +198,7 @@ func createHeadscale(p headscaleParams) (_ *hscontrol.Headscale, err error) {
 			PropagationTimeout: p.certs.propagationTimeout,
 			Resolvers:          challengeResolvers,
 			ProviderName:       p.certs.providerName,
-			Provider:           &scopedProvider{Provider: p.certs.provider, domain: dns.BaseDomain},
+			Provider:           &scopedProvider{certs: p.certs, orgID: p.orgID, domain: dns.BaseDomain},
 		}
 	}
 	cfg := &types.Config{
@@ -317,13 +323,18 @@ func toResolvers(nameservers []string) []*dnstype.Resolver {
 }
 
 // scopedProvider limits a provider shared by every organization to
-// challenge records under one organization's MagicDNS domain.
+// challenge records under one organization's MagicDNS domain, and to
+// certs.perOrgPerWeek new certificate names a week.
 type scopedProvider struct {
-	hsdns.Provider
+	certs  *nodeCerts
+	orgID  string
 	domain string
 }
 
-var errOutOfScope = errors.New("DNS record outside the organization's domain")
+var (
+	errOutOfScope = errors.New("DNS record outside the organization's domain")
+	errCertLimit  = errors.New("organization reached its weekly limit of new certificates")
+)
 
 func (p *scopedProvider) check(zone string, recs []libdns.Record) error {
 	suffix := "." + strings.TrimSuffix(p.domain, ".") + "."
@@ -337,16 +348,70 @@ func (p *scopedProvider) check(zone string, recs []libdns.Record) error {
 	return nil
 }
 
+// certName is the certificate name rec, a checked challenge, is for.
+func certName(zone string, rec libdns.Record) string {
+	name := strings.ToLower(libdns.AbsoluteName(rec.RR().Name, zone))
+	return strings.TrimSuffix(strings.TrimPrefix(name, types.ACMEChallengePrefix), ".")
+}
+
+// reserve records the names of recs not seen before, failing with
+// errCertLimit if that goes over the weekly limit. Only new names count:
+// Let's Encrypt doesn't rate limit renewals.
+func (p *scopedProvider) reserve(ctx context.Context, zone string, recs []libdns.Record) ([]string, error) {
+	q, commit, rollback, err := p.certs.queries.StartTx(ctx)
+	if err != nil {
+		return nil, err
+	}
+	defer rollback()
+
+	var added []string
+	for _, r := range recs {
+		name := certName(zone, r)
+		seen, err := q.CertNameExists(ctx, sqlcgen.CertNameExistsParams{OrganizationID: p.orgID, Name: name})
+		if err != nil {
+			return nil, err
+		}
+		if seen || slices.Contains(added, name) {
+			continue
+		}
+		if p.certs.perOrgPerWeek > 0 {
+			n, err := q.CountCertNamesThisWeek(ctx, p.orgID)
+			if err != nil {
+				return nil, err
+			}
+			if n >= int64(p.certs.perOrgPerWeek) {
+				return nil, fmt.Errorf("%w (%d): %s", errCertLimit, p.certs.perOrgPerWeek, name)
+			}
+		}
+		if err := q.CreateCertName(ctx, sqlcgen.CreateCertNameParams{OrganizationID: p.orgID, Name: name}); err != nil {
+			return nil, err
+		}
+		added = append(added, name)
+	}
+	return added, commit()
+}
+
 func (p *scopedProvider) AppendRecords(ctx context.Context, zone string, recs []libdns.Record) ([]libdns.Record, error) {
 	if err := p.check(zone, recs); err != nil {
 		return nil, err
 	}
-	return p.Provider.AppendRecords(ctx, zone, recs)
+	added, err := p.reserve(ctx, zone, recs)
+	if err != nil {
+		return nil, err
+	}
+	got, err := p.certs.provider.AppendRecords(ctx, zone, recs)
+	if err != nil {
+		// No certificate can come of it, so it doesn't count.
+		for _, name := range added {
+			_ = p.certs.queries.DeleteCertName(context.WithoutCancel(ctx), sqlcgen.DeleteCertNameParams{OrganizationID: p.orgID, Name: name})
+		}
+	}
+	return got, err
 }
 
 func (p *scopedProvider) DeleteRecords(ctx context.Context, zone string, recs []libdns.Record) ([]libdns.Record, error) {
 	if err := p.check(zone, recs); err != nil {
 		return nil, err
 	}
-	return p.Provider.DeleteRecords(ctx, zone, recs)
+	return p.certs.provider.DeleteRecords(ctx, zone, recs)
 }

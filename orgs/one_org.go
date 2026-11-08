@@ -211,6 +211,13 @@ func (o *OrgService) GetDNSSettings(ctx context.Context) (_ DNSConfig, err error
 	return normalizeDNSConfig(cfg.DNS), nil
 }
 
+// NewCertsThisWeek returns how many certificate names o got for the first
+// time in the last week.
+func (o *OrgService) NewCertsThisWeek(ctx context.Context) (_ int64, err error) {
+	defer derrors.Wrap(&err, "o.NewCertsThisWeek(%q)", o.orgID)
+	return o.queries.CountCertNamesThisWeek(ctx, o.orgID)
+}
+
 // SetDNSSettings validates dns, persists it into o's HeadscaleConfig,
 // and restarts headscale so it's applied.
 func (o *OrgService) SetDNSSettings(ctx context.Context, dns DNSConfig) (err error) {

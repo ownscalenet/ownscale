@@ -2,6 +2,7 @@ package orgs
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -12,19 +13,24 @@ import (
 	"github.com/libdns/libdns"
 	"tailscale.com/tsnet"
 
+	"github.com/ownscalenet/ownscale/db/dbtest"
+	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/hscl"
 	"tailscale.com/tailcfg/nodecap"
 )
 
-// fakeProvider records the challenge records written to it.
 type fakeProvider struct {
 	mu      sync.Mutex
 	records []libdns.RR
+	fail    error
 }
 
 func (p *fakeProvider) AppendRecords(_ context.Context, _ string, recs []libdns.Record) ([]libdns.Record, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.fail != nil {
+		return nil, p.fail
+	}
 	for _, r := range recs {
 		p.records = append(p.records, r.RR())
 	}
@@ -81,6 +87,14 @@ func TestCreateHeadscaleCerts(t *testing.T) {
 	}
 }
 
+func newScopedProvider(t *testing.T, fake *fakeProvider, perOrgPerWeek int) (*scopedProvider, *sql.DB) {
+	t.Helper()
+	pool, queries := dbtest.New(t)
+	org := dbtest.CreateOrg(t, queries.Queries, "acme")
+	certs := &nodeCerts{provider: fake, queries: queries, perOrgPerWeek: perOrgPerWeek}
+	return &scopedProvider{certs: certs, orgID: org.ID, domain: "netacme.os.example.com"}, pool
+}
+
 func TestScopedProvider(t *testing.T) {
 	tests := []struct {
 		name    string
@@ -96,7 +110,7 @@ func TestScopedProvider(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			fake := &fakeProvider{}
-			p := &scopedProvider{Provider: fake, domain: "netacme.os.example.com"}
+			p, _ := newScopedProvider(t, fake, 10)
 			_, err := p.AppendRecords(t.Context(), "example.com.", []libdns.Record{tt.rec})
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("AppendRecords error = %v, wantErr %v", err, tt.wantErr)
@@ -111,13 +125,78 @@ func TestScopedProvider(t *testing.T) {
 	}
 }
 
+func TestScopedProviderLimit(t *testing.T) {
+	challenge := func(node string) libdns.Record {
+		return libdns.TXT{Name: "_acme-challenge." + node + ".netacme.os", Text: strings.Repeat("a", 43)}
+	}
+	tests := []struct {
+		name          string
+		perOrgPerWeek int
+		// before are challenges published, and aged a week, before nodes.
+		before    []string
+		nodes     []string
+		wantErr   []bool
+		wantCount int64
+	}{
+		{"under limit", 2, nil, []string{"a", "b"}, []bool{false, false}, 2},
+		{"over limit", 2, nil, []string{"a", "b", "c"}, []bool{false, false, true}, 2},
+		{"renewal doesn't count", 2, nil, []string{"a", "a", "b", "a"}, []bool{false, false, false, false}, 2},
+		{"case folded", 1, nil, []string{"a", "A"}, []bool{false, false}, 1},
+		{"no limit", 0, nil, []string{"a", "b", "c"}, []bool{false, false, false}, 3},
+		{"older than a week", 1, []string{"a", "b"}, []string{"a", "c", "d"}, []bool{false, false, true}, 1},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			p, pool := newScopedProvider(t, &fakeProvider{}, tt.perOrgPerWeek)
+			queries := p.certs.queries
+			for _, node := range tt.before {
+				if err := queries.CreateCertName(t.Context(), sqlcgen.CreateCertNameParams{OrganizationID: p.orgID, Name: node + ".netacme.os.example.com"}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if _, err := pool.ExecContext(t.Context(), "UPDATE cert_names SET first_seen_at = datetime('now', '-8 days')"); err != nil {
+				t.Fatal(err)
+			}
+			for i, node := range tt.nodes {
+				_, err := p.AppendRecords(t.Context(), "example.com.", []libdns.Record{challenge(node)})
+				if (err != nil) != tt.wantErr[i] || (err != nil && !errors.Is(err, errCertLimit)) {
+					t.Errorf("AppendRecords(%s) error = %v, wantErr %v", node, err, tt.wantErr[i])
+				}
+			}
+			got, err := queries.CountCertNamesThisWeek(t.Context(), p.orgID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got != tt.wantCount {
+				t.Errorf("CountCertNamesThisWeek = %d, want %d", got, tt.wantCount)
+			}
+		})
+	}
+}
+
+func TestScopedProviderFailureDoesntCount(t *testing.T) {
+	fake := &fakeProvider{fail: errors.New("provider down")}
+	p, _ := newScopedProvider(t, fake, 1)
+	rec := libdns.TXT{Name: "_acme-challenge.a.netacme.os", Text: strings.Repeat("a", 43)}
+	if _, err := p.AppendRecords(t.Context(), "example.com.", []libdns.Record{rec}); err == nil {
+		t.Fatal("AppendRecords succeeded with a failing provider")
+	}
+	n, err := p.certs.queries.CountCertNamesThisWeek(t.Context(), p.orgID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 0 {
+		t.Errorf("CountCertNamesThisWeek = %d after a failed append, want 0", n)
+	}
+}
+
 // TestNodeCertChallenge connects a real node to an organization with node
 // certificates on and checks it gets a certificate name and can publish its
 // DNS-01 challenge through the provider.
 func TestNodeCertChallenge(t *testing.T) {
 	svc := newRealService(t)
 	fake := &fakeProvider{}
-	svc.certs = &nodeCerts{provider: fake, providerName: "rfc2136", zone: "example.com"}
+	svc.certs = &nodeCerts{provider: fake, providerName: "rfc2136", zone: "example.com", queries: svc.queries}
 	org := createStarted(t, svc, "acme")
 	client, err := svc.Client("acme")
 	if err != nil {
