@@ -37,6 +37,10 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
   if (mode === 'both') { process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:q.id,result:{},error:{code:1,message:'x',data:{code:'timeout',message:'SECRET'}}})+'\\n'); return; }
   if (mode === 'error') { process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:q.id,error:{code:1,message:'${secret}',data:{code:'invalid_command',message:'${secret}'}}})+'\\n'); return; }
   if (mode === 'unknown-error') { process.stdout.write(JSON.stringify({jsonrpc:'2.0',id:q.id,error:{code:1,message:'${secret}',data:{code:'${secret}',message:'${secret}'}}})+'\\n'); return; }
+  if (mode === 'tls') {
+    if (q.method === 'serveTLS') { process.stdout.write(reply({node:q.params.node,service:q.params.service,identity:'id',addresses:['100.64.0.1:443'],port:443,domain:'host.org.example.com'})); return; }
+    if (q.method === 'probe') { process.stdout.write(reply(q.params.serverName === 'host.org.example.com' ? {ok:true,statusCode:200,identity:'id',durationMs:1} : {ok:false,statusCode:0,identity:'',durationMs:1,error:{code:'timeout',message:'x'}})); return; }
+  }
   process.stderr.write('${secret}'.repeat(5000));
   if (q.method === 'create') {
     if (q.params.authKey !== '${secret}' || process.argv.includes(q.params.authKey) ||
@@ -61,6 +65,16 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
   process.stdout.write(reply(result));
 });
 `
+
+test('serveTLS returns the certificate domain and probe forwards serverName', async () => {
+  const bridge = await start('tls')
+  try {
+    expect(await bridge.serveTLS('one', 's')).toMatchObject({ port: 443, domain: 'host.org.example.com' })
+    expect(await bridge.probe('two', 'https://100.64.0.1', 'id', 1000, 'host.org.example.com')).toMatchObject({ ok: true })
+  } finally {
+    await bridge.shutdown()
+  }
+})
 
 async function start(mode: string) {
   return Bridge.start({ command: process.execPath, args: ['-e', mock, mode],

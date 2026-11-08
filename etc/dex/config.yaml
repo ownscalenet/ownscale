@@ -96,3 +96,7 @@ staticPasswords:
     hash: "$2b$12$393bqrQ./sduEOViwHyF7.1JBDkXUkUfFze/dj2P0GP7/Cgx4R3WW"
     username: "ssh"
     userID: "08a8684b-db88-4b73-90a9-3cd1661f5586"
+  - email: "serve@ownscale.test"
+    hash: "$2b$12$393bqrQ./sduEOViwHyF7.1JBDkXUkUfFze/dj2P0GP7/Cgx4R3WW"
+    username: "serve"
+    userID: "08a8684b-db88-4b73-90a9-3cd1661f5587"

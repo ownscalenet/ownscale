@@ -9,8 +9,8 @@ const baseURL = process.env.E2E_BASE_URL ?? 'https://console.ownscale.test'
 
 export default defineConfig({
   testDir: './tests',
-  // connectivity/, ssh/ and devbox/ have their own configs.
-  testIgnore: ['**/connectivity/**', '**/ssh/**', '**/devbox/**'],
+  // connectivity/, ssh/, devbox/ and serve/ have their own configs.
+  testIgnore: ['**/connectivity/**', '**/ssh/**', '**/devbox/**', '**/serve/**'],
   globalSetup: './run-guard.ts',
   // Each worker runs as its own account in its own organization (see
   // tests/support/account.ts); files stay whole on one worker.

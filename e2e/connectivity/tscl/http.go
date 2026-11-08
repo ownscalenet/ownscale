@@ -2,6 +2,7 @@ package tscl
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +26,7 @@ const (
 // HTTPService serves a client's identity over its tailnet.
 type HTTPService struct {
 	identity  string
+	domain    string
 	addresses []netip.AddrPort
 	server    *http.Server
 	done      chan struct{}
@@ -46,6 +48,59 @@ func (c *Client) ServeHTTP(port uint16) (_ *HTTPService, err error) {
 	if err != nil {
 		return nil, err
 	}
+	return c.startService(ln, "")
+}
+
+// ServeTLS starts the identity endpoint over HTTPS on port 443, with the
+// machine's certificate for its MagicDNS name. It gets the certificate
+// before returning, so issuance failures surface here as ErrNoCertificate.
+func (c *Client) ServeTLS(ctx context.Context) (_ *HTTPService, err error) {
+	defer derrors.Wrap(&err, "c.ServeTLS()")
+	domain, err := c.fetchCert(ctx)
+	if err != nil {
+		return nil, err
+	}
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if c.closed {
+		return nil, net.ErrClosed
+	}
+	ln, err := c.server.ListenTLS("tcp", ":443")
+	if err != nil {
+		return nil, err
+	}
+	return c.startService(ln, domain)
+}
+
+// fetchCert gets the certificate of the machine's MagicDNS name and returns
+// that name.
+func (c *Client) fetchCert(ctx context.Context) (string, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if c.closed {
+		return "", net.ErrClosed
+	}
+	ctx, cancel := c.operationContext(ctx)
+	defer cancel()
+	domains := c.server.CertDomains()
+	if len(domains) == 0 {
+		return "", fmt.Errorf("%w: control offers no certificate name", ErrNoCertificate)
+	}
+	lc, err := c.server.LocalClient()
+	if err != nil {
+		return "", err
+	}
+	if _, _, err := lc.CertPair(ctx, domains[0]); err != nil {
+		if ctx.Err() != nil {
+			return "", errors.Join(ctx.Err(), err)
+		}
+		return "", errors.Join(ErrNoCertificate, err)
+	}
+	return domains[0], nil
+}
+
+// startService serves the identity endpoint on ln. c.mu must be held.
+func (c *Client) startService(ln net.Listener, domain string) (*HTTPService, error) {
 	boundPort, err := listenerPort(ln.Addr().String())
 	if err != nil {
 		return nil, errors.Join(err, ln.Close())
@@ -61,6 +116,7 @@ func (c *Client) ServeHTTP(port uint16) (_ *HTTPService, err error) {
 		return nil, errors.Join(errors.New("machine has no tailnet addresses"), ln.Close())
 	}
 	service := serveHTTP(ln, c.identity, addresses, c.logger)
+	service.domain = domain
 	c.services = append(c.services, service)
 	return service, nil
 }
@@ -111,6 +167,10 @@ func serveHTTP(ln net.Listener, identity string, addresses []netip.AddrPort, log
 // Identity returns the unique identity shared by this client's HTTP services.
 func (s *HTTPService) Identity() string { return s.identity }
 
+// Domain returns the certificate name of a ServeTLS endpoint; it is empty
+// for plain HTTP.
+func (s *HTTPService) Domain() string { return s.domain }
+
 // Addresses returns the endpoint's tailnet IPs and allocated port.
 func (s *HTTPService) Addresses() []netip.AddrPort {
 	return append([]netip.AddrPort(nil), s.addresses...)
@@ -157,6 +217,20 @@ type ProbeResult struct {
 // the endpoint identity. A failure does not by itself establish an ACL denial.
 func (c *Client) ProbeHTTP(ctx context.Context, targetURL, expectedIdentity string) (_ ProbeResult, err error) {
 	defer derrors.Wrap(&err, "c.ProbeHTTP()")
+	return c.probe(ctx, targetURL, expectedIdentity, nil)
+}
+
+// ProbeHTTPS is ProbeHTTP for an https URL to a tailnet IP, verifying the
+// endpoint's certificate for serverName against the system roots.
+func (c *Client) ProbeHTTPS(ctx context.Context, targetURL, serverName, expectedIdentity string) (_ ProbeResult, err error) {
+	defer derrors.Wrap(&err, "c.ProbeHTTPS()")
+	if serverName == "" {
+		return ProbeResult{}, errors.New("server name is required")
+	}
+	return c.probe(ctx, targetURL, expectedIdentity, &tls.Config{ServerName: serverName})
+}
+
+func (c *Client) probe(ctx context.Context, targetURL, expectedIdentity string, tlsConfig *tls.Config) (ProbeResult, error) {
 	c.mu.RLock()
 	if c.closed {
 		c.mu.RUnlock()
@@ -166,10 +240,10 @@ func (c *Client) ProbeHTTP(ctx context.Context, targetURL, expectedIdentity stri
 	timeout := c.probeTimeout
 	c.mu.RUnlock()
 	defer cancel()
-	return probeHTTP(ctx, c.DialContext, timeout, targetURL, expectedIdentity)
+	return probeHTTP(ctx, c.DialContext, timeout, targetURL, expectedIdentity, tlsConfig)
 }
 
-func probeHTTP(ctx context.Context, dial func(context.Context, string, string) (net.Conn, error), timeout time.Duration, targetURL, expectedIdentity string) (result ProbeResult, err error) {
+func probeHTTP(ctx context.Context, dial func(context.Context, string, string) (net.Conn, error), timeout time.Duration, targetURL, expectedIdentity string, tlsConfig *tls.Config) (result ProbeResult, err error) {
 	start := time.Now()
 	defer func() { result.Duration = time.Since(start) }()
 	if _, err := parseHTTPURL(targetURL); err != nil {
@@ -180,7 +254,7 @@ func probeHTTP(ctx context.Context, dial func(context.Context, string, string) (
 	}
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
-	transport := &http.Transport{DialContext: dial, DisableKeepAlives: true}
+	transport := &http.Transport{DialContext: dial, DisableKeepAlives: true, TLSClientConfig: tlsConfig}
 	defer transport.CloseIdleConnections()
 	client := &http.Client{
 		Transport: transport,

@@ -29,6 +29,10 @@ type testNode struct {
 	dnsErr    error
 	resolved  map[string][]netip.Addr
 	authURL   string
+	// serveTLSErr is what ServeTLS fails with.
+	serveTLSErr error
+	// serverName is what ProbeHTTPS was last called with.
+	serverName string
 }
 
 func (n *testNode) DNS(context.Context) (_ tailcfg.DNSConfig, err error) {
@@ -52,6 +56,17 @@ func (n *testNode) Status(context.Context) (_ *ipnstate.Status, err error) {
 func (n *testNode) ServeHTTP(uint16) (_ *tscl.HTTPService, err error) {
 	defer derrors.Wrap(&err, "n.ServeHTTP()")
 	return nil, errors.New("unexpected service creation")
+}
+
+func (n *testNode) ServeTLS(context.Context) (_ *tscl.HTTPService, err error) {
+	defer derrors.Wrap(&err, "n.ServeTLS()")
+	return nil, n.serveTLSErr
+}
+
+func (n *testNode) ProbeHTTPS(ctx context.Context, url, serverName, identity string) (_ tscl.ProbeResult, err error) {
+	defer derrors.Wrap(&err, "n.ProbeHTTPS()")
+	n.serverName = serverName
+	return n.ProbeHTTP(ctx, url, identity)
 }
 
 func (n *testNode) ProbeHTTP(context.Context, string, string) (_ tscl.ProbeResult, err error) {
@@ -91,6 +106,7 @@ func TestDispatchValidation(t *testing.T) {
 		{"negative port", "serve", `{"timeout":"5000ms","node":"n","service":"s","port":-1}`, "invalid_command"},
 		{"missing port", "serve", `{"timeout":"5000ms","node":"n","service":"s"}`, "invalid_command"},
 		{"excess port", "serve", `{"timeout":"5000ms","node":"n","service":"s","port":65536}`, "invalid_command"},
+		{"TLS port", "serveTLS", `{"timeout":"5000ms","node":"n","service":"s","port":443}`, "invalid_command"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := newDispatcher().dispatch(t.Context(), tt.op, json.RawMessage(tt.params))
@@ -305,16 +321,62 @@ func TestProbeOutcomes(t *testing.T) {
 	}
 }
 
-func TestProbeRejectsNonTailnetTargets(t *testing.T) {
-	for _, target := range []string{
-		"http://127.0.0.1:80", "http://example.com:80", "http://100.64.0.1:0",
-		"******100.64.0.1:80", "https://100.64.0.1:80",
-		"http://100.64.0.1:80/?key=secret", "http://100.64.0.1:80/private",
+func TestServeTLSFailure(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		err  error
+		code string
+	}{
+		{"no certificate", fmt.Errorf("c.ServeTLS(): %w", tscl.ErrNoCertificate), "certificate_unavailable"},
+		{"deadline", errors.Join(context.DeadlineExceeded, tscl.ErrNoCertificate), "timeout"},
+		{"closed", net.ErrClosed, "closed_node"},
 	} {
-		t.Run(target, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
+			d := newDispatcher()
+			d.nodes["n"] = &ownedNode{client: &testNode{serveTLSErr: tt.err}}
+			_, err := d.dispatch(t.Context(), "serveTLS", json.RawMessage(`{"timeout":"5000ms","node":"n","service":"s"}`))
+			if err == nil || classify(err).Code != tt.code {
+				t.Fatalf("error = %v, want %s", err, tt.code)
+			}
+			if d.reserved("s") {
+				t.Fatal("failed serveTLS reserved its service handle")
+			}
+		})
+	}
+}
+
+func TestProbeHTTPS(t *testing.T) {
+	d := newDispatcher()
+	n := &testNode{}
+	d.nodes["n"] = &ownedNode{client: n}
+	_, err := d.dispatch(t.Context(), "probe", json.RawMessage(
+		`{"timeout":"5000ms","node":"n","url":"https://100.64.0.1","expectedIdentity":"target","serverName":"host.org.os.example.com"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n.serverName != "host.org.os.example.com" {
+		t.Fatalf("ProbeHTTPS server name = %q", n.serverName)
+	}
+}
+
+func TestProbeRejectsNonTailnetTargets(t *testing.T) {
+	for _, tt := range []struct{ target, serverName string }{
+		{"http://127.0.0.1:80", ""}, {"http://example.com:80", ""}, {"http://100.64.0.1:0", ""},
+		{"******100.64.0.1:80", ""}, {"https://100.64.0.1:80", ""},
+		{"http://100.64.0.1:80/?key=secret", ""}, {"http://100.64.0.1:80/private", ""},
+		{"http://100.64.0.1:443", "host.org.os.example.com"},
+		{"https://127.0.0.1:443", "host.org.os.example.com"},
+		{"https://100.64.0.1:443", "host"},
+		{"https://100.64.0.1:443", "Host.org.os.example.com"},
+	} {
+		t.Run(tt.target+"/"+tt.serverName, func(t *testing.T) {
 			d := newDispatcher()
 			d.nodes["n"] = &ownedNode{client: &testNode{}}
-			args, err := json.Marshal(map[string]any{"timeout": "5000ms", "node": "n", "url": target, "expectedIdentity": "target"})
+			params := map[string]any{"timeout": "5000ms", "node": "n", "url": tt.target, "expectedIdentity": "target"}
+			if tt.serverName != "" {
+				params["serverName"] = tt.serverName
+			}
+			args, err := json.Marshal(params)
 			if err != nil {
 				t.Fatal(err)
 			}

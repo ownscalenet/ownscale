@@ -51,17 +51,18 @@ func (e *protocolError) Error() string { return e.Message }
 
 func failure(code string) *protocolError {
 	messages := map[string]string{
-		"invalid_command":   "Invalid command or arguments",
-		"duplicate_handle":  "Handle is already reserved",
-		"unknown_handle":    "Handle does not exist",
-		"closed_node":       "Node is closed",
-		"timeout":           "Operation deadline exceeded",
-		"unreachable":       "Network endpoint is unreachable",
-		"refused":           "Network connection was refused",
-		"cancelled":         "Operation was cancelled",
-		"identity_mismatch": "Endpoint returned a different identity",
-		"invalid_response":  "Endpoint returned an invalid response",
-		"bridge_failure":    "Bridge operation or cleanup failed",
+		"invalid_command":         "Invalid command or arguments",
+		"duplicate_handle":        "Handle is already reserved",
+		"unknown_handle":          "Handle does not exist",
+		"closed_node":             "Node is closed",
+		"timeout":                 "Operation deadline exceeded",
+		"unreachable":             "Network endpoint is unreachable",
+		"refused":                 "Network connection was refused",
+		"cancelled":               "Operation was cancelled",
+		"identity_mismatch":       "Endpoint returned a different identity",
+		"invalid_response":        "Endpoint returned an invalid response",
+		"bridge_failure":          "Bridge operation or cleanup failed",
+		"certificate_unavailable": "Node could not get an HTTPS certificate",
 	}
 	return &protocolError{Code: code, Message: messages[code]}
 }

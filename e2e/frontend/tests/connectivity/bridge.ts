@@ -35,6 +35,8 @@ export interface ServiceInfo {
   identity: string
   addresses: string[]
   port: number
+  // domain is the certificate name of a serveTLS endpoint.
+  domain?: string
 }
 
 export interface ProbeResult {
@@ -70,6 +72,7 @@ const messages: Record<string, string> = {
   identity_mismatch: 'Endpoint returned a different identity',
   invalid_response: 'Endpoint returned an invalid response',
   bridge_failure: 'Bridge operation or cleanup failed',
+  certificate_unavailable: 'Node could not get an HTTPS certificate',
 }
 const handle = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(v)
 const text = (v: unknown, max = 256): v is string => typeof v === 'string' && v.length <= max && !/[\x00-\x1f\x7f]/.test(v)
@@ -101,8 +104,9 @@ const resolveInfo = (v: unknown): v is ResolveInfo => object(v) &&
   Array.isArray(v.addresses) && v.addresses.length <= 16 &&
   v.addresses.every(a => typeof a === 'string' && isIP(a) !== 0)
 const serviceInfo = (v: unknown): v is ServiceInfo => object(v) &&
-  keys(v, ['node', 'service', 'identity', 'addresses', 'port']) &&
+  keys(v, ['node', 'service', 'identity', 'addresses', 'port'], ['domain']) &&
   handle(v.node) && handle(v.service) && text(v.identity) && v.identity.length > 0 &&
+  (v.domain === undefined || (text(v.domain, 253) && v.domain.length > 0)) &&
   integer(v.port, 1, 65535) && Array.isArray(v.addresses) && v.addresses.length > 0 &&
   v.addresses.length <= 16 && v.addresses.every(a => {
     if (typeof a !== 'string') return false
@@ -223,8 +227,20 @@ export class Bridge {
       v => serviceInfo(v) && v.node === node && v.service === service && (port === 0 || v.port === port))
   }
 
-  async probe(node: string, url: string, expectedIdentity: string, timeoutMs = 5000): Promise<ProbeResult> {
-    const result = await this.call<ProbeResult>('probe', { node, url, expectedIdentity }, timeoutMs,
+  /**
+   * serveTLS serves node's identity over HTTPS on port 443 with a certificate
+   * for its MagicDNS name, which it gets first: that waits on the DNS-01
+   * challenge propagating, hence the long default deadline.
+   */
+  serveTLS(node: string, service: string, timeoutMs = 240_000): Promise<ServiceInfo> {
+    return this.call('serveTLS', { node, service }, timeoutMs,
+      v => serviceInfo(v) && v.node === node && v.service === service && v.port === 443 && !!v.domain)
+  }
+
+  /** probe fetches url from node; serverName makes it https, verifying the certificate for that name. */
+  async probe(node: string, url: string, expectedIdentity: string, timeoutMs = 5000, serverName?: string): Promise<ProbeResult> {
+    const args = { node, url, expectedIdentity, ...(serverName ? { serverName } : {}) }
+    const result = await this.call<ProbeResult>('probe', args, timeoutMs,
       v => probeResult(v) && (!v.ok || v.identity === expectedIdentity))
     if (result.error) result.error.message = messages[result.error.code]
     return result

@@ -13,3 +13,6 @@ var ErrUnreachable = errors.New("tailnet endpoint is unreachable")
 
 // ErrCleanup means a service or node could not complete its cleanup.
 var ErrCleanup = errors.New("connectivity cleanup failed")
+
+// ErrNoCertificate means the machine could not get an HTTPS certificate.
+var ErrNoCertificate = errors.New("no HTTPS certificate")

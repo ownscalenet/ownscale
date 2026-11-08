@@ -4,8 +4,8 @@ import { baseDomain } from '../connectivity/environment'
 
 // Each frontend worker signs in as its own Dex identity, which owns its own
 // organization, so workers never change each other's org-wide state
-// (policy, DNS, invites, members, ...). The ssh suite has its own account
-// too. global.setup.ts signs them in and records their orgs in
+// (policy, DNS, invites, members, ...). The ssh and serve suites have their
+// own accounts too. global.setup.ts signs them in and records their orgs in
 // accountsFile.
 
 // workerAccounts are the frontend workers' identities, by parallel index.
@@ -19,7 +19,7 @@ export const workerAccounts = [
 
 // accountNames are signed in by global.setup.ts, in this order, so on a
 // fresh stack they get the fixed subdomains after admin/user1/user2/passkey.
-export const accountNames = [...workerAccounts.map(a => a.name), 'ssh']
+export const accountNames = [...workerAccounts.map(a => a.name), 'ssh', 'serve']
 
 export const accountsFile = 'tests/.auth/accounts.json'
 

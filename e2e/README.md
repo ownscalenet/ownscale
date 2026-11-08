@@ -41,6 +41,7 @@ invites or members (`tests/support/account.ts`):
 | `passkey.spec.ts` | passkey@ownscale.test | dddd |
 | frontend workers 0-2 | worker0-2@ownscale.test (invite invitee0-2) | eeee, ffff, gggg |
 | ssh suite | ssh@ownscale.test | hhhh |
+| serve suite | serve@ownscale.test | iiii |
 
 The setup project signs them in, in that order (new organizations take the
 next fixed subdomain, `aaaa`-`jjjj`), and records their organizations in
@@ -137,6 +138,32 @@ The same config runs `tests/devbox/split-dns.spec.ts`: one devbox runs dnsmasq
 on its tailnet IP, the DNS page points a split DNS domain at it, and a second
 devbox must resolve names under that domain through MagicDNS only while
 the entry exists.
+
+These suites are local-only: devboxes join the local stack's docker network,
+reach the org via `host-gateway`, trust the local dev CA, and get their keys
+from `docker compose exec ownscale osa devbox-key`. `make e2e-remote` doesn't
+run them.
+
+## HTTPS certificates (extra tests)
+
+`make e2e-remote-serve` (`npm run test:serve`, own config
+`playwright.serve.config.ts`, part of `make e2e-remote`) checks that a machine
+gets a publicly trusted certificate for its MagicDNS name, like
+`tailscale serve` does: one `tscl-bridge` machine serves HTTPS on port 443 and a
+second one fetches it, verifying the certificate against the system roots. It
+runs as `serve@ownscale.test` (a remote stack's Dex gets it from `etc/dex` on
+deploy).
+
+Each run issues a Let's Encrypt certificate for a new hostname, which counts
+towards the org's `CERTS_PER_ORG_PER_WEEK` and Let's Encrypt's own limits, so
+it's skipped unless opted in per base domain with `EXTRA_TESTS`, a
+comma-separated list of `<base domain>:<test>` entries:
+
+```sh
+EXTRA_TESTS=beastbb.bond:serve make e2e-remote-serve
+```
+
+Stacks without a DNS provider (like the local one) can't issue certificates.
 
 ## Browser-driven connectivity
 

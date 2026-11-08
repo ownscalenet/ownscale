@@ -6,7 +6,7 @@
 .PHONY: docker-image caddy-image purge ci docs load-cert dev-up devbox stress
 .PHONY: e2e e2e-deps e2e-setup e2e-ssh
 .PHONY: e2e-frontend e2e-frontend-run e2e-connectivity
-.PHONY: e2e-remote e2e-remote-frontend e2e-remote-connectivity
+.PHONY: e2e-remote e2e-remote-frontend e2e-remote-connectivity e2e-remote-serve
 
 DOCKER_IMAGE := ownscale:latest
 CADDY_IMAGE := ownscale-caddy:latest
@@ -131,7 +131,7 @@ e2e-ssh:
 REMOTE_BASE_DOMAIN ?= "beastbb.bond"
 REMOTE_CONTENT_DOMAIN ?= "ownsc.net"
 
-e2e-remote: e2e-remote-frontend e2e-remote-connectivity
+e2e-remote: e2e-remote-frontend e2e-remote-connectivity e2e-remote-serve
 
 e2e-remote-frontend:
 	E2E_BASE_URL=https://console.$(REMOTE_BASE_DOMAIN) E2E_BASE_DOMAIN=$(REMOTE_BASE_DOMAIN) E2E_CONTENT_DOMAIN=$(REMOTE_CONTENT_DOMAIN) E2E_CA_FILE= $(MAKE) e2e-frontend
@@ -140,6 +140,12 @@ e2e-remote-connectivity:
 	mkdir -p bin/connectivity-work
 	E2E_BASE_URL=https://console.$(REMOTE_BASE_DOMAIN) E2E_BASE_DOMAIN=$(REMOTE_BASE_DOMAIN) E2E_CONTENT_DOMAIN=$(REMOTE_CONTENT_DOMAIN) E2E_CA_FILE= \
 		TMPDIR="$(CURDIR)/bin/connectivity-work" npm --prefix e2e/frontend run test:connectivity
+
+# Skipped unless EXTRA_TESTS has $(REMOTE_BASE_DOMAIN):serve; each run issues a certificate.
+e2e-remote-serve:
+	mkdir -p bin/connectivity-work
+	E2E_BASE_URL=https://console.$(REMOTE_BASE_DOMAIN) E2E_BASE_DOMAIN=$(REMOTE_BASE_DOMAIN) E2E_CONTENT_DOMAIN=$(REMOTE_CONTENT_DOMAIN) E2E_CA_FILE= \
+		TMPDIR="$(CURDIR)/bin/connectivity-work" npm --prefix e2e/frontend run test:serve
 
 restore:
 	docker compose run --rm --entrypoint osa ownscale restore $(filter-out restore,$(MAKECMDGOALS))

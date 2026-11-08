@@ -26,7 +26,9 @@ type node interface {
 	DNS(context.Context) (tailcfg.DNSConfig, error)
 	Resolve(context.Context, string) ([]netip.Addr, error)
 	ServeHTTP(uint16) (*tscl.HTTPService, error)
+	ServeTLS(context.Context) (*tscl.HTTPService, error)
 	ProbeHTTP(context.Context, string, string) (tscl.ProbeResult, error)
+	ProbeHTTPS(context.Context, string, string, string) (tscl.ProbeResult, error)
 	Close() error
 }
 
@@ -107,6 +109,8 @@ type serviceResult struct {
 	Identity  string   `json:"identity"`
 	Addresses []string `json:"addresses"`
 	Port      uint16   `json:"port"`
+	// Domain is the certificate name of a serveTLS endpoint.
+	Domain string `json:"domain,omitempty"`
 }
 
 type probeResult struct {
@@ -260,7 +264,7 @@ func (d *dispatcher) dispatch(parent context.Context, op string, params json.Raw
 			result.Addresses = append(result.Addresses, a.String())
 		}
 		return result, nil
-	case "serve":
+	case "serve", "serveTLS":
 		var args struct {
 			Timeout timeout `json:"timeout"`
 			Node    string  `json:"node"`
@@ -272,7 +276,12 @@ func (d *dispatcher) dispatch(parent context.Context, op string, params json.Raw
 		}
 		ctx, cancel := context.WithTimeout(parent, time.Duration(args.Timeout))
 		defer cancel()
-		if !handlePattern.MatchString(args.Service) || args.Port == nil || *args.Port < 0 || *args.Port > 65535 {
+		// serveTLS always listens on 443, the port HTTPS clients assume.
+		validPort := args.Port != nil && *args.Port >= 0 && *args.Port <= 65535
+		if op == "serveTLS" {
+			validPort = args.Port == nil
+		}
+		if !handlePattern.MatchString(args.Service) || !validPort {
 			return nil, failure("invalid_command")
 		}
 		n, err := d.lookup(args.Node)
@@ -288,12 +297,20 @@ func (d *dispatcher) dispatch(parent context.Context, op string, params json.Raw
 		if err := ctx.Err(); err != nil {
 			return nil, err
 		}
-		service, err := n.client.ServeHTTP(uint16(*args.Port))
-		if err != nil {
-			return nil, err
+		var service *tscl.HTTPService
+		if op == "serveTLS" {
+			service, err = n.client.ServeTLS(ctx)
+			if err != nil {
+				return nil, classify(err)
+			}
+		} else {
+			service, err = n.client.ServeHTTP(uint16(*args.Port))
+			if err != nil {
+				return nil, err
+			}
 		}
 		d.services[args.Service] = service
-		result := serviceResult{Node: args.Node, Service: args.Service, Identity: service.Identity(), Addresses: []string{}}
+		result := serviceResult{Node: args.Node, Service: args.Service, Identity: service.Identity(), Domain: service.Domain(), Addresses: []string{}}
 		for _, addr := range service.Addresses() {
 			result.Addresses = append(result.Addresses, addr.String())
 			result.Port = addr.Port()
@@ -305,6 +322,8 @@ func (d *dispatcher) dispatch(parent context.Context, op string, params json.Raw
 			Node             string  `json:"node"`
 			URL              string  `json:"url"`
 			ExpectedIdentity string  `json:"expectedIdentity"`
+			// ServerName makes the probe https, verifying the certificate for it.
+			ServerName string `json:"serverName"`
 		}
 		if err := decode(params, &args); err != nil {
 			return nil, err
@@ -315,21 +334,33 @@ func (d *dispatcher) dispatch(parent context.Context, op string, params json.Raw
 		if err != nil {
 			return nil, err
 		}
+		scheme, defaultPort := "http", "80"
+		if args.ServerName != "" {
+			scheme, defaultPort = "https", "443"
+			if len(args.ServerName) > 253 || !dnsNamePattern.MatchString(args.ServerName) {
+				return nil, failure("invalid_command")
+			}
+		}
 		u, err := url.Parse(args.URL)
 		if err != nil || len(args.URL) > 2048 || len(args.ExpectedIdentity) == 0 ||
-			len(args.ExpectedIdentity) > 256 || u.Scheme != "http" || u.User != nil ||
+			len(args.ExpectedIdentity) > 256 || u.Scheme != scheme || u.User != nil ||
 			u.Fragment != "" || u.RawQuery != "" || (u.Path != "" && u.Path != "/") {
 			return nil, failure("invalid_command")
 		}
 		address := u.Host
 		if u.Port() == "" {
-			address = net.JoinHostPort(u.Hostname(), "80")
+			address = net.JoinHostPort(u.Hostname(), defaultPort)
 		}
 		ap, err := netip.ParseAddrPort(address)
 		if err != nil || ap.Port() == 0 || ap.Addr().Zone() != "" || !tsaddr.IsTailscaleIP(ap.Addr()) {
 			return nil, failure("invalid_command")
 		}
-		observed, err := n.client.ProbeHTTP(ctx, args.URL, args.ExpectedIdentity)
+		var observed tscl.ProbeResult
+		if args.ServerName != "" {
+			observed, err = n.client.ProbeHTTPS(ctx, args.URL, args.ServerName, args.ExpectedIdentity)
+		} else {
+			observed, err = n.client.ProbeHTTP(ctx, args.URL, args.ExpectedIdentity)
+		}
 		result := probeResult{
 			OK: err == nil, StatusCode: observed.StatusCode,
 			Identity: observed.Identity, DurationMs: observed.Duration.Milliseconds(),
@@ -455,6 +486,8 @@ func classify(err error) *protocolError {
 	case errors.Is(err, syscall.ENETUNREACH), errors.Is(err, syscall.EHOSTUNREACH),
 		errors.Is(err, syscall.ECONNRESET), errors.Is(err, syscall.EPIPE), errors.Is(err, tscl.ErrUnreachable):
 		return failure("unreachable")
+	case errors.Is(err, tscl.ErrNoCertificate):
+		return failure("certificate_unavailable")
 	case errors.Is(err, tscl.ErrInvalidResponse):
 		return failure("invalid_response")
 	case errors.Is(err, tscl.ErrIdentityMismatch):

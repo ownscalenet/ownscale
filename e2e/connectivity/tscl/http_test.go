@@ -2,6 +2,8 @@ package tscl
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"io"
 	"log/slog"
@@ -61,7 +63,7 @@ func TestProbeHTTP(t *testing.T) {
 				_, _ = io.WriteString(w, tt.body)
 			}))
 			defer server.Close()
-			result, err := probeHTTP(t.Context(), (&net.Dialer{}).DialContext, time.Second, server.URL, "target")
+			result, err := probeHTTP(t.Context(), (&net.Dialer{}).DialContext, time.Second, server.URL, "target", nil)
 			if (err == nil) != (tt.wantErr == "") || (err != nil && !strings.Contains(err.Error(), tt.wantErr)) {
 				t.Fatalf("probeHTTP() = %+v, %v; want %q", result, err, tt.wantErr)
 			}
@@ -105,7 +107,7 @@ func TestProbeDeadlines(t *testing.T) {
 			if tt.cancel {
 				cancel()
 			}
-			_, err := probeHTTP(ctx, (&net.Dialer{}).DialContext, tt.probeLimit, server.URL, "target")
+			_, err := probeHTTP(ctx, (&net.Dialer{}).DialContext, tt.probeLimit, server.URL, "target", nil)
 			if !errors.Is(err, tt.want) {
 				t.Fatalf("probeHTTP() = %v, want %v", err, tt.want)
 			}
@@ -124,7 +126,7 @@ func TestProbeInvalidWireResponse(t *testing.T) {
 		_, _ = io.WriteString(conn, "not an HTTP response\r\n\r\n")
 	}))
 	defer server.Close()
-	_, err := probeHTTP(t.Context(), (&net.Dialer{}).DialContext, time.Second, server.URL, "target")
+	_, err := probeHTTP(t.Context(), (&net.Dialer{}).DialContext, time.Second, server.URL, "target", nil)
 	if !errors.Is(err, ErrInvalidResponse) {
 		t.Fatalf("probeHTTP() = %v, want invalid response", err)
 	}
@@ -147,7 +149,7 @@ func TestHTTPService(t *testing.T) {
 	if service.Addresses()[0] != address || address.Port() == 0 {
 		t.Fatal("endpoint addresses are missing or mutable")
 	}
-	result, err := probeHTTP(t.Context(), (&net.Dialer{}).DialContext, time.Second, "http://"+address.String(), service.Identity())
+	result, err := probeHTTP(t.Context(), (&net.Dialer{}).DialContext, time.Second, "http://"+address.String(), service.Identity(), nil)
 	if err != nil || result.Identity != "target" {
 		t.Fatalf("probe service = %+v, %v", result, err)
 	}
@@ -200,7 +202,7 @@ func TestProbeFreshConnections(t *testing.T) {
 		return (&net.Dialer{}).DialContext(ctx, network, address)
 	}
 	for range 2 {
-		if _, err := probeHTTP(t.Context(), dial, time.Second, "http://100.64.0.1", "target"); err != nil {
+		if _, err := probeHTTP(t.Context(), dial, time.Second, "http://100.64.0.1", "target", nil); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -222,7 +224,7 @@ func TestProbeInvalidInput(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			// A nil dialer ensures invalid input is rejected before network I/O.
-			if _, err := probeHTTP(t.Context(), nil, time.Second, tt.url, tt.identity); err == nil {
+			if _, err := probeHTTP(t.Context(), nil, time.Second, tt.url, tt.identity, nil); err == nil {
 				t.Fatal("invalid probe input accepted")
 			}
 		})
@@ -236,7 +238,24 @@ func TestProbeTLSVerification(t *testing.T) {
 	server.Config.ErrorLog = slog.NewLogLogger(discardLogger().Handler(), slog.LevelDebug)
 	server.StartTLS()
 	defer server.Close()
-	if _, err := probeHTTP(t.Context(), (&net.Dialer{}).DialContext, time.Second, server.URL, "target"); err == nil {
-		t.Fatal("untrusted TLS certificate was accepted")
+	roots := x509.NewCertPool()
+	roots.AddCert(server.Certificate())
+	// httptest's certificate is for example.com; the URL holds an IP, as
+	// tailnet probes do.
+	for _, tt := range []struct {
+		name    string
+		config  *tls.Config
+		wantErr bool
+	}{
+		{"system roots", nil, true},
+		{"matching server name", &tls.Config{RootCAs: roots, ServerName: "example.com"}, false},
+		{"other server name", &tls.Config{RootCAs: roots, ServerName: "other.example.net"}, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := probeHTTP(t.Context(), (&net.Dialer{}).DialContext, time.Second, server.URL, "target", tt.config)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("probeHTTP() = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
 	}
 }
