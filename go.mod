@@ -3,7 +3,7 @@ module github.com/ownscalenet/ownscale
 go 1.27.3
 
 require (
-	github.com/benbjohnson/litestream v0.5.17
+	github.com/benbjohnson/litestream v0.5.18
 	github.com/caarlos0/env/v11 v11.4.1
 	github.com/creachadair/jrpc2 v1.3.6
 	github.com/descope/virtualwebauthn v1.0.5
@@ -31,10 +31,6 @@ require (
 )
 
 replace github.com/juanfont/headscale => github.com/ownscalenet/headscale v0.29.7-2
-
-// Unreleased fix for Azure compaction moving one file per run. Remove once a
-// release includes https://github.com/benbjohnson/litestream/pull/1461.
-replace github.com/benbjohnson/litestream => github.com/benbjohnson/litestream v0.5.18-0.20261102170535-0eee9c64c9c3
 
 require (
 	atomicgo.dev/cursor v0.2.0 // indirect
