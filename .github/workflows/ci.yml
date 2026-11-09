@@ -73,9 +73,12 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       # Go's Node runner executes the Tailscale WASM client in check:wasm.
+      # No cache: this job builds nothing, and as the first to finish it would
+      # save an empty cache under the go.sum key every other job restores.
       - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
+          cache: false
       - run: npm ci
       - run: npm run lint
       - run: npm run format:check
