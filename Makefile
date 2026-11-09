@@ -115,9 +115,12 @@ e2e: e2e-deps e2e-setup
 		e2e-frontend-run e2e-connectivity
 	$(MAKE) e2e-ssh E2E_SSH_ARGS="--project=ssh --no-deps"
 
+# Builds tscl-bridge up front so a cold Go cache isn't compiled inside the
+# tests' timeouts; their own rebuild is then incremental.
 e2e-deps:
 	npm --prefix e2e/frontend ci
 	npx --prefix e2e/frontend playwright install chromium
+	go build -o bin/tscl-bridge ./e2e/connectivity/cmd/tscl-bridge
 
 # Signs in the frontend workers' and ssh suite's accounts.
 e2e-setup:
