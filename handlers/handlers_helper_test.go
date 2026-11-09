@@ -138,7 +138,7 @@ func insertUser(t *testing.T, queries *dbpkg.TxQueries) sqlcgen.User {
 // headscale, and inserts its owner.
 func createOwner(t *testing.T, h *Handlers) sqlcgen.User {
 	t.Helper()
-	subdomain, err := h.orgs.NextSubdomain(t.Context())
+	subdomain, err := h.orgs.NextSubdomain(t.Context(), "")
 	if err != nil {
 		t.Fatalf("NextSubdomain: %v", err)
 	}

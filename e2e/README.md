@@ -18,8 +18,7 @@ Playwright and its browser binaries never weigh down the production
 2. Node.js (matching `frontend/`'s toolchain).
 3. Go and the repository's Go dependencies, plus `/etc/hosts` entries for
    the e2e accounts' organizations, which tests that register real devices
-   (via `bin/tscl-bridge` or devbox containers) reach by name. On a fresh
-   stack those are:
+   (via `bin/tscl-bridge` or devbox containers) reach by name:
 
    ```text
    127.0.0.1 eeee.ownscale.test ffff.ownscale.test gggg.ownscale.test hhhh.ownscale.test
@@ -33,21 +32,22 @@ Playwright and its browser binaries never weigh down the production
 
 Each suite, and each frontend worker, runs as its own Dex identity that owns
 its own organization, so they never change each other's policy, DNS,
-invites or members (`tests/support/account.ts`):
+invites or members. The identities are named after their organizations
+(`tests/support/accounts.ts`, `etc/dex/config.yaml`, password `ownscale`):
 
-| Who | Identity | Organization (fresh stack) |
-| --- | --- | --- |
-| connectivity suite | admin, user1, user2 | aaaa, bbbb, cccc |
-| `passkey.spec.ts` | passkey@ownscale.test | dddd |
-| frontend workers 0-2 | worker0-2@ownscale.test (invite invitee0-2) | eeee, ffff, gggg |
-| ssh suite | ssh@ownscale.test | hhhh |
-| serve suite | serve@ownscale.test | iiii |
+| Who | Identity and organization |
+| --- | --- |
+| connectivity suite | aaaa, bbbb, cccc |
+| serve suite | dddd |
+| frontend workers 0-2 | eeee, ffff, gggg (invite invitee0-2@ownscale.test) |
+| ssh suite | hhhh |
+| spare, for manual use | iiii, jjjj |
 
-The setup project signs them in, in that order (new organizations take the
-next fixed subdomain, `aaaa`-`jjjj`), and records their organizations in
-`tests/.auth/accounts.json`. Specs never hard-code an organization: they get
-it from the `account` fixture, so `make e2e-remote` works with whatever names
-the remote stack assigned.
+A new user whose email local-part is in `OWNSCALE_FIXED_SUBDOMAINS` gets that
+subdomain, so `aaaa@ownscale.test` always lands on `aaaa`, whatever order
+the accounts sign in. Each config's setup project (`tests/global.setup.ts`)
+signs in only the accounts its suite needs and fails if one landed elsewhere,
+e.g. when the stack doesn't set `OWNSCALE_FIXED_SUBDOMAINS`.
 
 `make e2e` installs and runs the setup once, then runs the frontend suite
 (3 workers) and the connectivity suite concurrently, and the ssh suite
@@ -97,40 +97,35 @@ Other useful commands (from `e2e/frontend/`):
   to trust the local dev CA (see `make load-cert`). With `E2E_CA_FILE=`
   (the `e2e-remote*` targets) certificates are validated against the system
   store. Node clients such as the funnel request trust the CA file directly.
-- A `setup` project (`tests/global.setup.ts`) logs in once as the Dex
-  seeded `admin@ownscale.test` user and caches the session in
-  `tests/.auth/admin.json` (gitignored); every other spec starts already
-  authenticated. Specs that need to exercise the login/logout flow itself
-  (`login.spec.ts`, `onboarding.spec.ts`) opt out of that cached state.
-  That same setup also self-registers a fixed `passkey@ownscale.test`
-  identity via passkey, creating org `dddd`, and caches its WebAuthn
-  credential in `tests/.auth/passkey-credential.<base-domain>.json`
-  (gitignored) so `passkey.spec.ts` and later runs can sign back in as that
-  identity without registering another brand-new user/org. The file is per
-  base domain, so local and `e2e-remote` runs don't invalidate each other's
-  credential.
+- The setup project caches each account's session in
+  `tests/.auth/<name>.json` (gitignored), so specs start already
+  authenticated. Specs that exercise the login flow itself
+  (`login.spec.ts`, `onboarding.spec.ts`) opt out of it.
+- `passkey.spec.ts` signs up a throwaway `e2e-<random>` passkey user, signs
+  back in with the same passkey, then deletes the account, which deletes its
+  organization too.
 - `settings-apply.spec.ts` checks that saved settings take effect inside the
   organization's headscale (which restarts on every save). DNS changes are
   read back from a real enrolled device's netmap (via `tscl-bridge`'s `dns`
-  op), and the login allowlist is checked by starting a registration login at
-  `https://aaaa.<base-domain>/register/<random auth id>`: headscale answers
-  401 when the signed-in user is excluded and 410 when admitted. Like
-  `registerRealMachine`, it needs `aaaa.<base-domain>` to resolve.
-- This suite is local-only for now (like `make test-integration`) and
-  isn't wired into GitHub Actions CI.
+  op), and the login allowlist is checked by starting a registration login
+  on the worker's org: headscale's OIDC callback answers 401 when the
+  signed-in user is excluded and 303 when admitted.
+- CI typechecks the suite and runs the connectivity contract tests, which
+  need no stack. The serve suite runs against beastbb.bond every other day
+  (`.github/workflows/e2e-serve.yml`).
 
 ## Tailscale SSH
 
 `make e2e-ssh` (`npm run test:ssh` from `e2e/frontend/`) checks that
 Tailscale SSH works between two real machines only while the org's policy
-has an `ssh` rule. It starts two containers from the `e2e/devbox` image
-joins both to `aaaa` with `osa devbox-key`, runs `tailscale up --ssh` on one
+has an `ssh` rule. It starts two containers from the `e2e/devbox` image,
+joins both to `hhhh` with `osa devbox-key`, runs `tailscale up --ssh` on one
 and `tailscale ssh` from the other, then removes the rule and expects SSH to be
 denied. The containers are removed and the original policy restored afterwards.
 
 Besides `make dev-up`, it needs docker with `/dev/net/tun` (the containers
 run `tailscaled` with `NET_ADMIN`), the local dev CA at
-`data/local-ca/root.crt` (or `E2E_CA_FILE`), and the `aaaa.ownscale.test`
+`data/local-ca/root.crt` (or `E2E_CA_FILE`), and the `hhhh.ownscale.test`
 `/etc/hosts` entry. It has its own config (`playwright.ssh.config.ts`) so
 `make e2e-frontend` doesn't need docker.
 
@@ -151,7 +146,7 @@ run them.
 gets a publicly trusted certificate for its MagicDNS name, like
 `tailscale serve` does: one `tscl-bridge` machine serves HTTPS on port 443 and a
 second one fetches it, verifying the certificate against the system roots. It
-runs as `serve@ownscale.test` (a remote stack's Dex gets it from `etc/dex` on
+runs as `dddd@ownscale.test` (a remote stack's Dex gets it from `etc/dex` on
 deploy).
 
 Each run issues a Let's Encrypt certificate for a new hostname, which counts
@@ -188,11 +183,9 @@ Build/browser scratch files remain under ignored `bin/connectivity-work`.
 
 - Start the stack yourself with `make dev-up`. Tests do not start, restart,
   recreate, reset, or inspect the stack database.
-- Use the seeded Dex admin, user1, and user2 identities. Their organizations
-  must be `aaaa`, `bbbb`, and `cccc`, respectively, with owner/manager
-  permissions. They log in sequentially in that order. A different existing
-  assignment fails with an actionable prerequisite error; tests never
-  reassign users. Each organization has up to five minutes to become ready.
+- Uses the aaaa, bbbb and cccc identities, which must own the organizations
+  of the same name. A different existing assignment fails with an
+  actionable prerequisite error; tests never reassign users. Each organization has up to five minutes to become ready.
 - The existing local CA certificate must be readable. The Go child receives
   `SSL_CERT_FILE` and verifies TLS; it never disables certificate checking.
   Preflight also validates HTTPS for the app and Dex discovery endpoint.

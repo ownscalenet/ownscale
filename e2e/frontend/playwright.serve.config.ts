@@ -1,8 +1,9 @@
 import { defineConfig, devices } from '@playwright/test'
 import { baseURL, localTLS } from './tests/connectivity/environment'
+import { setupProject } from './tests/support/accounts'
 
 // HTTPS certificates for machines. Only runs where EXTRA_TESTS opts in (see README.md).
-export default defineConfig({
+export default defineConfig<object, { accountName: string | undefined }>({
   testDir: './tests',
   globalSetup: './run-guard.ts',
   fullyParallel: false,
@@ -16,16 +17,13 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   projects: [
-    {
-      name: 'setup',
-      testMatch: /global\.setup\.ts/,
-    },
+    setupProject(['dddd']),
     {
       name: 'serve',
       testMatch: /serve\/.*\.spec\.ts/,
       use: {
         ...devices['Desktop Chrome'],
-        accountName: 'serve',
+        accountName: 'dddd',
       },
       dependencies: ['setup'],
     },

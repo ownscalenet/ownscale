@@ -20,6 +20,7 @@ import (
 	"github.com/ownscalenet/ownscale/debugserver"
 	"github.com/ownscalenet/ownscale/handlers"
 	"github.com/ownscalenet/ownscale/logging"
+	"github.com/ownscalenet/ownscale/orgs"
 	"github.com/ownscalenet/ownscale/server"
 	"github.com/ownscalenet/ownscale/tlsask"
 	"github.com/ownscalenet/ownscale/webui"
@@ -61,6 +62,12 @@ func run() error {
 	}
 
 	ctx := context.Background()
+
+	unlock, err := orgs.LockDataDir(cfg.DataDir)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 
 	// Litestream must outlive every connection to the databases it
 	// replicates, so it's closed last, and not at all while a headscale

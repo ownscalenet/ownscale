@@ -26,6 +26,7 @@ From a source checkout, `make osa <command>` is a shortcut for the first form.
 | Command | Description |
 | --- | --- |
 | `osa organization list` | List organizations. |
+| `osa organization delete <subdomain>...` | Delete organizations with their machines, data and backups. Needs ownscale stopped. |
 
 ## user
 

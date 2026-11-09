@@ -1,39 +1,7 @@
-import { readFileSync } from 'node:fs'
 import { test as base, expect, type BrowserContextOptions, type Page } from '@playwright/test'
-import { baseDomain } from '../connectivity/environment'
+import { accounts, emailOf, namesOf, storageStateOf } from './accounts'
 
-// Each frontend worker signs in as its own Dex identity, which owns its own
-// organization, so workers never change each other's org-wide state
-// (policy, DNS, invites, members, ...). The ssh and serve suites have their
-// own accounts too. global.setup.ts signs them in and records their orgs in
-// accountsFile.
-
-// workerAccounts are the frontend workers' identities, by parallel index.
-// Each has its own invitee: a Dex user that's never registered beforehand,
-// because invites only apply to brand-new users.
-export const workerAccounts = [
-  { name: 'worker0', invitee: 'invitee0@ownscale.test' },
-  { name: 'worker1', invitee: 'invitee1@ownscale.test' },
-  { name: 'worker2', invitee: 'invitee2@ownscale.test' },
-] as const
-
-// accountNames are signed in by global.setup.ts, in this order, so on a
-// fresh stack they get the fixed subdomains after admin/user1/user2/passkey.
-export const accountNames = [...workerAccounts.map(a => a.name), 'ssh', 'serve']
-
-export const accountsFile = 'tests/.auth/accounts.json'
-
-// passkeyCredentialFile is per base domain: a credential minted on another
-// stack fails to sign in, and setup would then register another passkey org.
-export const passkeyCredentialFile = `tests/.auth/passkey-credential.${baseDomain}.json`
-
-export function emailOf(name: string): string {
-  return `${name}@ownscale.test`
-}
-
-export function storageStateOf(name: string): string {
-  return `tests/.auth/${name}.json`
-}
+export { accounts, emailOf, namesOf, storageStateOf }
 
 // Account is the signed-in identity a test runs as.
 export interface Account {
@@ -92,25 +60,18 @@ export async function removeInvitee(page: Page, invitee: string): Promise<void> 
 }
 
 function loadAccount(name: string): Account {
-  let orgs: Record<string, string>
-  try {
-    orgs = JSON.parse(readFileSync(accountsFile, 'utf-8'))
-  } catch {
-    throw new Error(`${accountsFile} is missing: run the setup project first (make e2e-setup)`)
-  }
-  const org = orgs[name]
-  if (!org) throw new Error(`${accountsFile} has no org for ${name}: run the setup project again`)
-  const worker = workerAccounts.find(a => a.name === name)
-  return { name, email: emailOf(name), org, storageState: storageStateOf(name), invitee: worker?.invitee ?? '' }
+  const entry = accounts.find(a => a.name === name)
+  if (!entry) throw new Error(`unknown account ${name}: add it to accounts`)
+  return { name, email: emailOf(name), org: name, storageState: storageStateOf(name), invitee: 'invitee' in entry ? entry.invitee : '' }
 }
 
-// test runs each spec as its worker's account: worker<parallelIndex>, or
-// accountName when a config sets it (the ssh suite).
+// test runs each spec as its worker's account, by parallel index, or as
+// accountName when a config sets it (the ssh and serve suites).
 export const test = base.extend<{ storageState: BrowserContextOptions['storageState'] }, { account: Account; accountName: string | undefined }>({
   accountName: [undefined, { option: true, scope: 'worker' }],
   account: [async ({ accountName }, use, workerInfo) => {
-    const name = accountName ?? workerAccounts[workerInfo.parallelIndex]?.name
-    if (!name) throw new Error(`no account for worker ${workerInfo.parallelIndex}: add one to workerAccounts`)
+    const name = accountName ?? namesOf('worker')[workerInfo.parallelIndex]
+    if (!name) throw new Error(`no account for worker ${workerInfo.parallelIndex}: add a worker to accounts`)
     await use(loadAccount(name))
   }, { scope: 'worker' }],
   storageState: async ({ account }, use) => use(account.storageState),

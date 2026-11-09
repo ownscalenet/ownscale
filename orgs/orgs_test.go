@@ -382,15 +382,17 @@ func TestCreateRejectsDuplicateSubdomain(t *testing.T) {
 func TestNextSubdomain(t *testing.T) {
 	tests := []struct {
 		name  string
+		hint  string
 		taken []string
 		// leftover subdomains have a data directory, but no organization.
 		leftover []string
 		want     string // "" means a random subdomain
 	}{
-		{"empty database", nil, nil, "aaaa"},
-		{"skips taken fixed subdomains", []string{"aaaa", "bbbb"}, nil, "cccc"},
-		{"skips leftover data directories", []string{"aaaa"}, []string{"bbbb"}, "cccc"},
-		{"falls back to random", testFixedSubdomains, nil, ""},
+		{"fixed subdomain named after the user", "cccc", nil, nil, "cccc"},
+		{"no hint gets a random subdomain", "", nil, nil, ""},
+		{"unknown hint gets a random subdomain", "acme", nil, nil, ""},
+		{"taken fixed subdomain", "aaaa", []string{"aaaa"}, nil, ""},
+		{"leftover data directory", "bbbb", nil, []string{"bbbb"}, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -403,7 +405,7 @@ func TestNextSubdomain(t *testing.T) {
 			for _, sub := range tt.leftover {
 				writeDatabase(t, svc, sub)
 			}
-			got, err := svc.NextSubdomain(t.Context())
+			got, err := svc.NextSubdomain(t.Context(), tt.hint)
 			if err != nil {
 				t.Fatalf("NextSubdomain: %v", err)
 			}

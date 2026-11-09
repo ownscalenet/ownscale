@@ -133,6 +133,8 @@ export class Bridge {
   private stderrBytes = 0
   private stderrText = ''
   private static readonly maxStderrText = 4096
+  // Auth keys sent to the bridge, kept out of stderrText since its logs may echo them.
+  private readonly secrets = new Set<string>()
   private requests = 0
   private replies = 0
   // Number of calls awaiting a reply. Unlike the old hand-rolled protocol,
@@ -178,7 +180,9 @@ export class Bridge {
     this.child.stderr.on('error', () => this.fail('Bridge diagnostic stream failed'))
     this.child.stderr.on('data', (data: Buffer) => {
       this.stderrBytes = Math.min(Number.MAX_SAFE_INTEGER, this.stderrBytes + data.length)
-      this.stderrText = (this.stderrText + data.toString('utf8')).slice(-Bridge.maxStderrText)
+      let text = this.stderrText + data.toString('utf8')
+      for (const secret of this.secrets) text = text.replaceAll(secret, '[redacted]')
+      this.stderrText = text.slice(-Bridge.maxStderrText)
     })
     this.child.stdout.setEncoding('utf8')
     this.child.stdout.on('data', (data: string) => this.receive(data))
@@ -198,6 +202,7 @@ export class Bridge {
 
   create(args: { node: string; hostname: string; controlURL: string; authKey: string },
     timeoutMs = enrollmentTimeoutMs): Promise<NodeInfo> {
+    if (args.authKey) this.secrets.add(args.authKey)
     return this.call('create', args, timeoutMs, v => nodeInfo(v) && v.node === args.node && v.hostname === args.hostname)
   }
 

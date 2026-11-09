@@ -1,8 +1,6 @@
-import { expect, test } from './support/account'
+import { emailOf, expect, test } from './support/account'
 
-// Uses a second seeded Dex identity (see etc/dex/config.yaml) so this
-// doesn't collide with the "admin" identity the "setup" project already
-// authenticated as -- see playwright.config.ts.
+// Signs in as a connectivity account, which no frontend worker uses.
 test.use({ storageState: { cookies: [], origins: [] } })
 
 test('a new user is provisioned an organization and lands on /machines', async ({ page }) => {
@@ -13,7 +11,7 @@ test('a new user is provisioned an organization and lands on /machines', async (
 
   await page.goto('/login')
   await page.getByRole('link', { name: 'Sign in with SSO' }).click()
-  await page.locator('#login').fill('user1@ownscale.test')
+  await page.locator('#login').fill(emailOf('bbbb'))
   await page.locator('#password').fill('ownscale')
   await page.locator('#submit-login').click()
 

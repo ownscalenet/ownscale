@@ -6,14 +6,11 @@ import type {
 import { baseDomain, baseURL, contentDomain, localTLS } from './environment'
 import { Recovery, type OwnedResource } from './recovery'
 import { confirmDialog } from '../support/confirm'
+import { emailOf, namesOf } from '../support/accounts'
 
-export const identities = [
-  { name: 'admin', email: 'admin@ownscale.test', org: 'aaaa' },
-  { name: 'user1', email: 'user1@ownscale.test', org: 'bbbb' },
-  { name: 'user2', email: 'user2@ownscale.test', org: 'cccc' },
-] as const
+export interface Identity { name: string; email: string; org: string }
 
-type Identity = typeof identities[number]
+export const identities: Identity[] = namesOf('connectivity').map(name => ({ name, email: emailOf(name), org: name }))
 interface Session {
   user: User
   organization: { Domain: string; Status: string } | null

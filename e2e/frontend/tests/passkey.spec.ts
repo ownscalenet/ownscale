@@ -1,21 +1,12 @@
 import { randomBytes } from 'node:crypto'
-import { readFileSync } from 'node:fs'
-import { expect, passkeyCredentialFile, test } from './support/account'
+import { expect, test } from './support/account'
 import { confirmDialog } from './support/confirm'
-import { addVirtualAuthenticator, importCredential } from './support/webauthn'
+import { addVirtualAuthenticator } from './support/webauthn'
 
 const PASSKEY_IDENTITY_NAME = 'passkey'
 
-// This test adds a passkey to the worker's already-provisioned account from
-// User settings, then uses it to sign back in. It deliberately reuses the
-// worker's authenticated storageState (unlike login.spec.ts)
-// rather than exercising brand-new self-registration, since that path
-// consumes one of the dev stack's fixed seed organizations -- brand-new
-// passkey self-registration is instead exercised once, deterministically,
-// in global.setup.ts's bootstrap (see the test below, which signs back in
-// with that bootstrapped identity's passkey instead of registering
-// another). The invite-skip-provisioning case is covered at the Go handler
-// level in handlers/passkey_test.go.
+// Adds a passkey to the worker's account from User settings, then uses it
+// to sign back in.
 test('adding a passkey in User settings and signing in with it', async ({ page }) => {
   // Unique per run: an interrupted run leaves its passkey behind on a
   // persistent (remote) stack, and a shared name would then match several rows.
@@ -46,41 +37,35 @@ test('adding a passkey in User settings and signing in with it', async ({ page }
   await expect(row).toBeHidden()
 })
 
-// Unauthenticated sign-in as the fixed passkey identity that
-// global.setup.ts's bootstrap self-registered into org "dddd" (see
-// PASSKEY_IDENTITY there). Rather than self-registering another brand-new
-// user here (which would use up one of the fixed subdomains handed out by
-// orgs.Service.NextSubdomain), this replays the credential that bootstrap saved -- exercising
-// the discoverable/usernameless passkey login as "logging in again in
-// some other test" with the *same* passkey, consuming no additional org.
-//
-// Wrapped in its own describe block: test.use() applies to the whole file's
-// top-level suite when called at file scope, so without this it would also
-// clear the authenticated storageState for the "adding a passkey in
-// Settings" test above.
-test.describe('signing back in with the bootstrapped passkey', () => {
+// Self-registers a throwaway passkey user, signs back in with the same
+// passkey, then deletes the account and its org so runs leave nothing behind.
+test.describe('signing up with a passkey', () => {
+  // test.use at file scope would also log out the test above.
   test.use({ storageState: { cookies: [], origins: [] } })
 
-  test('the bootstrapped passkey user can sign back in with the same passkey', async ({ page }) => {
-    const auth = await addVirtualAuthenticator(page)
-    const saved = JSON.parse(readFileSync(passkeyCredentialFile, 'utf-8'))
-    await importCredential(auth, saved.credential)
+  test('a new passkey user can sign back in and delete their account', async ({ page }) => {
+    test.setTimeout(120_000)
+    const username = `e2e-${randomBytes(4).toString('hex')}`
+    await addVirtualAuthenticator(page)
 
     await page.goto('/login')
-    await page.getByRole('button', { name: 'Sign in with a passkey' }).click()
+    await page.getByRole('link', { name: 'Create an account' }).click()
+    await expect(page).toHaveURL(/\/signup/)
+    await page.locator('#passkey-username').fill(username)
+    await page.getByRole('button', { name: 'Continue with passkey' }).click()
+    const logout = page.getByRole('button', { name: 'Logout' })
+    await expect(logout).toBeVisible({ timeout: 60_000 })
     try {
-      await expect(page.getByRole('button', { name: 'Logout' })).toBeVisible({ timeout: 15_000 })
-    } catch (err) {
-      // This test relies on global.setup.ts's bootstrap having already
-      // registered PASSKEY_IDENTITY and saved a *currently valid* credential.
-      throw new Error(
-        `sign-in with the saved passkey credential failed; re-run global.setup.ts's bootstrap ` +
-        `(or delete ${passkeyCredentialFile} to force it to re-register) if the backend's ` +
-        `database was reset since that credential was saved: ${err}`,
-      )
+      await logout.click()
+      await expect(page).toHaveURL(/\/login/)
+      await page.getByRole('button', { name: 'Sign in with a passkey' }).click()
+      await expect(logout).toBeVisible({ timeout: 15_000 })
+      const session = await page.request.get('/api/session').then(r => r.json())
+      expect(session.user?.Name).toBe(username)
+    } finally {
+      const deleted = await page.request.delete('/api/account')
+      expect(deleted.ok(), `DELETE /api/account: HTTP ${deleted.status()}`).toBeTruthy()
     }
-
-    const session = await page.request.get('/api/session').then(r => r.json())
-    expect(session.user?.Name).toBe(PASSKEY_IDENTITY_NAME)
+    expect((await page.request.get('/api/session')).ok()).toBeFalsy()
   })
 })

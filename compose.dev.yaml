@@ -64,14 +64,14 @@ services:
       OWNSCALE_LOG_FORMAT: text
       OWNSCALE_DNS_PROVIDER: none
       OWNSCALE_AUTH_SESSION_SECRET: dev-session-secret
-      # Dex, with the test login admin@ownscale.test / ownscale.
+      # Dex, with test logins aaaa@ownscale.test ... jjjj@ownscale.test / ownscale.
       OWNSCALE_AUTH_UPSTREAM_OIDC_ISSUER: https://dex.ownscale.test
       OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_ID: ownscale
       OWNSCALE_AUTH_UPSTREAM_OIDC_CLIENT_SECRET: ownscale-dev-secret
       OWNSCALE_AUTH_UPSTREAM_OIDC_CALLBACK_URL: https://console.ownscale.test/auth/oidc/callback
       SSL_CERT_DIR: /etc/ssl/certs:/etc/pki/tls/certs:/data/local-ca
-      # The first organizations get predictable subdomains, which the e2e
-      # setup relies on.
+      # Dex user aaaa@ownscale.test gets subdomain aaaa, and so on; the e2e
+      # setup relies on it.
       OWNSCALE_FIXED_SUBDOMAINS: aaaa,bbbb,cccc,dddd,eeee,ffff,gggg,hhhh,iiii,jjjj
 
   caddy:

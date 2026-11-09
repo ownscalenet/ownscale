@@ -483,32 +483,52 @@ func (s *Service) LookupPort(subdomain string) (int, bool) {
 	return rt.port, true
 }
 
-// NextSubdomain returns an unused subdomain for a new organization: the
-// first free one of fixedSubdomains, else a random one.
-func (s *Service) NextSubdomain(ctx context.Context) (_ string, err error) {
-	defer derrors.Wrap(&err, "s.NextSubdomain()")
+// NextSubdomain returns an unused subdomain for a new organization. A
+// fixed subdomain is only given to the user it's named after, through
+// hint (their email's local part), so test identities land on their own
+// organization regardless of sign-in order. Everyone else gets a random one.
+func (s *Service) NextSubdomain(ctx context.Context, hint string) (_ string, err error) {
+	defer derrors.Wrap(&err, "s.NextSubdomain(%q)", hint)
 
-	candidates := slices.Clone(s.cfg.FixedSubdomains)
-	for range maxSubdomainAttempts {
-		suffix, err := randomAlphaNum(6)
+	if slices.Contains(s.cfg.FixedSubdomains, hint) {
+		free, err := s.subdomainFree(ctx, hint)
 		if err != nil {
 			return "", err
 		}
-		candidates = append(candidates, suffix)
+		if free {
+			return hint, nil
+		}
 	}
-	for _, subdomain := range candidates {
-		if s.hasFiles(subdomain) {
+	for range maxSubdomainAttempts {
+		subdomain, err := randomAlphaNum(6)
+		if err != nil {
+			return "", err
+		}
+		if slices.Contains(s.cfg.FixedSubdomains, subdomain) {
 			continue
 		}
-		_, err := s.queries.GetOrganizationBySubdomain(ctx, subdomain)
-		if errors.Is(err, sql.ErrNoRows) {
-			return subdomain, nil
-		}
+		free, err := s.subdomainFree(ctx, subdomain)
 		if err != nil {
 			return "", err
+		}
+		if free {
+			return subdomain, nil
 		}
 	}
 	return "", errors.New("no unused subdomain found")
+}
+
+// subdomainFree reports whether no organization uses subdomain, nor left
+// its files behind.
+func (s *Service) subdomainFree(ctx context.Context, subdomain string) (bool, error) {
+	if s.hasFiles(subdomain) {
+		return false, nil
+	}
+	_, err := s.queries.GetOrganizationBySubdomain(ctx, subdomain)
+	if errors.Is(err, sql.ErrNoRows) {
+		return true, nil
+	}
+	return false, err
 }
 
 // Create stores a new organization with the given subdomain and starts its

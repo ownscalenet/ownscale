@@ -34,8 +34,9 @@ type Config struct {
 	// Caddy; it reveals which organizations exist, better not to publish this
 	// but then again, orgs can already be queried at http://org.base_domain.
 	TLSAskAddr string `env:"OWNSCALE_TLS_ASK_ADDR"`
-	// FixedSubdomains are handed out in order to the first organizations
-	// created, so development identities land on predictable subdomains.
+	// FixedSubdomains are reserved for the users named after them: a new
+	// user with a verified email "aaaa@..." gets subdomain aaaa, so test
+	// identities land on predictable subdomains. Meant for test stacks.
 	FixedSubdomains []string `env:"OWNSCALE_FIXED_SUBDOMAINS" envSeparator:","`
 
 	Auth   AuthConfig

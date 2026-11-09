@@ -594,3 +594,22 @@ func TestIsSafeNext(t *testing.T) {
 		}
 	}
 }
+
+func TestSubdomainHint(t *testing.T) {
+	tests := []struct {
+		name string
+		user sqlcgen.CreateUserParams
+		want string
+	}{
+		{"verified OIDC email", sqlcgen.CreateUserParams{Provider: "oidc", Email: "aaaa@ownscale.test", EmailVerified: 1}, "aaaa"},
+		{"unverified email", sqlcgen.CreateUserParams{Provider: "oidc", Email: "aaaa@ownscale.test"}, ""},
+		{"passkey username", sqlcgen.CreateUserParams{Provider: passkeyProvider, Email: "aaaa@passkey", EmailVerified: 1}, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := subdomainHint(tt.user); got != tt.want {
+				t.Errorf("subdomainHint = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

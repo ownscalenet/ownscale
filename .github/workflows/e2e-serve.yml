@@ -1,0 +1,42 @@
+name: E2E serve
+
+# Checks that machines on beastbb.bond get trusted HTTPS certificates. Each run
+# issues a certificate, so it runs every other day rather than on every push.
+on:
+  schedule:
+    - cron: '0 3 */2 * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Runs share the e2e organizations on beastbb.bond.
+concurrency:
+  group: e2e-remote-beastbb.bond
+  cancel-in-progress: false
+
+jobs:
+  serve:
+    name: tailscale serve on beastbb.bond
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: e2e/frontend/package-lock.json
+      - run: npm --prefix e2e/frontend ci
+      - run: npx --prefix e2e/frontend playwright install --with-deps chromium
+      - run: make e2e-remote-serve
+        env:
+          EXTRA_TESTS: beastbb.bond:serve
+      - uses: actions/upload-artifact@v7.0.2
+        if: failure()
+        with:
+          name: e2e-serve-results
+          path: e2e/frontend/test-results

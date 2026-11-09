@@ -1,5 +1,5 @@
 import type { Browser, Page } from '@playwright/test'
-import { expect, test } from './support/account'
+import { emailOf, expect, test } from './support/account'
 import { confirmDialog } from './support/confirm'
 import { baseDomain, localTLS } from './connectivity/environment'
 import { startPendingLogin } from './support/pendingLogin'
@@ -33,16 +33,17 @@ async function signIn(browser: Browser, email: string, startURL: string): Promis
 
 test("a user of another organization can't sign in to its tailnet until switching to a member account", async ({ browser, account }) => {
   const login = await startPendingLogin(account.org)
-  // user1 owns bbbb (see global.setup.ts). Signing in from the tailnet's
-  // login page is refused by the console...
-  const page = await signIn(browser, 'user1@ownscale.test', await login.authURL())
+  // bbbb owns another org. Signing in from the tailnet's login page is
+  // refused by the console...
+  const outsider = emailOf('bbbb')
+  const page = await signIn(browser, outsider, await login.authURL())
   try {
     await expect(page.getByText("You aren't a member of this organization")).toBeVisible({ timeout: 15_000 })
 
     // ...and with a console session already in place, the OIDC provider
     // asks to sign in with another account instead of failing.
     await page.goto(await login.authURL())
-    await expect(page.getByText("You're signed in as user1@ownscale.test")).toBeVisible()
+    await expect(page.getByText(`You're signed in as ${outsider}`)).toBeVisible()
 
     // Switching to a member (the worker's account owns its org) hands
     // headscale an identity.

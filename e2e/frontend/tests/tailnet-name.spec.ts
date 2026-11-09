@@ -1,5 +1,5 @@
 import { request as playwrightRequest, type Page } from '@playwright/test'
-import { expect, storageStateOf, test } from './support/account'
+import { expect, namesOf, storageStateOf, test } from './support/account'
 import { contentDomain, localTLS } from './connectivity/environment'
 import { dnsPageLoaded, snapshotDns } from './support/dnsPage'
 import { retryUntil } from './support/retry'
@@ -36,7 +36,8 @@ test.describe('tailnet name', () => {
   })
 
   test('is different in every organization', async ({ page, account, baseURL }) => {
-    const other = account.name === 'ssh' ? 'worker0' : 'ssh'
+    const [first, second] = namesOf('worker')
+    const other = account.name === first ? second : first
     const otherAPI = await playwrightRequest.newContext({
       baseURL,
       storageState: storageStateOf(other),

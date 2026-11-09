@@ -1,5 +1,6 @@
 import { defineConfig, devices } from '@playwright/test'
 import { localTLS } from './tests/connectivity/environment'
+import { namesOf, setupProject } from './tests/support/accounts'
 
 // baseURL matches the dev domain set in compose.dev.yaml ("ownscale.test"),
 // with the console served at its "console." subdomain; override with
@@ -15,7 +16,7 @@ export default defineConfig({
   // Each worker runs as its own account in its own organization (see
   // tests/support/account.ts); files stay whole on one worker.
   fullyParallel: false,
-  workers: 3,
+  workers: namesOf('worker').length,
   retries: 0,
   maxFailures: 1,
   reporter: [['list'], ['html', { open: 'never' }]],
@@ -29,10 +30,7 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [
-    {
-      name: 'setup',
-      testMatch: /global\.setup\.ts/,
-    },
+    setupProject(namesOf('worker')),
     {
       name: 'chromium',
       use: {

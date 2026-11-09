@@ -61,6 +61,16 @@ var errUsernameTaken = errors.New("username is already taken in this organizatio
 
 var errHeadscaleUnavailable = errors.New("headscale is unavailable")
 
+// subdomainHint returns the subdomain u asks for: their email's local part.
+// Passkey usernames are self-chosen, so they don't get one.
+func subdomainHint(u sqlcgen.CreateUserParams) string {
+	if u.Provider == passkeyProvider || u.EmailVerified == 0 {
+		return ""
+	}
+	local, _, _ := strings.Cut(u.Email, "@")
+	return local
+}
+
 // createNewUser creates a brand-new user row, always with a resolved
 // organization and role: either the invite's organization+role (when next
 // points at an invite-accept path, consuming the invite atomically with
@@ -70,7 +80,7 @@ func (h *Handlers) createNewUser(ctx context.Context, params sqlcgen.CreateUserP
 
 	token, isInvite := inviteTokenFromNext(next)
 	if !isInvite {
-		subdomain, err := h.orgs.NextSubdomain(ctx)
+		subdomain, err := h.orgs.NextSubdomain(ctx, subdomainHint(params))
 		if err != nil {
 			return sqlcgen.User{}, err
 		}

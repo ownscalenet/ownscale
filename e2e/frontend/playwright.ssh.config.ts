@@ -1,9 +1,10 @@
 import { defineConfig, devices } from '@playwright/test'
 import { baseURL, localTLS } from './tests/connectivity/environment'
+import { setupProject } from './tests/support/accounts'
 
 // Tailscale SSH, split DNS and subnet routing between real tailscaled containers. Needs docker on top of
 // `make dev-up` (see README.md), so it's kept out of the default config.
-export default defineConfig({
+export default defineConfig<object, { accountName: string | undefined }>({
   testDir: './tests',
   globalSetup: './run-guard.ts',
   fullyParallel: false,
@@ -17,10 +18,7 @@ export default defineConfig({
     trace: 'retain-on-failure',
   },
   projects: [
-    {
-      name: 'setup',
-      testMatch: /global\.setup\.ts/,
-    },
+    setupProject(['hhhh']),
     {
       name: 'ssh',
       testMatch: /(ssh|devbox)\/.*\.spec\.ts/,
@@ -28,7 +26,7 @@ export default defineConfig({
         ...devices['Desktop Chrome'],
         // Its own account and organization, so it can run alongside the
         // other suites.
-        accountName: 'ssh',
+        accountName: 'hhhh',
       },
       dependencies: ['setup'],
     },
