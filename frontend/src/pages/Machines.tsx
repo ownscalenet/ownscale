@@ -198,7 +198,8 @@ export default function Machines() {
       {!failed && (
         <>
           <form className="flex flex-wrap gap-2 mb-4" onSubmit={(e) => e.preventDefault()}>
-            <input {...rawTextProps}
+            <input
+              {...rawTextProps}
               type="text"
               placeholder="Search by name or IP…"
               className="input input-bordered input-sm w-64"
@@ -358,7 +359,8 @@ function RegisterMachineDialog({
       <form className="space-y-4" onSubmit={handleSubmit}>
         <fieldset className="fieldset">
           <legend className="fieldset-legend">Registration key or URL</legend>
-          <input {...rawTextProps}
+          <input
+            {...rawTextProps}
             id="register-machine-key"
             type="text"
             className="input input-bordered w-full font-mono"

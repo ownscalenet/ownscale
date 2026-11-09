@@ -35,6 +35,15 @@ type OrgService struct {
 	restart func(ctx context.Context) error
 	// sleep stops the org's headscale until its next use.
 	sleep func(ctx context.Context) error
+	// del deletes the org; see Delete.
+	del func(ctx context.Context) error
+}
+
+// Delete stops o's headscale and deletes the organization with its
+// members, machines, settings, files and backup.
+func (o *OrgService) Delete(ctx context.Context) (err error) {
+	defer derrors.Wrap(&err, "o.Delete(%q)", o.subdomain)
+	return o.del(ctx)
 }
 
 // Sleep stops o's headscale to free its resources, closing its device

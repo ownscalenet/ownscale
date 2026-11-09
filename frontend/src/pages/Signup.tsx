@@ -83,7 +83,8 @@ export default function Signup() {
                 <label className="fieldset-label" htmlFor="passkey-username">
                   Username
                 </label>
-                <input {...rawTextProps}
+                <input
+                  {...rawTextProps}
                   id="passkey-username"
                   type="text"
                   required

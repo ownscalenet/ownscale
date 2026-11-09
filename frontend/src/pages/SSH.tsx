@@ -214,7 +214,8 @@ export default function SSH() {
         <form onSubmit={connect} className="flex flex-wrap items-end gap-3">
           <label className="form-control">
             <span className="label-text text-sm">Username on the machine</span>
-            <input {...rawTextProps}
+            <input
+              {...rawTextProps}
               className="input input-bordered"
               value={username}
               onChange={(e) => setUsername(e.target.value)}

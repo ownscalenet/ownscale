@@ -107,6 +107,20 @@ func TestDeleteUser(t *testing.T) {
 		}
 	})
 
+	t.Run("refuses the last member", func(t *testing.T) {
+		_, queries := dbtest.New(t)
+		org := dbtest.CreateOrg(t, queries.Queries, "acme")
+		user := insertUser(t, queries.Queries, t.Context(), "owner@example.test", org, "owner", "1")
+		var out strings.Builder
+		err := deleteUser(t.Context(), &out, queries, nil, user.ID)
+		if err == nil || !strings.Contains(err.Error(), "last member") {
+			t.Fatalf("deleteUser: err = %v, want last member error", err)
+		}
+		if _, err := queries.GetUserByID(t.Context(), user.ID); err != nil {
+			t.Errorf("GetUserByID after refused delete: %v", err)
+		}
+	})
+
 	t.Run("deletes user, headscale user and machines", func(t *testing.T) {
 		_, queries := dbtest.New(t)
 		org := dbtest.CreateOrg(t, queries.Queries, "acme")
@@ -124,6 +138,7 @@ func TestDeleteUser(t *testing.T) {
 				t.Fatalf("RegisterNode(%q): %v", name, err)
 			}
 		}
+		insertUser(t, queries.Queries, t.Context(), "other@example.test", org, "owner", hsUserIDs["other"])
 		user := insertUser(t, queries.Queries, t.Context(), "linked@example.test", org, "member", hsUserIDs["linked"])
 		var gotSubdomain string
 		clientFor := func(subdomain string) *hscl.Client {

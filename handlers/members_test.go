@@ -375,6 +375,7 @@ func TestTransferOwnershipTargetNotFound(t *testing.T) {
 
 // TestDeleteAccount checks that callers can delete their own account, with
 // its headscale user and machines, except an owner who still has members.
+// The last member's deletion deletes the organization.
 func TestDeleteAccount(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -385,11 +386,13 @@ func TestDeleteAccount(t *testing.T) {
 		wantUsers   []string
 		wantNodes   []string
 		wantAccount bool
+		wantOrg     bool
 	}{
-		{"member", RoleMember, true, false, http.StatusNoContent, []string{"other"}, []string{"other-laptop"}, false},
-		{"owner alone", RoleOwner, false, false, http.StatusNoContent, []string{"other"}, []string{"other-laptop"}, false},
-		{"owner with members", RoleOwner, true, false, http.StatusConflict, []string{"caller", "other"}, []string{"caller-laptop", "other-laptop"}, true},
-		{"headscale unreachable", RoleMember, true, true, http.StatusServiceUnavailable, []string{"caller", "other"}, []string{"caller-laptop", "other-laptop"}, true},
+		{"member", RoleMember, true, false, http.StatusNoContent, []string{"other"}, []string{"other-laptop"}, false, true},
+		// The org's headscale database goes as a whole, so its users aren't deleted one by one.
+		{"owner alone", RoleOwner, false, false, http.StatusNoContent, []string{"caller", "other"}, []string{"caller-laptop", "other-laptop"}, false, false},
+		{"owner with members", RoleOwner, true, false, http.StatusConflict, []string{"caller", "other"}, []string{"caller-laptop", "other-laptop"}, true, true},
+		{"headscale unreachable", RoleMember, true, true, http.StatusServiceUnavailable, []string{"caller", "other"}, []string{"caller-laptop", "other-laptop"}, true, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -444,8 +447,9 @@ func TestDeleteAccount(t *testing.T) {
 			if gotAccount := err == nil; gotAccount != tt.wantAccount {
 				t.Errorf("account exists = %v, want %v (err %v)", gotAccount, tt.wantAccount, err)
 			}
-			if _, err := h.queries.GetOrganization(t.Context(), org.ID); err != nil {
-				t.Errorf("GetOrganization: %v, want the organization to remain", err)
+			_, err = h.queries.GetOrganization(t.Context(), org.ID)
+			if gotOrg := err == nil; gotOrg != tt.wantOrg {
+				t.Errorf("organization exists = %v, want %v (err %v)", gotOrg, tt.wantOrg, err)
 			}
 			if rec.Code == http.StatusNoContent {
 				cleared := false

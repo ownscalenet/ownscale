@@ -152,25 +152,34 @@ function PasskeysCard() {
 }
 
 // DeleteAccountCard lets the user delete their own account. Owners must
-// first hand over or empty the organization, which the server enforces too.
+// first hand over or empty the organization, which the server enforces too;
+// the last member's deletion deletes the organization.
 function DeleteAccountCard() {
   const confirm = useConfirm()
   const { refresh } = useAuth()
   const members = useQuery({ queryKey: ['members'], queryFn: ({ signal }) => listMembers(signal) })
   const remove = useMutation({ mutationFn: deleteAccount, onSuccess: () => void refresh() })
-  const ownerWithMembers =
-    members.data?.callerRole === 'owner' && (members.data?.members.length ?? 0) > 1
+  const isOwner = members.data?.callerRole === 'owner'
+  const ownerWithMembers = isOwner && (members.data?.members.length ?? 0) > 1
+  const deletesOrg = isOwner && !ownerWithMembers
   const failure = remove.error ?? members.error
   const error = failure ? errorMessage(failure) : null
 
   const handleDelete = async () => {
     const ok = await confirm({
       title: 'Delete your account?',
-      consequences: [
-        'All your machines are removed from the tailnet.',
-        'Your passkeys are deleted.',
-        "This can't be undone.",
-      ],
+      consequences: deletesOrg
+        ? [
+            "You're the last member, so the whole organization is deleted.",
+            'All its machines, including tagged ones, are removed from the tailnet.',
+            'Its settings, funnels and your passkeys are deleted.',
+            "This can't be undone.",
+          ]
+        : [
+            'All your machines are removed from the tailnet.',
+            'Your passkeys are deleted.',
+            "This can't be undone.",
+          ],
       confirmLabel: 'Delete account',
       tone: 'danger',
     })
@@ -184,7 +193,9 @@ function DeleteAccountCard() {
           <div>
             <h2 className="card-title">Delete account</h2>
             <p className="text-sm opacity-60 -mt-1">
-              Permanently delete your account and remove your machines from the tailnet.
+              {deletesOrg
+                ? "Permanently delete your account and this organization, since you're its last member."
+                : 'Permanently delete your account and remove your machines from the tailnet.'}
             </p>
           </div>
           <button

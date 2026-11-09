@@ -128,6 +128,15 @@ func deleteUser(ctx context.Context, out io.Writer, queries *db.TxQueries, clien
 	if err != nil {
 		return fmt.Errorf("get organization: %w", err)
 	}
+	// Deleting the last member deletes the org, which needs its headscale
+	// stopped by the ownscale process.
+	members, err := queries.ListUsersByOrganization(ctx, org.ID)
+	if err != nil {
+		return fmt.Errorf("list organization members: %w", err)
+	}
+	if len(members) == 1 {
+		return fmt.Errorf("user %s is the last member of organization %q; delete the account from the console to delete the organization too", user.ID, org.Subdomain)
+	}
 	if err := clientFor(org.Subdomain).DeleteUserAndNodes(ctx, user.HeadscaleUserID); err != nil {
 		return fmt.Errorf("delete headscale user: %w", err)
 	}

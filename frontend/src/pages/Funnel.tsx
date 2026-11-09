@@ -179,7 +179,8 @@ export default function Funnel() {
                 <fieldset className="fieldset">
                   <legend className="fieldset-legend">Subdomain</legend>
                   <label className="input input-bordered input-sm w-full flex items-center gap-0 font-mono">
-                    <input {...rawTextProps}
+                    <input
+                      {...rawTextProps}
                       id="funnel-label"
                       type="text"
                       className="grow min-w-0"

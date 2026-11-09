@@ -220,6 +220,20 @@ func TestEnsureRefusesMissingDatabase(t *testing.T) {
 	}
 }
 
+// TestCreateRefusesLeftoverDataDirectory verifies a new organization never
+// gets the headscale database a deleted one left behind.
+func TestCreateRefusesLeftoverDataDirectory(t *testing.T) {
+	svc := newTestService(t)
+	writeDatabase(t, svc, "acme")
+
+	if _, err := svc.Create(t.Context(), "acme"); err == nil {
+		t.Fatal("Create: want an error for the leftover data directory, got nil")
+	}
+	if _, err := svc.queries.GetOrganizationBySubdomain(t.Context(), "acme"); !errors.Is(err, sql.ErrNoRows) {
+		t.Errorf("GetOrganizationBySubdomain: err = %v, want sql.ErrNoRows", err)
+	}
+}
+
 func TestCreateRejectsInvalidSubdomain(t *testing.T) {
 	svc := newTestService(t)
 
@@ -369,11 +383,14 @@ func TestNextSubdomain(t *testing.T) {
 	tests := []struct {
 		name  string
 		taken []string
-		want  string // "" means a random subdomain
+		// leftover subdomains have a data directory, but no organization.
+		leftover []string
+		want     string // "" means a random subdomain
 	}{
-		{"empty database", nil, "aaaa"},
-		{"skips taken fixed subdomains", []string{"aaaa", "bbbb"}, "cccc"},
-		{"falls back to random", testFixedSubdomains, ""},
+		{"empty database", nil, nil, "aaaa"},
+		{"skips taken fixed subdomains", []string{"aaaa", "bbbb"}, nil, "cccc"},
+		{"skips leftover data directories", []string{"aaaa"}, []string{"bbbb"}, "cccc"},
+		{"falls back to random", testFixedSubdomains, nil, ""},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -382,6 +399,9 @@ func TestNextSubdomain(t *testing.T) {
 				if _, err := svc.Create(t.Context(), sub); err != nil {
 					t.Fatalf("Create(%q): %v", sub, err)
 				}
+			}
+			for _, sub := range tt.leftover {
+				writeDatabase(t, svc, sub)
 			}
 			got, err := svc.NextSubdomain(t.Context())
 			if err != nil {

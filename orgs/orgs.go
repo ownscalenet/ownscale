@@ -9,10 +9,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -230,6 +232,9 @@ func (s *Service) ForOrg(org sqlcgen.Organization) *OrgService {
 		},
 		sleep: func(ctx context.Context) error {
 			return s.sleepHeadscale(ctx, sub)
+		},
+		del: func(ctx context.Context) error {
+			return s.deleteOrg(ctx, org.ID, sub)
 		},
 	}
 }
@@ -492,6 +497,9 @@ func (s *Service) NextSubdomain(ctx context.Context) (_ string, err error) {
 		candidates = append(candidates, suffix)
 	}
 	for _, subdomain := range candidates {
+		if s.hasFiles(subdomain) {
+			continue
+		}
 		_, err := s.queries.GetOrganizationBySubdomain(ctx, subdomain)
 		if errors.Is(err, sql.ErrNoRows) {
 			return subdomain, nil
@@ -512,6 +520,10 @@ func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organ
 
 	if err := ValidateSubdomain(subdomain); err != nil {
 		return sqlcgen.Organization{}, err
+	}
+	// A new org must not inherit a deleted org's headscale database.
+	if s.hasFiles(subdomain) {
+		return sqlcgen.Organization{}, fmt.Errorf("data directory of subdomain %q already exists", subdomain)
 	}
 
 	clientID, err := randomAlphaNum(8)
@@ -571,6 +583,8 @@ func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organ
 	if err != nil {
 		if delErr := s.queries.DeleteOrganization(ctx, org.ID); delErr != nil {
 			s.logger.Error("delete organization whose headscale didn't start", "subdomain", subdomain, "error", delErr)
+		} else if rmErr := s.removeFiles(ctx, subdomain); rmErr != nil {
+			s.logger.Error("remove files of organization whose headscale didn't start", "subdomain", subdomain, "error", rmErr)
 		}
 		return sqlcgen.Organization{}, err
 	}
@@ -867,6 +881,53 @@ func (s *Service) sleepHeadscale(ctx context.Context, subdomain string) (err err
 		s.onSleep(subdomain)
 	}
 	return nil
+}
+
+// deleteOrg stops subdomain's headscale and deletes the organization with
+// everything it owns: its rows, files and backup. Failing to remove the
+// files is only logged, as the organization is gone by then.
+func (s *Service) deleteOrg(ctx context.Context, orgID, subdomain string) (err error) {
+	defer derrors.Wrap(&err, "s.deleteOrg(%q)", subdomain)
+
+	// A canceled request must not leave the org half deleted.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), sleepTimeout)
+	defer cancel()
+	s.orgLock(subdomain).Lock()
+	defer s.orgLock(subdomain).Unlock()
+
+	if rt, ok := s.orgs.Load(subdomain); ok {
+		if err := stopLocked(ctx, rt); err != nil {
+			return err
+		}
+		s.orgs.Delete(subdomain)
+	}
+	s.startFailures.Delete(subdomain)
+	if s.onSleep != nil {
+		s.onSleep(subdomain)
+	}
+	if err := s.queries.DeleteOrganization(ctx, orgID); err != nil {
+		return err
+	}
+	s.logger.Info("deleted organization", "org", subdomain)
+	if err := s.removeFiles(ctx, subdomain); err != nil {
+		s.logger.Error("remove files of deleted organization", "org", subdomain, "error", err)
+	}
+	return nil
+}
+
+// removeFiles deletes subdomain's data directory and its backup.
+func (s *Service) removeFiles(ctx context.Context, subdomain string) error {
+	return errors.Join(
+		s.backups.Remove(ctx, DBFile(subdomain)),
+		os.RemoveAll(filepath.Join(s.cfg.DataDir, subdomain)),
+	)
+}
+
+// hasFiles reports whether subdomain's data directory exists, e.g. left
+// behind by a deleted organization whose cleanup failed.
+func (s *Service) hasFiles(subdomain string) bool {
+	_, err := os.Stat(filepath.Join(s.cfg.DataDir, subdomain))
+	return !errors.Is(err, fs.ErrNotExist)
 }
 
 // BackUpAll adds the database of every organization to backups, skipping

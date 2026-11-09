@@ -420,7 +420,8 @@ function CreateAuthKeyDialog({
             {canManage && (
               <fieldset className="fieldset">
                 <legend className="fieldset-legend">ACL tags{tagOnly && ' (required)'}</legend>
-                <input {...rawTextProps}
+                <input
+                  {...rawTextProps}
                   type="text"
                   className="input input-bordered w-full font-mono"
                   placeholder="tag:server, tag:prod"

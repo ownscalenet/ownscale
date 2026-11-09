@@ -165,7 +165,8 @@ func (h *Handlers) RemoveMember(w http.ResponseWriter, r *http.Request) {
 
 // DeleteAccount handles DELETE /api/account: the caller deletes their own
 // account, and is logged out. An owner can only do so once they're the
-// organization's last member, so it's never left without an owner.
+// organization's last member, so it's never left without an owner; the
+// organization is then deleted along with them.
 func (h *Handlers) DeleteAccount(w http.ResponseWriter, r *http.Request) {
 	caller, org, r, ok := h.callerAndOrg(w, r)
 	if !ok {
@@ -182,8 +183,14 @@ func (h *Handlers) DeleteAccount(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	client, _ := headscaleClientFromContext(r)
-	if err := h.deleteAccount(r.Context(), client, *caller); err != nil {
+	var err error
+	if caller.Role == RoleOwner {
+		err = h.orgs.ForOrg(org).Delete(r.Context())
+	} else {
+		client, _ := headscaleClientFromContext(r)
+		err = h.deleteAccount(r.Context(), client, *caller)
+	}
+	if err != nil {
 		h.serverError(w, r, err)
 		return
 	}

@@ -154,6 +154,7 @@ test('a member deletes their own account, which the owner can only do once alone
       await page.reload()
       await expect(deleteButton).toBeEnabled()
       await expect(page.getByText('You own this organization and it still has other members.')).toBeHidden()
+      await expect(page.getByText(/delete your account and this organization/)).toBeVisible()
     } finally {
       await teardownRealMachine(machine)
     }

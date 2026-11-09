@@ -64,20 +64,16 @@ export function ExitNodeBadge({ status }: { status: ExitNodeStatus }) {
 // ErrorAlert shows error, and nothing when there is none. It is a fixed
 // toast so it stays visible however far the page is scrolled; inline keeps it
 // in the page flow, for when the error is the page's content.
-export function ErrorAlert({
-  error,
-  inline = false,
-}: {
-  error: string | null
-  inline?: boolean
-}) {
+export function ErrorAlert({ error, inline = false }: { error: string | null; inline?: boolean }) {
   const [dismissed, setDismissed] = useState<string | null>(null)
   // Forget the dismissal once the error is gone, so the same error shows again.
   if (!error && dismissed !== null) setDismissed(null)
 
   if (!error) return null
   const message = (
-    <span className={`whitespace-pre-wrap break-words ${error.includes('\n') ? 'font-mono text-sm' : ''}`}>
+    <span
+      className={`whitespace-pre-wrap break-words ${error.includes('\n') ? 'font-mono text-sm' : ''}`}
+    >
       {error}
     </span>
   )

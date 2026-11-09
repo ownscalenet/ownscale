@@ -36,6 +36,12 @@ the inviting organization with the role chosen in the invite instead.
 
 Each account belongs to exactly one organization.
 
+## How organizations are deleted
+
+An organization is deleted when its last member, the owner, deletes their
+account. Its machines, settings, funnels, Headscale database and backup are
+deleted with it, and can't be recovered.
+
 ## Sleeping organizations
 
 An organization's Headscale instance stops when no machine has been

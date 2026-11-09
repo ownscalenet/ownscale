@@ -86,6 +86,23 @@ func (r *Replicator) Add(relPath string) (err error) {
 	return r.store.RegisterDB(db)
 }
 
+// Remove stops replicating the database at relPath and deletes its replica.
+func (r *Replicator) Remove(ctx context.Context, relPath string) (err error) {
+	defer derrors.Wrap(&err, "r.Remove(%q)", relPath)
+
+	if r == nil || r.store == nil {
+		return nil
+	}
+	if err := r.store.UnregisterDB(ctx, filepath.Join(r.dataDir, relPath)); err != nil {
+		return err
+	}
+	client, err := newClient(r.cfg, relPath)
+	if err != nil {
+		return err
+	}
+	return client.DeleteAll(ctx)
+}
+
 // Close syncs pending changes to the replica and stops replicating. The
 // final sync is abandoned once ctx is done. Callers must have closed their
 // own connections to the replicated databases first.

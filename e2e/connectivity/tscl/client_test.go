@@ -210,7 +210,7 @@ func TestRedactedError(t *testing.T) {
 func TestParseAddrs(t *testing.T) {
 	build := func(rcode dnsmessage.RCode, answers ...dnsmessage.Resource) []byte {
 		raw, err := (&dnsmessage.Message{
-			Header:  dnsmessage.Header{Response: true, RCode: rcode},
+			Response: true, RCode: rcode,
 			Answers: answers,
 		}).Pack()
 		if err != nil {

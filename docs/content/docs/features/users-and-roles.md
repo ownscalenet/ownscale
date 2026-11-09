@@ -45,6 +45,19 @@ Tagged machines aren't owned by a user, so they stay. If the removed person
 signs in again later, they get a fresh account and a new organization of
 their own, unless they use a new invite.
 
+## Deleting your account
+
+Any member can delete their own account from the account settings page. As
+with removing a member, their Headscale user and machines are deleted too.
+
+The owner can only delete their account once they're the last member, so
+they first transfer ownership or remove everyone else. Deleting the last
+member's account deletes the whole organization, including its tagged
+machines, settings, funnels and backup.
+
+Server administrators can delete accounts with `osa user delete`, except an
+organization's last member; that account must be deleted from the console.
+
 ## Users in the policy file
 
 Refer to a member in the policy file by their email address, such as
