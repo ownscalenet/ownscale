@@ -2,13 +2,19 @@ package main
 
 import (
 	"context"
+	"io"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/hscl"
 	"github.com/ownscalenet/ownscale/hscl/hstest"
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 func TestListOrganizations(t *testing.T) {
@@ -110,6 +116,63 @@ func TestListOrganizationSubdomains(t *testing.T) {
 			}
 			if out.String() != tt.want {
 				t.Errorf("output = %q, want %q", out.String(), tt.want)
+			}
+		})
+	}
+}
+
+func TestDeleteOrganizations(t *testing.T) {
+	tests := []struct {
+		name       string
+		running    bool
+		delete     []string
+		wantErr    bool
+		wantRemain []string
+	}{
+		{"deletes data and backups", false, []string{"acme"}, false, []string{"globex"}},
+		{"refuses while ownscale runs", true, []string{"acme"}, true, []string{"acme", "globex"}},
+		{"stops at an unknown organization", false, []string{"acme", "nope", "globex"}, true, []string{"globex"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			replicaDir := t.TempDir()
+			bcfg := config.BackupConfig{ReplicaURL: "file://" + replicaDir, SyncInterval: 10 * time.Millisecond}
+			cfg := &config.Config{DataDir: t.TempDir(), Backup: bcfg}
+			_, queries := dbtest.New(t)
+			for _, sub := range []string{"acme", "globex"} {
+				dbtest.CreateOrg(t, queries.Queries, sub)
+				backUpOrg(t, bcfg, replicaDir, sub, sub)
+				if err := os.MkdirAll(filepath.Join(cfg.DataDir, sub), 0o755); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if tt.running {
+				unlock, err := orgs.LockDataDir(cfg.DataDir)
+				if err != nil {
+					t.Fatal(err)
+				}
+				defer unlock()
+			}
+
+			err := deleteOrganizations(t.Context(), io.Discard, cfg, queries, tt.delete)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("deleteOrganizations err = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			var remain []string
+			for _, sub := range []string{"acme", "globex"} {
+				_, dbErr := queries.GetOrganizationBySubdomain(t.Context(), sub)
+				_, dirErr := os.Stat(filepath.Join(cfg.DataDir, sub))
+				backedUp := hasFiles(t, filepath.Join(replicaDir, orgs.DBFile(sub)))
+				if (dbErr == nil) != (dirErr == nil) || (dbErr == nil) != backedUp {
+					t.Errorf("%s: row err %v, dir err %v, backed up %v; want all present or all gone", sub, dbErr, dirErr, backedUp)
+				}
+				if dbErr == nil {
+					remain = append(remain, sub)
+				}
+			}
+			if !slices.Equal(remain, tt.wantRemain) {
+				t.Errorf("remaining = %v, want %v", remain, tt.wantRemain)
 			}
 		})
 	}

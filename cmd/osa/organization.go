@@ -7,6 +7,7 @@ import (
 	"io"
 	"log/slog"
 	"os"
+	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/peterbourgon/ff/v4"
 
+	"github.com/ownscalenet/ownscale/backup"
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/derrors"
@@ -79,18 +81,19 @@ func newOrgResources() (_ *orgResources, cleanup func(), err error) {
 }
 
 // newOrganizationCommand builds the "organization" subcommand group
-// (list), parented under rootFlags.
+// (list, delete), parented under rootFlags.
 func newOrganizationCommand(rootFlags *ff.FlagSet) *ff.Command {
 	organizationFlags := ff.NewFlagSet("organization").SetParent(rootFlags)
 	organizationCmd := &ff.Command{
 		Name:      "organization",
 		Usage:     "osa organization SUBCOMMAND ...",
-		ShortHelp: "inspect organizations",
+		ShortHelp: "inspect and delete organizations",
 		Flags:     organizationFlags,
 	}
 
 	organizationCmd.Subcommands = append(organizationCmd.Subcommands,
 		newOrganizationListCommand(organizationFlags),
+		newOrganizationDeleteCommand(organizationFlags),
 	)
 	return organizationCmd
 }
@@ -121,6 +124,58 @@ func newOrganizationListCommand(parent *ff.FlagSet) *ff.Command {
 			return listOrganizations(ctx, os.Stdout, res.queries, probe)
 		},
 	}
+}
+
+func newOrganizationDeleteCommand(parent *ff.FlagSet) *ff.Command {
+	flags := ff.NewFlagSet("organization delete").SetParent(parent)
+	return &ff.Command{
+		Name:      "delete",
+		Usage:     "osa organization delete SUBDOMAIN...",
+		ShortHelp: "delete organizations, their data and backups; ownscale must be stopped",
+		Flags:     flags,
+		Exec: func(ctx context.Context, args []string) error {
+			if len(args) == 0 {
+				return errors.New("usage: osa organization delete SUBDOMAIN...")
+			}
+			res, cleanup, err := newOrgResources()
+			defer cleanup()
+			if err != nil {
+				return err
+			}
+			return deleteOrganizations(ctx, os.Stdout, res.cfg, res.queries, args)
+		},
+	}
+}
+
+// deleteOrganizations deletes each organization's row, which cascades to
+// its memberships, then its backup and data directory. It holds the data
+// dir lock so it can't race a running ownscale.
+func deleteOrganizations(ctx context.Context, out io.Writer, cfg *config.Config, queries *db.TxQueries, subdomains []string) (err error) {
+	defer derrors.Wrap(&err, "deleteOrganizations(%q)", subdomains)
+
+	unlock, err := orgs.LockDataDir(cfg.DataDir)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
+	for _, sub := range subdomains {
+		org, err := queries.GetOrganizationBySubdomain(ctx, sub)
+		if err != nil {
+			return fmt.Errorf("organization %q: %w", sub, err)
+		}
+		if err := queries.DeleteOrganization(ctx, org.ID); err != nil {
+			return err
+		}
+		if err := errors.Join(
+			backup.DeleteReplica(ctx, cfg.Backup, orgs.DBFile(sub)),
+			os.RemoveAll(filepath.Join(cfg.DataDir, sub)),
+		); err != nil {
+			return fmt.Errorf("organization %q deleted, but its files remain: %w", sub, err)
+		}
+		_, _ = fmt.Fprintf(out, "deleted %s\n", sub)
+	}
+	return nil
 }
 
 // probeTimeout bounds how long probeHeadscale waits for an answer.
