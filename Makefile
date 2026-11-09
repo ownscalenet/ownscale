@@ -54,8 +54,10 @@ osa:
 #  - a session secret, if none is set, for compose.yaml's required check
 #    (compose.dev.yaml overrides the value the container gets).
 #
-# Pass `make dev-up BUILD=1` to forward --build to `docker compose up`.
+# Pass `make dev-up BUILD=1` to forward --build to `docker compose up`, and
+# DETACH=1 to start the stack in the background (as CI does).
 BUILD ?=
+DETACH ?=
 dev-up:
 	@touch .env
 	@{ grep -vE '^(COMPOSE_FILE|HOST_UID|HOST_GID)=|^OWNSCALE_AUTH_SESSION_SECRET=$$' .env; \
@@ -64,7 +66,7 @@ dev-up:
 		echo HOST_GID=$(HOST_GID); \
 		grep -q '^OWNSCALE_AUTH_SESSION_SECRET=.' .env || echo OWNSCALE_AUTH_SESSION_SECRET=dev-session-secret; \
 	} > .env.tmp && cat .env.tmp > .env && rm .env.tmp
-	docker compose up $(if $(BUILD),--build)
+	docker compose up $(if $(BUILD),--build) $(if $(DETACH),-d)
 
 # devbox opens up a shell in a container that has joined a tailnet.
 # It's useful for debugging, but requires make dev-up to already run.
@@ -113,9 +115,10 @@ e2e-deps:
 	npm --prefix e2e/frontend ci
 	npx --prefix e2e/frontend playwright install chromium
 
-# Signs in the e2e identities and records their organizations.
+# Signs in the frontend workers' and ssh suite's accounts.
 e2e-setup:
 	npm --prefix e2e/frontend test -- --project=setup
+	npm --prefix e2e/frontend run test:ssh -- --project=setup
 
 e2e-frontend: e2e-deps e2e-frontend-run
 e2e-frontend-run:

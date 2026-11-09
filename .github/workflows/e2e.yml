@@ -1,0 +1,76 @@
+name: E2E
+
+# Runs `make e2e` against a local development stack (`make dev-up`).
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  e2e:
+    name: make e2e on the dev stack
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@v7.1.0
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: |
+            frontend/package-lock.json
+            e2e/frontend/package-lock.json
+
+      # The images embed the host-built frontend. No e2e test needs the docs
+      # site, so Caddy gets an empty one instead of a hugo build.
+      - name: Build frontend
+        run: |
+          npm --prefix frontend ci
+          npm --prefix frontend run build
+          cp frontend/node_modules/@tailscale/connect/main.wasm.zst webui/dist/assets/
+          mkdir -p etc/caddy/site
+
+      - name: Map *.ownscale.test to localhost
+        run: |
+          names="ownscale.test console.ownscale.test dex.ownscale.test"
+          for org in aaaa bbbb cccc dddd eeee ffff gggg hhhh iiii jjjj; do
+            names="$names $org.ownscale.test web1-$org.ownscale.test web2-$org.ownscale.test"
+          done
+          echo "127.0.0.1 $names" | sudo tee -a /etc/hosts
+
+      - run: make dev-up BUILD=1 DETACH=1
+
+      - name: Wait for the console
+        run: |
+          for _ in $(seq 60); do
+            curl -fsS -o /dev/null --cacert data/local-ca/root.crt https://console.ownscale.test && exit 0
+            sleep 2
+          done
+          docker compose ps
+          exit 1
+
+      - run: npm --prefix e2e/frontend ci
+      - run: npx --prefix e2e/frontend playwright install --with-deps chromium
+      - run: make e2e
+
+      - name: Collect stack logs
+        if: failure()
+        run: docker compose logs --no-color > compose.log 2>&1
+      - uses: actions/upload-artifact@v7.0.2
+        if: failure()
+        with:
+          name: e2e-results
+          path: |
+            e2e/frontend/test-results
+            compose.log
