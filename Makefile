@@ -54,12 +54,16 @@ osa:
 #  - a session secret, if none is set, for compose.yaml's required check
 #    (compose.dev.yaml overrides the value the container gets).
 #
+# The data dir is created first, or docker creates it root-owned and ownscale
+# (running as HOST_UID) can't write to it.
+#
 # Pass `make dev-up BUILD=1` to forward --build to `docker compose up`, and
 # DETACH=1 to start the stack in the background (as CI does).
 BUILD ?=
 DETACH ?=
 dev-up:
 	@touch .env
+	@mkdir -p $(if $(OWNSCALE_DATA_DIR),$(OWNSCALE_DATA_DIR),data)
 	@{ grep -vE '^(COMPOSE_FILE|HOST_UID|HOST_GID)=|^OWNSCALE_AUTH_SESSION_SECRET=$$' .env; \
 		echo COMPOSE_FILE=compose.yaml:compose.dev.yaml; \
 		echo HOST_UID=$(HOST_UID); \
