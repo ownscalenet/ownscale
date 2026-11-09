@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import type { IPN } from '@tailscale/connect'
 import { Link, useParams } from 'react-router-dom'
 import { TerminalSquare } from 'lucide-react'
@@ -27,6 +27,10 @@ interface pendingSession {
 // the WebAssembly client joins the tailnet, the live terminal, or the
 // "session ended" state.
 type phase = 'form' | 'connecting' | 'connected' | 'done'
+
+// joinTimeoutMs bounds how long the client may take to join the tailnet,
+// well within the pre-auth key's 3 minute lifetime.
+const joinTimeoutMs = 90_000
 
 // sshUserKey is where the username last used for a machine is remembered,
 // so reconnecting doesn't mean retyping it.
@@ -84,6 +88,15 @@ export default function SSH() {
   const keyDeletedRef = useRef(false)
   const leavingRef = useRef(false)
 
+  // endSession stops the Tailscale client as soon as the session is over:
+  // a client left running keeps polling headscale for as long as the tab
+  // stays open.
+  const endSession = useCallback((err?: string) => {
+    for (const fn of cleanupRef.current.splice(0)) fn()
+    if (err) setError(err)
+    setPhase('done')
+  }, [])
+
   // The terminal can only be attached once its container exists, which is
   // one render after the client reports Running.
   useEffect(() => {
@@ -96,12 +109,12 @@ export default function SSH() {
       {
         onConnectionProgress: setProgress,
         onConnected: () => setProgress(''),
-        onDone: () => setPhase('done'),
-        onError: (err) => setError(sshErrorMessage(err)),
+        onDone: () => endSession(),
+        onError: (err) => endSession(sshErrorMessage(err)),
       },
       { fontSize: 13 },
     )
-  }, [pending])
+  }, [pending, endSession])
 
   // Leaving the page (client-side navigation included) tears the node
   // down instead of waiting for headscale's ephemeral timeout.
@@ -134,8 +147,7 @@ export default function SSH() {
       setSession(s)
       await runSession(s, username.trim())
     } catch (err) {
-      setError(errorMessage(err))
-      setPhase('done')
+      endSession(errorMessage(err))
     }
   }
 
@@ -149,27 +161,49 @@ export default function SSH() {
       authKey: s.authKey,
       hostname: s.hostname,
       wasmURL: '/assets/main.wasm',
-      panicHandler: (err) => setError(`Tailscale client stopped: ${err}`),
+      panicHandler: (err) => endSession(`Tailscale client stopped: ${err}`),
     })
     cleanupRef.current.push(() => {
       leavingRef.current = true
-      ipn.logout()
+      try {
+        ipn.logout()
+      } catch {
+        // The client already stopped (e.g. it panicked).
+      }
       noteSSHLogout()
     })
+    // A rejected key leaves the client retrying registration in the
+    // background without reporting an error.
+    const joinTimer = setTimeout(
+      () => endSession('Couldn’t join the tailnet. Reconnect to try with a new key.'),
+      joinTimeoutMs,
+    )
+    cleanupRef.current.push(() => clearTimeout(joinTimer))
+    let loginRequested = false
+    let running = false
     setProgress('Joining the tailnet...')
     ipn.run({
       notifyState: (state) => {
         // Logging out reports NeedsLogin, which mustn't log in again.
         if (leavingRef.current) return
         if (state === 'NeedsLogin') {
-          ipn.login()
+          // The pre-auth key is single use, so it can only log in once. Losing
+          // the node later (deleted, expired) ends the session.
+          if (running) {
+            endSession('The browser’s tailnet session ended. Reconnect to start a new one.')
+          } else if (!loginRequested) {
+            loginRequested = true
+            ipn.login()
+          }
           return
         }
         if (state === 'NeedsMachineAuth') {
-          setError('This tailnet requires manual approval of new machines.')
+          endSession('This tailnet requires manual approval of new machines.')
           return
         }
         if (state !== 'Running') return
+        running = true
+        clearTimeout(joinTimer)
         // The pre-auth key is consumed once the node registers; delete it
         // now instead of waiting out its short server-side TTL.
         if (!keyDeletedRef.current) {
@@ -181,7 +215,7 @@ export default function SSH() {
       },
       notifyNetMap: () => {},
       notifyBrowseToURL: () => {},
-      notifyPanicRecover: (err) => setError(`Tailscale client stopped: ${err}`),
+      notifyPanicRecover: (err) => endSession(`Tailscale client stopped: ${err}`),
     })
   }
 

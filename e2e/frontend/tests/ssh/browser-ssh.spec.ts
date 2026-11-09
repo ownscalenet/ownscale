@@ -21,6 +21,34 @@ async function putPolicy(page: Page, content: string): Promise<void> {
   expect(res.ok(), await res.text()).toBe(true)
 }
 
+// consoleNodes lists the browser SSH pages' ephemeral nodes.
+async function consoleNodes(page: Page): Promise<{ id: string; name: string }[]> {
+  const res = await page.request.get('/api/machines')
+  expect(res.ok(), await res.text()).toBe(true)
+  const { machines } = (await res.json()) as { machines: { id: string; name: string }[] }
+  return machines.filter(m => m.name.endsWith('-console-ssh'))
+}
+
+// openTerminal opens the SSH page for hostname and waits for a root prompt.
+async function openTerminal(page: Page, hostname: string): Promise<void> {
+  await page.goto('/machines')
+  const row = page.getByRole('row').filter({ hasText: hostname })
+  await expect(row).toBeVisible({ timeout: 30_000 })
+  await row.getByRole('button', { name: 'Actions', exact: true }).click()
+  await page.getByRole('menuitem', { name: 'SSH', exact: true }).click()
+  await page.waitForURL(/\/machines\/\d+\/ssh$/, { timeout: 10_000 })
+  await connect(page)
+}
+
+async function connect(page: Page): Promise<void> {
+  await page.getByRole('textbox').fill('root')
+  await page.getByRole('button', { name: 'Connect', exact: true }).click()
+  // The wasm client is ~27MB and has to join the tailnet before the
+  // terminal opens, so give it room.
+  await expect(page.locator('.xterm-screen')).toBeVisible({ timeout: 60_000 })
+  await expect(page.locator('.xterm-rows')).toContainText('#', { timeout: 60_000 })
+}
+
 // The browser SSH page joins the tailnet as an ephemeral node owned by the
 // signed-in user, the same headscale user `osa devbox-key` mints keys for,
 // so autogroup:self covers both ends.
@@ -65,14 +93,7 @@ test('SSH from the browser into a real machine', async ({ page, account }) => {
         return [html.fontFamily, html.lineHeight, title.fontSize, title.fontWeight].join('|')
       })
     const styleBeforeSSH = await pageStyle()
-    await page.getByRole('textbox').fill('root')
-    await page.getByRole('button', { name: 'Connect', exact: true }).click()
-
-    // The wasm client is ~27MB and has to join the tailnet before the
-    // terminal opens, so give it room.
-    const terminal = page.locator('.xterm-screen')
-    await expect(terminal).toBeVisible({ timeout: 60_000 })
-    await expect(page.locator('.xterm-rows')).toContainText('#', { timeout: 60_000 })
+    await connect(page)
 
     await page.keyboard.type('echo browser-ssh-ok')
     await page.keyboard.press('Enter')
@@ -82,6 +103,50 @@ test('SSH from the browser into a real machine', async ({ page, account }) => {
     expect(await pageStyle()).toBe(styleBeforeSSH)
 
     expect(telemetry).toEqual([])
+  } finally {
+    await removeDevbox(server)
+    await putPolicy(page, original)
+  }
+})
+
+
+// A finished session must not leave the browser's tailnet client running:
+// it would keep polling headscale for as long as the tab stays open.
+test('the browser node goes away when the SSH session ends', async ({ page, account }) => {
+  test.setTimeout(3 * 60_000)
+  await ensureDevboxImage()
+
+  const suffix = randomBytes(3).toString('hex')
+  const server = `ownscale-e2e-websh-${suffix}`
+  const hostname = `websh-${suffix}`
+  const original = await getPolicy(page)
+  const ended = page.getByText('Session ended.', { exact: true })
+
+  try {
+    await putPolicy(page, policyWithSSH)
+    await startDevbox(server, account.org, hostname)
+
+    const before = new Set((await consoleNodes(page)).map(m => m.id))
+    await openTerminal(page, hostname)
+    const mine = async () => (await consoleNodes(page)).filter(m => !before.has(m.id))
+    expect(await mine()).toHaveLength(1)
+    await page.keyboard.type('exit')
+    await page.keyboard.press('Enter')
+    await expect(ended).toBeVisible({ timeout: 15_000 })
+    await expect.poll(mine, { timeout: 15_000 }).toEqual([])
+
+    // Losing the node mid-session ends it too, instead of logging in again
+    // with the spent key.
+    await page.getByRole('button', { name: 'Reconnect' }).click()
+    await connect(page)
+    const [node] = await mine()
+    expect(node).toBeDefined()
+    const res = await page.request.delete(`/api/machines/${node.id}`)
+    expect(res.ok(), await res.text()).toBe(true)
+    await expect(ended).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText('tailnet session ended')).toBeVisible()
+    await page.waitForTimeout(5_000)
+    expect(await mine()).toEqual([])
   } finally {
     await removeDevbox(server)
     await putPolicy(page, original)
