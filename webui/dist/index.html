@@ -4,13 +4,7 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <script>
-      // Applies the saved theme before first paint to avoid a flash.
-      try {
-        var t = localStorage.getItem('ownscale-theme')
-        if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t
-      } catch (e) {}
-    </script>
+    <script src="/theme.js"></script>
     <title>Ownscale console</title>
     <script type="module" crossorigin src="/assets/index.js"></script>
     <link rel="stylesheet" crossorigin href="/assets/index.css">
