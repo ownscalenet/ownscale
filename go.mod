@@ -4,10 +4,10 @@ go 1.27.3
 
 require (
 	github.com/benbjohnson/litestream v0.5.18
-	github.com/caarlos0/env/v11 v11.4.1
+	github.com/caarlos0/env/v11 v11.4.2
 	github.com/creachadair/jrpc2 v1.3.6
 	github.com/descope/virtualwebauthn v1.0.5
-	github.com/go-jose/go-jose/v4 v4.1.7
+	github.com/go-jose/go-jose/v4 v4.1.9
 	github.com/go-webauthn/webauthn v0.18.2
 	github.com/gorilla/sessions v1.4.0
 	github.com/juanfont/headscale v0.29.4
@@ -20,13 +20,13 @@ require (
 	github.com/rs/xid v1.6.0
 	github.com/rs/zerolog v1.35.1
 	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f
-	github.com/zitadel/oidc/v3 v3.51.16
+	github.com/zitadel/oidc/v3 v3.51.17
 	golang.org/x/crypto v0.58.0
-	golang.org/x/net v0.61.0
-	golang.org/x/sync v0.24.0
+	golang.org/x/net v0.62.0
+	golang.org/x/sync v0.25.0
 	golang.org/x/time v0.16.0
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/sqlite v1.61.0
+	modernc.org/sqlite v1.62.0
 	tailscale.com v1.105.0-pre.0.20261028221719-f7c1b8e52600
 )
 
@@ -73,7 +73,7 @@ require (
 	github.com/aws/smithy-go v1.28.6 // indirect
 	github.com/axiomhq/hyperloglog v0.3.0 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
-	github.com/bmatcuk/doublestar/v4 v4.10.3 // indirect
+	github.com/bmatcuk/doublestar/v4 v4.10.4 // indirect
 	github.com/caddyserver/certmagic v0.25.6 // indirect
 	github.com/caddyserver/zerossl v0.1.6 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
@@ -235,7 +235,7 @@ require (
 	gorm.io/driver/postgres v1.6.3 // indirect
 	gorm.io/gorm v1.31.2 // indirect
 	gvisor.dev/gvisor v0.0.0-20260915211658-a6f909f08a72 // indirect
-	modernc.org/libc v1.79.0 // indirect
+	modernc.org/libc v1.80.1 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
 )
