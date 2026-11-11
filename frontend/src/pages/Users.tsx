@@ -13,6 +13,7 @@ import {
   type Role,
 } from '../api'
 import { useConfirm } from '../lib/confirm'
+import { downloadCsv, toCsv } from '../lib/csv'
 import { CopyIcon } from '../components/CopyButton'
 import { ErrorAlert, PageHeader } from '../components/ui'
 
@@ -21,6 +22,12 @@ function roleLabel(role: string): string {
     .split('_')
     .map((w) => w[0].toUpperCase() + w.slice(1))
     .join(' ')
+}
+
+function membersToCsv(members: Member[]): string {
+  const header = ['Name', 'Email', 'Role', 'User ID']
+  const rows = members.map((m) => [m.name, m.email, roleLabel(m.role), m.id])
+  return toCsv(header, rows)
 }
 
 export default function Users() {
@@ -52,7 +59,16 @@ export default function Users() {
       <PageHeader
         title="Users"
         subtitle={`${members.length} ${members.length === 1 ? 'member' : 'members'}`}
-      />
+      >
+        <button
+          type="button"
+          className="btn btn-sm btn-outline"
+          disabled={members.length === 0}
+          onClick={() => downloadCsv('users.csv', membersToCsv(members))}
+        >
+          Download CSV
+        </button>
+      </PageHeader>
 
       <ErrorAlert error={error} />
 

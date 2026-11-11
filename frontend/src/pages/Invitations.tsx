@@ -11,10 +11,12 @@ import {
   errorMessage,
   listInvites,
   listMembers,
+  type Invite,
   type Role,
 } from '../api'
 import Modal from '../components/Modal'
 import CopyButton, { CopyIcon } from '../components/CopyButton'
+import { downloadCsv, toCsv } from '../lib/csv'
 import { ErrorAlert, PageHeader, PageSpinner } from '../components/ui'
 
 function roleLabel(role: string): string {
@@ -22,6 +24,17 @@ function roleLabel(role: string): string {
     .split('_')
     .map((w) => w[0].toUpperCase() + w.slice(1))
     .join(' ')
+}
+
+function invitesToCsv(invites: Invite[]): string {
+  const header = ['Email', 'Role', 'Expires', 'Invite link']
+  const rows = invites.map((i) => [
+    i.email ?? '',
+    roleLabel(i.role),
+    i.expiresAt,
+    `${window.location.origin}/invite/${i.token}`,
+  ])
+  return toCsv(header, rows)
 }
 
 export default function Invitations() {
@@ -72,6 +85,14 @@ export default function Invitations() {
         <button type="button" className="btn btn-primary btn-sm" onClick={() => setInviting(true)}>
           <UserPlus className="size-3.5" aria-hidden="true" />
           Invite member
+        </button>
+        <button
+          type="button"
+          className="btn btn-sm btn-outline"
+          disabled={invites.length === 0}
+          onClick={() => downloadCsv('invitations.csv', invitesToCsv(invites))}
+        >
+          Download CSV
         </button>
       </PageHeader>
 
