@@ -21,31 +21,37 @@ Self-hosted Mesh VPN
 {{< hextra/hero-button text="Read docs" link="/docs/" >}}
 </div>
 
-<div class="hx:mt-6"></div>
+<div class="content hx:mt-6 hx:w-full">
 
-{{< hextra/feature-grid >}}
-  {{< hextra/feature-card
-    title="Many tailnets, one server"
-    subtitle="Each organization gets its own tailnet, backed by its own Headscale instance and subdomain."
-  >}}
-  {{< hextra/feature-card
-    title="Web console"
-    subtitle="Manage machines, users, access control, DNS and auth keys from the browser."
-  >}}
-  {{< hextra/feature-card
-    title="Single sign-on and passkeys"
-    subtitle="Log in with OIDC, Google, Microsoft, GitHub or a passkey."
-  >}}
-  {{< hextra/feature-card
-    title="Funnels"
-    subtitle="Expose a service running on a machine in your tailnet to the public internet."
-  >}}
-  {{< hextra/feature-card
-    title="Tailscale features"
-    subtitle="MagicDNS, split DNS, subnet routers, exit nodes, tags, ACLs, grants, Tailscale SSH, Taildrop and HTTPS certificates."
-  >}}
-  {{< hextra/feature-card
-    title="Simple to operate"
-    subtitle="One process, SQLite databases and continuous Litestream backups. Deployed with Docker Compose."
-  >}}
-{{< /hextra/feature-grid >}}
+## Goals
+
+Ownscale goals build up on Headscale's goals of creating an open source
+alternative to Tailscale.
+Ownscale provides a way for self-hosters to run several tailnets from the same
+backend and interact with them through an web UI.
+
+To reduce deployment complexities, ownscale comes as a self-contained
+binary that runs behind a reverse-proxy without the need of a database
+cluster. We do have a database with backup&restore functions however.
+
+## Features
+
+**Many tailnets, one server**\
+Organizations are used for splitting users into groups. Each organization
+gets its own tailnet, backed by its own Headscale instance and subdomain.
+Users from one organization can only access resources from their organization.
+
+**Web console**\
+Manage machines, users, access control, DNS and auth keys from the browser.
+
+**Single sign-on and passkeys**\
+Log in with OIDC, Google, Microsoft, GitHub or a passkey.
+
+**Funnels**\
+Expose a service running on a machine in your tailnet to the public internet.
+
+**Tailscale features**\
+MagicDNS, split DNS, subnet routers, exit nodes, tags, ACLs, grants,
+Tailscale SSH, Taildrop and HTTPS certificates.
+
+</div>
