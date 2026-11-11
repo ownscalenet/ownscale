@@ -28,7 +28,7 @@ type FunnelRoute struct {
 type Invite struct {
 	ID               string
 	OrganizationID   string
-	Email            sql.NullString
+	Name             sql.NullString
 	Role             string
 	Token            string
 	CreatedBy        string

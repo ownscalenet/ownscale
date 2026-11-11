@@ -12,15 +12,15 @@ import (
 )
 
 const createInvite = `-- name: CreateInvite :one
-INSERT INTO invites (id, organization_id, email, role, token, created_by, expires_at)
+INSERT INTO invites (id, organization_id, name, role, token, created_by, expires_at)
 VALUES (?, ?, ?, ?, ?, ?, ?)
-RETURNING id, organization_id, email, role, token, created_by, created_at, expires_at, accepted_at, accepted_by_user_id
+RETURNING id, organization_id, name, role, token, created_by, created_at, expires_at, accepted_at, accepted_by_user_id
 `
 
 type CreateInviteParams struct {
 	ID             string
 	OrganizationID string
-	Email          sql.NullString
+	Name           sql.NullString
 	Role           string
 	Token          string
 	CreatedBy      string
@@ -31,7 +31,7 @@ func (q *Queries) CreateInvite(ctx context.Context, arg CreateInviteParams) (Inv
 	row := q.db.QueryRowContext(ctx, createInvite,
 		arg.ID,
 		arg.OrganizationID,
-		arg.Email,
+		arg.Name,
 		arg.Role,
 		arg.Token,
 		arg.CreatedBy,
@@ -41,7 +41,7 @@ func (q *Queries) CreateInvite(ctx context.Context, arg CreateInviteParams) (Inv
 	err := row.Scan(
 		&i.ID,
 		&i.OrganizationID,
-		&i.Email,
+		&i.Name,
 		&i.Role,
 		&i.Token,
 		&i.CreatedBy,
@@ -63,7 +63,7 @@ func (q *Queries) DeleteInvite(ctx context.Context, id string) error {
 }
 
 const getInvite = `-- name: GetInvite :one
-SELECT id, organization_id, email, role, token, created_by, created_at, expires_at, accepted_at, accepted_by_user_id FROM invites WHERE id = ?
+SELECT id, organization_id, name, role, token, created_by, created_at, expires_at, accepted_at, accepted_by_user_id FROM invites WHERE id = ?
 `
 
 func (q *Queries) GetInvite(ctx context.Context, id string) (Invite, error) {
@@ -72,7 +72,7 @@ func (q *Queries) GetInvite(ctx context.Context, id string) (Invite, error) {
 	err := row.Scan(
 		&i.ID,
 		&i.OrganizationID,
-		&i.Email,
+		&i.Name,
 		&i.Role,
 		&i.Token,
 		&i.CreatedBy,
@@ -85,7 +85,7 @@ func (q *Queries) GetInvite(ctx context.Context, id string) (Invite, error) {
 }
 
 const getInviteByToken = `-- name: GetInviteByToken :one
-SELECT id, organization_id, email, role, token, created_by, created_at, expires_at, accepted_at, accepted_by_user_id FROM invites WHERE token = ?
+SELECT id, organization_id, name, role, token, created_by, created_at, expires_at, accepted_at, accepted_by_user_id FROM invites WHERE token = ?
 `
 
 func (q *Queries) GetInviteByToken(ctx context.Context, token string) (Invite, error) {
@@ -94,7 +94,7 @@ func (q *Queries) GetInviteByToken(ctx context.Context, token string) (Invite, e
 	err := row.Scan(
 		&i.ID,
 		&i.OrganizationID,
-		&i.Email,
+		&i.Name,
 		&i.Role,
 		&i.Token,
 		&i.CreatedBy,
@@ -107,7 +107,7 @@ func (q *Queries) GetInviteByToken(ctx context.Context, token string) (Invite, e
 }
 
 const listInvitesByOrganization = `-- name: ListInvitesByOrganization :many
-SELECT id, organization_id, email, role, token, created_by, created_at, expires_at, accepted_at, accepted_by_user_id FROM invites WHERE organization_id = ? AND accepted_at IS NULL ORDER BY created_at
+SELECT id, organization_id, name, role, token, created_by, created_at, expires_at, accepted_at, accepted_by_user_id FROM invites WHERE organization_id = ? AND accepted_at IS NULL ORDER BY created_at
 `
 
 func (q *Queries) ListInvitesByOrganization(ctx context.Context, organizationID string) ([]Invite, error) {
@@ -122,7 +122,7 @@ func (q *Queries) ListInvitesByOrganization(ctx context.Context, organizationID 
 		if err := rows.Scan(
 			&i.ID,
 			&i.OrganizationID,
-			&i.Email,
+			&i.Name,
 			&i.Role,
 			&i.Token,
 			&i.CreatedBy,

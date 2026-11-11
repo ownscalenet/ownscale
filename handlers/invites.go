@@ -19,7 +19,7 @@ const inviteTokenTTL = 7 * 24 * time.Hour
 // invite is the JSON shape returned for a pending invite.
 type invite struct {
 	ID        string  `json:"id"`
-	Email     *string `json:"email"`
+	Name      *string `json:"name"`
 	Role      string  `json:"role"`
 	Token     string  `json:"token"`
 	CreatedAt string  `json:"createdAt"`
@@ -34,8 +34,8 @@ func toInvite(i sqlcgen.Invite) invite {
 		CreatedAt: i.CreatedAt.Format(time.RFC3339),
 		ExpiresAt: i.ExpiresAt.Format(time.RFC3339),
 	}
-	if i.Email.Valid {
-		v.Email = &i.Email.String
+	if i.Name.Valid {
+		v.Name = &i.Name.String
 	}
 	return v
 }
@@ -66,8 +66,8 @@ func (h *Handlers) CreateInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var req struct {
-		Email string `json:"email"`
-		Role  string `json:"role"`
+		Name string `json:"name"`
+		Role string `json:"role"`
 	}
 	if !h.decodeJSONBody(w, r, &req) {
 		return
@@ -86,15 +86,15 @@ func (h *Handlers) CreateInvite(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	email := sql.NullString{}
-	if req.Email != "" {
-		email = sql.NullString{String: req.Email, Valid: true}
+	name := sql.NullString{}
+	if req.Name != "" {
+		name = sql.NullString{String: req.Name, Valid: true}
 	}
 
 	inv, err := h.queries.CreateInvite(r.Context(), sqlcgen.CreateInviteParams{
 		ID:             xid.New().String(),
 		OrganizationID: org.ID,
-		Email:          email,
+		Name:           name,
 		Role:           req.Role,
 		Token:          token,
 		CreatedBy:      caller.ID,

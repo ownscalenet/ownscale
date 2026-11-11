@@ -32,6 +32,27 @@ test('creating and revoking an invite link', async ({ page }) => {
   await expect(row).toBeHidden()
 })
 
+test('pasting multiple names creates one invite per name', async ({ page }) => {
+  await page.goto('/invitations')
+  await page.getByRole('button', { name: 'Invite member' }).click()
+  const dialog = page.getByRole('dialog')
+  await dialog.getByRole('textbox').fill('Alice\nBob\nCarol\nAlice')
+  await dialog.getByRole('button', { name: 'Create invite link' }).click()
+
+  await expect(dialog.getByText(/expire in 7 days/i)).toBeVisible()
+  const rows = dialog.getByRole('listitem')
+  await expect(rows).toHaveCount(3)
+  await expect(rows.filter({ hasText: 'Alice' })).toBeVisible()
+  await expect(rows.filter({ hasText: 'Bob' })).toBeVisible()
+  await expect(rows.filter({ hasText: 'Carol' })).toBeVisible()
+  await expect(rows.getByRole('button', { name: 'Copy link' })).toHaveCount(3)
+  await dialog.getByRole('button', { name: 'Done' }).click()
+
+  for (const name of ['Alice', 'Bob', 'Carol']) {
+    await expect(page.getByRole('row').filter({ hasText: name })).toBeVisible()
+  }
+})
+
 test('accepting an invite adds a member, whose role can be changed and who can be removed', async ({
   page,
   browser,

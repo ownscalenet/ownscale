@@ -10,12 +10,12 @@ person who signs in gets their own new organization.
 
 ## Creating an invite
 
-On **Users**, create an invite and choose:
+On **Invitations**, create an invite and choose:
 
 - **Role**: any role except `owner`. Defaults to `member`.
-- **Email** (optional): a note to remember who the invite is for. ownscale
-  doesn't send email and doesn't check that the person accepting it has this
-  address.
+- **Name** (optional): a note to remember who the invite is for. ownscale
+  doesn't send email and doesn't check the identity of whoever accepts it.
+  Enter one name per line to create several invites at once.
 
 ownscale shows a link of the form `https://console.<BASE_DOMAIN>/invite/<token>`.
 Send it to the person yourself, through a channel you trust.
@@ -30,7 +30,7 @@ Invites:
 
 - are valid for **7 days**;
 - can be used **once**;
-- can be revoked from the **Users** page while pending.
+- can be revoked from the **Invitations** page while pending.
 
 {{< callout type="info" >}}
 An invite only works for a new account. Someone who already belongs to

@@ -31,7 +31,7 @@ func TestCreateAndListInvites(t *testing.T) {
 	h, _, users := newOrgTestHandlers(t, RoleOwner)
 	owner := users[0]
 
-	body := strings.NewReader(`{"email":"new@example.com","role":"admin"}`)
+	body := strings.NewReader(`{"name":"New Member","role":"admin"}`)
 	req := withTestUser(httptest.NewRequest(http.MethodPost, "/api/invites", body), owner)
 	rec := httptest.NewRecorder()
 	h.CreateInvite(rec, req)

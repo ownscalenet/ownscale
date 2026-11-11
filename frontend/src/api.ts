@@ -332,7 +332,7 @@ export function transferOwnership(memberId: string) {
 
 export interface Invite {
   id: string
-  email: string | null
+  name: string | null
   role: Role
   token: string
   createdAt: string
@@ -343,10 +343,10 @@ export function listInvites(signal?: AbortSignal) {
   return request<{ invites: Invite[] }>('/api/invites', { signal })
 }
 
-export function createInvite(email: string, role: Role) {
+export function createInvite(name: string, role: Role) {
   return request<{ invite: Invite }>('/api/invites', {
     method: 'POST',
-    body: JSON.stringify({ email, role }),
+    body: JSON.stringify({ name, role }),
   })
 }
 

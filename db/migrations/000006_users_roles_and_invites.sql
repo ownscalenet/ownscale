@@ -14,7 +14,7 @@ CREATE UNIQUE INDEX users_org_headscale_user_idx ON users (organization_id, head
 CREATE TABLE invites (
     id TEXT PRIMARY KEY,
     organization_id TEXT NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-    email TEXT,
+    name TEXT,
     role TEXT NOT NULL DEFAULT 'member',
     token TEXT NOT NULL UNIQUE,
     created_by TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
