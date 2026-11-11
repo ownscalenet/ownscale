@@ -38,6 +38,8 @@ type Config struct {
 	// user with a verified email "aaaa@..." gets subdomain aaaa, so test
 	// identities land on predictable subdomains. Meant for test stacks.
 	FixedSubdomains []string `env:"OWNSCALE_FIXED_SUBDOMAINS" envSeparator:","`
+	// MaxOrgs caps how many organizations can exist; 0 means no cap.
+	MaxOrgs int `env:"OWNSCALE_MAX_ORGS"`
 
 	Auth   AuthConfig
 	Log    LogConfig
@@ -444,6 +446,9 @@ EOF`)
 	}
 	if c.DataDir != "" && !filepath.IsAbs(c.DataDir) {
 		return fmt.Errorf("OWNSCALE_DATA_DIR must resolve to an absolute path, got %q", c.DataDir)
+	}
+	if c.MaxOrgs < 0 {
+		return fmt.Errorf("OWNSCALE_MAX_ORGS must not be negative, got %d", c.MaxOrgs)
 	}
 	if err := c.Backup.Validate(); err != nil {
 		return err

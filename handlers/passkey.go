@@ -16,6 +16,7 @@ import (
 	"github.com/ownscalenet/ownscale/auth/passkey"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/funnelproxy"
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 const passkeyProvider = "passkey"
@@ -197,6 +198,10 @@ func (h *Handlers) PasskeyRegisterFinish(w http.ResponseWriter, r *http.Request)
 	if err != nil {
 		if invErr, ok := errors.AsType[*inviteInvalidError](err); ok {
 			h.writeError(w, http.StatusGone, invErr.Error())
+			return
+		}
+		if errors.Is(err, orgs.ErrMaxOrgs) {
+			h.writeError(w, http.StatusForbidden, errMaxOrgsMessage)
 			return
 		}
 		if errors.Is(err, errHeadscaleUnavailable) {

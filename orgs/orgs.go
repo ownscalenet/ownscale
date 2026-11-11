@@ -318,6 +318,10 @@ var (
 	// identity another headscale user already has.
 	ErrIdentityTaken = errors.New("OIDC identity belongs to another headscale user")
 
+	// ErrMaxOrgs is returned by Create when config.Config.MaxOrgs
+	// organizations already exist.
+	ErrMaxOrgs = errors.New("organization limit reached")
+
 	errClosed = fmt.Errorf("%w: shutting down", ErrNotRunning)
 )
 
@@ -627,6 +631,19 @@ func (s *Service) insertOrganization(
 		return sqlcgen.Organization{}, err
 	}
 	defer rollback()
+
+	// Counting in the same transaction as the insert keeps concurrent
+	// sign-ups from going over the limit: the pool has one connection, so
+	// transactions don't interleave.
+	if s.cfg.MaxOrgs > 0 {
+		n, err := txQueries.CountOrganizations(ctx)
+		if err != nil {
+			return sqlcgen.Organization{}, err
+		}
+		if n >= int64(s.cfg.MaxOrgs) {
+			return sqlcgen.Organization{}, ErrMaxOrgs
+		}
+	}
 
 	org, err := txQueries.CreateOrganization(ctx, sqlcgen.CreateOrganizationParams{
 		ID:           xid.New().String(),

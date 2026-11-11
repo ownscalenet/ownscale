@@ -359,6 +359,73 @@ func TestAuthCallbackAssignsInvitedOrganization(t *testing.T) {
 	}
 }
 
+// TestAuthCallbackMaxOrgs verifies that once OWNSCALE_MAX_ORGS
+// organizations exist, a first-time login without an invite is refused,
+// while an invited one still joins.
+func TestAuthCallbackMaxOrgs(t *testing.T) {
+	tests := []struct {
+		name       string
+		next       string
+		wantStatus int
+	}{
+		{name: "without invite", wantStatus: http.StatusForbidden},
+		{name: "with invite", next: "/invite/testtoken", wantStatus: http.StatusSeeOther},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			setupSessions()
+			h, queries := newTestHandlersWithConfig(t, "", shortTempDir(t), func(c *config.Config) { c.MaxOrgs = 1 })
+			owner := createOwner(t, h)
+			if _, err := queries.CreateInvite(t.Context(), sqlcgen.CreateInviteParams{
+				ID:             "invite-1",
+				OrganizationID: owner.OrganizationID,
+				Role:           RoleMember,
+				Token:          "testtoken",
+				CreatedBy:      owner.ID,
+				ExpiresAt:      time.Now().Add(24 * time.Hour),
+			}); err != nil {
+				t.Fatalf("CreateInvite: %v", err)
+			}
+
+			orig := gothic.CompleteUserAuth
+			t.Cleanup(func() { gothic.CompleteUserAuth = orig })
+			gothic.CompleteUserAuth = func(w http.ResponseWriter, r *http.Request) (goth.User, error) {
+				return goth.User{Provider: "oidc", UserID: "second-user-id", Email: "second@example.com", Name: "Second"}, nil
+			}
+
+			req := httptest.NewRequest(http.MethodGet, "/auth/oidc/callback", nil)
+			if tt.next != "" {
+				req.AddCookie(&http.Cookie{Name: nextCookieName, Value: tt.next})
+			}
+			rec := httptest.NewRecorder()
+			h.AuthCallback(rec, req)
+
+			if rec.Code != tt.wantStatus {
+				t.Fatalf("status = %d, want %d; body=%s", rec.Code, tt.wantStatus, rec.Body.String())
+			}
+			user, err := queries.GetUserByProvider(t.Context(), sqlcgen.GetUserByProviderParams{
+				Provider:       "oidc",
+				ProviderUserID: "second-user-id",
+			})
+			switch {
+			case tt.wantStatus == http.StatusForbidden && !errors.Is(err, sql.ErrNoRows):
+				t.Errorf("GetUserByProvider: err = %v, want sql.ErrNoRows for a refused sign-up", err)
+			case tt.wantStatus != http.StatusForbidden && err != nil:
+				t.Fatalf("GetUserByProvider: %v", err)
+			case tt.wantStatus != http.StatusForbidden && user.OrganizationID != owner.OrganizationID:
+				t.Errorf("OrganizationID = %q, want the invited organization %q", user.OrganizationID, owner.OrganizationID)
+			}
+			n, err := queries.CountOrganizations(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if n != 1 {
+				t.Errorf("organizations = %d, want 1", n)
+			}
+		})
+	}
+}
+
 func TestAuthCallbackRejectsInvalidInvite(t *testing.T) {
 	setupSessions()
 	h, queries := newTestHandlers(t)

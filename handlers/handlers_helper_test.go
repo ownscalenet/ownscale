@@ -56,6 +56,13 @@ func shortTempDir(t *testing.T) string {
 // their state.
 func newTestHandlersWithDataDir(t *testing.T, baseDomain, dataDir string) (*Handlers, *dbpkg.TxQueries) {
 	t.Helper()
+	return newTestHandlersWithConfig(t, baseDomain, dataDir, func(*config.Config) {})
+}
+
+// newTestHandlersWithConfig is newTestHandlersWithDataDir, with edit
+// applied to the config before the Handlers are built.
+func newTestHandlersWithConfig(t *testing.T, baseDomain, dataDir string, edit func(*config.Config)) (*Handlers, *dbpkg.TxQueries) {
+	t.Helper()
 	_, queries := dbtest.New(t)
 
 	derpMap := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -63,14 +70,16 @@ func newTestHandlersWithDataDir(t *testing.T, baseDomain, dataDir string) (*Hand
 	}))
 	t.Cleanup(derpMap.Close)
 	derpCfg := config.DerpConfig{MapURL: derpMap.URL}
-	h, err := New(queries, &config.Config{
+	cfg := &config.Config{
 		FastOrgs:      true,
 		BaseDomain:    baseDomain,
 		DataDir:       dataDir,
 		Derp:          derpCfg,
 		ContentDomain: baseDomain,
 		Funnel:        config.FunnelConfig{MaxBodyBytes: 1 << 20},
-	}, nil, slog.New(slog.DiscardHandler), nil)
+	}
+	edit(cfg)
+	h, err := New(queries, cfg, nil, slog.New(slog.DiscardHandler), nil)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}

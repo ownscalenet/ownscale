@@ -9,6 +9,17 @@ import (
 	"context"
 )
 
+const countOrganizations = `-- name: CountOrganizations :one
+SELECT COUNT(*) FROM organizations
+`
+
+func (q *Queries) CountOrganizations(ctx context.Context) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countOrganizations)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createOrganization = `-- name: CreateOrganization :one
 INSERT INTO organizations (id, subdomain, tailnet_label)
 VALUES (?, ?, ?)

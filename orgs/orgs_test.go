@@ -379,6 +379,93 @@ func TestCreateRejectsDuplicateSubdomain(t *testing.T) {
 	}
 }
 
+// TestCreateMaxOrgs verifies Create refuses a new organization once
+// config.Config.MaxOrgs exist, without starting its headscale.
+func TestCreateMaxOrgs(t *testing.T) {
+	tests := []struct {
+		name     string
+		maxOrgs  int
+		existing int
+		wantErr  error
+	}{
+		{name: "no limit", maxOrgs: 0, existing: 3},
+		{name: "under the limit", maxOrgs: 2, existing: 1},
+		{name: "at the limit", maxOrgs: 2, existing: 2, wantErr: ErrMaxOrgs},
+		{name: "single organization", maxOrgs: 1, existing: 1, wantErr: ErrMaxOrgs},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			svc := newTestService(t)
+			for i := range tt.existing {
+				if _, err := svc.Create(t.Context(), fmt.Sprintf("org%d", i)); err != nil {
+					t.Fatalf("Create existing: %v", err)
+				}
+			}
+			svc.cfg.MaxOrgs = tt.maxOrgs
+			var starts int
+			svc.createFn = func(p headscaleParams) (*hscontrol.Headscale, error) {
+				starts++
+				return noopCreateFn(p)
+			}
+
+			_, err := svc.Create(t.Context(), "newone")
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Create: err = %v, want %v", err, tt.wantErr)
+			}
+			n, err := svc.queries.CountOrganizations(t.Context())
+			if err != nil {
+				t.Fatal(err)
+			}
+			wantCount, wantStarts := int64(tt.existing+1), 1
+			if tt.wantErr != nil {
+				wantCount, wantStarts = int64(tt.existing), 0
+			}
+			if n != wantCount {
+				t.Errorf("organizations = %d, want %d", n, wantCount)
+			}
+			if starts != wantStarts {
+				t.Errorf("headscale started %d times, want %d", starts, wantStarts)
+			}
+		})
+	}
+}
+
+// TestCreateMaxOrgsConcurrent verifies concurrent Creates don't go over
+// config.Config.MaxOrgs.
+func TestCreateMaxOrgsConcurrent(t *testing.T) {
+	svc := newTestService(t)
+	svc.cfg.MaxOrgs = 1
+
+	const n = 8
+	var wg sync.WaitGroup
+	var created, refused atomic.Int32
+	for i := range n {
+		wg.Go(func() {
+			_, err := svc.Create(t.Context(), fmt.Sprintf("org%d", i))
+			switch {
+			case err == nil:
+				created.Add(1)
+			case errors.Is(err, ErrMaxOrgs):
+				refused.Add(1)
+			default:
+				t.Errorf("Create: %v", err)
+			}
+		})
+	}
+	wg.Wait()
+
+	if created.Load() != 1 || refused.Load() != n-1 {
+		t.Errorf("created %d, refused %d; want 1 and %d", created.Load(), refused.Load(), n-1)
+	}
+	count, err := svc.queries.CountOrganizations(t.Context())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Errorf("organizations = %d, want 1", count)
+	}
+}
+
 func TestNextSubdomain(t *testing.T) {
 	tests := []struct {
 		name  string

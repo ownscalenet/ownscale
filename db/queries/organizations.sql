@@ -14,3 +14,6 @@ SELECT * FROM organizations ORDER BY subdomain;
 
 -- name: DeleteOrganization :exec
 DELETE FROM organizations WHERE id = ?;
+
+-- name: CountOrganizations :one
+SELECT COUNT(*) FROM organizations;

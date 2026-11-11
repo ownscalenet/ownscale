@@ -13,6 +13,7 @@ import (
 	"github.com/ownscalenet/ownscale/auth/oidcprovider"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/derrors"
+	"github.com/ownscalenet/ownscale/orgs"
 
 	"github.com/markbates/goth"
 	"github.com/markbates/goth/gothic"
@@ -60,6 +61,10 @@ func (e *inviteInvalidError) Error() string { return e.msg }
 var errUsernameTaken = errors.New("username is already taken in this organization")
 
 var errHeadscaleUnavailable = errors.New("headscale is unavailable")
+
+// errMaxOrgsMessage is shown to someone signing in without an invite once
+// OWNSCALE_MAX_ORGS organizations exist.
+const errMaxOrgsMessage = "this server isn't accepting new organizations, ask an organization's admin for an invite"
 
 // subdomainHint returns the subdomain u asks for: their email's local part.
 // Passkey usernames are self-chosen, so they don't get one.
@@ -292,6 +297,10 @@ func (h *Handlers) AuthCallback(w http.ResponseWriter, r *http.Request) {
 		if err != nil {
 			if invErr, ok := errors.AsType[*inviteInvalidError](err); ok {
 				h.writeError(w, http.StatusGone, invErr.Error())
+				return
+			}
+			if errors.Is(err, orgs.ErrMaxOrgs) {
+				h.writeError(w, http.StatusForbidden, errMaxOrgsMessage)
 				return
 			}
 			if errors.Is(err, errHeadscaleUnavailable) {
