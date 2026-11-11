@@ -52,6 +52,7 @@ type authProvidersStatus struct {
 	Google    bool
 	Microsoft bool
 	GitHub    bool
+	Passkey   bool
 }
 
 // New builds the Handlers, wiring queries and cfg into the orgs.Service
@@ -112,6 +113,7 @@ func New(
 			Google:    cfg.Auth.Google.Enabled(),
 			Microsoft: cfg.Auth.Microsoft.Enabled(),
 			GitHub:    cfg.Auth.GitHub.Enabled(),
+			Passkey:   cfg.Auth.Passkey.Enabled(),
 		},
 	}
 	orgSvc.OnSleep(h.funnel.Evict)

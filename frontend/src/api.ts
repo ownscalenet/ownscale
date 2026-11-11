@@ -132,6 +132,7 @@ export interface AuthProviders {
   google: boolean
   microsoft: boolean
   github: boolean
+  passkey: boolean
 }
 
 // getAuthProviders reports which upstream login providers are configured,

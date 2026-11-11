@@ -123,8 +123,22 @@ func validatePasskeyUsername(username string) (string, string) {
 	return u, ""
 }
 
+// requirePasskeyEnabled writes a 403 and returns false if passkey auth is
+// disabled (OWNSCALE_AUTH_PASSKEY_DISABLED), so every passkey endpoint
+// rejects requests the same way regardless of how a client reached it.
+func (h *Handlers) requirePasskeyEnabled(w http.ResponseWriter) bool {
+	if !h.authProviders.Passkey {
+		h.writeError(w, http.StatusForbidden, "passkey auth is disabled for this deployment")
+		return false
+	}
+	return true
+}
+
 // PasskeyRegisterBegin is the first step of self-service account creation via passkey.
 func (h *Handlers) PasskeyRegisterBegin(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePasskeyEnabled(w) {
+		return
+	}
 	var req struct {
 		Username string `json:"username"`
 		Next     string `json:"next"`
@@ -168,6 +182,9 @@ func (h *Handlers) PasskeyRegisterBegin(w http.ResponseWriter, r *http.Request) 
 // PasskeyRegisterFinish verifies the browser's attestation, creates the new
 // user + credential, and finishes the login the same way AuthCallback does.
 func (h *Handlers) PasskeyRegisterFinish(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePasskeyEnabled(w) {
+		return
+	}
 	ceremony, ok := h.takePasskeyCeremony(w, r)
 	clearPasskeyCeremonyCookie(w)
 	if !ok {
@@ -230,6 +247,9 @@ func (h *Handlers) PasskeyRegisterFinish(w http.ResponseWriter, r *http.Request)
 // PasskeyLoginBegin a single "sign in with passkey" button with no email/username
 // typed first.
 func (h *Handlers) PasskeyLoginBegin(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePasskeyEnabled(w) {
+		return
+	}
 	var req struct {
 		Next string `json:"next"`
 	}
@@ -254,6 +274,9 @@ func (h *Handlers) PasskeyLoginBegin(w http.ResponseWriter, r *http.Request) {
 // PasskeyLoginFinish verifies the assertion against whichever credential/user
 // the authenticator reports, bumps the credential's sign count, and finishes the login.
 func (h *Handlers) PasskeyLoginFinish(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePasskeyEnabled(w) {
+		return
+	}
 	ceremony, ok := h.takePasskeyCeremony(w, r)
 	clearPasskeyCeremonyCookie(w)
 	if !ok {
@@ -321,6 +344,9 @@ func (h *Handlers) ListPasskeys(w http.ResponseWriter, r *http.Request) {
 // PasskeyAddBegin lets an already-authenticated user (created via OAuth or passkey)
 // register an additional passkey as a login method.
 func (h *Handlers) PasskeyAddBegin(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePasskeyEnabled(w) {
+		return
+	}
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
 		h.writeError(w, http.StatusUnauthorized, "unauthenticated")
@@ -364,6 +390,9 @@ func (h *Handlers) PasskeyAddBegin(w http.ResponseWriter, r *http.Request) {
 
 // PasskeyAddFinish completes adding an extra passkey for the already-authenticated caller.
 func (h *Handlers) PasskeyAddFinish(w http.ResponseWriter, r *http.Request) {
+	if !h.requirePasskeyEnabled(w) {
+		return
+	}
 	user, ok := auth.UserFromContext(r.Context())
 	if !ok {
 		h.writeError(w, http.StatusUnauthorized, "unauthenticated")

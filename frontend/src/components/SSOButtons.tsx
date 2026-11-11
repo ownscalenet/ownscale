@@ -5,9 +5,13 @@ import { getAuthProviders, type AuthProviders } from '../api'
 import { nextQuery } from '../lib/authRedirect'
 import { GitHubIcon, GoogleIcon, MicrosoftIcon } from './ProviderIcons'
 
-// ssoButtons maps each AuthProviders key to its button copy and icon.
+// SSOProvider excludes 'passkey': it has its own dedicated button/form on
+// Login and Signup instead of a generic "Sign in with X" link.
+type SSOProvider = Exclude<keyof AuthProviders, 'passkey'>
+
+// ssoButtons maps each SSOProvider to its button copy and icon.
 const ssoButtons: Record<
-  keyof AuthProviders,
+  SSOProvider,
   { label: string; Icon: ComponentType<{ className?: string }> }
 > = {
   github: { label: 'GitHub', Icon: GitHubIcon },
@@ -16,7 +20,7 @@ const ssoButtons: Record<
   oidc: { label: 'SSO', Icon: KeyRound },
 }
 
-const providers: (keyof AuthProviders)[] = ['github', 'google', 'microsoft', 'oidc']
+const providers: SSOProvider[] = ['github', 'google', 'microsoft', 'oidc']
 
 // SSOButtons renders a link per upstream login provider. Signing in and
 // signing up are the same flow (the account is created on first login), so

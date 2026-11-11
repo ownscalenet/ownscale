@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { UserKey } from 'lucide-react'
 import { useAuth } from '../authContext'
-import { errorMessage, passkeyRegisterBegin, passkeyRegisterFinish } from '../api'
+import { errorMessage, getAuthProviders, passkeyRegisterBegin, passkeyRegisterFinish } from '../api'
 import { createPasskey, browserSupportsWebAuthn } from '../lib/webauthn'
 import { goToNext, safeNextPath, nextQuery } from '../lib/authRedirect'
 import { usePageTitle } from '../hooks/usePageTitle'
@@ -26,6 +27,14 @@ export default function Signup() {
   const [passkeyBusy, setPasskeyBusy] = useState(false)
   const [passkeyError, setPasskeyError] = useState<string | null>(null)
   const [username, setUsername] = useState('')
+  // authProviders?.passkey defaults to true while loading, so the form
+  // doesn't flash away for the common case where passkeys are enabled.
+  const { data: authProviders } = useQuery({
+    queryKey: ['authProviders'],
+    queryFn: getAuthProviders,
+    retry: false,
+  })
+  const showPasskeyForm = passkeySupported && authProviders?.passkey !== false
 
   // `next` may be a backend-only route, which needs a full navigation.
   const nextPath = safeNextPath(next)
@@ -72,7 +81,7 @@ export default function Signup() {
           <ErrorAlert error={passkeyError} />
 
           <div className="flex flex-col gap-2">
-            {passkeySupported ? (
+            {showPasskeyForm ? (
               <form
                 className="flex flex-col gap-2 text-left"
                 onSubmit={(e) => void handlePasskeyRegister(e)}
@@ -102,9 +111,11 @@ export default function Signup() {
                 </button>
               </form>
             ) : (
-              <p className="text-sm text-base-content/70 text-left">
-                This browser doesn't support passkeys; sign up with one of the providers below.
-              </p>
+              !passkeySupported && (
+                <p className="text-sm text-base-content/70 text-left">
+                  This browser doesn't support passkeys; sign up with one of the providers below.
+                </p>
+              )
             )}
             <div className="divider text-sm text-base-content/60">or</div>
             <SSOButtons verb="Sign up" next={next} />

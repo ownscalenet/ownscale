@@ -9,6 +9,7 @@ import {
   deleteAccount,
   deletePasskey,
   errorMessage,
+  getAuthProviders,
   passkeyAddBegin,
   passkeyAddFinish,
   type Passkey,
@@ -40,6 +41,14 @@ function PasskeysCard() {
   const query = useQuery({ queryKey: ['passkeys'], queryFn: ({ signal }) => listPasskeys(signal) })
   const passkeys = query.data?.passkeys ?? []
   const reload = () => queryClient.invalidateQueries({ queryKey: ['passkeys'] })
+  // authProviders?.passkey defaults to true while loading, so the button
+  // doesn't flash away for the common case where passkeys are enabled.
+  const { data: authProviders } = useQuery({
+    queryKey: ['authProviders'],
+    queryFn: getAuthProviders,
+    retry: false,
+  })
+  const canAdd = supported && authProviders?.passkey !== false
 
   const add = useMutation({
     mutationFn: async (name: string) => {
@@ -85,7 +94,7 @@ function PasskeysCard() {
               biometrics or security key.
             </p>
           </div>
-          {supported && (
+          {canAdd && (
             <button
               type="button"
               className="btn btn-sm btn-primary"

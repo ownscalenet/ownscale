@@ -213,6 +213,7 @@ func (h *Handlers) AuthProviders(w http.ResponseWriter, r *http.Request) {
 		"google":    h.authProviders.Google,
 		"microsoft": h.authProviders.Microsoft,
 		"github":    h.authProviders.GitHub,
+		"passkey":   h.authProviders.Passkey,
 	})
 }
 

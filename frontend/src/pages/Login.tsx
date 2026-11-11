@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import { UserKey } from 'lucide-react'
 import { useAuth } from '../authContext'
-import { errorMessage, passkeyLoginBegin, passkeyLoginFinish } from '../api'
+import { errorMessage, getAuthProviders, passkeyLoginBegin, passkeyLoginFinish } from '../api'
 import { getPasskey, browserSupportsWebAuthn } from '../lib/webauthn'
 import { goToNext, safeNextPath, nextQuery } from '../lib/authRedirect'
 import { usePageTitle } from '../hooks/usePageTitle'
@@ -28,6 +29,14 @@ export default function Login() {
   const [passkeySupported] = useState(() => browserSupportsWebAuthn())
   const [passkeyBusy, setPasskeyBusy] = useState(false)
   const [passkeyError, setPasskeyError] = useState<string | null>(null)
+  // authProviders?.passkey defaults to true while loading, so the button
+  // doesn't flash away for the common case where passkeys are enabled.
+  const { data: authProviders } = useQuery({
+    queryKey: ['authProviders'],
+    queryFn: getAuthProviders,
+    retry: false,
+  })
+  const showPasskeyButton = passkeySupported && authProviders?.passkey !== false
 
   // `next` may be a backend-only route such as /authorize/callback, which the
   // SPA router doesn't know, so it needs a full navigation, not <Navigate>.
@@ -83,7 +92,7 @@ export default function Login() {
           <ErrorAlert error={passkeyError} />
 
           <div className="flex flex-col gap-2">
-            {passkeySupported && (
+            {showPasskeyButton && (
               <>
                 <button
                   type="button"

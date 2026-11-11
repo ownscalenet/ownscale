@@ -259,7 +259,16 @@ type AuthConfig struct {
 	Microsoft     MicrosoftConfig
 	GitHub        GitHubConfig
 	OIDCProvider  OIDCProviderConfig
+	Passkey       PasskeyConfig
 }
+
+// PasskeyConfig toggles passkey (WebAuthn) sign-up/sign-in. Enabled by
+// default; set Disabled to turn it off deployment-wide.
+type PasskeyConfig struct {
+	Disabled bool `env:"OWNSCALE_AUTH_PASSKEY_DISABLED"`
+}
+
+func (p PasskeyConfig) Enabled() bool { return !p.Disabled }
 
 // UpstreamOIDCConfig configures the upstream OpenID Connect provider used
 // for the admin panel's own login (e.g. Google, or a local Dex instance for

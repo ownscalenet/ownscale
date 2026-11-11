@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"reflect"
 	"regexp"
+	"strings"
 	"testing"
 	"time"
 
@@ -630,9 +631,50 @@ func TestAuthProviders(t *testing.T) {
 	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
 		t.Fatalf("decode response: %v", err)
 	}
-	want := map[string]bool{"oidc": true, "google": true, "microsoft": false, "github": true}
+	want := map[string]bool{"oidc": true, "google": true, "microsoft": false, "github": true, "passkey": true}
 	if !reflect.DeepEqual(got, want) {
 		t.Errorf("AuthProviders response = %+v, want %+v", got, want)
+	}
+}
+
+// TestAuthProvidersPasskeyDisabled verifies OWNSCALE_AUTH_PASSKEY_DISABLED
+// both flips the providers endpoint's "passkey" flag and makes every
+// passkey endpoint reject requests, so a deployment can fully turn it off.
+func TestAuthProvidersPasskeyDisabled(t *testing.T) {
+	_, queries := dbtest.New(t)
+	h, err := New(queries, &config.Config{
+		DataDir: t.TempDir(),
+		Auth:    config.AuthConfig{Passkey: config.PasskeyConfig{Disabled: true}},
+	}, nil, slog.New(slog.DiscardHandler), nil)
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodGet, "/api/auth/providers", nil)
+	rec := httptest.NewRecorder()
+	h.AuthProviders(rec, req)
+	var got map[string]bool
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got["passkey"] {
+		t.Errorf("AuthProviders[passkey] = true, want false when disabled")
+	}
+
+	for name, fn := range map[string]http.HandlerFunc{
+		"PasskeyRegisterBegin":  h.PasskeyRegisterBegin,
+		"PasskeyRegisterFinish": h.PasskeyRegisterFinish,
+		"PasskeyLoginBegin":     h.PasskeyLoginBegin,
+		"PasskeyLoginFinish":    h.PasskeyLoginFinish,
+		"PasskeyAddBegin":       h.PasskeyAddBegin,
+		"PasskeyAddFinish":      h.PasskeyAddFinish,
+	} {
+		req := httptest.NewRequest(http.MethodPost, "/api/passkey/x", strings.NewReader("{}"))
+		rec := httptest.NewRecorder()
+		fn(rec, req)
+		if rec.Code != http.StatusForbidden {
+			t.Errorf("%s status = %d, want %d", name, rec.Code, http.StatusForbidden)
+		}
 	}
 }
 
