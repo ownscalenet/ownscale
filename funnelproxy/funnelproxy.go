@@ -69,8 +69,8 @@ type Pool struct {
 	logger  *slog.Logger
 
 	cfg config.FunnelConfig
-	// limitsURL is the docs section on funnel limits, linked from error pages.
-	limitsURL string
+	// docsURL is the funnel docs page, linked from error pages.
+	docsURL string
 
 	mu      sync.Mutex
 	servers map[string]*tunnel    // keyed by organization subdomain
@@ -141,7 +141,7 @@ func NewPool(queries Queries, orgs Orgs, cfg *config.Config, logger *slog.Logger
 		dataDir:   cfg.DataDir,
 		logger:    logger,
 		cfg:       cfg.Funnel,
-		limitsURL: "https://" + cfg.BaseDomain + "/docs/features/funnels/#limits",
+		docsURL:   "https://" + cfg.BaseDomain + "/docs/features/funnels/",
 		servers:   make(map[string]*tunnel),
 		limits:    make(map[string]*orgLimits),
 		upTimeout: funnelUpTimeout,
@@ -282,7 +282,7 @@ func (p *Pool) ServeHTTP(w http.ResponseWriter, r *http.Request, label, subdomai
 	// too. Waking it would only let anyone keep orgs awake.
 	client, err := p.orgs.Client(subdomain)
 	if err != nil {
-		http.Error(w, "funnel target offline", http.StatusServiceUnavailable)
+		p.writeErrorPage(w, http.StatusServiceUnavailable, msgOffline)
 		return
 	}
 
@@ -296,7 +296,7 @@ func (p *Pool) ServeHTTP(w http.ResponseWriter, r *http.Request, label, subdomai
 	targetIP, err := tun.peerIP(ctx, route.TargetNodeID)
 	if err != nil {
 		p.logger.Warn("funnel: target node unreachable", "subdomain", subdomain, "target_node_id", route.TargetNodeID, "error", err)
-		http.Error(w, "target machine not found", http.StatusBadGateway)
+		p.writeErrorPage(w, http.StatusBadGateway, msgUnreachable)
 		return
 	}
 
@@ -320,7 +320,7 @@ func (p *Pool) ServeHTTP(w http.ResponseWriter, r *http.Request, label, subdomai
 				return
 			}
 			p.logger.Warn("funnel: proxy to target failed", "subdomain", subdomain, "label", label, "target", targetAddr, "error", err)
-			w.WriteHeader(http.StatusBadGateway)
+			p.writeErrorPage(w, http.StatusBadGateway, msgUnreachable)
 		},
 	}
 	proxy.ServeHTTP(w, r)
@@ -574,10 +574,12 @@ func (p *Pool) limitsFor(subdomain string) *orgLimits {
 	return lim
 }
 
-// Messages shown to funnel visitors when a limit is hit.
+// Messages shown to funnel visitors on error pages.
 const (
 	msgTooManyRequests = "This site is receiving too many requests. Try again in a moment."
 	msgBodyTooLarge    = "The request body is too large."
+	msgOffline         = "The machine serving this site is offline. Try again later."
+	msgUnreachable     = "The machine serving this site can't be reached right now. Try again later."
 )
 
 var errorPage = template.Must(template.New("error").Parse(`<!DOCTYPE html>
@@ -604,7 +606,7 @@ ownscale
 </div>
 <h1>{{.Status}} {{.Title}}</h1>
 <p>{{.Message}}</p>
-<p>If you own this funnel, see the <a href="{{.LimitsURL}}">funnel limits</a>.</p>
+<p>If you own this funnel, see the <a href="{{.DocsURL}}">funnel docs</a>.</p>
 </main>
 </body>
 </html>
@@ -621,7 +623,7 @@ func (p *Pool) writeErrorPage(w http.ResponseWriter, status int, message string)
 	h.Set("Content-Security-Policy", "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'")
 	w.WriteHeader(status)
 	_ = errorPage.Execute(w, struct {
-		Status                    int
-		Title, Message, LimitsURL string
-	}{status, http.StatusText(status), message, p.limitsURL})
+		Status                  int
+		Title, Message, DocsURL string
+	}{status, http.StatusText(status), message, p.docsURL})
 }

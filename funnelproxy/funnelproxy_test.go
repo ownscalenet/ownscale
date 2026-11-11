@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"io"
 	"io/fs"
 	"log/slog"
@@ -173,12 +174,15 @@ func TestServeHTTP(t *testing.T) {
 		fmt.Fprint(w, "ok")
 	}))
 	t.Cleanup(backend.Close)
+	down := httptest.NewServer(http.NotFoundHandler())
+	down.Close()
 
 	const maxBody = 1024
 	tests := []struct {
 		name     string
 		targetID string
 		asleep   bool
+		down     bool // the target machine refuses connections
 		limits   *orgLimits
 		body     io.Reader
 		chunked  bool
@@ -187,8 +191,9 @@ func TestServeHTTP(t *testing.T) {
 	}{
 		{name: "ok", targetID: "1", want: http.StatusOK},
 		{name: "body at limit", targetID: "1", body: strings.NewReader(strings.Repeat("a", maxBody)), want: http.StatusOK},
-		{name: "asleep org not woken", targetID: "1", asleep: true, want: http.StatusServiceUnavailable},
-		{name: "target not in netmap", targetID: "2", want: http.StatusBadGateway},
+		{name: "asleep org not woken", targetID: "1", asleep: true, want: http.StatusServiceUnavailable, wantPage: msgOffline},
+		{name: "target not in netmap", targetID: "2", want: http.StatusBadGateway, wantPage: msgUnreachable},
+		{name: "target unreachable", targetID: "1", down: true, want: http.StatusBadGateway, wantPage: msgUnreachable},
 		{name: "body over limit", targetID: "1", body: strings.NewReader(strings.Repeat("a", maxBody+1)), want: http.StatusRequestEntityTooLarge, wantPage: msgBodyTooLarge},
 		{name: "chunked body over limit", targetID: "1", body: strings.NewReader(strings.Repeat("a", maxBody+1)), chunked: true, want: http.StatusRequestEntityTooLarge, wantPage: msgBodyTooLarge},
 		{
@@ -215,6 +220,9 @@ func TestServeHTTP(t *testing.T) {
 			}
 			pool := NewPool(queries, hs, testConfig(t, maxBody), slog.New(slog.DiscardHandler))
 			pool.servers["acme"] = fakeTunnel(backend)
+			if tt.down {
+				pool.servers["acme"] = fakeTunnel(down)
+			}
 			if tt.limits != nil {
 				pool.limits["acme"] = tt.limits
 			}
@@ -235,10 +243,10 @@ func TestServeHTTP(t *testing.T) {
 				if csp := rec.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "style-src 'unsafe-inline'") {
 					t.Errorf("Content-Security-Policy = %q, want inline styles allowed", csp)
 				}
-				if !strings.Contains(rec.Body.String(), tt.wantPage) {
+				if !strings.Contains(rec.Body.String(), template.HTMLEscapeString(tt.wantPage)) {
 					t.Errorf("body = %q, want it to contain %q", rec.Body.String(), tt.wantPage)
 				}
-				if link := "https://example.com/docs/features/funnels/#limits"; !strings.Contains(rec.Body.String(), link) {
+				if link := "https://example.com/docs/features/funnels/"; !strings.Contains(rec.Body.String(), link) {
 					t.Errorf("body = %q, want a link to %q", rec.Body.String(), link)
 				}
 			}

@@ -70,8 +70,8 @@ the [FAQ]({{< relref "/docs/faqs.md#ownscale-agent-user--machine" >}}).
   These numbers are defaults: the server administrator can change them with
   the `FUNNEL_*` settings in `example.env`.
   ownscale.net uses [lower limits]({{< relref "/docs/ownscalenet/_index.md#funnel-limitations" >}}).
-- If the target machine is offline, or the organization is
+- If the target machine is offline or can't be reached, or the organization is
   [asleep]({{< relref "/docs/concepts/organizations.md#sleeping-organizations" >}}),
-  visitors get `503`.
+  visitors get an error page with status `502` or `503`.
 - The access control policy must allow the `ownscale-agent` machine to reach
   the target port. The default allow-all policy does.
