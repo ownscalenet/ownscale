@@ -9,6 +9,7 @@ import Machines from './pages/Machines'
 import MachineDetail from './pages/MachineDetail'
 import SSH from './pages/SSH'
 import Users from './pages/Users'
+import Invitations from './pages/Invitations'
 import AccessControl from './pages/AccessControl'
 import AuthRestrictions from './pages/AuthRestrictions'
 import DNS from './pages/DNS'
@@ -51,6 +52,7 @@ function AppRoutes() {
         <Route path="machines/:ip" element={<MachineDetail />} />
         <Route path="machines/:id/ssh" element={<SSH />} />
         <Route path="users" element={<Users />} />
+        <Route path="invitations" element={<Invitations />} />
         <Route path="access-control" element={<AccessControl />} />
         <Route path="auth-restrictions" element={<AuthRestrictions />} />
         <Route path="dns" element={<DNS />} />

@@ -65,7 +65,7 @@ test("a user of another organization can't sign in to its tailnet until switchin
 test("removing a member removes their machines from the tailnet", async ({ page, browser, account }) => {
   test.setTimeout(300_000)
 
-  await page.goto('/users')
+  await page.goto('/invitations')
   await page.getByRole('button', { name: 'Invite member' }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('combobox').selectOption('member')
@@ -108,7 +108,7 @@ test("removing a member removes their machines from the tailnet", async ({ page,
 test('a member deletes their own account, which the owner can only do once alone', async ({ page, browser, account }) => {
   test.setTimeout(300_000)
 
-  await page.goto('/users')
+  await page.goto('/invitations')
   await page.getByRole('button', { name: 'Invite member' }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('combobox').selectOption('member')
@@ -165,7 +165,7 @@ test('a member deletes their own account, which the owner can only do once alone
 })
 
 test('a member sees the tailnet name on the DNS page but cannot change DNS settings', async ({ page, browser, account }) => {
-  await page.goto('/users')
+  await page.goto('/invitations')
   await page.getByRole('button', { name: 'Invite member' }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('combobox').selectOption('member')

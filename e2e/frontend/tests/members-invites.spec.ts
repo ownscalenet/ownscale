@@ -12,8 +12,8 @@ test.beforeEach(async ({ page }) => {
 })
 
 test('creating and revoking an invite link', async ({ page }) => {
-  await page.goto('/users')
-  await expect(page.getByRole('heading', { name: 'Users' })).toBeVisible()
+  await page.goto('/invitations')
+  await expect(page.getByRole('heading', { name: 'Invitations' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Invite member' }).click()
   const dialog = page.getByRole('dialog')
@@ -24,7 +24,6 @@ test('creating and revoking an invite link', async ({ page }) => {
   await expect(link).toHaveValue(/\/invite\//)
   await dialog.getByRole('button', { name: 'Done' }).click()
 
-  await expect(page.getByRole('heading', { name: 'Pending invites' })).toBeVisible()
   // Take newest invite.
   const row = page.getByRole('row').filter({ hasText: '(link only)' }).last()
   await expect(row).toBeVisible()
@@ -38,8 +37,8 @@ test('accepting an invite adds a member, whose role can be changed and who can b
   browser,
   account,
 }) => {
-  await page.goto('/users')
-  await expect(page.getByRole('heading', { name: 'Users' })).toBeVisible()
+  await page.goto('/invitations')
+  await expect(page.getByRole('heading', { name: 'Invitations' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Invite member' }).click()
   const dialog = page.getByRole('dialog')
@@ -69,7 +68,7 @@ test('accepting an invite adds a member, whose role can be changed and who can b
     await inviteeContext.close()
   }
 
-  await page.reload()
+  await page.goto('/users')
   const memberRow = page.getByRole('row').filter({ hasText: account.invitee })
   await expect(memberRow).toBeVisible()
   await expect(memberRow.getByRole('combobox')).toHaveValue('admin')
@@ -88,7 +87,7 @@ test('creating an account from an invite joins the inviting organization', async
   page,
   browser,
 }) => {
-  await page.goto('/users')
+  await page.goto('/invitations')
   await page.getByRole('button', { name: 'Invite member' }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('button', { name: 'Create invite link' }).click()
@@ -118,7 +117,7 @@ test('creating an account from an invite joins the inviting organization', async
     await inviteeContext.close()
   }
 
-  await page.reload()
+  await page.goto('/users')
   const memberRow = page.getByRole('row').filter({ hasText: username })
   await expect(memberRow).toBeVisible()
 
@@ -132,7 +131,7 @@ test('transferring ownership promotes the member and demotes the caller to admin
   browser,
   account,
 }) => {
-  await page.goto('/users')
+  await page.goto('/invitations')
   await page.getByRole('button', { name: 'Invite member' }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('button', { name: 'Create invite link' }).click()
@@ -158,7 +157,7 @@ test('transferring ownership promotes the member and demotes the caller to admin
     })
 
     // The owner transfers ownership to the new member.
-    await page.reload()
+    await page.goto('/users')
     const memberRow = page.getByRole('row').filter({ hasText: account.invitee })
     await memberRow.getByRole('button', { name: 'Make owner' }).click()
     await confirmDialog(page, 'Transfer ownership')
@@ -215,7 +214,7 @@ test('a plain member cannot see owner/admin-only management controls', async ({
   // Invite a plain member so we can sign in as someone without manage
   // rights, then verify the UI hides (not just the backend rejecting)
   // owner/admin-only actions for them.
-  await page.goto('/users')
+  await page.goto('/invitations')
   await page.getByRole('button', { name: 'Invite member' }).click()
   const dialog = page.getByRole('dialog')
   await dialog.getByRole('button', { name: 'Create invite link' }).click()
@@ -241,12 +240,17 @@ test('a plain member cannot see owner/admin-only management controls', async ({
     })
 
     // Users page: no "Invite member" button, no role dropdowns/Remove
-    // buttons for other members.
+    // buttons for other members. The Invitations nav link is hidden, and
+    // the route itself redirects away.
     await memberPage.goto('/users')
     await expect(memberPage.getByRole('heading', { name: 'Users' })).toBeVisible()
     await expect(memberPage.getByRole('button', { name: 'Invite member' })).toBeHidden()
     await expect(memberPage.getByRole('combobox')).toHaveCount(0)
     await expect(memberPage.getByRole('button', { name: 'Remove' })).toHaveCount(0)
+    await expect(memberPage.getByRole('link', { name: 'Invitations' })).toBeHidden()
+
+    await memberPage.goto('/invitations')
+    await expect(memberPage).toHaveURL(/\/machines$/)
 
     // Pre-auth keys, DNS, access control and auth restrictions pages are
     // read-only / inaccessible for a plain member.

@@ -1,10 +1,12 @@
 import { useRef, type ReactNode } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
   BookOpen,
   GlobeLock,
   ListChecks,
   LogOut,
+  Mail,
   Menu,
   Monitor,
   Network,
@@ -14,7 +16,7 @@ import {
   Users,
 } from 'lucide-react'
 import { useAuth } from './authContext'
-import { displayName, isPasskeyEmail, logout } from './api'
+import { displayName, isPasskeyEmail, listMembers, logout } from './api'
 import { CopyIcon } from './components/CopyButton'
 import Logo from './components/Logo'
 import ThemeToggle from './components/ThemeToggle'
@@ -41,6 +43,10 @@ const navGroups: { title: string; links: { to: string; label: string; icon: Reac
   },
 ]
 
+// invitationsLink is manager-only, so it's inserted into the Access group
+// conditionally rather than listed statically above.
+const invitationsLink = { to: '/invitations', label: 'Invitations', icon: <Mail /> }
+
 const userSettingsLink = { to: '/user-settings', label: 'User settings', icon: <UserCog /> }
 
 const statusDot: Record<string, string> = {
@@ -66,8 +72,24 @@ export default function Layout() {
   const { user, organization, version, refresh } = useAuth()
   const drawerToggleRef = useRef<HTMLInputElement>(null)
   const { pathname } = useLocation()
+  // Shares the ['members'] cache with the Users/Invitations pages, so this
+  // doesn't add an extra request.
+  const membersQuery = useQuery({
+    queryKey: ['members'],
+    queryFn: ({ signal }) => listMembers(signal),
+  })
+  const canManage = membersQuery.data?.canManage ?? false
 
-  const links = [...navGroups.flatMap((g) => g.links), userSettingsLink]
+  const accessGroup = navGroups.find((g) => g.title === 'Access')!
+  const groups = navGroups.map((g) =>
+    g === accessGroup
+      ? {
+          ...g,
+          links: canManage ? [g.links[0], invitationsLink, ...g.links.slice(1)] : g.links,
+        }
+      : g,
+  )
+  const links = [...groups.flatMap((g) => g.links), userSettingsLink]
   const pageTitle = links.find((l) => pathname.startsWith(l.to))?.label ?? 'Ownscale'
   const loginServer = organization ? `${window.location.protocol}//${organization.Domain}` : ''
 
@@ -165,7 +187,7 @@ export default function Layout() {
           </div>
 
           <nav className="p-3 flex-1 overflow-y-auto" onClick={closeDrawer}>
-            {navGroups.map((g) => (
+            {groups.map((g) => (
               <div key={g.title} className="mb-4">
                 <div className="px-2.5 pb-1 text-[11px] font-medium uppercase tracking-wider text-base-content/50">
                   {g.title}
