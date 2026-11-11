@@ -14,6 +14,7 @@ import (
 	"log/slog"
 	"net/url"
 	"path/filepath"
+	"time"
 
 	"github.com/benbjohnson/litestream"
 	"github.com/benbjohnson/litestream/abs"
@@ -23,6 +24,17 @@ import (
 	"github.com/ownscalenet/ownscale/config"
 	"github.com/ownscalenet/ownscale/derrors"
 )
+
+// compactionLevels widens litestream's default L1/L2/L3 intervals (30s/5m/1h)
+// to cut the Azure LIST operations for idle polling cost reduction.
+// Our setup where each organization has its own database makes cost grow up
+// more compared to a single database app.
+var compactionLevels = litestream.CompactionLevels{
+	{Level: 0, Interval: 0},
+	{Level: 1, Interval: 2 * time.Minute},
+	{Level: 2, Interval: 30 * time.Minute},
+	{Level: 3, Interval: 4 * time.Hour},
+}
 
 // Replicator replicates databases under a data directory to the configured
 // replica. With backups disabled, or on a nil Replicator, all its methods
@@ -49,7 +61,7 @@ func New(ctx context.Context, cfg config.BackupConfig, dataDir string, logger *s
 		return r, nil
 	}
 
-	r.store = litestream.NewStore(nil, litestream.DefaultCompactionLevels)
+	r.store = litestream.NewStore(nil, compactionLevels)
 	// Litestream logs every sync at info level.
 	r.store.Logger = slog.New(minLevelHandler{Handler: logger.Handler(), min: slog.LevelWarn}).With("component", "backup")
 	r.done = make(chan struct{})
