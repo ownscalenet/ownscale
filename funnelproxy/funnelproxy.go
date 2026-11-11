@@ -591,7 +591,7 @@ var errorPage = template.Must(template.New("error").Parse(`<!DOCTYPE html>
 <style>
 body { font-family: system-ui, sans-serif; margin: 0; min-height: 100vh; display: grid; place-items: center; background: #f5f5f5; color: #222; }
 main { max-width: 32rem; padding: 2rem; text-align: center; }
-.brand { display: inline-flex; align-items: center; gap: .5rem; margin-bottom: 1.5rem; font-weight: 600; font-size: 1.125rem; color: #111827; }
+.brand { display: inline-flex; align-items: center; gap: .5rem; margin-bottom: 1.5rem; font-weight: 600; font-size: 1.125rem; color: #111827; text-decoration: none; }
 .brand svg { width: 1.75rem; height: 1.75rem; }
 h1 { font-size: 1.5rem; margin: 0 0 .5rem; }
 p { margin: 0 0 .75rem; color: #555; }
@@ -600,10 +600,10 @@ a { color: #2563eb; }
 </head>
 <body>
 <main>
-<div class="brand">
+<a class="brand" href="https://github.com/ownscalenet/ownscale">
 <svg viewBox="0 0 64 64" aria-hidden="true"><g fill="currentColor"><circle cx="12" cy="12" r="8"/><circle cx="32" cy="12" r="8"/><circle cx="52" cy="12" r="8"/><circle cx="12" cy="32" r="8"/><circle cx="52" cy="32" r="8"/><circle cx="12" cy="52" r="8"/><circle cx="32" cy="52" r="8"/><circle cx="52" cy="52" r="8"/></g><circle cx="32" cy="32" r="8" fill="currentColor" opacity="0.4"/></svg>
 ownscale
-</div>
+</a>
 <h1>{{.Status}} {{.Title}}</h1>
 <p>{{.Message}}</p>
 <p>If you own this funnel, see the <a href="{{.DocsURL}}">funnel docs</a>.</p>
