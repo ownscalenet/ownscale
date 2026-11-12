@@ -160,8 +160,13 @@ async function registerLoginStatus(page: Page, org: string, authURL: string): Pr
   // client-side redirects can't interfere with the page the test drives.
   const tab = await page.context().newPage()
   try {
+    // An auth ID read just before a headscale restart gets a 410 instead of
+    // the redirect to the login, so return that for the caller to poll again.
     const callback = tab.waitForResponse(
-      r => r.request().isNavigationRequest() && r.url().startsWith(`https://${org}.${baseDomain}/oidc/callback`),
+      r => r.request().isNavigationRequest() && (
+        r.url().startsWith(`https://${org}.${baseDomain}/oidc/callback`) ||
+        (r.url().startsWith(`https://${org}.${baseDomain}/register/`) && r.status() !== 302)
+      ),
       { timeout: 30_000 },
     )
     // goto itself may report "interrupted by another navigation" as the
