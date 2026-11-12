@@ -88,7 +88,5 @@ OWNSCALE_VERSION=dev docker compose up -d
 
 ## Next steps
 
-- [Quickstart]({{< relref "/docs/get-started/quickstart.md" >}}): create
-  your organization and add the first machines.
 - [Limitations]({{< relref "/docs/reference/limitations.md" >}}): what
   ownscale doesn't support yet.

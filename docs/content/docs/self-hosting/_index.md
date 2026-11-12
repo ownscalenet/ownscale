@@ -3,9 +3,11 @@ title: Self-hosting
 weight: 5
 ---
 
-Run ownscale on your own server. A deployment is a Docker Compose stack with
-two containers, `ownscale` and `caddy`, plus DNS records and an optional
-backup destination.
+Run ownscale on your own server. Unless specified, the documentation here
+assumes you're going to run Ownscale with the provided Caddy image as
+a reverse proxy.
+If you already have a reverse proxy, please see the [bring your own reverse
+proxy examples](/docs/self-hosting/byorp).
 
 {{< cards >}}
   {{< card link="/docs/self-hosting/requirements/" title="Requirements" icon="clipboard-check" subtitle="Server, domains, DNS provider and login provider." >}}

@@ -10,22 +10,14 @@ Headscale user and an `ownscale-agent` machine. These show up in your
 listings marked as internal resources. The machine is an embedded Tailscale
 client running inside the ownscale server, and it forwards funnel traffic
 into your tailnet. Removing it deletes all of the organization's funnel
-routes. See [Funnels]({{< relref "features/funnels.md" >}}).
+routes.
 
 ## Is ownscale the same as Tailscale?
 
 No. ownscale is a self-hosted *coordination server* that the official
 Tailscale clients connect to instead of Tailscale's hosted service. It's built
 on [Headscale](https://headscale.net) and isn't affiliated with Tailscale
-Inc. See [How it works]({{< relref "concepts/how-it-works.md" >}}).
-
-## Does my traffic go through the ownscale server?
-
-No. Machines connect directly to each other with WireGuard. When a direct
-connection isn't possible, encrypted traffic goes through a
-[DERP relay]({{< relref "concepts/terminology.md#derp" >}}). Only
-[funnel]({{< relref "features/funnels.md" >}}) traffic passes through the
-ownscale server.
+Inc.
 
 ## What's the difference between the console URL, the login server and the tailnet name?
 
@@ -60,8 +52,7 @@ SSH into their own machines:
 between the machines.
 
 Each machine you want to SSH into must run `tailscale set --ssh`. Then connect
-with `ssh user@machine` from another machine in the tailnet. See
-[Tailscale SSH]({{< relref "features/tailscale-ssh.md" >}}).
+with `ssh user@machine` from another machine in the tailnet.
 
 ## How do I resolve internal domains with split DNS?
 
@@ -75,21 +66,20 @@ nameserver inside your network is usually reached through a machine that
 advertises its subnet route, or is itself a machine in the tailnet.
 
 Machines only use it when they accept DNS settings from the tailnet
-(`tailscale set --accept-dns`, the default). See
-[Split DNS]({{< relref "features/dns.md#split-dns" >}}).
+(`tailscale set --accept-dns`, the default).
 
 ## Why can't my teammate see my machines?
 
 Each account belongs to one organization. If your teammate signed in without
-an invite, they got their own organization. Remove their account and
-[invite them]({{< relref "features/invites.md" >}}).
+an invite, they got their own organization. Create an invitation for them
+and
 
 ## Why can't machines reach each other?
 
 Check, in order:
 
 1. Both machines are online on **Machines** and not expired.
-2. The [access control policy]({{< relref "features/access-control.md" >}})
+2. The access control policy
    allows the traffic. Use the editor's tests to check.
 3. The service listens on the tailnet interface, or on all interfaces.
 4. `tailscale ping <peer>` succeeds from one to the other.
@@ -104,18 +94,6 @@ machine's menu.
 
 Advertised routes must be approved by a manager on the machine's **Routes**
 dialog, and Linux clients must run `tailscale set --accept-routes`. See
-[Subnet routers and exit nodes]({{< relref "features/subnet-routers-and-exit-nodes.md" >}}).
-
-## Why can't I get an HTTPS certificate?
-
-The server needs a `DNS_PROVIDER`, and the organization needs MagicDNS on.
-The DNS page shows the status. See
-[HTTPS certificates]({{< relref "features/https-certificates.md" >}}).
-
-## Can I use the network_admin, it_admin or auditor roles?
-
-You can assign them, but they currently have the same permissions as
-`member`. See [Users and roles]({{< relref "features/users-and-roles.md" >}}).
 
 ## Can I move my existing Headscale server to ownscale?
 

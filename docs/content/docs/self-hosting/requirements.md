@@ -38,8 +38,7 @@ console. It needs its own wildcard record. See
 
 ## DNS provider
 
-Caddy gets wildcard certificates through an ACME DNS-01 challenge, and
-ownscale uses the same provider for [machine certificates]({{< relref "/docs/features/https-certificates.md" >}}).
+Ownscale gets wildcard certificates through an ACME DNS-01 challenge.
 The provider must host the zones of `BASE_DOMAIN` and `CONTENT_DOMAIN`.
 Supported providers:
 

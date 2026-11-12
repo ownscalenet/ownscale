@@ -11,8 +11,7 @@ service or from a standalone Headscale.
 ## Compared with Tailscale
 
 - **Funnel**: `tailscale funnel` doesn't work. Use ownscale's
-  [funnels]({{< relref "/docs/features/funnels.md" >}}) instead, which are
-  HTTP only.
+  funnels in the web console instead.
 - **Sharing machines between tailnets** (node sharing) isn't supported.
 - **Tailnet lock**, **app connectors**, **device posture** and **logging and
   audit streaming** aren't available.
