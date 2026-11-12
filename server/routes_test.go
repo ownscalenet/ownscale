@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/ownscalenet/ownscale/auth"
@@ -74,6 +75,57 @@ func TestNewMuxUnmatchedPathFallsBackToStatic(t *testing.T) {
 	}
 	if rec.Code != http.StatusTeapot {
 		t.Errorf("status = %d, want %d", rec.Code, http.StatusTeapot)
+	}
+}
+
+func TestNewMuxSiteHosts(t *testing.T) {
+	tests := []struct {
+		name          string
+		contentDomain string
+		host          string
+		want          string
+	}{
+		{"base domain", "example-content.net", "example.com", "docs"},
+		{"base domain with port", "example-content.net", "Example.com:443", "docs"},
+		{"content domain", "example-content.net", "example-content.net", "landing"},
+		{"content domain is base domain", "example.com", "example.com", "docs"},
+		{"console", "example-content.net", "console.example.com", "static"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, queries := dbtest.New(t)
+			h, err := handlers.New(queries, &config.Config{
+				BaseDomain:    "example.com",
+				ContentDomain: tt.contentDomain,
+				DataDir:       t.TempDir(),
+			}, nil, slog.New(slog.DiscardHandler), nil)
+			if err != nil {
+				t.Fatalf("handlers.New: %v", err)
+			}
+			static := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(http.StatusTeapot)
+			})
+			requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
+				return auth.RequireAuthAPI(queries.Queries, next)
+			}
+			mux := NewMux(h, requireAuthAPI, slog.New(slog.DiscardHandler), static, nil)
+
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Host = tt.host
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+
+			got := "static"
+			if rec.Code != http.StatusTeapot {
+				got = "docs"
+				if strings.Contains(rec.Body.String(), "is used by") {
+					got = "landing"
+				}
+			}
+			if got != tt.want {
+				t.Errorf("GET %s/ served %s (status %d), want %s", tt.host, got, rec.Code, tt.want)
+			}
+		})
 	}
 }
 

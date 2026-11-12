@@ -8,12 +8,14 @@ With `BASE_DOMAIN=example.com` and `CONTENT_DOMAIN=example-content.net`:
 | URL | Serves |
 | --- | --- |
 | `https://example.com` | This documentation site. |
+| `https://example-content.net` | A short page explaining what the content domain is. |
 | `https://console.example.com` | The web console, its API and ownscale's OIDC provider. |
 | `https://console.example.com/invite/<token>` | Invite links. |
 | `https://<org>.example.com` | The organization's login server (its Headscale instance). Used with `tailscale up --login-server`. |
 | `https://<label>-<org>.example-content.net` | A funnel for exposing local services to the internet. |
 | `<machine>.<tailnet label>.os.example-content.net` | A machine's MagicDNS name, used for HTTPS certificates. Only resolvable inside the tailnet. |
 | `https://example.com/s/<slug>` | Short links into the documentation, used by the console. |
+| `https://example.com/console/<path>` | Redirects to `https://console.example.com/<path>`, so the docs can link to console pages. |
 
 Without a separate `CONTENT_DOMAIN`, funnels and machine names use
 `example.com` too.

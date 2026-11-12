@@ -31,6 +31,7 @@ func TestHandler(t *testing.T) {
 		want          int
 	}{
 		{"base domain", "funnel.net", "vpn.example.com", http.StatusOK},
+		{"content domain", "funnel.net", "funnel.net", http.StatusOK},
 		{"console", "funnel.net", "console.vpn.example.com", http.StatusOK},
 		{"console uppercase trailing dot", "funnel.net", "CONSOLE.vpn.example.com.", http.StatusOK},
 		{"existing org", "funnel.net", "acme.vpn.example.com", http.StatusOK},

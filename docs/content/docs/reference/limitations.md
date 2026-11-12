@@ -11,7 +11,7 @@ service or from a standalone Headscale.
 ## Compared with Tailscale
 
 - **Funnel**: `tailscale funnel` doesn't work. Use ownscale's
-  funnels in the web console instead.
+  [funnels](/console/funnels) in the web console instead.
 - **Sharing machines between tailnets** (node sharing) isn't supported.
 - **Tailnet lock**, **app connectors**, **device posture** and **logging and
   audit streaming** aren't available.
@@ -31,8 +31,8 @@ service or from a standalone Headscale.
 - **Global nameservers are fallbacks only.** ownscale doesn't set Headscale's
   `override_local_dns`.
 - **The tailnet name can't be changed.**
-- **Settings changes restart the instance.** Saving DNS settings or auth
-  restrictions restarts the organization's Headscale. Policy changes don't.
+- **Settings changes restart the instance.** Saving [DNS settings](/console/dns) or
+  [auth restrictions](/console/auth-restrictions) restarts the organization's Headscale. [Policy](/console/access-control) changes don't.
 
 ## ownscale itself
 

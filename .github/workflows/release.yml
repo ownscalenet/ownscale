@@ -78,6 +78,23 @@ jobs:
         run: |
           echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
           echo "version=${TAG}-$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+      - name: Build tagged docs
+        working-directory: source
+        env:
+          HUGO_VERSION: 0.169.0
+          HUGO_SHA256: c41672a0725d307758a132bc94a962e59760eb33f9ba08c991b81f9881d6fa7d
+          HUGO_PARAMS_VERSION: ${{ steps.revision.outputs.version }}
+          # Hugo modules need docs/go.mod's Go version.
+          GOTOOLCHAIN: auto
+        run: |
+          tarball="$RUNNER_TEMP/hugo.tar.gz"
+          curl --fail --silent --show-error --location -o "$tarball" \
+            "https://github.com/gohugoio/hugo/releases/download/v${HUGO_VERSION}/hugo_extended_${HUGO_VERSION}_linux-amd64.tar.gz"
+          echo "$HUGO_SHA256  $tarball" | sha256sum -c -
+          tar -xzf "$tarball" -C "$RUNNER_TEMP" hugo
+          find docsite/dist -mindepth 1 ! -name .gitkeep -delete
+          "$RUNNER_TEMP/hugo" --source docs --destination ../docsite/dist --minify
+          grep -q "$HUGO_PARAMS_VERSION" docsite/dist/index.html
       - uses: docker/setup-buildx-action@v4.4.1
       - uses: docker/login-action@v4.7.0
         with:
@@ -120,12 +137,10 @@ jobs:
           docker run --rm --entrypoint osa "ghcr.io/ownscalenet/ownscale:$TAG" --help
           docker run --rm -e TAG --entrypoint sh "ghcr.io/ownscalenet/ownscale:$TAG" -c 'strings /bin/ownscale | grep -q "$TAG-[0-9a-f]\{7,\}"'
           docker run --rm -e TAG --entrypoint sh "ghcr.io/ownscalenet/ownscale-caddy:$TAG" -ec '
-            test -s /srv/site/index.html
-            grep -q "$TAG-[0-9a-f]\{7,\}" /srv/site/index.html
             test -s /etc/caddy/Caddyfile
             caddy list-modules | grep -q dns.providers.cloudflare
           '
-      - name: Verify embedded frontend over HTTP
+      - name: Verify embedded frontend and docs over HTTP
         shell: bash
         run: |
           cleanup() {
@@ -157,6 +172,9 @@ jobs:
             -H 'Accept-Encoding: gzip' \
             "http://$address/assets/main.wasm" -o "$RUNNER_TEMP/main.wasm"
           zstd -dc source/webui/dist/assets/main.wasm.zst | cmp - "$RUNNER_TEMP/main.wasm"
+          curl --fail --silent --show-error -H 'Host: example.com' \
+            "http://$address/" -o "$RUNNER_TEMP/docs.html"
+          cmp source/docsite/dist/index.html "$RUNNER_TEMP/docs.html"
       - name: Publish release tags
         run: |
           for image in ownscale ownscale-caddy; do

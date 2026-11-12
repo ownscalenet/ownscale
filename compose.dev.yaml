@@ -89,12 +89,10 @@ services:
       CONTENT_DOMAIN: ownscale.test
       DNS_PROVIDER: none
       CADDY_LOG_LEVEL: debug
-      OWNSCALE_DEVELOPMENT: "true"
-    # Bind mounts override the baked-in Caddyfile and docs site so edits only
+    # Bind mounts override the baked-in Caddyfile so edits only
     # need a restart; dev/ holds the local_certs, PKI and Dex snippets.
     volumes:
       - ./etc/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
-      - ./etc/caddy/site:/srv/site:ro
       - ./etc/caddy/dev:/etc/caddy/dev:ro
       - ${OWNSCALE_DATA_DIR:-./data}/local-ca:/etc/ownscale-local-ca:ro
     networks:

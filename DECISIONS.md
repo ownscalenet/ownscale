@@ -35,7 +35,7 @@ tests on a 2 CPU, 2 GB VM showed that only about 10 organizations fit: each
 headscale process needed only ~18 MB, but the machine stalled on IO. Now every
 organization's headscale (from a fork, github.com/ownscalenet/headscale) runs
 inside the ownscale process, listening on a loopback port that ownscale's
-SubdomainProxy forwards `<org>.<base_domain>` traffic to. ownscale itself talks
+org proxy (`server/orgproxy.go`) forwards `<org>.<base_domain>` traffic to. ownscale itself talks
 to each instance's API over its unix socket, so no API keys are needed.
 Changing an organization's settings restarts its instance.
 

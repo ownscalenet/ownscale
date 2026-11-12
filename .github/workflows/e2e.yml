@@ -34,14 +34,12 @@ jobs:
             frontend/package-lock.json
             e2e/frontend/package-lock.json
 
-      # The images embed the host-built frontend. No e2e test needs the docs
-      # site, so Caddy gets an empty one instead of a hugo build.
+      # The images embed the host-built frontend. No e2e test needs the docs.
       - name: Build frontend
         run: |
           npm --prefix frontend ci
           npm --prefix frontend run build
           cp frontend/node_modules/@tailscale/connect/main.wasm.zst webui/dist/assets/
-          mkdir -p etc/caddy/site
 
       - name: Map *.ownscale.test to localhost
         run: |

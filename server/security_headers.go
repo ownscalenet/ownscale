@@ -48,3 +48,13 @@ func securityHeadersMiddleware(next http.Handler) http.Handler {
 		next.ServeHTTP(w, r)
 	})
 }
+
+// hstsHeader covers subdomains too: org and funnel hosts are HTTPS-only.
+const hstsHeader = "max-age=31536000; includeSubDomains"
+
+func hstsMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Strict-Transport-Security", hstsHeader)
+		next.ServeHTTP(w, r)
+	})
+}

@@ -4,7 +4,7 @@
 
 node_modules/
 
-# Minified/compiled JS bundles (e.g. vendored under etc/caddy/site/).
+# Minified/compiled JS bundles (e.g. vendored under docsite/dist/).
 *.min.js
 *.min.css
 *.min.js.map

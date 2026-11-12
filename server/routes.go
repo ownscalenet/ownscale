@@ -14,12 +14,15 @@ import (
 // maxConsoleBodyBytes limits request bodies to the console API and OIDC endpoints.
 const maxConsoleBodyBytes = 1 << 20
 
-// NewMux builds the admin panel's http.ServeMux. requireAuthAPI wraps an
+// NewMux builds ownscale's HTTP handler. It routes by Host (see classifyHost)
+// to an organization's headscale, a funnel, the docs site, the content
+// domain's landing page or the console's routes below. requireAuthAPI wraps an
 // http.HandlerFunc so it only runs for an authenticated session (see
 // auth.RequireAuthAPI), responding 401 JSON otherwise. static serves the
 // built frontend (SPA fallback to index.html for client-side routes); pass
-// http.NotFoundHandler() if the frontend hasn't been built. Every request is
-// logged via logger before being dispatched.
+// http.NotFoundHandler() if the frontend hasn't been built. Every request
+// except an organization's is logged via logger. Responses other than
+// organizations' and funnels' are compressed and, outside development, get HSTS.
 func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.HandlerFunc, logger *slog.Logger, static http.Handler, oidcHandler http.Handler) http.Handler {
 	mux := http.NewServeMux()
 
@@ -107,20 +110,44 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	// client-side routes (/, /login, /machines, ...).
 	mux.Handle("/", static)
 
-	// Requests whose Host header is a funnel hostname
-	// ("<label>--<sub>.{base}", forwarded here by Caddy's map block.
 	// Org subdomains, dex and funnels are same-site with the console, so
 	// SameSite cookies alone don't stop CSRF.
 	console := http.NewCrossOriginProtection().Handler(mux)
-	dispatch := func(w http.ResponseWriter, r *http.Request) {
-		if h.ServeFunnelIfMatched(w, r) {
-			return
-		}
-		if r.Body != nil {
-			r.Body = http.MaxBytesReader(w, r.Body, maxConsoleBodyBytes)
-		}
-		console.ServeHTTP(w, r)
-	}
+	baseDomain, contentDomain := h.Domains()
+	orgHeadscale := newOrgProxy(baseDomain, h.DialOrg, logger)
+	hsts := !h.Development()
 
-	return loggingMiddleware(logger, securityHeadersMiddleware(http.HandlerFunc(dispatch)))
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var next http.Handler
+		route := classifyHost(r.Host, baseDomain, contentDomain)
+		switch route.kind {
+		case hostOrg:
+			// Headscale's own responses; orgProxy logs at debug level.
+			orgHeadscale.serve(w, r, route.subdomain)
+			return
+		case hostFunnel:
+			next = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				h.ServeFunnel(w, r, route.label, route.subdomain)
+			})
+		case hostDocs:
+			next = http.HandlerFunc(h.ServeDocs)
+		case hostLanding:
+			next = http.HandlerFunc(h.ServeLanding)
+		default:
+			next = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Body != nil {
+					r.Body = http.MaxBytesReader(w, r.Body, maxConsoleBodyBytes)
+				}
+				console.ServeHTTP(w, r)
+			})
+		}
+		// Funnels pass the target's own responses through untouched.
+		if route.kind != hostFunnel {
+			next = compressMiddleware(next)
+			if hsts {
+				next = hstsMiddleware(next)
+			}
+		}
+		loggingMiddleware(logger, securityHeadersMiddleware(next)).ServeHTTP(w, r)
+	})
 }

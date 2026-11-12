@@ -22,7 +22,7 @@ Inc.
 ## What's the difference between the console URL, the login server and the tailnet name?
 
 - **Console**: `https://console.<BASE_DOMAIN>`, where you manage everything
-  in a browser.
+  in a browser. [Open the console](/console/).
 - **Login server**: `https://<org>.<BASE_DOMAIN>`, which you pass to
   `tailscale up --login-server`.
 - **Tailnet name**: the DNS suffix of your machines' MagicDNS names, such as
@@ -33,7 +33,7 @@ See [Domains and URLs]({{< relref "reference/domains-and-urls.md" >}}).
 ## How do I enable Tailscale SSH?
 
 Tailscale SSH is controlled by the `ssh` section of your organization's access
-control policy (Access Control in the console). For example, to let every user
+control policy ([Access control](/console/access-control) in the console). For example, to let every user
 SSH into their own machines:
 
 ```jsonc

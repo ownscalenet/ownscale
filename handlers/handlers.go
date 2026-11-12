@@ -17,6 +17,7 @@ import (
 	"github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/derrors"
+	"github.com/ownscalenet/ownscale/docsite"
 	"github.com/ownscalenet/ownscale/funnelproxy"
 	"github.com/ownscalenet/ownscale/hscl"
 	"github.com/ownscalenet/ownscale/orgs"
@@ -36,9 +37,12 @@ type Handlers struct {
 	hs              headscaleClients
 	baseDomain      string
 	contentDomain   string
+	development     bool
 	oidc            *oidcprovider.Storage
 	logger          *slog.Logger
 	funnel          *funnelproxy.Pool
+	docs            http.Handler
+	landing         http.Handler
 	webauthn        *webauthn.WebAuthn
 	passkeySessions *passkeyCeremonyStore
 	authProviders   authProvidersStatus
@@ -101,11 +105,14 @@ func New(
 		queries:         queries,
 		baseDomain:      baseDomain,
 		contentDomain:   cfg.ContentDomain,
+		development:     cfg.Development,
 		oidc:            oidc,
 		logger:          logger,
 		orgs:            orgSvc,
 		hs:              orgSvc,
 		funnel:          funnelproxy.NewPool(queries, orgSvc, cfg, logger),
+		docs:            docsite.Handler(baseDomain, cfg.Development),
+		landing:         docsite.LandingHandler(baseDomain, cfg.ContentDomain),
 		webauthn:        wa,
 		passkeySessions: newPasskeyCeremonyStore(),
 		authProviders: authProvidersStatus{
@@ -128,26 +135,31 @@ func (h *Handlers) Close(ctx context.Context) error {
 	return h.orgs.Close(ctx)
 }
 
-// ServeFunnelIfMatched serves r via the funnel proxy and returns true if
-// r.Host is shaped like a funnel hostname ("<label>-<subdomain>.<contentDomain>",
-// see etc/caddy/Caddyfile's "*.{$CONTENT_DOMAIN}" site address that routes
-// these to ownscale, and funnelproxy.ParseHost); otherwise
-// it does nothing and returns false, so the caller (server.NewMux) can
-// fall through to the normal API/SPA mux.
-func (h *Handlers) ServeFunnelIfMatched(w http.ResponseWriter, r *http.Request) bool {
-	if h.contentDomain == "" {
-		return false
-	}
-	label, subdomain, ok := funnelproxy.ParseHost(r.Host, h.contentDomain)
-	if !ok {
-		return false
-	}
-	h.funnel.ServeHTTP(w, r, label, subdomain)
-	return true
+// Domains returns the base and content domains requests are routed by.
+func (h *Handlers) Domains() (baseDomain, contentDomain string) {
+	return h.baseDomain, h.contentDomain
 }
 
-// DialOrg connects to subdomain's in-process headscale instance. Used by
-// server.NewSubdomainProxy to route subdomain traffic.
+// Development reports whether ownscale runs in development mode.
+func (h *Handlers) Development() bool { return h.development }
+
+// ServeFunnel serves r, sent to the funnel label of the organization at
+// subdomain, through the funnel proxy.
+func (h *Handlers) ServeFunnel(w http.ResponseWriter, r *http.Request, label, subdomain string) {
+	h.funnel.ServeHTTP(w, r, label, subdomain)
+}
+
+// ServeDocs serves the docs site.
+func (h *Handlers) ServeDocs(w http.ResponseWriter, r *http.Request) {
+	h.docs.ServeHTTP(w, r)
+}
+
+// ServeLanding serves the content domain's landing page.
+func (h *Handlers) ServeLanding(w http.ResponseWriter, r *http.Request) {
+	h.landing.ServeHTTP(w, r)
+}
+
+// DialOrg connects to subdomain's in-process headscale instance.
 func (h *Handlers) DialOrg(ctx context.Context, subdomain string) (net.Conn, error) {
 	return h.orgs.DialOrg(ctx, subdomain)
 }

@@ -43,14 +43,14 @@ func Handler(q Queries, baseDomain, contentDomain string, logger *slog.Logger) h
 	return mux
 }
 
-// allowed reports whether host is the base domain, the console, an existing
-// organization or an existing funnel.
+// allowed reports whether host is the base or content domain, the console, an
+// existing organization or an existing funnel.
 func allowed(ctx context.Context, q Queries, baseDomain, contentDomain, host string) (bool, error) {
 	host = strings.TrimSuffix(strings.ToLower(host), ".")
 	if host == "" {
 		return false, nil
 	}
-	if host == baseDomain || host == orgs.ConsoleSubdomain+"."+baseDomain {
+	if host == baseDomain || host == contentDomain || host == orgs.ConsoleSubdomain+"."+baseDomain {
 		return true, nil
 	}
 	if label, sub, ok := funnelproxy.ParseHost(host, contentDomain); ok {

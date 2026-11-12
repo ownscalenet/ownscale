@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -55,6 +56,30 @@ func TestLoadEnvOverridesDefaults(t *testing.T) {
 	wantLocalCADir := filepath.Join(cfg.DataDir, "custom-local-ca")
 	if cfg.LocalCADir != wantLocalCADir {
 		t.Errorf("LocalCADir = %q, want %q (env override, resolved under DataDir)", cfg.LocalCADir, wantLocalCADir)
+	}
+}
+
+func TestLoadTrustedProxies(t *testing.T) {
+	tests := []struct {
+		value   string
+		want    string
+		wantErr bool
+	}{
+		{"", "[]", false},
+		{"10.0.0.0/8,fc00::/7", "[10.0.0.0/8 fc00::/7]", false},
+		{"10.0.0.1", "", true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.value, func(t *testing.T) {
+			t.Setenv("OWNSCALE_TRUSTED_PROXIES", tt.value)
+			cfg, err := Load()
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Load() error = %v, wantErr %v", err, tt.wantErr)
+			}
+			if err == nil && fmt.Sprint(cfg.TrustedProxies) != tt.want {
+				t.Errorf("TrustedProxies = %v, want %s", cfg.TrustedProxies, tt.want)
+			}
+		})
 	}
 }
 

@@ -18,15 +18,15 @@
 </style>
 </head>
 <body>
-<h1>What is {{env "CONTENT_DOMAIN"}}?</h1>
+<h1>What is {{.ContentDomain}}?</h1>
 <p>
-  <code>{{env "CONTENT_DOMAIN"}}</code> is used by an
+  <code>{{.ContentDomain}}</code> is used by an
   <a href="https://github.com/ownscalenet/ownscale">Ownscale</a> deployment
   to host user content.
 </p>
 <p>
   Any concerns about the content served by this domain, should be addressed to
-  its owners at: <a href="https://{{env "BASE_DOMAIN"}}/">{{env "BASE_DOMAIN"}}</a>.
+  its owners at: <a href="https://{{.BaseDomain}}/">{{.BaseDomain}}</a>.
 </p>
 </body>
 </html>

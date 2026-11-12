@@ -24,51 +24,26 @@
 	}
 }
 
-# The documentation site lives at the bare base domain; the Ownscale
-# console (web UI, API, its own OIDC provider) is at console.{$BASE_DOMAIN}
-# below. When CONTENT_DOMAIN differs from BASE_DOMAIN, this same block also
-# answers the bare content domain.
-{$BASE_DOMAIN}, {$CONTENT_DOMAIN} {
-	root * /srv/site
-
-	@development expression `"{$OWNSCALE_DEVELOPMENT}" != ""`
-	header @development Cache-Control "no-store"
-
-	# "{$CONTENT_DOMAIN} != {$BASE_DOMAIN}" is substituted to a literal
-	# true/false before this expression is even parsed, so it's static per
-	# deployment, not re-evaluated per request.
-	@contentDomain {
-		expression `"{$CONTENT_DOMAIN}" != "{$BASE_DOMAIN}"`
-		host {$CONTENT_DOMAIN}
-	}
-	handle @contentDomain {
-		root * /etc/caddy/content-domain-site
-		templates
-		file_server
-	}
-
-	file_server
-}
-
+# The Ownscale console (web UI, API, its own OIDC provider) is at
+# console.{$BASE_DOMAIN}; everything else goes to ownscale below.
 console.{$BASE_DOMAIN} {
-	# The console's JS/CSS bundles are served uncompressed by ownscale.
-	encode zstd gzip
 	reverse_proxy ownscale:8080
 }
 
 # Local-dev sites (Dex), see the global import above.
 import /etc/caddy/dev/sites*.caddyfile
 
-# Route https://<sub>.{$BASE_DOMAIN} and https://<label>-<sub>.{$CONTENT_DOMAIN}
-# (funnel) to the ownscale container. ownscale's SubdomainProxy dispatches
-# org-subdomain traffic to the right in-process headscale port, and its
-# funnelproxy routes funnel traffic into the org's tailnet. CONTENT_DOMAIN
-# defaults to BASE_DOMAIN (see compose.yaml); a repeated address is fine.
+# The docs site and the content domain's landing page. CONTENT_DOMAIN defaults
+# to BASE_DOMAIN (see compose.yaml); a repeated address is fine.
+{$BASE_DOMAIN}, {$CONTENT_DOMAIN} {
+	reverse_proxy ownscale:8080
+}
+
+# Route https://<sub>.{$BASE_DOMAIN} (org headscale) and
+# https://<label>-<sub>.{$CONTENT_DOMAIN} (funnels) to the ownscale container.
 *.{$BASE_DOMAIN}, *.{$CONTENT_DOMAIN} {
-	handle {
-		reverse_proxy ownscale:8080 {
-			lb_try_duration 5s
-			lb_try_interval 250ms
-		}
+	reverse_proxy ownscale:8080 {
+		lb_try_duration 5s
+		lb_try_interval 250ms
 	}
 }

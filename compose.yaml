@@ -13,6 +13,7 @@ services:
       OWNSCALE_DATA_DIR: /data
       OWNSCALE_DEVELOPMENT: ${OWNSCALE_DEVELOPMENT:-}
       OWNSCALE_MAX_ORGS: ${OWNSCALE_MAX_ORGS:-0}
+      OWNSCALE_TRUSTED_PROXIES: ${OWNSCALE_TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7}
       OWNSCALE_FUNNEL_MAX_BODY_BYTES: ${FUNNEL_MAX_BODY_BYTES:-}
       OWNSCALE_FUNNEL_RATE_PER_SECOND: ${FUNNEL_RATE_PER_SECOND:-}
       OWNSCALE_FUNNEL_RATE_BURST: ${FUNNEL_RATE_BURST:-}
@@ -80,7 +81,6 @@ services:
       BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
       CONTENT_DOMAIN: ${CONTENT_DOMAIN:-${BASE_DOMAIN:-ownscale.test}}
       CADDY_LOG_LEVEL: ${CADDY_LOG_LEVEL:-info}
-      OWNSCALE_DEVELOPMENT: ${OWNSCALE_DEVELOPMENT:-}
       DNS_PROVIDER: ${DNS_PROVIDER:-none}
       AZURE_SUBSCRIPTION_ID: ${AZURE_SUBSCRIPTION_ID:-}
       AZURE_RESOURCE_GROUP_NAME: ${AZURE_RESOURCE_GROUP_NAME:-}
@@ -97,7 +97,7 @@ services:
       - "${CADDY_LISTEN_IP:-0.0.0.0}:80:80"
       - "${CADDY_LISTEN_IP:-0.0.0.0}:443:443"
       - "${CADDY_LISTEN_IP:-0.0.0.0}:443:443/udp"
-    # Caddyfile, DNS providers and docs site are baked into the image.
+    # Caddyfile and DNS providers are baked into the image.
     volumes:
       - caddy-data:/data
       - caddy-config:/config

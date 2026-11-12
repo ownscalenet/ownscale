@@ -121,8 +121,8 @@ func run() error {
 	requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
 		return auth.RequireAuthAPI(queries.Queries, next)
 	}
-	consoleMux := server.NewMux(h, requireAuthAPI, logger, webui.Handler(cfg.Development), provider)
-	handler := server.NewSubdomainProxy(consoleMux, cfg.BaseDomain, h.DialOrg, logger)
+	handler := server.TrustedProxies(cfg.TrustedProxies,
+		server.NewMux(h, requireAuthAPI, logger, webui.Handler(cfg.Development), provider))
 
 	// No Read/WriteTimeout: headscale long-polls and funnel WebSockets stay open.
 	srv := &http.Server{

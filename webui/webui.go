@@ -6,14 +6,14 @@
 package webui
 
 import (
-	"crypto/sha256"
 	"embed"
-	"encoding/hex"
 	"errors"
 	"io/fs"
 	"net/http"
 
 	"tailscale.com/tsweb/compserve"
+
+	"github.com/ownscalenet/ownscale/utils"
 )
 
 //go:embed all:dist
@@ -35,7 +35,7 @@ func Handler(development bool) http.Handler {
 		// directory is missing from the embed, which would be a packaging bug.
 		panic("webui: " + err.Error())
 	}
-	etags, err := contentETags(sub)
+	etags, err := utils.ContentETags(sub)
 	if err != nil {
 		panic("webui: " + err.Error())
 	}
@@ -94,24 +94,6 @@ func serveWasm(w http.ResponseWriter, r *http.Request, sub fs.FS, etags map[stri
 		return
 	}
 	http.Error(w, http.StatusText(http.StatusInternalServerError), http.StatusInternalServerError)
-}
-
-// contentETags returns the ETag of every file in fsys, keyed by its path.
-func contentETags(fsys fs.FS) (map[string]string, error) {
-	etags := map[string]string{}
-	err := fs.WalkDir(fsys, ".", func(name string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		body, err := fs.ReadFile(fsys, name)
-		if err != nil {
-			return err
-		}
-		sum := sha256.Sum256(body)
-		etags[name] = `"` + hex.EncodeToString(sum[:8]) + `"`
-		return nil
-	})
-	return etags, err
 }
 
 // assetPath converts a URL path into a path relative to the embedded FS

@@ -9,8 +9,10 @@ ownscale ships as a Docker Compose stack:
 
 - the `ownscale` container runs the console, the API and one Headscale
   instance per organization, all in a single process;
-- the `caddy` container handles TLS and routes requests to the console, this
-  documentation site, every organization's login server and every funnel.
+- the `ownscale` container also serves this documentation site, every
+  organization's login server and every funnel;
+- the `caddy` container handles TLS and forwards requests to `ownscale`. You
+  can [use your own reverse proxy]({{< relref "byorp.md" >}}) instead.
 
 Check the [requirements]({{< relref "requirements.md" >}}) first.
 
@@ -59,7 +61,7 @@ minute or two. Follow progress with `docker compose logs -f caddy`.
 
 ### Sign in
 
-Open `https://console.<BASE_DOMAIN>/login` and sign in. Your first sign-in
+Open [`https://console.<BASE_DOMAIN>/login`](/console/login) and sign in. Your first sign-in
 creates your organization, and you become its owner.
 
 {{% /steps %}}
@@ -78,9 +80,10 @@ docker compose up -d
 ## Installing from source
 
 Clone the repository, copy `example.env` to `.env`, configure it, then build
-the images and run them:
+the images and run them. `make frontend docs` needs Node.js, Go and Hugo.
 
 ```sh
+make frontend docs
 docker build -t ghcr.io/ownscalenet/ownscale:dev .
 docker build -t ghcr.io/ownscalenet/ownscale-caddy:dev -f etc/caddy/Dockerfile .
 OWNSCALE_VERSION=dev docker compose up -d
