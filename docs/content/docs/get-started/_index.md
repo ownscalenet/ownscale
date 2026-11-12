@@ -7,24 +7,23 @@ aliases:
 
 Ownscale is a self-hosted control plane and web console for Tailscale
 clients. It is built on [Headscale](https://headscale.net), the open-source
-implementation of the Tailscale coordination server, and ships as a single Go
-binary containing the server, Headscale, the console and this documentation.
+implementation of the Tailscale coordination server. This documentation
+relies on the concepts introduced in the Tailscale documentation.
 
-## Tailscale, Headscale and Ownscale
+## Relation with Headscale and Tailscale
 
-- **Tailscale** is a VPN built on WireGuard. Its clients (the `tailscale` app
-  on Linux, macOS, Windows, iOS, Android, etc.) connect your devices directly to
-  each other. The company Tailscale also runs the *coordination server* that
-  tells clients about each other, and it's closed source.
-- **Headscale** is an open-source coordination server that the unmodified
-  Tailscale clients can use instead. One Headscale instance serves one
-  private network (one *tailnet*), and is configured with files and a CLI.
-- **ownscale** runs many Headscale instances in a single process, one per
-  [organization]({{< relref "/docs/concepts/organizations.md" >}}), and adds a
-  web console, single sign-on, passkeys, roles, invites and
-  [funnels]({{< relref "/docs/features/funnels.md" >}}).
+**Tailscale** is the original proprietary mesh VPN built on WireGuard.
+**Headscale** is an open-source alternative to Tailscale. It runs on your server
+and is configured with files and a CLI. **Ownscale** builds upon Headscale to
+offer a web interface and the ability to host several tailnets on the same
+server.
 
-Your traffic never goes through Ownscale. Machines talk to each other
+Common points:
+- Tailscale, Headscale and Ownscale are server components. For day to day
+usage users will interact with the Tailscale client applications for Linux,
+MacOS, Windows, iOS, Android which are all compatible with the servers.
+
+- Your traffic never goes through Ownscale. Machines talk to each other
 directly, or through a [DERP relay]({{< relref "/docs/concepts/terminology.md#derp" >}})
 when a direct path isn't possible. See
 [How it works]({{< relref "/docs/concepts/how-it-works.md" >}}).
