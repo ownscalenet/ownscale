@@ -12,6 +12,7 @@ import (
 
 	clientv1 "github.com/juanfont/headscale/gen/client/v1"
 	"github.com/juanfont/headscale/hscontrol"
+	hsconfig "github.com/juanfont/headscale/hscontrol/config"
 	"github.com/juanfont/headscale/hscontrol/types"
 	"github.com/rs/zerolog"
 	"tailscale.com/tailcfg"
@@ -33,13 +34,12 @@ func Headscale(t testing.TB) string {
 	v4 := netip.MustParsePrefix("100.64.0.0/10")
 	v6 := netip.MustParsePrefix("fd7a:115c:a1e0::/48")
 	sock := filepath.Join(dir, "hs.sock")
+	def := hsconfig.Default()
 	app, err := hscontrol.NewHeadscale(&types.Config{
-		ServerURL:           "http://127.0.0.1",
-		Addr:                "127.0.0.1:0",
-		NoisePrivateKeyPath: filepath.Join(dir, "noise_private.key"),
-		PrefixV4:            &v4,
-		PrefixV6:            &v6,
-		IPAllocation:        types.IPAllocationStrategy("sequential"),
+		ServerURL: "http://127.0.0.1",
+		Addr:      "127.0.0.1:0",
+		Noise:     types.NoiseConfig{PrivateKeyPath: filepath.Join(dir, "noise_private.key")},
+		Prefixes:  types.PrefixesConfig{V4: &v4, V6: &v6, Allocation: types.IPAllocationStrategySequential},
 		// A static map, so starting needs no network.
 		DERP: types.DERPConfig{DERPMap: &tailcfg.DERPMap{Regions: map[tailcfg.DERPRegionID]*tailcfg.DERPRegion{
 			900: {RegionID: 900, RegionCode: "test", Nodes: []*tailcfg.DERPNode{{Name: "900a", RegionID: 900, HostName: "derp.invalid"}}},
@@ -48,6 +48,10 @@ func Headscale(t testing.TB) string {
 			Type:   "sqlite3",
 			Sqlite: types.SqliteConfig{Path: filepath.Join(dir, "db.sqlite"), WriteAheadLog: true},
 		},
+		Log:                  def.Log,
+		TLS:                  def.TLS,
+		PreAuthKeys:          def.PreAuthKeys,
+		CLI:                  def.CLI,
 		UnixSocket:           sock,
 		UnixSocketPermission: 0o770,
 		Policy:               types.PolicyConfig{Mode: types.PolicyMode("database")},
@@ -57,9 +61,10 @@ func Headscale(t testing.TB) string {
 		Tuning: types.Tuning{
 			BatchChangeDelay:               800 * time.Millisecond,
 			BatcherWorkers:                 1,
-			NotifierSendTimeout:            800 * time.Millisecond,
 			NodeMapSessionBufferedChanSize: 30,
 			NodeStoreBatchSize:             100,
+			RegisterCacheExpiration:        15 * time.Minute,
+			RegisterCacheMaxEntries:        1024,
 			// Node writes block until the next tick of this timeout.
 			NodeStoreBatchTimeout: time.Millisecond,
 		},

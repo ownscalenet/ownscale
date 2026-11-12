@@ -30,7 +30,7 @@ require (
 	tailscale.com v1.105.0-pre.0.20261028221719-f7c1b8e52600
 )
 
-replace github.com/juanfont/headscale => github.com/ownscalenet/headscale v0.29.7-2
+replace github.com/juanfont/headscale => github.com/ownscalenet/headscale v0.29.7-3
 
 require (
 	atomicgo.dev/cursor v0.2.0 // indirect
@@ -86,7 +86,6 @@ require (
 	github.com/creachadair/mds v0.31.0 // indirect
 	github.com/creachadair/msync v0.10.1 // indirect
 	github.com/danielgtaylor/huma/v2 v2.40.0 // indirect
-	github.com/davecgh/go-spew v1.1.2-0.20180830191138-d8f796af33cc // indirect
 	github.com/dblohm7/wingoes v0.0.0-20260526185140-fb298caac7ca // indirect
 	github.com/dgryski/go-metro v0.0.0-20261008173524-5059e0b1da03 // indirect
 	github.com/dustin/go-humanize v1.1.0 // indirect
@@ -136,6 +135,11 @@ require (
 	github.com/kamstrup/intmap v0.5.2 // indirect
 	github.com/klauspost/compress v1.20.3 // indirect
 	github.com/klauspost/cpuid/v2 v2.4.1 // indirect
+	github.com/knadh/koanf/maps v0.1.2 // indirect
+	github.com/knadh/koanf/parsers/json v1.0.1 // indirect
+	github.com/knadh/koanf/parsers/yaml v1.1.1 // indirect
+	github.com/knadh/koanf/providers/confmap v1.0.1 // indirect
+	github.com/knadh/koanf/v2 v2.4.1 // indirect
 	github.com/kradalby/gigahost-go/client v0.0.0-20261015072437-249a08f0a737 // indirect
 	github.com/kradalby/libdns-gigahost v0.0.0-20261014145029-4c03bc63b974 // indirect
 	github.com/kylelemons/godebug v1.1.0 // indirect
@@ -158,7 +162,9 @@ require (
 	github.com/mdlayher/socket v0.8.0 // indirect
 	github.com/mfridman/interpolate v0.0.2 // indirect
 	github.com/mholt/acmez/v3 v3.1.7 // indirect
+	github.com/mitchellh/copystructure v1.2.0 // indirect
 	github.com/mitchellh/go-ps v1.0.0 // indirect
+	github.com/mitchellh/reflectwalk v1.0.2 // indirect
 	github.com/mittwald/go-powerdns v0.6.7 // indirect
 	github.com/muhlemmer/gu v0.3.1 // indirect
 	github.com/muhlemmer/httpforwarded v0.1.0 // indirect
@@ -167,7 +173,6 @@ require (
 	github.com/oapi-codegen/runtime v1.8.0 // indirect
 	github.com/oauth2-proxy/mockoidc v0.0.0-20240214162133-caebfff84d25 // indirect
 	github.com/pandatix/go-abnf v0.5.1 // indirect
-	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
 	github.com/petermattis/goid v0.0.0-20260918085751-abfca077860b // indirect
 	github.com/philhofer/fwd v1.2.1 // indirect
 	github.com/pierrec/lz4/v4 v4.1.33 // indirect
@@ -185,17 +190,12 @@ require (
 	github.com/remyoudompheng/bigfft v0.0.0-20230129092748-24d4a6f8daec // indirect
 	github.com/rs/cors v1.11.1 // indirect
 	github.com/safchain/ethtool v0.7.0 // indirect
-	github.com/sagikazarmark/locafero v0.12.0 // indirect
 	github.com/samber/lo v1.53.0 // indirect
 	github.com/sasha-s/go-deadlock v0.3.9 // indirect
 	github.com/sethvargo/go-retry v0.5.0 // indirect
-	github.com/spf13/afero v1.15.0 // indirect
-	github.com/spf13/cast v1.10.0 // indirect
 	github.com/spf13/cobra v1.10.2 // indirect
 	github.com/spf13/pflag v1.0.10 // indirect
-	github.com/spf13/viper v1.21.0 // indirect
 	github.com/spiffe/go-spiffe/v2 v2.8.1 // indirect
-	github.com/subosito/gotenv v1.6.0 // indirect
 	github.com/superfly/ltx v0.5.3 // indirect
 	github.com/tailscale/certstore v0.1.1-0.20260409135935-3638fb84b77d // indirect
 	github.com/tailscale/go-winio v0.0.0-20231025203758-c4f33415bf55 // indirect
@@ -220,7 +220,7 @@ require (
 	go.uber.org/multierr v1.11.0 // indirect
 	go.uber.org/zap v1.28.0 // indirect
 	go.uber.org/zap/exp v0.3.0 // indirect
-	go.yaml.in/yaml/v3 v3.0.5 // indirect
+	go.yaml.in/yaml/v3 v3.0.6 // indirect
 	go4.org/mem v0.0.0-20240501181205-ae6ca9944745 // indirect
 	go4.org/netipx v0.0.0-20260823151212-3075585bcbeb // indirect
 	golang.org/x/exp v0.0.0-20261014143641-f0251eb4aa3e // indirect

@@ -156,7 +156,8 @@ func (d DNSConfig) ChallengeProvider() (_ hsdns.Provider, err error) {
 	for _, s := range d.providerSettings() {
 		settings[s.key] = s.value
 	}
-	return hsdns.NewProvider(d.Provider, settings, func(string) (any, bool) { return nil, false })
+	return hsdns.NewProvider(d.Provider, settings, func(string) (any, bool) { return nil, false },
+		func(_, value string) (string, error) { return value, nil })
 }
 
 // Validate checks that d names a supported provider with all its

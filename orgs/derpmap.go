@@ -115,7 +115,7 @@ func (s *Service) pushDERPMap(subdomain string, dm *tailcfg.DERPMap) error {
 		return nil
 	}
 	// GetDERPMap clones and shuffles the map for this instance.
-	instMap, err := derp.GetDERPMap(types.DERPConfig{DERPMap: dm})
+	instMap, err := derp.GetDERPMap(types.DERPConfig{DERPMap: dm}, subdomain)
 	if err != nil {
 		return err
 	}

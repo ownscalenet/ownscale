@@ -699,7 +699,9 @@ func TestStartRetriesTakenPort(t *testing.T) {
 	org := dbtest.CreateOrg(t, svc.queries.Queries, "acme")
 
 	svc.orgLock("acme").Lock()
-	err = svc.startLocked(t.Context(), org.ID, "acme", newHeadscaleConfig(OIDCConfig{Issuer: "https://auth.example.com"}))
+	hsCfg := newHeadscaleConfig(OIDCConfig{Issuer: "https://auth.example.com", ClientID: "ownscale", ClientSecret: "secret"})
+	hsCfg.DNS.BaseDomain = "netacme.os.example.com"
+	err = svc.startLocked(t.Context(), org.ID, "acme", hsCfg)
 	svc.orgLock("acme").Unlock()
 	if err != nil {
 		t.Fatalf("startLocked: %v", err)
@@ -734,13 +736,12 @@ func testHeadscaleParams(t *testing.T, certs *nodeCerts) headscaleParams {
 }
 
 func TestCreateHeadscaleDERP(t *testing.T) {
-	app, err := createHeadscale(testHeadscaleParams(t, nil))
+	cfg, err := headscaleConfig(testHeadscaleParams(t, nil))
 	if err != nil {
-		t.Fatalf("createHeadscale: %v", err)
+		t.Fatalf("headscaleConfig: %v", err)
 	}
-	t.Cleanup(func() { _ = app.GetState().Close() })
 
-	derpCfg := app.GetState().DebugConfig().DERP
+	derpCfg := cfg.DERP
 	if derpCfg.AutoUpdate || len(derpCfg.URLs) != 0 {
 		t.Errorf("DERP config fetches by itself: %+v", derpCfg)
 	}
@@ -752,13 +753,12 @@ func TestCreateHeadscaleDERP(t *testing.T) {
 // TestCreateHeadscaleBaseDomain guards against nodes getting bare hostnames
 // as their FQDN, which breaks MagicDNS resolution of <host>.<base_domain>.
 func TestCreateHeadscaleBaseDomain(t *testing.T) {
-	app, err := createHeadscale(testHeadscaleParams(t, nil))
+	cfg, err := headscaleConfig(testHeadscaleParams(t, nil))
 	if err != nil {
-		t.Fatalf("createHeadscale: %v", err)
+		t.Fatalf("headscaleConfig: %v", err)
 	}
-	t.Cleanup(func() { _ = app.GetState().Close() })
 
-	if got, want := app.GetState().DebugConfig().BaseDomain, "netacme.os.example.com"; got != want {
+	if got, want := cfg.DNSConfig.BaseDomain, "netacme.os.example.com"; got != want {
 		t.Errorf("BaseDomain = %q, want %q", got, want)
 	}
 }

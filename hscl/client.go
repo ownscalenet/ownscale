@@ -554,9 +554,17 @@ func toPreAuthKey(k clientv1.PreAuthKey) PreAuthKey {
 		Used:       k.Used,
 		ACLTags:    k.AclTags,
 		CreatedAt:  timeString(k.CreatedAt),
-		Expiration: timeString(k.Expiration),
-		Expired:    expired(k.Expiration),
+		Expiration: timeString(ptrTime(k.Expiration)),
+		Expired:    expired(ptrTime(k.Expiration)),
 	}
+}
+
+// ptrTime returns *t, or the zero time when t is nil.
+func ptrTime(t *time.Time) time.Time {
+	if t == nil {
+		return time.Time{}
+	}
+	return *t
 }
 
 // expired reports whether t is set and not in the future. Expiring

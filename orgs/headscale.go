@@ -14,13 +14,12 @@ import (
 	"time"
 
 	"github.com/juanfont/headscale/hscontrol"
+	hsconfig "github.com/juanfont/headscale/hscontrol/config"
 	hsdns "github.com/juanfont/headscale/hscontrol/dns"
 	"github.com/juanfont/headscale/hscontrol/types"
 	"github.com/libdns/libdns"
 	"github.com/rs/xid"
-	"github.com/rs/zerolog"
 	"tailscale.com/tailcfg"
-	"tailscale.com/types/dnstype"
 	"tailscale.com/types/key"
 
 	"github.com/ownscalenet/ownscale/db"
@@ -174,6 +173,17 @@ var challengeResolvers = []string{"1.1.1.1:53", "8.8.8.8:53"}
 func createHeadscale(p headscaleParams) (_ *hscontrol.Headscale, err error) {
 	defer derrors.Wrap(&err, "createHeadscale(%q)", p.subdomain)
 
+	cfg, err := headscaleConfig(p)
+	if err != nil {
+		return nil, err
+	}
+	return hscontrol.NewHeadscale(cfg)
+}
+
+// headscaleConfig builds the headscale configuration for p.subdomain,
+// creating the org data directory if absent.
+func headscaleConfig(p headscaleParams) (*types.Config, error) {
+
 	dataDir, subdomain, hsCfg := p.dataDir, p.subdomain, p.hsCfg
 	pv4 := netip.MustParsePrefix("100.64.0.0/10")
 	pv6 := netip.MustParsePrefix("fd7a:115c:a1e0::/48")
@@ -190,28 +200,25 @@ func createHeadscale(p headscaleParams) (_ *hscontrol.Headscale, err error) {
 	}
 
 	dns := ownscaleDNSToTypes(hsCfg.DNS)
-	var challenge types.DNSChallengeConfig
 	// headscale only issues certificates for MagicDNS names.
 	if p.certs != nil && dns.MagicDNS {
 		dns.Certificates = types.CertificatesConfig{Enabled: true, Zone: p.certs.zone}
-		challenge = types.DNSChallengeConfig{
+		dns.Challenge = types.DNSChallengeConfig{
 			PropagationTimeout: p.certs.propagationTimeout,
 			Resolvers:          challengeResolvers,
-			ProviderName:       p.certs.providerName,
+			ProviderSettings:   map[string]any{"name": p.certs.providerName},
 			Provider:           &scopedProvider{certs: p.certs, orgID: p.orgID, domain: dns.BaseDomain},
 		}
 	}
 	cfg := &types.Config{
-		ServerURL:           fmt.Sprintf("https://%s.%s", subdomain, p.baseDomain),
-		Addr:                fmt.Sprintf("127.0.0.1:%d", p.port),
-		NoisePrivateKeyPath: noisePath(dataDir, subdomain),
-		PrefixV4:            &pv4,
-		PrefixV6:            &pv6,
-		IPAllocation:        types.IPAllocationStrategy("sequential"),
+		ServerURL: fmt.Sprintf("https://%s.%s", subdomain, p.baseDomain),
+		Addr:      types.ListenAddr(fmt.Sprintf("127.0.0.1:%d", p.port)),
+		Noise:     types.NoiseConfig{PrivateKeyPath: noisePath(dataDir, subdomain)},
+		Prefixes:  types.PrefixesConfig{V4: &pv4, V6: &pv6, Allocation: types.IPAllocationStrategySequential},
 		// ownscale fetches the DERP map and pushes updates (see RunDERPMapUpdater).
 		DERP: types.DERPConfig{DERPMap: p.derpMap},
 		Database: types.DatabaseConfig{
-			Type: "sqlite3",
+			Type: types.DatabaseSqliteShort,
 			Sqlite: types.SqliteConfig{
 				Path:          sqlitePath(dataDir, subdomain),
 				WriteAheadLog: true,
@@ -220,18 +227,9 @@ func createHeadscale(p headscaleParams) (_ *hscontrol.Headscale, err error) {
 				WALAutoCheckPoint: 1000,
 			},
 		},
-		Log:      types.LogConfig{Format: "json", Level: zerolog.InfoLevel},
-		Taildrop: types.TaildropConfig{Enabled: true},
-		// headscale builds node FQDNs (and MagicDNS names) from this field,
-		// not from DNSConfig.BaseDomain.
-		BaseDomain: dns.BaseDomain,
-		DNSConfig:  dns,
-		// TailcfgDNSConfig is the pre-computed tailcfg representation sent
-		// to nodes. NewHeadscale does not compute it from DNSConfig — the
-		// Viper config loader does. We replicate the conversion here so
-		// nodes receive a DNS config (nameservers, MagicDNS) from startup.
-		TailcfgDNSConfig:     buildTailcfgDNS(dns),
-		DNSChallenge:         challenge,
+		Log:                  types.LogConfig{Format: types.JSONLogFormat, Level: "info"},
+		Taildrop:             types.TaildropConfig{Enabled: true},
+		DNSConfig:            dns,
 		UnixSocket:           SocketPath(dataDir, subdomain),
 		UnixSocketPermission: 0o770,
 		Policy:               types.PolicyConfig{Mode: types.PolicyMode("database")},
@@ -245,9 +243,9 @@ func createHeadscale(p headscaleParams) (_ *hscontrol.Headscale, err error) {
 			}},
 		},
 		OIDC: types.OIDCConfig{
-			Issuer:         hsCfg.OIDC.Issuer,
+			Issuer:         types.HTTPURL(hsCfg.OIDC.Issuer),
 			ClientID:       hsCfg.OIDC.ClientID,
-			ClientSecret:   hsCfg.OIDC.ClientSecret,
+			ClientSecret:   types.Secret(hsCfg.OIDC.ClientSecret),
 			Scope:          []string{"openid", "profile", "email", "offline_access"},
 			AllowedDomains: hsCfg.OIDC.AllowedDomains,
 			AllowedGroups:  hsCfg.OIDC.AllowedGroups,
@@ -263,14 +261,22 @@ func createHeadscale(p headscaleParams) (_ *hscontrol.Headscale, err error) {
 		Tuning: types.Tuning{
 			BatchChangeDelay:               800 * time.Millisecond,
 			BatcherWorkers:                 types.DefaultBatcherWorkers(),
-			NotifierSendTimeout:            800 * time.Millisecond,
 			NodeMapSessionBufferedChanSize: 30,
 			NodeStoreBatchSize:             100,
 			NodeStoreBatchTimeout:          nodeStoreBatchTimeout,
 		},
 	}
 
-	return hscontrol.NewHeadscale(cfg)
+	// Keep headscale's defaults for settings ownscale doesn't choose, where a
+	// zero value would be wrong (e.g. an immediately expiring register cache).
+	def := hsconfig.Default()
+	cfg.PreAuthKeys = def.PreAuthKeys
+	cfg.CLI = def.CLI
+	cfg.TLS = def.TLS
+	cfg.Tuning.RegisterCacheExpiration = def.Tuning.RegisterCacheExpiration
+	cfg.Tuning.RegisterCacheMaxEntries = def.Tuning.RegisterCacheMaxEntries
+
+	return cfg, nil
 }
 
 // ownscaleDNSToTypes converts the ownscale DNS config representation to
@@ -287,39 +293,6 @@ func ownscaleDNSToTypes(dns DNSConfig) types.DNSConfig {
 		SearchDomains: dns.SearchDomains,
 		ExtraRecords:  records,
 	}
-}
-
-// buildTailcfgDNS converts headscale's DNSConfig to the tailcfg.DNSConfig
-// that the mapper sends to nodes. headscale's Viper config loader does this
-// automatically; when building types.Config directly (as createHeadscale
-// does) it must be done explicitly.
-func buildTailcfgDNS(dns types.DNSConfig) *tailcfg.DNSConfig {
-	cfg := &tailcfg.DNSConfig{
-		Proxied:      dns.MagicDNS,
-		ExtraRecords: dns.ExtraRecords,
-	}
-	// headscale uses FallbackResolvers when OverrideLocalDNS is false
-	// (the default); OverrideLocalDNS is not part of ownscale's config.
-	cfg.FallbackResolvers = toResolvers(dns.Nameservers.Global)
-	if len(dns.Nameservers.Split) > 0 {
-		cfg.Routes = make(map[string][]*dnstype.Resolver, len(dns.Nameservers.Split))
-		for domain, nameservers := range dns.Nameservers.Split {
-			cfg.Routes[domain] = toResolvers(nameservers)
-		}
-	}
-	if dns.BaseDomain != "" {
-		cfg.Domains = []string{dns.BaseDomain}
-	}
-	cfg.Domains = append(cfg.Domains, dns.SearchDomains...)
-	return cfg
-}
-
-func toResolvers(nameservers []string) []*dnstype.Resolver {
-	var resolvers []*dnstype.Resolver
-	for _, ns := range nameservers {
-		resolvers = append(resolvers, &dnstype.Resolver{Addr: ns})
-	}
-	return resolvers
 }
 
 // scopedProvider limits a provider shared by every organization to

@@ -67,18 +67,15 @@ func TestCreateHeadscaleCerts(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			p := testHeadscaleParams(t, tt.certs)
 			p.hsCfg.DNS.MagicDNS = tt.magicDNS
-			app, err := createHeadscale(p)
+			cfg, err := headscaleConfig(p)
 			if err != nil {
-				t.Fatalf("createHeadscale: %v", err)
+				t.Fatalf("headscaleConfig: %v", err)
 			}
-			t.Cleanup(func() { _ = app.GetState().Close() })
-
-			cfg := app.GetState().DebugConfig()
 			if got := cfg.DNSConfig.Certificates.Enabled; got != tt.want {
 				t.Errorf("Certificates.Enabled = %v, want %v", got, tt.want)
 			}
-			if got := cfg.DNSChallenge.Provider != nil; got != tt.want {
-				t.Errorf("DNSChallenge.Provider set = %v, want %v", got, tt.want)
+			if got := cfg.DNSConfig.Challenge.Provider != nil; got != tt.want {
+				t.Errorf("DNSConfig.Challenge.Provider set = %v, want %v", got, tt.want)
 			}
 			if tt.want && cfg.DNSConfig.Certificates.Zone != "example.com" {
 				t.Errorf("Certificates.Zone = %q, want example.com", cfg.DNSConfig.Certificates.Zone)

@@ -12,6 +12,7 @@ import (
 	"tailscale.com/types/dnstype"
 	"tailscale.com/types/key"
 
+	"github.com/juanfont/headscale/hscontrol/types"
 	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
@@ -33,6 +34,7 @@ func TestBuildTailcfgDNS(t *testing.T) {
 			want: &tailcfg.DNSConfig{
 				Proxied:           true,
 				FallbackResolvers: []*dnstype.Resolver{{Addr: "1.1.1.1"}},
+				Routes:            map[string][]*dnstype.Resolver{},
 				Domains:           []string{"acme.ownscale", "internal.example.com"},
 				ExtraRecords:      []tailcfg.DNSRecord{},
 			},
@@ -64,9 +66,9 @@ func TestBuildTailcfgDNS(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := buildTailcfgDNS(ownscaleDNSToTypes(tt.dns))
+			got := (&types.Config{DNSConfig: ownscaleDNSToTypes(tt.dns)}).TailcfgDNSConfig()
 			if !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("buildTailcfgDNS() = %+v, want %+v", got, tt.want)
+				t.Errorf("TailcfgDNSConfig() = %+v, want %+v", got, tt.want)
 			}
 		})
 	}

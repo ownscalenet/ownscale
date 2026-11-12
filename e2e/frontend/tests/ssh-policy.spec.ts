@@ -41,7 +41,7 @@ test('an ssh section can be saved in the policy, and invalid ssh rules are rejec
     // headscale rejects "*" as an SSH destination; the stored policy stays.
     await editor.fill(sshPolicy('*'))
     await save.click()
-    await expect(page.locator('.alert-error')).toContainText('wildcard (*) is not supported as SSH destination')
+    await expect(page.locator('.alert-error')).toContainText('invalid dst "*"')
     await page.reload()
     await expect(editor).toHaveValue(/autogroup:self/)
   } finally {

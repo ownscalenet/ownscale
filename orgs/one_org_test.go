@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/juanfont/headscale/hscontrol"
+	"github.com/juanfont/headscale/hscontrol/types"
 
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 )
@@ -211,6 +212,18 @@ func TestSettingsRestartFailureLeavesUnavailable(t *testing.T) {
 // and leave the org active.
 func TestSettingsApplyToRunningHeadscale(t *testing.T) {
 	svc := newRealService(t)
+	// Record the configuration of the latest instance; headscale no longer
+	// exposes the config of a running one.
+	var hs *types.Config
+	create := svc.createFn
+	svc.createFn = func(p headscaleParams) (*hscontrol.Headscale, error) {
+		cfg, err := headscaleConfig(p)
+		if err != nil {
+			return nil, err
+		}
+		hs = cfg
+		return create(p)
+	}
 	org := createStarted(t, svc, "acme")
 	port, _ := svc.LookupPort("acme")
 	first, _ := svc.running("acme")
@@ -243,16 +256,15 @@ func TestSettingsApplyToRunningHeadscale(t *testing.T) {
 		t.Errorf("ListUsers over the restarted instance's socket: %v", err)
 	}
 
-	hs := second.app.GetState().DebugConfig()
 	// Nameservers map to FallbackResolvers when OverrideLocalDNS is false.
-	if dns := hs.TailcfgDNSConfig; dns == nil || len(dns.FallbackResolvers) != 1 || dns.FallbackResolvers[0].Addr != "1.2.3.4" {
+	if dns := hs.TailcfgDNSConfig(); dns == nil || len(dns.FallbackResolvers) != 1 || dns.FallbackResolvers[0].Addr != "1.2.3.4" {
 		t.Errorf("TailcfgDNSConfig = %+v, want resolver 1.2.3.4", dns)
 	}
 	if !slices.Equal(hs.OIDC.AllowedDomains, []string{"example.com"}) {
 		t.Errorf("OIDC allowed domains = %v, want [example.com]", hs.OIDC.AllowedDomains)
 	}
 	// Only ownscale's own proxy needs to reach an org's headscale.
-	if !strings.HasPrefix(hs.Addr, "127.0.0.1:") {
+	if !strings.HasPrefix(string(hs.Addr), "127.0.0.1:") {
 		t.Errorf("headscale listen address = %q, want loopback only", hs.Addr)
 	}
 	// Without scopes the OIDC provider rejects headscale's login requests.
