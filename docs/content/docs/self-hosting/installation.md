@@ -46,10 +46,10 @@ Edit `.env`. At minimum, set:
 | `CONTENT_DOMAIN` | optional separate domain for user content |
 | `OWNSCALE_AUTH_SESSION_SECRET` | a long random string, e.g. from `openssl rand -hex 32` |
 | `OWNSCALE_VERSION` | the release you downloaded, e.g. `v0.1.0` |
-| `DNS_PROVIDER` | `azure`, `cloudflare`, `hetzner` or `rfc2136`, plus its credentials |
 
-Then add at least one login provider, if you want more
-than passkeys.
+Optionally, set `DNS_PROVIDER` and its credentials for wildcard and machine
+certificates. See [DNS provider]({{< relref "requirements.md#dns-provider-optional" >}}).
+Then add at least one login provider, if you want more than passkeys.
 
 ### Start
 
@@ -58,8 +58,8 @@ docker compose pull
 docker compose up -d
 ```
 
-On first start, Caddy requests the wildcard certificates, which can take a
-minute or two. Follow progress with `docker compose logs -f caddy`.
+On first start, Caddy requests the certificates, which can take a minute or
+two. Follow progress with `docker compose logs -f caddy`.
 
 ### Sign in
 

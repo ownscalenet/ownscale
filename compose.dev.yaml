@@ -87,7 +87,8 @@ services:
     environment:
       BASE_DOMAIN: ownscale.test
       CONTENT_DOMAIN: ownscale.test
-      DNS_PROVIDER: none
+      # local: wildcard certificates from the local CA, see etc/caddy/dev.
+      DNS_PROVIDER: local
       CADDY_LOG_LEVEL: debug
     # Bind mounts override the baked-in Caddyfile so edits only
     # need a restart; dev/ holds the local_certs, PKI and Dex snippets.

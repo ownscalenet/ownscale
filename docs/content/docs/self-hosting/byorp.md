@@ -30,8 +30,9 @@ Your proxy must:
   control protocol, and funnels can carry WebSockets;
 - **not time out idle requests**: clients keep a long-poll open to their
   login server for as long as they're connected;
-- **terminate TLS** with certificates for both wildcards. Wildcard
-  certificates need an ACME DNS-01 challenge;
+- **terminate TLS** with certificates for both wildcards, or [on
+  demand](#on-demand-certificates). Wildcard certificates need an ACME
+  DNS-01 challenge;
 - **redirect HTTP to HTTPS**: ownscale sends HSTS, but only over HTTPS;
 - **set `X-Forwarded-For`** to the client's address. ownscale only believes it
   from the addresses in `OWNSCALE_TRUSTED_PROXIES`, which `compose.yaml`
@@ -40,8 +41,9 @@ Your proxy must:
 ownscale compresses its responses itself, so don't enable compression in the
 proxy.
 
-Keep the [DNS provider]({{< relref "requirements.md#dns-provider" >}})
-settings in `.env` anyway: ownscale uses them to issue machine certificates.
+Keep the [DNS provider]({{< relref "requirements.md#dns-provider-optional" >}})
+settings in `.env` anyway, if you have one: ownscale uses them to issue machine
+certificates.
 
 ## Run ownscale without Caddy
 
@@ -132,7 +134,7 @@ Redirect the `web` entry point to `websecure` if you haven't already.
 ## On-demand certificates
 
 If your proxy can't do DNS-01 but can request certificates on demand (Caddy's
-`on_demand_tls`), set `OWNSCALE_TLS_ASK_ADDR` (for example `:8081`) and point
-the proxy's ask URL at `http://ownscale:8081/tls-allowed`, which answers 200
-for host names ownscale serves. It reveals which organizations exist, so don't
+`on_demand_tls`), point its ask URL at `http://ownscale:8081/tls-allowed`,
+which answers 200 for host names ownscale serves. `compose.yaml` sets
+`OWNSCALE_TLS_ASK_ADDR` to `:8081`. It reveals which organizations exist, so don't
 publish that port.

@@ -36,10 +36,17 @@ content published by users can't set cookies on or make requests as the
 console. It needs its own wildcard record. See
 [Domains and URLs]({{< relref "/docs/reference/domains-and-urls.md" >}}).
 
-## DNS provider
+## DNS provider (optional)
 
-Ownscale gets wildcard certificates through an ACME DNS-01 challenge.
-The provider must host the zones of `BASE_DOMAIN` and `CONTENT_DOMAIN`.
+Without a DNS provider, Caddy gets a separate certificate for each
+organization and funnel the first time it's visited, which takes a few
+seconds. Machine certificates (`tailscale cert`, `tailscale serve` over
+HTTPS) are disabled.
+
+With one, Caddy gets wildcard certificates through an ACME DNS-01 challenge,
+and machines can get certificates. Use one if you expect many organizations or
+funnels: Let's Encrypt issues at most 50 certificates per domain per week. The
+provider must host the zones of `BASE_DOMAIN` and `CONTENT_DOMAIN`.
 Supported providers:
 
 - **Azure DNS**: a service principal with *DNS Zone Contributor* on the zone;

@@ -1,0 +1,5 @@
+# Wildcard certificates need DNS-01, so without a provider each subdomain
+# gets its own certificate on demand.
+tls {
+	on_demand
+}

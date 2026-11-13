@@ -1,2 +1,5 @@
-# No DNS-01 provider: for local dev, where etc/caddy/dev/global.caddyfile
-# issues every certificate from the local CA instead of ACME.
+# No DNS-01 provider: certificates are issued per host name on first use,
+# for the names ownscale's ask endpoint allows. See none-site.caddyfile.
+on_demand_tls {
+	ask http://ownscale:8081/tls-allowed
+}
