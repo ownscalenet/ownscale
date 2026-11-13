@@ -28,6 +28,8 @@ TAG=v0.1.0     # pick a release from github.com/ownscalenet/ownscale/releases
 for f in compose.yaml example.env; do
   curl -fsSLO "https://raw.githubusercontent.com/ownscalenet/ownscale/$TAG/$f"
 done
+# Optional: shortcuts for the commands below, listed by `make help`.
+curl -fsSL -o Makefile "https://raw.githubusercontent.com/ownscalenet/ownscale/$TAG/deploy.mk"
 ```
 
 ### Configure
@@ -68,8 +70,18 @@ creates your organization, and you become its owner.
 
 ## Upgrading
 
-Download `compose.yaml` and `example.env` for the new release as above,
-compare `example.env` with your `.env` for new settings, set
+With the Makefile, run:
+
+```sh
+make upgrade TAG=v0.2.0
+```
+
+It downloads the release's `compose.yaml`, `example.env` and `Makefile`, sets
+`OWNSCALE_VERSION` in `.env`, then pulls and restarts the stack. Compare
+`example.env` with your `.env` for new settings.
+
+Without it, download `compose.yaml` and `example.env` for the new release as
+above, compare `example.env` with your `.env` for new settings, set
 `OWNSCALE_VERSION` to the new release, then run:
 
 ```sh
@@ -80,7 +92,8 @@ docker compose up -d
 ## Installing from source
 
 Clone the repository, copy `example.env` to `.env`, configure it, then build
-the images and run them. `make frontend docs` needs Node.js, Go and Hugo.
+the images and run them. `make frontend docs` needs Node.js, Go and Hugo;
+`make help` lists the other targets.
 
 ```sh
 make frontend docs

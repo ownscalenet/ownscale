@@ -19,7 +19,9 @@ Commands that must run while ownscale is **stopped**, namely `restore` and
 docker compose run --rm --entrypoint osa ownscale <command>
 ```
 
-From a source checkout, `make osa <command>` is a shortcut for the first form.
+With the [Makefile]({{< relref "/docs/self-hosting/installation.md" >}}),
+`make osa <command>` is a shortcut for the first form and
+`make restore <args>` for `osa restore`.
 
 ## organization
 

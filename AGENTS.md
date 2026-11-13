@@ -56,8 +56,9 @@ func (c *Ctl) MethodName(ctx context.Context, subdomain string) (_ string, err e
 - **Migrations**: run via [goose](https://github.com/pressly/goose)
   (`db/db.go`'s `Migrate`).
 - **Build/verify commands**: `go build ./...`, `go vet ./...`, and
-  `go test ./...` (or `make build` / `make test`) all pass cleanly on
-  `main` — run these after making backend changes.
+  `go test ./...` (or `make build`) all pass cleanly on
+  `main` — run these after making backend changes. `make help` lists all
+  targets; deployer commands live in `deploy.mk`, which `Makefile` includes.
 - make sure variables and functions are not exported when not needed
 - don't write excessively long comments. Just say why some code is the way it is
   and don't mention older/removed approaches/designs of the code.

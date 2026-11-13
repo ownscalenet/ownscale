@@ -1,69 +1,62 @@
-# Build the ownscale binary. The frontend (frontend/) is a React + Vite
-# app that builds directly into webui/dist, which is embedded into
-# the Go binary via go:embed.
+# Development of ownscale. Run `make` for the list of targets. The frontend
+# (frontend/) builds into webui/dist and the docs (docs/) into docsite/dist;
+# both are embedded into the Go binary.
 
-.PHONY: build frontend backend osa restore test coverage deploy
-.PHONY: docker-image caddy-image purge ci docs load-cert dev-up devbox stress
-.PHONY: e2e e2e-deps e2e-setup e2e-ssh
-.PHONY: e2e-frontend e2e-frontend-run e2e-connectivity
-.PHONY: e2e-remote e2e-remote-frontend e2e-remote-connectivity e2e-remote-serve
+include deploy.mk
 
-DOCKER_IMAGE := ownscale:latest
-CADDY_IMAGE := ownscale-caddy:latest
+# Set by deploy.mk while `make osa ...` or `make restore ...` passes its goals
+# through as arguments.
+ifndef OSA_MODE
+
 DEVBOX_IMAGE := ownscale-devbox:latest
+GHCR_IMAGE := ghcr.io/ownscalenet/ownscale
 
-# Ensure containers run with same host user.
+# Containers run as the host user.
 export HOST_UID := $(shell id -u)
 export HOST_GID := $(shell id -g)
 
 # Dev stack domain, set in compose.dev.yaml.
 BASE_DOMAIN := ownscale.test
-# Shown in the console sidebar and the docs navbar.
-# Same <tag>-<sha> shape as the release workflow; -dirty marks uncommitted changes.
+DATA_DIR := $(or $(OWNSCALE_DATA_DIR),data)
+CERT := $(DATA_DIR)/local-ca/root.crt
+
+# Shown in the console sidebar and the docs. Same <tag>-<sha> shape as the
+# release workflow; -dirty marks uncommitted changes.
 export BUILD_VERSION := $(shell git describe --tags --abbrev=0 2>/dev/null || echo dev)-$(shell git rev-parse --short HEAD 2>/dev/null)$(shell git diff --quiet HEAD 2>/dev/null || echo -dirty)
 
-build: frontend backend
+require_cert = @test -f $(CERT) || { echo "$(CERT) not found -- start the dev stack (local-ca-init) first"; exit 1; }
 
-frontend: docs
+##@ Build
+
+.PHONY: build frontend docs backend
+build: frontend docs backend ## Build the frontend, docs and Go binaries
+
+frontend: ## Build the console into webui/dist
 	npm --prefix frontend ci
 	npm --prefix frontend run build
 	# Tailscale client compiled to WASM; needed for browser SSH page.
 	cp frontend/node_modules/@tailscale/connect/main.wasm.zst webui/dist/assets/
 
-# Docs site for the dev stack, which bind-mounts it over the copy that
-# etc/caddy/Dockerfile renders into the Caddy image.
-docs:
-	rm -rf etc/caddy/site
-	HUGO_PARAMS_VERSION=$(BUILD_VERSION) hugo --source docs --destination ../etc/caddy/site --minify
+# .gitkeep lets the binary build without docs.
+docs: ## Build the docs site into docsite/dist
+	find docsite/dist -mindepth 1 ! -name .gitkeep -delete
+	HUGO_PARAMS_VERSION=$(BUILD_VERSION) hugo --source docs --destination ../docsite/dist --minify
 
-ifneq ($(filter osa restore,$(MAKECMDGOALS)),)
-%:
-	@:
-endif
+backend: ## Build ownscale and osa into bin/
+	go build -ldflags "-X github.com/ownscalenet/ownscale/utils.Version=$(BUILD_VERSION)" -o bin/ ./cmd/ownscale ./cmd/osa
 
-osa:
-	docker compose exec ownscale osa $(filter-out osa,$(MAKECMDGOALS))
+##@ Dev stack
 
-# Build the images, start the full stack, then stream logs from all
-# containers. Organizations are created on each new user's first login.
-#
-# Upserts into .env what compose.dev.yaml can't set itself, so plain
-# `docker compose` commands see the same stack:
-#  - COMPOSE_FILE, which layers compose.dev.yaml on top of compose.yaml;
-#  - HOST_UID/HOST_GID, for compose.yaml's user: "${HOST_UID:-0}:${HOST_GID:-0}";
-#  - a session secret, if none is set, for compose.yaml's required check
-#    (compose.dev.yaml overrides the value the container gets).
-#
-# The data dir is created first, or docker creates it root-owned and ownscale
-# (running as HOST_UID) can't write to it.
-#
-# Pass `make dev-up BUILD=1` to forward --build to `docker compose up`, and
-# DETACH=1 to start the stack in the background (as CI does).
+.PHONY: dev-up purge load-cert devbox stress
+# Upserts into .env what compose.dev.yaml can't set, so plain `docker compose`
+# sees the same stack: COMPOSE_FILE, HOST_UID/HOST_GID, and a session secret
+# for compose.yaml's required check. The data dir is created first, or docker
+# creates it root-owned.
 BUILD ?=
 DETACH ?=
-dev-up:
+dev-up: ## Start the dev stack at ownscale.test (BUILD=1 rebuilds, DETACH=1 backgrounds)
 	@touch .env
-	@mkdir -p $(if $(OWNSCALE_DATA_DIR),$(OWNSCALE_DATA_DIR),data)
+	@mkdir -p $(DATA_DIR)
 	@{ grep -vE '^(COMPOSE_FILE|HOST_UID|HOST_GID)=|^OWNSCALE_AUTH_SESSION_SECRET=$$' .env; \
 		echo COMPOSE_FILE=compose.yaml:compose.dev.yaml; \
 		echo HOST_UID=$(HOST_UID); \
@@ -72,137 +65,18 @@ dev-up:
 	} > .env.tmp && cat .env.tmp > .env && rm .env.tmp
 	docker compose up $(if $(BUILD),--build) $(if $(DETACH),-d)
 
-# devbox opens up a shell in a container that has joined a tailnet.
-# It's useful for debugging, but requires make dev-up to already run.
-ORG ?= aaaa
-
-devbox:
-	@docker compose ps --status running --services | grep -qx ownscale || { echo "ownscale is not running -- run 'make dev-up' first"; exit 1; }
-	@test -f $(CERT) || { echo "$(CERT) not found -- start docker compose (local-ca-init) first"; exit 1; }
-	@docker build -q -t $(DEVBOX_IMAGE) e2e/devbox >/dev/null
-	@echo "minting a pre-auth key for $(ORG)..."
-	@n=1; while docker ps -a --format '{{.Names}}' | grep -qx "devbox$(ORG)$$n"; do n=$$((n+1)); done; \
-	name=devbox$(ORG)$$n; \
-	authkey=$$(docker compose exec -T ownscale osa devbox-key $(ORG)); \
-	test -n "$$authkey" || { echo "failed to mint a pre-auth key"; exit 1; }; \
-	echo "connecting to https://$(ORG).$(BASE_DOMAIN) as $$name..."; \
-	docker run --rm -it --name=$$name --hostname=$$name \
-		--cap-add=NET_ADMIN --cap-add=NET_RAW --device=/dev/net/tun \
-		--add-host=$(ORG).$(BASE_DOMAIN):host-gateway \
-		-v $(abspath $(CERT)):/usr/local/share/ca-certificates/ownscale-local-ca.crt:ro \
-		$(DEVBOX_IMAGE) bash -c "\
-			set -e; \
-			devbox-up https://$(ORG).$(BASE_DOMAIN) $$authkey $$name; \
-			mkdir -p /var/www; \
-			echo '<html><body><h1>$$name</h1></body></html>' > /var/www/index.html; \
-			python3 -m http.server 80 --directory /var/www >/var/log/httpserver.log 2>&1 & \
-			exec bash"
-
-# stress joins many ephemeral tsnet clients to $(ORG) with a reusable
-# pre-auth key: make stress ORG=aaaa KEY=... STRESS_ARGS="-n 100 -duration 10m".
-# KEY can also be passed as the STRESS_AUTHKEY env var.
-stress:
-	@test -f $(CERT) || { echo "$(CERT) not found -- start docker compose (local-ca-init) first"; exit 1; }
-	@SSL_CERT_FILE=$(abspath $(CERT)) STRESS_AUTHKEY="$${STRESS_AUTHKEY:-$(KEY)}" \
-		go run ./e2e/stress -subdomain $(ORG) -base-domain $(BASE_DOMAIN) $(STRESS_ARGS)
-
-# Requires `make dev-up` already running. The suites use disjoint
-# organizations to perfoorm concurrent tests. ssh runs alone afterwards:
-# its devbox containers add and remove host network links, which makes Chromium
-# abort other browsers' in-flight requests (net::ERR_NETWORK_CHANGED).
-e2e: e2e-deps e2e-setup
-	$(MAKE) -j2 --output-sync=target E2E_FRONTEND_ARGS="--project=chromium --no-deps" \
-		e2e-frontend-run e2e-connectivity
-	$(MAKE) e2e-ssh E2E_SSH_ARGS="--project=ssh --no-deps"
-
-# Builds tscl-bridge up front so a cold Go cache isn't compiled inside the
-# tests' timeouts; their own rebuild is then incremental.
-e2e-deps:
-	npm --prefix e2e/frontend ci
-	npx --prefix e2e/frontend playwright install chromium
-	go build -o bin/tscl-bridge ./e2e/connectivity/cmd/tscl-bridge
-
-# Signs in the frontend workers' and ssh suite's accounts.
-e2e-setup:
-	npm --prefix e2e/frontend test -- --project=setup
-	npm --prefix e2e/frontend run test:ssh -- --project=setup
-
-e2e-frontend: e2e-deps e2e-frontend-run
-e2e-frontend-run:
-	npm --prefix e2e/frontend test -- $(E2E_FRONTEND_ARGS)
-e2e-connectivity:
-	mkdir -p bin/connectivity-work
-	TMPDIR="$(CURDIR)/bin/connectivity-work" npm --prefix e2e/frontend run test:connectivity
-
-# Tailscale SSH and split DNS between devbox containers; also needs docker with /dev/net/tun.
-e2e-ssh:
-	npm --prefix e2e/frontend run test:ssh -- $(E2E_SSH_ARGS)
-
-REMOTE_BASE_DOMAIN ?= "beastbb.bond"
-REMOTE_CONTENT_DOMAIN ?= "ownsc.net"
-
-e2e-remote: e2e-remote-frontend e2e-remote-connectivity e2e-remote-serve
-
-e2e-remote-frontend:
-	E2E_BASE_URL=https://console.$(REMOTE_BASE_DOMAIN) E2E_BASE_DOMAIN=$(REMOTE_BASE_DOMAIN) E2E_CONTENT_DOMAIN=$(REMOTE_CONTENT_DOMAIN) E2E_CA_FILE= $(MAKE) e2e-frontend
-
-e2e-remote-connectivity:
-	mkdir -p bin/connectivity-work
-	E2E_BASE_URL=https://console.$(REMOTE_BASE_DOMAIN) E2E_BASE_DOMAIN=$(REMOTE_BASE_DOMAIN) E2E_CONTENT_DOMAIN=$(REMOTE_CONTENT_DOMAIN) E2E_CA_FILE= \
-		TMPDIR="$(CURDIR)/bin/connectivity-work" npm --prefix e2e/frontend run test:connectivity
-
-# Skipped unless EXTRA_TESTS has $(REMOTE_BASE_DOMAIN):serve; each run issues a certificate.
-e2e-remote-serve:
-	mkdir -p bin/connectivity-work
-	E2E_BASE_URL=https://console.$(REMOTE_BASE_DOMAIN) E2E_BASE_DOMAIN=$(REMOTE_BASE_DOMAIN) E2E_CONTENT_DOMAIN=$(REMOTE_CONTENT_DOMAIN) E2E_CA_FILE= \
-		TMPDIR="$(CURDIR)/bin/connectivity-work" npm --prefix e2e/frontend run test:serve
-
-restore:
-	docker compose run --rm --entrypoint osa ownscale restore $(filter-out restore,$(MAKECMDGOALS))
-
-BROWSER := firefox
-coverage:
-	go test -coverprofile=coverage.out ./...
-	BROWSER=$(BROWSER) go tool cover -html=coverage.out
-
-# Build the ownscale Docker image locally, tagged to match the "image:"
-# name compose.dev.yaml expects for the ownscale service.
-docker-image:
-	docker build --build-arg VERSION=$(BUILD_VERSION) -t $(DOCKER_IMAGE) .
-
-caddy-image:
-	docker build --build-arg VERSION=$(BUILD_VERSION) -t $(CADDY_IMAGE) -f etc/caddy/Dockerfile .
-
-# Deploy a published release to the az host: make deploy VERSION=v0.1.0.
-# The remote keeps its own .env; etc/ is baked into the Caddy image.
-VERSION ?=
-deploy:
-	@test -n "$(VERSION)" || { echo "usage: make deploy VERSION=vX.Y.Z"; exit 1; }
-	ssh az mkdir -p ownscale
-	scp compose.yaml Makefile az:ownscale/
-	ssh az 'cd ownscale && touch .env && sed -i "/^OWNSCALE_VERSION=/d" .env && \
-		echo OWNSCALE_VERSION=$(VERSION) >> .env && \
-		docker compose pull && docker compose up -d'
-
-purge:
+purge: ## Stop the dev stack and delete its data, keeping the local CA
 	docker compose down
-	# rm everything under data/ (org dirs, DBs, backups) except data/local-ca
-	sudo find data -mindepth 1 -maxdepth 1 ! -name local-ca -exec rm -rf {} +
-	# The connectivity suite's recovery records describe orgs that are now gone.
+	sudo find $(DATA_DIR) -mindepth 1 -maxdepth 1 ! -name local-ca -exec rm -rf {} +
+	# Recovery records of the connectivity suite describe orgs that are now gone.
 	rm -rf e2e/.connectivity-private/recovery
-	# Guards left by e2e runs that were killed before releasing them.
+	# Locks left by killed e2e runs.
 	rm -f e2e/.*-run.lock
 
-# ghetto script for trusting caddy's self-signed certificates.
-# To manually trust the certificates in firefox:
-#  1. Copy the root cert out of `${OWNSCALE_DATA_DIR}/local-ca/root.crt` (no
-#     `docker cp` needed -- it's a plain file on the host).
-#  2. Go to `about:preferences#privacy` → scroll to Certificates → View Certificates
-#  3. Authorities tab → Import → select `root.crt`
-#  4. Check "Trust this CA to identify websites"
-CERT := $(if $(OWNSCALE_DATA_DIR),$(OWNSCALE_DATA_DIR),data)/local-ca/root.crt
-load-cert:
-	@test -f $(CERT) || { echo "$(CERT) not found -- start docker compose (local-ca-init) first"; exit 1; }
+# To trust it in Firefox by hand: about:preferences#privacy, View
+# Certificates, Authorities, Import $(CERT), "Trust this CA to identify websites".
+load-cert: ## Trust the dev stack's local CA in Firefox and the OS
+	$(require_cert)
 	@command -v certutil >/dev/null || { echo "certutil not found -- install it (e.g. 'sudo apt install libnss3-tools')"; exit 1; }
 	@found=0; \
 	for profiles_dir in "$$HOME/.mozilla/firefox" "$$HOME/snap/firefox/common/.mozilla/firefox" "$$HOME/.var/app/org.mozilla.firefox/.mozilla/firefox"; do \
@@ -222,15 +96,43 @@ load-cert:
 	sudo update-ca-certificates
 	@echo "done -- firefox and os certs are updated to trust our local certificate"
 
-# worktree_state hashes uncommitted changes, untracked files included, so ci
-# can tell whether its formatters and fixers rewrote anything.
+ORG ?= aaaa
+devbox: ## Open a shell in a container joined to organization ORG (default aaaa)
+	@docker compose ps --status running --services | grep -qx ownscale || { echo "ownscale is not running -- run 'make dev-up' first"; exit 1; }
+	$(require_cert)
+	@docker build -q -t $(DEVBOX_IMAGE) e2e/devbox >/dev/null
+	@echo "minting a pre-auth key for $(ORG)..."
+	@n=1; while docker ps -a --format '{{.Names}}' | grep -qx "devbox$(ORG)$$n"; do n=$$((n+1)); done; \
+	name=devbox$(ORG)$$n; \
+	authkey=$$(docker compose exec -T ownscale osa devbox-key $(ORG)); \
+	test -n "$$authkey" || { echo "failed to mint a pre-auth key"; exit 1; }; \
+	echo "connecting to https://$(ORG).$(BASE_DOMAIN) as $$name..."; \
+	docker run --rm -it --name=$$name --hostname=$$name \
+		--cap-add=NET_ADMIN --cap-add=NET_RAW --device=/dev/net/tun \
+		--add-host=$(ORG).$(BASE_DOMAIN):host-gateway \
+		-v $(abspath $(CERT)):/usr/local/share/ca-certificates/ownscale-local-ca.crt:ro \
+		$(DEVBOX_IMAGE) bash -c "\
+			set -e; \
+			devbox-up https://$(ORG).$(BASE_DOMAIN) $$authkey $$name; \
+			mkdir -p /var/www; \
+			echo '<html><body><h1>$$name</h1></body></html>' > /var/www/index.html; \
+			python3 -m http.server 80 --directory /var/www >/var/log/httpserver.log 2>&1 & \
+			exec bash"
+
+# KEY can also come from the STRESS_AUTHKEY env var.
+stress: ## Join many tsnet clients to ORG: KEY=<reusable key> STRESS_ARGS="-n 100"
+	$(require_cert)
+	@SSL_CERT_FILE=$(abspath $(CERT)) STRESS_AUTHKEY="$${STRESS_AUTHKEY:-$(KEY)}" \
+		go run ./e2e/stress -subdomain $(ORG) -base-domain $(BASE_DOMAIN) $(STRESS_ARGS)
+
+##@ Checks
+
+.PHONY: ci coverage
+# Hashes uncommitted changes, untracked files included, so ci can tell
+# whether its formatters and fixers rewrote anything.
 worktree_state = { git diff HEAD --binary; git ls-files -o --exclude-standard -z | xargs -0 -r sha256sum; } | sha256sum
 
-# Run the same checks as .github/workflows/ci.yml, for local sanity-checking
-# before pushing. Formatting and auto-fixable lint issues are fixed in place
-# instead of failing; ci then fails only if that changed files, so they can be
-# reviewed and committed.
-ci:
+ci: ## Run .github/workflows/ci.yml locally, fixing formatting in place
 	@mkdir -p bin && $(worktree_state) > bin/ci-worktree-state
 	npm --prefix frontend run lint -- --fix
 	npm --prefix frontend run format
@@ -248,3 +150,80 @@ ci:
 		git status --short; \
 		exit 1; \
 	fi
+
+BROWSER := firefox
+coverage: ## Open a Go test coverage report in BROWSER
+	go test -coverprofile=coverage.out ./...
+	BROWSER=$(BROWSER) go tool cover -html=coverage.out
+
+##@ E2E tests (see e2e/README.md)
+
+.PHONY: e2e e2e-deps e2e-setup e2e-frontend e2e-frontend-run e2e-connectivity e2e-ssh
+.PHONY: e2e-remote e2e-remote-serve
+CONNECTIVITY_ENV = TMPDIR="$(CURDIR)/bin/connectivity-work"
+
+# The suites use disjoint organizations, so they run concurrently. ssh runs
+# alone: its devbox network changes abort Chromium's in-flight requests.
+e2e: e2e-deps e2e-setup ## Run all suites against the dev stack
+	$(MAKE) -j2 --output-sync=target E2E_FRONTEND_ARGS="--project=chromium --no-deps" \
+		e2e-frontend-run e2e-connectivity
+	$(MAKE) e2e-ssh E2E_SSH_ARGS="--project=ssh --no-deps"
+
+# tscl-bridge is built up front so a cold Go cache isn't compiled inside the
+# tests' timeouts.
+e2e-deps: ## Install the e2e dependencies
+	npm --prefix e2e/frontend ci
+	npx --prefix e2e/frontend playwright install chromium
+	go build -o bin/tscl-bridge ./e2e/connectivity/cmd/tscl-bridge
+
+e2e-setup: ## Sign in the frontend and ssh suites' accounts
+	npm --prefix e2e/frontend test -- --project=setup
+	npm --prefix e2e/frontend run test:ssh -- --project=setup
+
+e2e-frontend: e2e-deps e2e-frontend-run ## Run the frontend suite (E2E_FRONTEND_ARGS)
+e2e-frontend-run:
+	npm --prefix e2e/frontend test -- $(E2E_FRONTEND_ARGS)
+
+e2e-connectivity: ## Run the connectivity suite
+	mkdir -p bin/connectivity-work
+	$(CONNECTIVITY_ENV) npm --prefix e2e/frontend run test:connectivity
+
+e2e-ssh: ## Run the Tailscale SSH and split DNS suite (needs /dev/net/tun)
+	npm --prefix e2e/frontend run test:ssh -- $(E2E_SSH_ARGS)
+
+REMOTE_BASE_DOMAIN ?= "beastbb.bond"
+REMOTE_CONTENT_DOMAIN ?= "ownsc.net"
+REMOTE_E2E_ENV = E2E_BASE_URL=https://console.$(REMOTE_BASE_DOMAIN) E2E_BASE_DOMAIN=$(REMOTE_BASE_DOMAIN) \
+	E2E_CONTENT_DOMAIN=$(REMOTE_CONTENT_DOMAIN) E2E_CA_FILE=
+
+e2e-remote: ## Run the suites against REMOTE_BASE_DOMAIN
+	$(REMOTE_E2E_ENV) $(MAKE) e2e-frontend e2e-connectivity e2e-remote-serve
+
+# Each run issues a certificate, so it's skipped unless EXTRA_TESTS has
+# $(REMOTE_BASE_DOMAIN):serve.
+e2e-remote-serve: ## Run the serve suite against REMOTE_BASE_DOMAIN
+	mkdir -p bin/connectivity-work
+	$(REMOTE_E2E_ENV) $(CONNECTIVITY_ENV) npm --prefix e2e/frontend run test:serve
+
+##@ Remote host
+
+.PHONY: deploy-local
+DEPLOY_HOST ?= az
+
+# Releases are deployed on the host with `make upgrade TAG=...`. Here nothing
+# is pushed to ghcr; the images are streamed over ssh, gzipped since the upload
+# is the bottleneck. The host keeps its own .env; etc/ is baked into the Caddy
+# image.
+deploy-local: frontend docs ## Build images from the working tree and run them on DEPLOY_HOST
+	docker build --platform linux/amd64 --build-arg VERSION=$(BUILD_VERSION) \
+		-t $(GHCR_IMAGE):$(BUILD_VERSION) .
+	docker build --platform linux/amd64 --build-arg VERSION=$(BUILD_VERSION) \
+		-t $(GHCR_IMAGE)-caddy:$(BUILD_VERSION) -f etc/caddy/Dockerfile .
+	docker save $(GHCR_IMAGE):$(BUILD_VERSION) $(GHCR_IMAGE)-caddy:$(BUILD_VERSION) | gzip | ssh $(DEPLOY_HOST) docker load
+	ssh $(DEPLOY_HOST) mkdir -p ownscale
+	scp compose.yaml $(DEPLOY_HOST):ownscale/
+	scp deploy.mk $(DEPLOY_HOST):ownscale/Makefile
+	ssh $(DEPLOY_HOST) 'cd ownscale && touch .env && sed -i "/^OWNSCALE_VERSION=/d" .env && \
+		echo OWNSCALE_VERSION=$(BUILD_VERSION) >> .env && docker compose up -d --pull never'
+
+endif

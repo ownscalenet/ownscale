@@ -3,6 +3,7 @@ package server
 import (
 	"net/http"
 	"net/netip"
+	"slices"
 	"strings"
 )
 
@@ -36,8 +37,8 @@ func TrustedProxies(trusted []netip.Prefix, next http.Handler) http.Handler {
 // the first untrusted one, or the leftmost valid one if all are trusted.
 func forwardedClient(xff []string, isTrusted func(netip.Addr) bool) (client netip.Addr, ok bool) {
 	hops := strings.Split(strings.Join(xff, ","), ",")
-	for i := len(hops) - 1; i >= 0; i-- {
-		a, err := netip.ParseAddr(strings.TrimSpace(hops[i]))
+	for _, hop := range slices.Backward(hops) {
+		a, err := netip.ParseAddr(strings.TrimSpace(hop))
 		if err != nil {
 			break
 		}
