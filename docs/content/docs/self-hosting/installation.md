@@ -16,7 +16,25 @@ ownscale ships as a Docker Compose stack:
 
 Check the [requirements]({{< relref "requirements.md" >}}) first.
 
-## Quick start
+## Install script
+
+On the server, run:
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/ownscalenet/ownscale/main/install.sh | sh
+```
+
+It asks for a directory, your domain and your reverse proxy, then:
+
+- downloads the latest release's `compose.yaml`, `example.env` and
+  `Makefile`;
+- creates `.env` with your domain and a random session secret;
+- for [your own reverse proxy]({{< relref "byorp.md" >}}), turns off the
+  bundled Caddy and prints the config your proxy needs.
+
+Then start ownscale as the script shows, and [sign in](#sign-in).
+
+## Manual install
 
 {{% steps %}}
 
@@ -46,6 +64,7 @@ Edit `.env`. At minimum, set:
 | `CONTENT_DOMAIN` | optional separate domain for user content |
 | `OWNSCALE_AUTH_SESSION_SECRET` | a long random string, e.g. from `openssl rand -hex 32` |
 | `OWNSCALE_VERSION` | the release you downloaded, e.g. `v0.1.0` |
+| `COMPOSE_PROFILES` | `caddy`, or empty with [your own reverse proxy]({{< relref "byorp.md" >}}) |
 
 Optionally, set `DNS_PROVIDER` and its credentials for wildcard and machine
 certificates. See [DNS provider]({{< relref "requirements.md#dns-provider-optional" >}}).

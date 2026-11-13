@@ -1,6 +1,4 @@
 # Production stack: ownscale behind Caddy, using the published images.
-# Local development layers compose.dev.yaml on top (run `make dev-up`), which
-# builds the images from source instead.
 name: ownscale
 
 services:
@@ -8,10 +6,10 @@ services:
     image: ghcr.io/ownscalenet/ownscale:${OWNSCALE_VERSION:-latest}
     user: "${HOST_UID:-0}:${HOST_GID:-0}"
     environment:
+      # See example.env for details about these variables.
       OWNSCALE_BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
       OWNSCALE_CONTENT_DOMAIN: ${CONTENT_DOMAIN:-${BASE_DOMAIN:-ownscale.test}}
       OWNSCALE_DATA_DIR: /data
-      OWNSCALE_DEVELOPMENT: ${OWNSCALE_DEVELOPMENT:-}
       OWNSCALE_MAX_ORGS: ${OWNSCALE_MAX_ORGS:-0}
       OWNSCALE_TRUSTED_PROXIES: ${OWNSCALE_TRUSTED_PROXIES:-10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,fc00::/7}
       OWNSCALE_FUNNEL_MAX_BODY_BYTES: ${FUNNEL_MAX_BODY_BYTES:-}
@@ -41,9 +39,7 @@ services:
       OWNSCALE_TLS_ASK_ADDR: ":8081"
       OWNSCALE_DNS_ZONE: ${DNS_ZONE:-}
       OWNSCALE_DNS_PROPAGATION_TIMEOUT: ${DNS_PROPAGATION_TIMEOUT:-2m}
-      OWNSCALE_CERTS_PER_ORG_PER_WEEK: ${CERTS_PER_ORG_PER_WEEK:-10}
-      # Test stacks only: see e2e/README.md.
-      OWNSCALE_FIXED_SUBDOMAINS: ${OWNSCALE_FIXED_SUBDOMAINS:-}
+      OWNSCALE_CERTS_PER_ORG_PER_WEEK: ${CERTS_PER_ORG_PER_WEEK:-0}
       OWNSCALE_DNS_AZURE_SUBSCRIPTION_ID: ${AZURE_SUBSCRIPTION_ID:-}
       OWNSCALE_DNS_AZURE_RESOURCE_GROUP_NAME: ${AZURE_RESOURCE_GROUP_NAME:-}
       OWNSCALE_DNS_AZURE_TENANT_ID: ${AZURE_TENANT_ID:-}
@@ -55,6 +51,7 @@ services:
       OWNSCALE_DNS_RFC2136_KEY_NAME: ${RFC2136_KEY_NAME:-}
       OWNSCALE_DNS_RFC2136_KEY_ALG: ${RFC2136_KEY_ALG:-}
       OWNSCALE_DNS_RFC2136_KEY: ${RFC2136_KEY:-}
+      OWNSCALE_FIXED_SUBDOMAINS: ${OWNSCALE_FIXED_SUBDOMAINS:-}
       OWNSCALE_LOG_LEVEL: ${OWNSCALE_LOG_LEVEL:-info}
       OWNSCALE_LOG_FORMAT: ${OWNSCALE_LOG_FORMAT:-json}
       OWNSCALE_DEBUG_ADDR: ${OWNSCALE_DEBUG_ADDR:-}
@@ -66,6 +63,7 @@ services:
       OWNSCALE_BACKUP_ENDPOINT: ${OWNSCALE_BACKUP_ENDPOINT:-}
       OWNSCALE_BACKUP_AZURE_ACCOUNT_KEY: ${OWNSCALE_BACKUP_AZURE_ACCOUNT_KEY:-}
       OWNSCALE_BACKUP_SYNC_INTERVAL: ${OWNSCALE_BACKUP_SYNC_INTERVAL:-10s}
+      OWNSCALE_DEVELOPMENT: ${OWNSCALE_DEVELOPMENT:-}
     volumes:
       - ${OWNSCALE_DATA_DIR:-./data}:/data
     restart: unless-stopped
@@ -79,6 +77,9 @@ services:
 
   caddy:
     image: ghcr.io/ownscalenet/ownscale-caddy:${OWNSCALE_VERSION:-latest}
+    # Started only when COMPOSE_PROFILES includes caddy, so it can be swapped
+    # for your own reverse proxy.
+    profiles: [caddy]
     environment:
       BASE_DOMAIN: ${BASE_DOMAIN:-ownscale.test}
       CONTENT_DOMAIN: ${CONTENT_DOMAIN:-${BASE_DOMAIN:-ownscale.test}}

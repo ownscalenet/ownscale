@@ -224,6 +224,8 @@ deploy-local: frontend docs ## Build images from the working tree and run them o
 	scp compose.yaml $(DEPLOY_HOST):ownscale/
 	scp deploy.mk $(DEPLOY_HOST):ownscale/Makefile
 	ssh $(DEPLOY_HOST) 'cd ownscale && touch .env && sed -i "/^OWNSCALE_VERSION=/d" .env && \
-		echo OWNSCALE_VERSION=$(BUILD_VERSION) >> .env && docker compose up -d --pull never'
+		echo OWNSCALE_VERSION=$(BUILD_VERSION) >> .env && \
+		{ grep -q "^COMPOSE_PROFILES=" .env || echo COMPOSE_PROFILES=caddy >> .env; } && \
+		docker compose up -d --pull never'
 
 endif

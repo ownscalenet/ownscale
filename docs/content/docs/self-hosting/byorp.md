@@ -9,6 +9,10 @@ console, this documentation site, every organization's login server and every
 funnel. The provided Caddy image only adds TLS. If you already run a reverse
 proxy, you can use it instead.
 
+The [install script]({{< relref "installation.md#install-script" >}}) sets
+this up for Caddy, Traefik, nginx and Nginx Proxy Manager, and prints the
+proxy config with your domain filled in.
+
 ## What to route
 
 With `BASE_DOMAIN=example.com` and `CONTENT_DOMAIN=example-content.net`,
@@ -47,9 +51,24 @@ certificates.
 
 ## Run ownscale without Caddy
 
-Follow the [installation]({{< relref "installation.md" >}}) steps, but start
-only the `ownscale` service, and expose its port to your proxy. For a proxy
-on the same host, add a `compose.override.yaml`:
+Follow the [installation]({{< relref "installation.md" >}}) steps, but set
+`COMPOSE_PROFILES=` (empty) in `.env`, so the bundled Caddy doesn't start.
+Then let your proxy reach ownscale with a `compose.override.yaml` next to
+`compose.yaml`. For a proxy container, join its Docker network, so it reaches
+`ownscale:8080`:
+
+```yaml
+services:
+  ownscale:
+    networks: [default, proxy]
+networks:
+  proxy:
+    name: my-proxy-network # see `docker network ls`
+    external: true
+```
+
+For a proxy running on the host, publish the port on loopback instead and use
+`127.0.0.1:8080`:
 
 ```yaml
 services:
@@ -58,9 +77,28 @@ services:
       - "127.0.0.1:8080:8080"
 ```
 
-```sh
-docker compose up -d ownscale
+## Caddy
+
+Caddy can get a certificate for each host [on
+demand](#on-demand-certificates), so it needs no DNS provider:
+
+```caddy
+{
+	on_demand_tls {
+		ask http://ownscale:8081/tls-allowed
+	}
+}
+
+example.com, *.example.com, example-content.net, *.example-content.net {
+	tls {
+		on_demand
+	}
+	reverse_proxy ownscale:8080
+}
 ```
+
+For Caddy on the host, also publish `127.0.0.1:8081:8081` and use
+`127.0.0.1` instead of `ownscale`.
 
 ## nginx
 
@@ -103,7 +141,8 @@ server {
 ## Traefik
 
 Attach the `ownscale` service to Traefik's network and label it. The
-`certresolver` must use a DNS challenge.
+`certresolver` must use a DNS challenge. `traefik.docker.network` tells
+Traefik which of ownscale's networks to use.
 
 ```yaml
 services:
@@ -111,9 +150,10 @@ services:
     networks: [default, traefik]
     labels:
       traefik.enable: "true"
+      traefik.docker.network: traefik
       traefik.http.routers.ownscale.rule: >-
-        Host(`example.com`) || HostRegexp(`^[a-z0-9-]+\.example\.com$`) ||
-        Host(`example-content.net`) || HostRegexp(`^[a-z0-9-]+\.example-content\.net$`)
+        Host(`example.com`) || HostRegexp(`^[a-z0-9-]+\.example\.com$$`) ||
+        Host(`example-content.net`) || HostRegexp(`^[a-z0-9-]+\.example-content\.net$$`)
       traefik.http.routers.ownscale.entrypoints: websecure
       traefik.http.routers.ownscale.tls.certresolver: letsencrypt
       traefik.http.routers.ownscale.tls.domains[0].main: example.com
@@ -127,14 +167,33 @@ networks:
     external: true
 ```
 
-Traefik v3 times out requests after 60 seconds by default. Set
+Compose needs `$` written as `$$`. Traefik v3 times out requests after 60
+seconds by default. Set
 `entryPoints.websecure.transport.respondingTimeouts.readTimeout` to `0`.
 Redirect the `web` entry point to `websecure` if you haven't already.
+
+## Nginx Proxy Manager
+
+Join ownscale to NPM's Docker network as shown
+[above](#run-ownscale-without-caddy), then add a proxy host:
+
+- **Details**: domain names `example.com` and `*.example.com` (plus the
+  content domain's), forward to `http` `ownscale` port `8080`, and turn on
+  *Websockets Support*.
+- **SSL**: request a new certificate with *Use a DNS Challenge*, which
+  wildcards need, and turn on *Force SSL* and *HTTP/2 Support*.
+- **Advanced**, custom nginx configuration:
+
+  ```nginx
+  proxy_buffering off;
+  proxy_read_timeout 1d;
+  proxy_send_timeout 1d;
+  ```
 
 ## On-demand certificates
 
 If your proxy can't do DNS-01 but can request certificates on demand (Caddy's
 `on_demand_tls`), point its ask URL at `http://ownscale:8081/tls-allowed`,
 which answers 200 for host names ownscale serves. `compose.yaml` sets
-`OWNSCALE_TLS_ASK_ADDR` to `:8081`. It reveals which organizations exist, so don't
-publish that port.
+`OWNSCALE_TLS_ASK_ADDR` to `:8081`. It reveals which organizations exist, so
+publish that port on loopback at most.

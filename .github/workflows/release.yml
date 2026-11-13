@@ -47,7 +47,7 @@ jobs:
         working-directory: source
         run: |
           OWNSCALE_VERSION="$TAG" OWNSCALE_AUTH_SESSION_SECRET=ci \
-            docker compose -f compose.yaml config --format json > "$RUNNER_TEMP/compose.json"
+            docker compose -f compose.yaml --profile caddy config --format json > "$RUNNER_TEMP/compose.json"
           jq -e --arg tag "$TAG" '
             (.services | keys) == ["caddy", "ownscale"] and
             .services.ownscale.image == ("ghcr.io/ownscalenet/ownscale:" + $tag) and

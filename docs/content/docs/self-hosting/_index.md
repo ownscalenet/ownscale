@@ -11,7 +11,7 @@ proxy examples](/docs/self-hosting/byorp).
 
 {{< cards >}}
   {{< card link="/docs/self-hosting/requirements/" title="Requirements" icon="clipboard-check" subtitle="Server, domains, DNS provider and login provider." >}}
-  {{< card link="/docs/self-hosting/installation/" title="Installation" icon="download" subtitle="Docker Compose quick start." >}}
+  {{< card link="/docs/self-hosting/installation/" title="Installation" icon="download" subtitle="Install script or manual Docker Compose setup." >}}
   {{< card link="/docs/self-hosting/byorp/" title="Own reverse proxy" icon="switch-horizontal" subtitle="Run ownscale behind nginx, Traefik or another proxy." >}}
 {{< /cards >}}
 

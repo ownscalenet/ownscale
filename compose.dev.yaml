@@ -76,6 +76,7 @@ services:
 
   caddy:
     image: ownscale-caddy:latest
+    profiles: !reset []
     build:
       context: .
       dockerfile: etc/caddy/Dockerfile
