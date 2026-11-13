@@ -4,4 +4,4 @@
 try {
   var t = localStorage.getItem('ownscale-theme')
   if (t === 'light' || t === 'dark') document.documentElement.dataset.theme = t
-} catch (e) {}
+} catch {}

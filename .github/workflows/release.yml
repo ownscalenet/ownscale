@@ -167,11 +167,15 @@ jobs:
             -H 'Accept-Encoding: zstd' \
             "http://$address/assets/main.wasm" -o "$RUNNER_TEMP/main.wasm.zst"
           cmp source/webui/dist/assets/main.wasm.zst "$RUNNER_TEMP/main.wasm.zst"
-          # Clients without zstd get the module decompressed.
+          # Clients without zstd get the module recompressed, or plain.
           curl --fail --silent --show-error -H 'Host: console.example.com' \
             -H 'Accept-Encoding: gzip' \
+            "http://$address/assets/main.wasm" -o "$RUNNER_TEMP/main.wasm.gz"
+          zstd -dc source/webui/dist/assets/main.wasm.zst > "$RUNNER_TEMP/want.wasm"
+          gzip -dc "$RUNNER_TEMP/main.wasm.gz" | cmp "$RUNNER_TEMP/want.wasm" -
+          curl --fail --silent --show-error -H 'Host: console.example.com' \
             "http://$address/assets/main.wasm" -o "$RUNNER_TEMP/main.wasm"
-          zstd -dc source/webui/dist/assets/main.wasm.zst | cmp - "$RUNNER_TEMP/main.wasm"
+          cmp "$RUNNER_TEMP/want.wasm" "$RUNNER_TEMP/main.wasm"
           curl --fail --silent --show-error -H 'Host: example.com' \
             "http://$address/" -o "$RUNNER_TEMP/docs.html"
           cmp source/docsite/dist/index.html "$RUNNER_TEMP/docs.html"
