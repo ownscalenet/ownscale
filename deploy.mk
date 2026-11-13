@@ -55,8 +55,6 @@ upgrade: ## Switch to release TAG=vX.Y.Z: download its files, pull and restart
 		{ rm -f compose.yaml.new example.env.new Makefile.new; exit 1; }
 	mv compose.yaml.new compose.yaml && mv example.env.new example.env && mv Makefile.new Makefile
 	touch .env && sed -i '/^OWNSCALE_VERSION=/d' .env && echo OWNSCALE_VERSION=$(TAG) >> .env
-	@# Installs from before the caddy profile expect Caddy to keep running.
-	grep -q '^COMPOSE_PROFILES=' .env || echo COMPOSE_PROFILES=caddy >> .env
 	docker compose pull
 	docker compose up -d
 	@echo "upgraded to $(TAG); compare example.env with .env for new settings"
