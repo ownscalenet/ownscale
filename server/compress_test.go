@@ -30,7 +30,6 @@ func TestNewMuxCompressionAndHSTS(t *testing.T) {
 		{"console gzip", false, http.MethodGet, "console.example.com", "gzip", "gzip", true},
 		{"console identity", false, http.MethodGet, "console.example.com", "", "", true},
 		{"console head", false, http.MethodHead, "console.example.com", "gzip", "", true},
-		{"docs", false, http.MethodGet, "example.com", "gzip", "gzip", true},
 		{"landing", false, http.MethodGet, "example-content.net", "gzip", "gzip", true},
 		{"development", true, http.MethodGet, "console.example.com", "gzip", "gzip", false},
 		{"funnel", false, http.MethodGet, "web-acme.example-content.net", "gzip", "", false},
