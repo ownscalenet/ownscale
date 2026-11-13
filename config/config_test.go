@@ -118,6 +118,61 @@ func TestLoadOIDCProviderIssuerExplicitOverride(t *testing.T) {
 	}
 }
 
+func TestLoadCallbackURLDefaults(t *testing.T) {
+	cases := []struct {
+		name string
+		env  map[string]string
+		want [4]string // oidc, google, microsoft, github
+	}{
+		{
+			name: "no base domain",
+		},
+		{
+			// compose passes unset settings as empty strings.
+			name: "empty uses console",
+			env: map[string]string{
+				"OWNSCALE_BASE_DOMAIN":                     "example.com",
+				"OWNSCALE_AUTH_UPSTREAM_OIDC_CALLBACK_URL": "",
+			},
+			want: [4]string{
+				"https://console.example.com/auth/oidc/callback",
+				"https://console.example.com/auth/google/callback",
+				"https://console.example.com/auth/microsoft/callback",
+				"https://console.example.com/auth/github/callback",
+			},
+		},
+		{
+			name: "explicit kept",
+			env: map[string]string{
+				"OWNSCALE_BASE_DOMAIN":                     "example.com",
+				"OWNSCALE_AUTH_UPSTREAM_OIDC_CALLBACK_URL": "https://login.example.org/cb",
+			},
+			want: [4]string{
+				"https://login.example.org/cb",
+				"https://console.example.com/auth/google/callback",
+				"https://console.example.com/auth/microsoft/callback",
+				"https://console.example.com/auth/github/callback",
+			},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			for k, v := range tc.env {
+				t.Setenv(k, v)
+			}
+			cfg, err := Load()
+			if err != nil {
+				t.Fatalf("Load: %v", err)
+			}
+			a := cfg.Auth
+			got := [4]string{a.UpstreamOIDC.CallbackURL, a.Google.CallbackURL, a.Microsoft.CallbackURL, a.GitHub.CallbackURL}
+			if got != tc.want {
+				t.Errorf("callback URLs = %q, want %q", got, tc.want)
+			}
+		})
+	}
+}
+
 // TestLoadGoogleConfig covers auth.google (OWNSCALE_AUTH_GOOGLE_*), which is
 // disabled when unset and enabled with its three fields set when configured.
 func TestLoadGoogleConfig(t *testing.T) {

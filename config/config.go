@@ -400,6 +400,18 @@ func Load() (_ *Config, err error) {
 	if cfg.Auth.OIDCProvider.Issuer == "" && cfg.BaseDomain != "" {
 		cfg.Auth.OIDCProvider.Issuer = "https://console." + cfg.BaseDomain
 	}
+	if cfg.BaseDomain != "" {
+		for provider, u := range map[string]*string{
+			"oidc":      &cfg.Auth.UpstreamOIDC.CallbackURL,
+			"google":    &cfg.Auth.Google.CallbackURL,
+			"microsoft": &cfg.Auth.Microsoft.CallbackURL,
+			"github":    &cfg.Auth.GitHub.CallbackURL,
+		} {
+			if *u == "" {
+				*u = "https://console." + cfg.BaseDomain + "/auth/" + provider + "/callback"
+			}
+		}
+	}
 	// SigningKeyPath is stored under DataDir unless already absolute.
 	if cfg.Auth.OIDCProvider.SigningKeyPath != "" && cfg.DataDir != "" && !filepath.IsAbs(cfg.Auth.OIDCProvider.SigningKeyPath) {
 		cfg.Auth.OIDCProvider.SigningKeyPath = filepath.Join(cfg.DataDir, cfg.Auth.OIDCProvider.SigningKeyPath)
