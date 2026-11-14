@@ -32,6 +32,9 @@ func TestLoadDefaultsOnly(t *testing.T) {
 	if len(cfg.FixedSubdomains) != 0 {
 		t.Errorf("FixedSubdomains = %v, want none by default", cfg.FixedSubdomains)
 	}
+	if cfg.NoIndex {
+		t.Errorf("NoIndex = %v, want false by default", cfg.NoIndex)
+	}
 }
 
 func TestLoadEnvOverridesDefaults(t *testing.T) {
@@ -39,10 +42,14 @@ func TestLoadEnvOverridesDefaults(t *testing.T) {
 	t.Setenv("OWNSCALE_BASE_DOMAIN", "override.example.com")
 	t.Setenv("OWNSCALE_LOG_LEVEL", "warn")
 	t.Setenv("OWNSCALE_LOCAL_CA_DIR", "custom-local-ca")
+	t.Setenv("OWNSCALE_NOINDEX", "true")
 
 	cfg, err := Load()
 	if err != nil {
 		t.Fatalf("Load: %v", err)
+	}
+	if !cfg.NoIndex {
+		t.Errorf("NoIndex = %v, want true (env override)", cfg.NoIndex)
 	}
 	if cfg.Addr != ":7070" {
 		t.Errorf("Addr = %q, want %q (env override)", cfg.Addr, ":7070")

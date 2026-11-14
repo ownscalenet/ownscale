@@ -23,6 +23,8 @@ const maxConsoleBodyBytes = 1 << 20
 // http.NotFoundHandler() if the frontend hasn't been built. Every request
 // except an organization's is logged via logger. Responses other than
 // organizations' and funnels' are compressed and, outside development, get HSTS.
+// With h.NoIndex, responses other than funnels' ask search engines not to
+// index them.
 func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.HandlerFunc, logger *slog.Logger, static http.Handler, oidcHandler http.Handler) http.Handler {
 	mux := http.NewServeMux()
 
@@ -116,10 +118,15 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	baseDomain, contentDomain := h.Domains()
 	orgHeadscale := newOrgProxy(baseDomain, h.DialOrg, logger)
 	hsts := !h.Development()
+	noIndex := h.NoIndex()
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var next http.Handler
 		route := classifyHost(r.Host, baseDomain, contentDomain)
+		// Funnels serve users' own content; indexing is their call.
+		if noIndex && route.kind != hostFunnel {
+			w.Header().Set("X-Robots-Tag", "noindex")
+		}
 		switch route.kind {
 		case hostOrg:
 			// Headscale's own responses; orgProxy logs at debug level.

@@ -129,6 +129,52 @@ func TestNewMuxSiteHosts(t *testing.T) {
 	}
 }
 
+func TestNewMuxNoIndex(t *testing.T) {
+	tests := []struct {
+		name    string
+		host    string
+		noIndex bool
+		want    string
+	}{
+		{"console", "console.example.com", true, "noindex"},
+		{"docs", "example.com", true, "noindex"},
+		{"landing", "example-content.net", true, "noindex"},
+		{"org", "acme.example.com", true, "noindex"},
+		{"funnel", "web-acme.example-content.net", true, ""},
+		{"console disabled", "console.example.com", false, ""},
+		{"docs disabled", "example.com", false, ""},
+		{"landing disabled", "example-content.net", false, ""},
+		{"org disabled", "acme.example.com", false, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, queries := dbtest.New(t)
+			h, err := handlers.New(queries, &config.Config{
+				BaseDomain:    "example.com",
+				ContentDomain: "example-content.net",
+				DataDir:       t.TempDir(),
+				NoIndex:       tt.noIndex,
+			}, nil, slog.New(slog.DiscardHandler), nil)
+			if err != nil {
+				t.Fatalf("handlers.New: %v", err)
+			}
+			requireAuthAPI := func(next http.HandlerFunc) http.HandlerFunc {
+				return auth.RequireAuthAPI(queries.Queries, next)
+			}
+			mux := NewMux(h, requireAuthAPI, slog.New(slog.DiscardHandler), http.NotFoundHandler(), nil)
+
+			req := httptest.NewRequest(http.MethodGet, "/", nil)
+			req.Host = tt.host
+			rec := httptest.NewRecorder()
+			mux.ServeHTTP(rec, req)
+
+			if got := rec.Header().Get("X-Robots-Tag"); got != tt.want {
+				t.Errorf("GET %s/: X-Robots-Tag = %q, want %q", tt.host, got, tt.want)
+			}
+		})
+	}
+}
+
 func TestNewMuxAuthenticatedSession(t *testing.T) {
 	_, queries := dbtest.New(t)
 	h, err := handlers.New(queries, &config.Config{}, nil, slog.New(slog.DiscardHandler), nil)

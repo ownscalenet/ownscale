@@ -38,6 +38,7 @@ type Handlers struct {
 	baseDomain      string
 	contentDomain   string
 	development     bool
+	noIndex         bool
 	oidc            *oidcprovider.Storage
 	logger          *slog.Logger
 	funnel          *funnelproxy.Pool
@@ -106,6 +107,7 @@ func New(
 		baseDomain:      baseDomain,
 		contentDomain:   cfg.ContentDomain,
 		development:     cfg.Development,
+		noIndex:         cfg.NoIndex,
 		oidc:            oidc,
 		logger:          logger,
 		orgs:            orgSvc,
@@ -142,6 +144,10 @@ func (h *Handlers) Domains() (baseDomain, contentDomain string) {
 
 // Development reports whether ownscale runs in development mode.
 func (h *Handlers) Development() bool { return h.development }
+
+// NoIndex reports whether ownscale's sites ask search engines not to index
+// them.
+func (h *Handlers) NoIndex() bool { return h.noIndex }
 
 // ServeFunnel serves r, sent to the funnel label of the organization at
 // subdomain, through the funnel proxy.

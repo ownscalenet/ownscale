@@ -41,6 +41,8 @@ type Config struct {
 	FixedSubdomains []string `env:"OWNSCALE_FIXED_SUBDOMAINS" envSeparator:","`
 	// MaxOrgs caps how many organizations can exist; 0 means no cap.
 	MaxOrgs int `env:"OWNSCALE_MAX_ORGS"`
+	// NoIndex asks search engines not to index ownscale's own sites.
+	NoIndex bool `env:"OWNSCALE_NOINDEX"`
 	// TrustedProxies are the reverse proxies whose X-Forwarded-For header
 	// tells the client's IP.
 	TrustedProxies []netip.Prefix `env:"OWNSCALE_TRUSTED_PROXIES" envSeparator:","`
