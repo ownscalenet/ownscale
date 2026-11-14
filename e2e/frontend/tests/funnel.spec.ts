@@ -34,6 +34,16 @@ test('creating and deleting a funnel route', async ({ page, account }) => {
     await expect(row).toBeVisible({ timeout: 60_000 })
     await expect(row.getByText(`${machine.hostname}:8080`, { exact: true })).toBeVisible()
 
+    // Removing the target machine warns that the funnel stops working.
+    await page.goto('/machines')
+    const machineRow = page.getByRole('row').filter({ hasText: machine.hostname })
+    await machineRow.getByRole('button', { name: 'Actions', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Remove', exact: true }).click()
+    const dialog = page.getByRole('dialog')
+    await expect(dialog.getByText(new RegExp(`^Funnel ${label}-\\S+ will stop working\\.$`))).toBeVisible()
+    await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
+
+    await page.goto('/funnels')
     await row.getByRole('button', { name: 'Remove' }).click()
     await confirmDialog(page, 'Remove route')
     await expect(row).toBeHidden()

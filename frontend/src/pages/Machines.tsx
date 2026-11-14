@@ -464,6 +464,20 @@ function MachineRow({
   onOpen: (kind: MachineDialogKind) => void
 }) {
   const confirm = useConfirm()
+  const queryClient = useQueryClient()
+  const funnelConsequences = async () => {
+    try {
+      const { funnelRoutes } = await queryClient.fetchQuery({
+        queryKey: ['funnel'],
+        queryFn: ({ signal }) => listFunnelRoutes(signal),
+      })
+      return funnelRoutes
+        .filter((f) => f.targetNodeId === m.id)
+        .map((f) => `Funnel ${f.hostname} will stop working.`)
+    } catch {
+      return ['Funnels pointing at it will stop working.']
+    }
+  }
   const action = useMutation({
     mutationFn: (fn: () => Promise<unknown>) => fn(),
     onSuccess: onChange,
@@ -663,11 +677,16 @@ function MachineRow({
                       title: `Permanently remove ${m.givenName}?`,
                       consequences: [
                         `${m.givenName} will not be accesible anymore on the tailnet.`,
+                        ...(await funnelConsequences()),
                       ],
                       confirmLabel: 'Remove',
                       tone: 'danger',
                     })
-                    if (ok) run(() => deleteMachine(m.id))
+                    if (ok)
+                      run(async () => {
+                        await deleteMachine(m.id)
+                        await queryClient.invalidateQueries({ queryKey: ['funnel'] })
+                      })
                   }}
                 >
                   <Trash2 className="size-3.5" aria-hidden="true" />

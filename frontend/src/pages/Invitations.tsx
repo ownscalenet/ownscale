@@ -287,12 +287,12 @@ function InviteDialog({ onClose, onCreated }: { onClose: () => void; onCreated: 
           <ErrorAlert error={create.error ? errorMessage(create.error) : null} />
           <fieldset className="fieldset">
             <legend className="fieldset-legend">
-              Names - invites will have a name associated for easier identification.
+              Names - each invite will have a name for easier identification.
             </legend>
             <textarea
               className="textarea textarea-bordered w-full"
               rows={3}
-              placeholder="Optional"
+              placeholder="Optional, one per line"
               value={namesInput}
               onChange={(e) => setNamesInput(e.target.value)}
               autoComplete="off"
