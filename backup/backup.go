@@ -62,6 +62,9 @@ func New(ctx context.Context, cfg config.BackupConfig, dataDir string, logger *s
 	}
 
 	r.store = litestream.NewStore(nil, compactionLevels)
+	// The default (15s) polls far more often than L0Retention (5m) requires,
+	// multiplying Azure LIST costs across every org database.
+	r.store.L0RetentionCheckInterval = 4 * time.Minute
 	// Litestream logs every sync at info level.
 	r.store.Logger = slog.New(minLevelHandler{Handler: logger.Handler(), min: slog.LevelWarn}).With("component", "backup")
 	r.done = make(chan struct{})
