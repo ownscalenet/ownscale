@@ -15,4 +15,5 @@ proxy examples](/docs/self-hosting/byorp).
   {{< card link="/docs/self-hosting/byorp/" title="Own reverse proxy" icon="switch-horizontal" subtitle="Run ownscale behind nginx, Traefik or another proxy." >}}
 {{< /cards >}}
 
-Every setting is documented in `example.env`, which ships with each release.
+[`example.env`](https://github.com/ownscalenet/ownscale/blob/master/example.env)
+is the documentation document for ownscale settings.

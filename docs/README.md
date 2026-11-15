@@ -13,7 +13,7 @@ It is embedded into the ownscale binary (package `docsite`) and served at
 
 | Section | Holds |
 | --- | --- |
-| `get-started/` | what ownscale is, quickstart, connecting clients |
+| `_index.md` | what ownscale is, where to start |
 | `concepts/` | how it works, terminology glossary, organizations, architecture |
 | `features/` | one page per console feature: what, who can use it, limits |
 | `self-hosting/` | requirements, installation, own reverse proxy |

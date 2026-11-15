@@ -6,7 +6,6 @@ weight: 1
 ## Server
 
 - A Linux host with **Docker** and **Docker Compose**.
-- **linux/amd64**: release images are only built for this architecture.
 - A public IP address with inbound **TCP 80**, **TCP 443** and **UDP 443**
   open. Caddy uses all three.
 - Persistent disk for `OWNSCALE_DATA_DIR` (default `./data`). ownscale's own database and every
@@ -29,21 +28,20 @@ You need a domain you control, called `BASE_DOMAIN` (for example
 A single record per hostname isn't enough, because each organization gets its
 own subdomain.
 
-We recommend a second, separate registrable domain for user content, called
-`CONTENT_DOMAIN` (for example `example-content.net`, not
-`content.example.com`). Funnels and machine certificate names live there, so
-content published by users can't set cookies on or make requests as the
-console. It needs its own wildcard record. See
+A second, separate domain for user content, called `CONTENT_DOMAIN`
+is very much recommended. Ownscale serves user-provided content
+through funnels and that allows setting cookies on on the domain.
+The content domain needs its own wildcard record. See
 [Domains and URLs]({{< relref "/docs/reference/domains-and-urls.md" >}}).
 
 ## DNS provider (optional)
 
 Without a DNS provider, Caddy gets a separate certificate for each
-organization and funnel the first time it's visited, which takes a few
-seconds. Machine certificates (`tailscale cert`, `tailscale serve` over
+organization and funnel the first time it's visited.
+Machine certificates (`tailscale cert`, `tailscale serve` over
 HTTPS) are disabled.
 
-With one, Caddy gets wildcard certificates through an ACME DNS-01 challenge,
+With a provider set up, Caddy gets wildcard certificates through an ACME DNS-01 challenge,
 and machines can get certificates. Use one if you expect many organizations or
 funnels: Let's Encrypt issues at most 50 certificates per domain per week. The
 provider must host the zones of `BASE_DOMAIN` and `CONTENT_DOMAIN`.
@@ -63,8 +61,6 @@ any of the following:
 - an **OpenID Connect provider** such as Okta, Keycloak, Authentik, Dex,
   Google Workspace or Entra ID;
 - **Google**, **Microsoft** or **GitHub** OAuth apps.
-
-Callback URLs have the form `https://console.<BASE_DOMAIN>/auth/<provider>/callback`.
 
 ## Optional
 

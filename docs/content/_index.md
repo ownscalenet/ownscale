@@ -30,9 +30,9 @@ alternative to Tailscale.
 Ownscale provides a way for self-hosters to run several tailnets from the same
 backend and interact with them through an web UI.
 
-To reduce deployment complexities, ownscale comes as a self-contained
-binary that runs behind a reverse-proxy without the need of a database
-cluster. We do have a database with backup&restore functions however.
+Because the development team is small, Ownscale implements a smaller list
+of features. Bug-fixes and a stable execution will be prioritised over
+porting over Tailscale features.
 
 ## Features
 
@@ -52,6 +52,6 @@ Expose a service running on a machine in your tailnet to the public internet.
 
 **Tailscale features**\
 MagicDNS, split DNS, subnet routers, exit nodes, tags, ACLs, grants,
-Tailscale SSH, Taildrop and HTTPS certificates.
+Tailscale SSH, Taildrop, HTTPS certificates...
 
 </div>
