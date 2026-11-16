@@ -33,7 +33,7 @@ directly, or through a DERP relay when a direct path isn't possible.
   {{< card link="/docs/self-hosting/" title="Self-hosting" icon="server" subtitle="Run ownscale on your own server." >}}
   {{< card link="/docs/ownscalenet/" title="ownscale.net" icon="play" subtitle="Try it without hosting it." >}}
   {{< card link="/docs/connect/" title="Connecting devices" icon="device-mobile" subtitle="Point Tailscale clients at your login server." >}}
-  {{< card link="/docs/reference/" title="Reference" icon="document-text" subtitle="CLI, domains and limitations." >}}
+  {{< card link="/docs/reference/" title="Reference" icon="document-text" subtitle="CLI, domains, limitations and terminology." >}}
   {{< card link="/docs/faqs/" title="FAQs" icon="question-mark-circle" subtitle="Answers to common questions." >}}
 {{< /cards >}}
 

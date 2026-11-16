@@ -5,7 +5,7 @@ import { dnsPageLoaded, snapshotDns } from './support/dnsPage'
 import { retryUntil } from './support/retry'
 
 // The tailnet name is the MagicDNS base domain shown on the DNS page,
-// "<label>.os.<content domain>". It is not the org's login URL
+// "<label>.<content domain>". It is not the org's login URL
 // (<subdomain>.<base domain>), which is where tailscale clients sign in.
 
 const hostname = /^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z0-9]([a-z0-9-]*[a-z0-9])?$/
@@ -32,7 +32,9 @@ test.describe('tailnet name', () => {
     const loginURLHost = `${account.org}.${contentDomain}`
     expect(shown).not.toBe(loginURLHost)
     expect(shown).not.toMatch(new RegExp(`^${account.org}\\.`))
-    expect(shown.endsWith(`.os.${contentDomain}`)).toBe(true)
+    const [label, ...rest] = shown.split('.')
+    expect(label).toMatch(/^net[a-z0-9]{6}$/)
+    expect(rest.join('.')).toBe(contentDomain)
   })
 
   test('is different in every organization', async ({ page, account, baseURL }) => {

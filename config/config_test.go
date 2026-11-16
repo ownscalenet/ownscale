@@ -506,7 +506,7 @@ func TestValidate(t *testing.T) {
 	}{
 		{name: "zone is content domain", content: "example.net", zone: "example.net"},
 		{name: "zone is parent", content: "c.example.net", zone: "example.net"},
-		{name: "zone is tailnet domain", content: "example.net", zone: "os.example.net", wantErr: "OWNSCALE_DNS_ZONE"},
+		{name: "zone is child", content: "example.net", zone: "c.example.net", wantErr: "OWNSCALE_DNS_ZONE"},
 		{name: "zone elsewhere", content: "example.net", zone: "other.net", wantErr: "OWNSCALE_DNS_ZONE"},
 		{name: "uppercase content domain", content: "Example.net", zone: "example.net", wantErr: "OWNSCALE_CONTENT_DOMAIN"},
 	}

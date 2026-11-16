@@ -700,7 +700,7 @@ func TestStartRetriesTakenPort(t *testing.T) {
 
 	svc.orgLock("acme").Lock()
 	hsCfg := newHeadscaleConfig(OIDCConfig{Issuer: "https://auth.example.com", ClientID: "ownscale", ClientSecret: "secret"})
-	hsCfg.DNS.BaseDomain = "netacme.os.example.com"
+	hsCfg.DNS.BaseDomain = "netacme.example.com"
 	err = svc.startLocked(t.Context(), org.ID, "acme", hsCfg)
 	svc.orgLock("acme").Unlock()
 	if err != nil {
@@ -724,7 +724,7 @@ func TestStartRetriesTakenPort(t *testing.T) {
 // with node certificates from certs, if non-nil.
 func testHeadscaleParams(t *testing.T, certs *nodeCerts) headscaleParams {
 	hsCfg := newHeadscaleConfig(OIDCConfig{Issuer: "https://auth.example.com"})
-	hsCfg.DNS.BaseDomain = "netacme.os.example.com"
+	hsCfg.DNS.BaseDomain = "netacme.example.com"
 	return headscaleParams{
 		dataDir:    t.TempDir(),
 		subdomain:  "acme",
@@ -758,7 +758,7 @@ func TestCreateHeadscaleBaseDomain(t *testing.T) {
 		t.Fatalf("headscaleConfig: %v", err)
 	}
 
-	if got, want := cfg.DNSConfig.BaseDomain, "netacme.os.example.com"; got != want {
+	if got, want := cfg.DNSConfig.BaseDomain, "netacme.example.com"; got != want {
 		t.Errorf("BaseDomain = %q, want %q", got, want)
 	}
 }

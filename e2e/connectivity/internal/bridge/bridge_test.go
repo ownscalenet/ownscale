@@ -220,20 +220,20 @@ func TestDNS(t *testing.T) {
 func TestResolve(t *testing.T) {
 	d := newDispatcher()
 	d.nodes["n"] = &ownedNode{client: &testNode{resolved: map[string][]netip.Addr{
-		"host.org.os.example.com": {netip.MustParseAddr("100.64.0.2")},
+		"host.org.example.com": {netip.MustParseAddr("100.64.0.2")},
 	}}}
 	for _, tt := range []struct {
 		name, node string
 		want       []string
 		code       string
 	}{
-		{"host.org.os.example.com", "n", []string{"100.64.0.2"}, ""},
-		{"missing.org.os.example.com", "n", []string{}, ""},
-		{"Host.org.os.example.com", "n", nil, "invalid_command"},
+		{"host.org.example.com", "n", []string{"100.64.0.2"}, ""},
+		{"missing.org.example.com", "n", []string{}, ""},
+		{"Host.org.example.com", "n", nil, "invalid_command"},
 		{"host", "n", nil, "invalid_command"},
 		{"host..example.com", "n", nil, "invalid_command"},
 		{"host.example.com.", "n", nil, "invalid_command"},
-		{"host.org.os.example.com", "absent", nil, "unknown_handle"},
+		{"host.org.example.com", "absent", nil, "unknown_handle"},
 	} {
 		t.Run(tt.name+"/"+tt.node, func(t *testing.T) {
 			got, err := d.dispatch(t.Context(), "resolve",
@@ -350,11 +350,11 @@ func TestProbeHTTPS(t *testing.T) {
 	n := &testNode{}
 	d.nodes["n"] = &ownedNode{client: n}
 	_, err := d.dispatch(t.Context(), "probe", json.RawMessage(
-		`{"timeout":"5000ms","node":"n","url":"https://100.64.0.1","expectedIdentity":"target","serverName":"host.org.os.example.com"}`))
+		`{"timeout":"5000ms","node":"n","url":"https://100.64.0.1","expectedIdentity":"target","serverName":"host.org.example.com"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if n.serverName != "host.org.os.example.com" {
+	if n.serverName != "host.org.example.com" {
 		t.Fatalf("ProbeHTTPS server name = %q", n.serverName)
 	}
 }
@@ -364,10 +364,10 @@ func TestProbeRejectsNonTailnetTargets(t *testing.T) {
 		{"http://127.0.0.1:80", ""}, {"http://example.com:80", ""}, {"http://100.64.0.1:0", ""},
 		{"******100.64.0.1:80", ""}, {"https://100.64.0.1:80", ""},
 		{"http://100.64.0.1:80/?key=secret", ""}, {"http://100.64.0.1:80/private", ""},
-		{"http://100.64.0.1:443", "host.org.os.example.com"},
-		{"https://127.0.0.1:443", "host.org.os.example.com"},
+		{"http://100.64.0.1:443", "host.org.example.com"},
+		{"https://127.0.0.1:443", "host.org.example.com"},
 		{"https://100.64.0.1:443", "host"},
-		{"https://100.64.0.1:443", "Host.org.os.example.com"},
+		{"https://100.64.0.1:443", "Host.org.example.com"},
 	} {
 		t.Run(tt.target+"/"+tt.serverName, func(t *testing.T) {
 			d := newDispatcher()

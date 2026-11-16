@@ -96,6 +96,10 @@ func (cfg *HeadscaleConfig) Marshal() (string, error) {
 
 var subdomainRe = regexp.MustCompile(`^[a-z0-9]{4,63}$`)
 
+// tailnetLabelRe matches tailnet labels, which share the level below the
+// content domain with subdomains when both domains are the same.
+var tailnetLabelRe = regexp.MustCompile(`^net[a-z0-9]{6}$`)
+
 var reservedSubdomains = map[string]bool{
 	"admin":   true,
 	"auth":    true,
@@ -114,6 +118,9 @@ func ValidateSubdomain(s string) (err error) {
 	}
 	if reservedSubdomains[strings.ToLower(s)] {
 		return fmt.Errorf("%q is a reserved subdomain and cannot be used for an organization", s)
+	}
+	if tailnetLabelRe.MatchString(s) {
+		return fmt.Errorf("%q is reserved for tailnet names and cannot be used for an organization", s)
 	}
 	return nil
 }

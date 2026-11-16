@@ -13,7 +13,7 @@ With `BASE_DOMAIN=example.com` and `CONTENT_DOMAIN=example-content.net`:
 | `https://console.example.com/invite/<token>` | Invite links. |
 | `https://<org>.example.com` | The organization's login server (its Headscale instance). Used with `tailscale up --login-server`. |
 | `https://<label>-<org>.example-content.net` | A funnel for exposing local services to the internet. |
-| `<machine>.<tailnet label>.os.example-content.net` | A machine's MagicDNS name, used for HTTPS certificates. Only resolvable inside the tailnet. |
+| `<machine>.<tailnet label>.example-content.net` | A machine's MagicDNS name, used for HTTPS certificates. Only resolvable inside the tailnet. |
 | `https://example.com/s/<slug>` | Short links into the documentation, used by the console. |
 | `https://example.com/console/<path>` | Redirects to `https://console.example.com/<path>`, so the docs can link to console pages. |
 

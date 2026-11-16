@@ -26,7 +26,7 @@ Inc.
 - **Login server**: `https://<org>.<BASE_DOMAIN>`, which you pass to
   `tailscale up --login-server`.
 - **Tailnet name**: the DNS suffix of your machines' MagicDNS names, such as
-  `net3k9x2a.os.example.com`.
+  `net3k9x2a.example.com`.
 
 See [Domains and URLs]({{< relref "reference/domains-and-urls.md" >}}).
 

@@ -209,8 +209,10 @@ func (s *Service) CertsEnabled() bool { return s.certs != nil }
 func (s *Service) CertsPerOrgPerWeek() int { return s.cfg.DNS.CertsPerOrgPerWeek }
 
 // tailnetDomain returns the MagicDNS domain of the organization with label.
+// Funnel hostnames contain "-" and ValidateSubdomain rejects the label's
+// shape, so it can't collide with other names under the content domain.
 func (s *Service) tailnetDomain(label string) string {
-	return label + "." + s.cfg.TailnetDomain()
+	return label + "." + s.cfg.ContentDomain
 }
 
 // OnSleep sets f to run each time an organization's headscale is put to
@@ -585,7 +587,20 @@ func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organ
 	const maxLabelAttempts = 5
 	var org sqlcgen.Organization
 	for attempt := 1; ; attempt++ {
-		org, err = s.insertOrganization(ctx, subdomain, newTailnetLabel(), clientID, string(clientSecretHash), string(redirectURIsJSON), hsConfig)
+		label := newTailnetLabel()
+		// Subdomains created before ValidateSubdomain reserved the label's
+		// shape may still have it.
+		_, err = s.queries.GetOrganizationBySubdomain(ctx, label)
+		if err == nil {
+			if attempt < maxLabelAttempts {
+				continue
+			}
+			return sqlcgen.Organization{}, fmt.Errorf("tailnet label %q is an organization's subdomain", label)
+		}
+		if !errors.Is(err, sql.ErrNoRows) {
+			return sqlcgen.Organization{}, err
+		}
+		org, err = s.insertOrganization(ctx, subdomain, label, clientID, string(clientSecretHash), string(redirectURIsJSON), hsConfig)
 		if err != nil && strings.Contains(err.Error(), "organizations.tailnet_label") && attempt < maxLabelAttempts {
 			continue
 		}
@@ -617,7 +632,8 @@ func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organ
 
 // newTailnetLabel returns a random label for an organization's MagicDNS
 // domain. It is unrelated to the subdomain, so certificate transparency logs
-// don't reveal which organization a node belongs to.
+// don't reveal which organization a node belongs to. It always matches
+// tailnetLabelRe.
 func newTailnetLabel() string {
 	return "net" + strings.ToLower(rand.Text()[:6])
 }

@@ -33,7 +33,7 @@ func TestGetDNSSettingsReflectsProvisionedDefaults(t *testing.T) {
 	if !resp.DNS.MagicDNS {
 		t.Error("MagicDNS = false, want true (headscale's default)")
 	}
-	if want := "netacme.os.example.com"; resp.DNS.BaseDomain != want {
+	if want := "netacme.example.com"; resp.DNS.BaseDomain != want {
 		t.Errorf("BaseDomain = %q, want %q", resp.DNS.BaseDomain, want)
 	}
 	if resp.CanManage {

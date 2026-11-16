@@ -93,8 +93,8 @@ func TestGetDNSSettingsReflectsProvisionedDefaults(t *testing.T) {
 	if !dns.MagicDNS {
 		t.Errorf("MagicDNS = false, want true")
 	}
-	if !regexp.MustCompile(`^net[a-z0-9]{6}\.os\.example\.com$`).MatchString(dns.BaseDomain) {
-		t.Errorf("BaseDomain = %q, want net<6 chars>.os.example.com", dns.BaseDomain)
+	if !regexp.MustCompile(`^net[a-z0-9]{6}\.example\.com$`).MatchString(dns.BaseDomain) {
+		t.Errorf("BaseDomain = %q, want net<6 chars>.example.com", dns.BaseDomain)
 	}
 }
 

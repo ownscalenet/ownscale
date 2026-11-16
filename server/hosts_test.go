@@ -22,7 +22,7 @@ func TestClassifyHost(t *testing.T) {
 		{"funnel on base domain", "web-aaaa.ownscale.test", base, base, hostRoute{kind: hostFunnel, subdomain: "aaaa", label: "web"}},
 		{"funnel host on base with separate content domain", "web-aaaa.ownscale.test", base, content, hostRoute{kind: hostConsole}},
 		{"org name under content domain", "aaaa.content.net", base, content, hostRoute{kind: hostConsole}},
-		{"node name", "web.netaaaa.os.content.net", base, content, hostRoute{kind: hostConsole}},
+		{"node name", "web.netaaaa.content.net", base, content, hostRoute{kind: hostConsole}},
 		{"docs", "ownscale.test", base, content, hostRoute{kind: hostDocs}},
 		{"docs with port", "ownscale.test:8080", base, content, hostRoute{kind: hostDocs}},
 		{"landing", "content.net", base, content, hostRoute{kind: hostLanding}},

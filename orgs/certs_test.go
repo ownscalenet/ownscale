@@ -89,7 +89,7 @@ func newScopedProvider(t *testing.T, fake *fakeProvider, perOrgPerWeek int) (*sc
 	pool, queries := dbtest.New(t)
 	org := dbtest.CreateOrg(t, queries.Queries, "acme")
 	certs := &nodeCerts{provider: fake, queries: queries, perOrgPerWeek: perOrgPerWeek}
-	return &scopedProvider{certs: certs, orgID: org.ID, domain: "netacme.os.example.com"}, pool
+	return &scopedProvider{certs: certs, orgID: org.ID, domain: "netacme.example.com"}, pool
 }
 
 func TestScopedProvider(t *testing.T) {
@@ -98,11 +98,11 @@ func TestScopedProvider(t *testing.T) {
 		rec     libdns.Record
 		wantErr bool
 	}{
-		{"own node challenge", libdns.TXT{Name: "_acme-challenge.node.netacme.os"}, false},
-		{"other org", libdns.TXT{Name: "_acme-challenge.node.netother.os"}, true},
-		{"suffix lookalike", libdns.TXT{Name: "_acme-challenge.node.xnetacme.os"}, true},
-		{"not a challenge", libdns.TXT{Name: "node.netacme.os"}, true},
-		{"not TXT", libdns.Address{Name: "_acme-challenge.node.netacme.os"}, true},
+		{"own node challenge", libdns.TXT{Name: "_acme-challenge.node.netacme"}, false},
+		{"other org", libdns.TXT{Name: "_acme-challenge.node.netother"}, true},
+		{"suffix lookalike", libdns.TXT{Name: "_acme-challenge.node.xnetacme"}, true},
+		{"not a challenge", libdns.TXT{Name: "node.netacme"}, true},
+		{"not TXT", libdns.Address{Name: "_acme-challenge.node.netacme"}, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -124,7 +124,7 @@ func TestScopedProvider(t *testing.T) {
 
 func TestScopedProviderLimit(t *testing.T) {
 	challenge := func(node string) libdns.Record {
-		return libdns.TXT{Name: "_acme-challenge." + node + ".netacme.os", Text: strings.Repeat("a", 43)}
+		return libdns.TXT{Name: "_acme-challenge." + node + ".netacme", Text: strings.Repeat("a", 43)}
 	}
 	tests := []struct {
 		name          string
@@ -147,7 +147,7 @@ func TestScopedProviderLimit(t *testing.T) {
 			p, pool := newScopedProvider(t, &fakeProvider{}, tt.perOrgPerWeek)
 			queries := p.certs.queries
 			for _, node := range tt.before {
-				if err := queries.CreateCertName(t.Context(), sqlcgen.CreateCertNameParams{OrganizationID: p.orgID, Name: node + ".netacme.os.example.com"}); err != nil {
+				if err := queries.CreateCertName(t.Context(), sqlcgen.CreateCertNameParams{OrganizationID: p.orgID, Name: node + ".netacme.example.com"}); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -174,7 +174,7 @@ func TestScopedProviderLimit(t *testing.T) {
 func TestScopedProviderFailureDoesntCount(t *testing.T) {
 	fake := &fakeProvider{fail: errors.New("provider down")}
 	p, _ := newScopedProvider(t, fake, 1)
-	rec := libdns.TXT{Name: "_acme-challenge.a.netacme.os", Text: strings.Repeat("a", 43)}
+	rec := libdns.TXT{Name: "_acme-challenge.a.netacme", Text: strings.Repeat("a", 43)}
 	if _, err := p.AppendRecords(t.Context(), "example.com.", []libdns.Record{rec}); err == nil {
 		t.Fatal("AppendRecords succeeded with a failing provider")
 	}
@@ -238,7 +238,7 @@ func TestNodeCertChallenge(t *testing.T) {
 	if err := lc.SetDNS(ctx, "_acme-challenge."+want, value); err != nil {
 		t.Fatalf("SetDNS: %v", err)
 	}
-	wantRel := "_acme-challenge.web." + org.TailnetLabel + ".os"
+	wantRel := "_acme-challenge.web." + org.TailnetLabel
 	if got := fake.names(); len(got) != 1 || got[0] != wantRel {
 		t.Errorf("provider records = %v, want [%s]", got, wantRel)
 	}

@@ -490,8 +490,8 @@ EOF`)
 	if err := c.DNS.Validate(); err != nil {
 		return err
 	}
-	if c.DNS.Enabled() && !strings.HasSuffix(c.TailnetDomain(), "."+c.DNS.Zone) {
-		return fmt.Errorf("OWNSCALE_DNS_ZONE %q must contain %q", c.DNS.Zone, c.TailnetDomain())
+	if c.DNS.Enabled() && c.DNS.Zone != c.ContentDomain && !strings.HasSuffix(c.ContentDomain, "."+c.DNS.Zone) {
+		return fmt.Errorf("OWNSCALE_DNS_ZONE %q must contain %q", c.DNS.Zone, c.ContentDomain)
 	}
 	if _, err := time.ParseDuration(c.Auth.OIDCProvider.AccessTokenLifetime); err != nil {
 		return fmt.Errorf("OWNSCALE_AUTH_OIDC_PROVIDER_ACCESS_TOKEN_LIFETIME: %w", err)
@@ -501,10 +501,6 @@ EOF`)
 	}
 	return nil
 }
-
-// TailnetDomain is the parent of every organization's MagicDNS domain.
-// Funnel hostnames always contain "-", so they can't collide with it.
-func (c *Config) TailnetDomain() string { return "os." + c.ContentDomain }
 
 // DatabaseFile is ownscale's own database, relative to Config.DataDir.
 const DatabaseFile = "ownscale.sqlite"

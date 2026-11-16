@@ -218,7 +218,7 @@ func TestParseAddrs(t *testing.T) {
 		}
 		return raw
 	}
-	name := dnsmessage.MustNewName("host.org.os.example.com.")
+	name := dnsmessage.MustNewName("host.org.example.com.")
 	hdr := dnsmessage.ResourceHeader{Name: name, Class: dnsmessage.ClassINET}
 	for _, tt := range []struct {
 		name  string
