@@ -58,7 +58,6 @@
 
             docker-client
             docker-compose
-            docker-credential-helpers
             nssTools # certutil (make load-cert)
             openssh
             curl
