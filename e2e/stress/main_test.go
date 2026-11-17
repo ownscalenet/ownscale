@@ -1,10 +1,14 @@
 package main
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"strings"
 	"testing"
 	"time"
+
+	vwa "github.com/descope/virtualwebauthn"
 )
 
 func TestPercentile(t *testing.T) {
@@ -67,44 +71,99 @@ func TestStatsSummary(t *testing.T) {
 }
 
 func TestParseFlags(t *testing.T) {
-	t.Setenv("STRESS_SUBDOMAIN", "")
-	t.Setenv("STRESS_AUTHKEY", "")
 	t.Setenv("BASE_DOMAIN", "")
 	for _, tt := range []struct {
-		name  string
-		args  []string
-		valid bool
+		name      string
+		args      []string
+		wantOrgs  int
+		wantN     int
+		wantState string
+		valid     bool
 	}{
-		{"minimal", []string{"-subdomain", "aaaa", "-authkey", "k"}, true},
-		{"until interrupted", []string{"-subdomain", "aaaa", "-authkey", "k", "-duration", "0"}, true},
-		{"no subdomain", []string{"-authkey", "k"}, false},
-		{"no key", []string{"-subdomain", "aaaa"}, false},
-		{"zero clients", []string{"-subdomain", "aaaa", "-authkey", "k", "-n", "0"}, false},
-		{"negative ramp", []string{"-subdomain", "aaaa", "-authkey", "k", "-ramp", "-1s"}, false},
-		{"zero join timeout", []string{"-subdomain", "aaaa", "-authkey", "k", "-join-timeout", "0"}, false},
-		{"extra args", []string{"-subdomain", "aaaa", "-authkey", "k", "extra"}, false},
+		{"defaults", nil, 1, 10, "bin/stress/ownscale.test", true},
+		{"orgs x machines", []string{"-orgs", "10", "-n", "10"}, 10, 10, "bin/stress/ownscale.test", true},
+		{"remote", []string{"-base-domain", "example.com"}, 1, 10, "bin/stress/example.com", true},
+		{"state dir", []string{"-state", "/tmp/x"}, 1, 10, "/tmp/x", true},
+		{"until interrupted", []string{"-duration", "0"}, 1, 10, "bin/stress/ownscale.test", true},
+		{"zero orgs", []string{"-orgs", "0"}, 0, 0, "", false},
+		{"zero clients", []string{"-n", "0"}, 0, 0, "", false},
+		{"negative ramp", []string{"-ramp", "-1s"}, 0, 0, "", false},
+		{"zero join timeout", []string{"-join-timeout", "0"}, 0, 0, "", false},
+		{"extra args", []string{"extra"}, 0, 0, "", false},
+		{"removed flag", []string{"-subdomain", "aaaa"}, 0, 0, "", false},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			cfg, err := parseFlags(tt.args)
 			if (err == nil) != tt.valid {
 				t.Fatalf("parseFlags() = %v, valid = %v", err, tt.valid)
 			}
-			if tt.valid && cfg.baseDomain != "ownscale.test" {
-				t.Fatalf("baseDomain = %q", cfg.baseDomain)
+			if !tt.valid {
+				return
+			}
+			if cfg.orgs != tt.wantOrgs || cfg.n != tt.wantN || cfg.stateDir != tt.wantState {
+				t.Fatalf("parseFlags() = orgs %d, n %d, state %q; want %d, %d, %q",
+					cfg.orgs, cfg.n, cfg.stateDir, tt.wantOrgs, tt.wantN, tt.wantState)
 			}
 		})
 	}
 }
 
-func TestParseFlagsEnv(t *testing.T) {
-	t.Setenv("STRESS_SUBDOMAIN", "bbbb")
-	t.Setenv("STRESS_AUTHKEY", "secret")
-	t.Setenv("BASE_DOMAIN", "example.com")
-	cfg, err := parseFlags(nil)
+func TestTargets(t *testing.T) {
+	orgs := []*org{{index: 0, subdomain: "aaaa"}, {index: 1, subdomain: "bbbb"}}
+	got := targets(orgs, 2, "state")
+	want := []struct{ sub, host, dir string }{
+		{"aaaa", "stress-0", "state/aaaa/m0"},
+		{"bbbb", "stress-0", "state/bbbb/m0"},
+		{"aaaa", "stress-1", "state/aaaa/m1"},
+		{"bbbb", "stress-1", "state/bbbb/m1"},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("len(targets) = %d, want %d", len(got), len(want))
+	}
+	for i, w := range want {
+		if g := got[i]; g.org.subdomain != w.sub || g.hostname != w.host || g.stateDir != w.dir {
+			t.Errorf("targets[%d] = %s %s %s, want %s %s %s", i, g.org.subdomain, g.hostname, g.stateDir, w.sub, w.host, w.dir)
+		}
+	}
+}
+
+// TestStateRoundTrip checks that a cached passkey still works after a reload,
+// since that's what lets later runs sign back in to the same org.
+func TestStateRoundTrip(t *testing.T) {
+	dir := t.TempDir()
+	sf, err := loadState(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if cfg.subdomain != "bbbb" || cfg.authKey != "secret" || cfg.baseDomain != "example.com" {
-		t.Fatalf("parseFlags() = %+v", cfg)
+	auth := vwa.NewAuthenticator()
+	auth.Options.UserHandle = []byte("user-1")
+	auth.AddCredential(vwa.NewCredential(vwa.KeyTypeEC2))
+	st := sf.entry(1)
+	*st = orgState{
+		Username: "stress-abc", Authenticator: auth, Subdomain: "abcd",
+		Cookies: []savedCookie{{Name: "s", Value: "v"}}, AuthKeyID: "7", AuthKey: "hskey",
+	}
+	if err := sf.save(); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := loadState(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(loaded.orgs) != 2 {
+		t.Fatalf("len(orgs) = %d, want 2", len(loaded.orgs))
+	}
+	want, _ := json.Marshal(st)
+	got, _ := json.Marshal(loaded.orgs[1])
+	if string(got) != string(want) {
+		t.Fatalf("loaded org = %s, want %s", got, want)
+	}
+
+	// The public key is derived from the cached private key, so a match
+	// means the reloaded passkey signs as the one registered.
+	la := loaded.orgs[1].Authenticator
+	if !bytes.Equal(la.Credentials[0].Key.AttestationData(), auth.Credentials[0].Key.AttestationData()) {
+		t.Fatal("reloaded passkey has a different public key")
 	}
 }

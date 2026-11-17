@@ -268,16 +268,19 @@ diagnostics, forced cleanup, and exclusive guard ownership.
 
 ## Stress test
 
-`e2e/stress` joins many ephemeral tsnet clients to one organization with a
-reusable pre-auth key and keeps them connected, loading its headscale's
-control plane. Every 5s it prints counts of connected, failed and pending
-clients plus join latency p50/p95/max. On exit (after `-duration`, or on
-Ctrl-C with `-duration 0`) it logs every client out so headscale deletes
-the nodes right away.
+`e2e/stress` signs up `-orgs` organizations with passkeys and joins `-n`
+tsnet clients to each, loading their headscales' control planes. Every 5s it
+prints counts of connected, failed and pending clients plus join latency
+p50/p95/max. On exit (after `-duration`, or on Ctrl-C with `-duration 0`) it
+closes the clients and prints each org's machine count.
+
+Accounts (passkey, session cookie, reusable auth key) and every machine's
+tsnet state are cached in `bin/stress/<base domain>/` (`-state`), so later
+runs sign back in to the same orgs and rejoin as the same nodes: the server
+keeps `-orgs` organizations with `-n` machines each, however many times it
+runs. Deleting that directory orphans its organizations on the server.
 
 ```sh
-make stress ORG=aaaa KEY=hskey-auth-... STRESS_ARGS="-n 100 -ramp 50ms -duration 10m"
-# or directly:
-SSL_CERT_FILE=$PWD/data/local-ca/root.crt STRESS_AUTHKEY=hskey-auth-... \
-  go run ./e2e/stress -subdomain aaaa -n 100
+make stress ORGS=2 MACHINES=3 STRESS_ARGS="-duration 1m"
+make stress BASE_DOMAIN=beastbb.bond ORGS=10 MACHINES=10 STRESS_ARGS="-duration 3m"
 ```

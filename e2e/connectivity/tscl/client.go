@@ -38,6 +38,9 @@ type Config struct {
 	Logger         *slog.Logger
 	StartupTimeout time.Duration
 	ProbeTimeout   time.Duration
+	// StateDir, if set, keeps the machine's state there and makes it
+	// non-ephemeral, so a later client with the same StateDir is the same node.
+	StateDir string
 }
 
 // Client owns one ephemeral machine. Construct it with New; do not copy it.
@@ -150,7 +153,13 @@ func start(ctx context.Context, cfg Config) (_ *Client, err error) {
 			err = errors.Join(err, c.Close())
 		}
 	}()
-	c.dir, err = os.MkdirTemp("", "ownscale-tscl-")
+	dir := cfg.StateDir
+	if dir == "" {
+		c.dir, err = os.MkdirTemp("", "ownscale-tscl-")
+		dir = c.dir
+	} else {
+		err = os.MkdirAll(dir, 0o700)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -167,8 +176,8 @@ func start(ctx context.Context, cfg Config) (_ *Client, err error) {
 		logger.Debug(msg)
 	}
 	server := &tsnet.Server{
-		Dir: c.dir, Hostname: cfg.Hostname, ControlURL: cfg.ControlURL,
-		AuthKey: cfg.AuthKey, Ephemeral: true, Logf: logf, UserLogf: logf,
+		Dir: dir, Hostname: cfg.Hostname, ControlURL: cfg.ControlURL,
+		AuthKey: cfg.AuthKey, Ephemeral: cfg.StateDir == "", Logf: logf, UserLogf: logf,
 	}
 	// Start cleans up its own failures; Close requires successful initialization.
 	if err = server.Start(); err != nil {

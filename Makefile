@@ -119,11 +119,16 @@ devbox: ## Open a shell in a container joined to organization ORG (default aaaa)
 			python3 -m http.server 80 --directory /var/www >/var/log/httpserver.log 2>&1 & \
 			exec bash"
 
-# KEY can also come from the STRESS_AUTHKEY env var.
-stress: ## Join many tsnet clients to ORG: KEY=<reusable key> STRESS_ARGS="-n 100"
+ORGS ?= 1
+MACHINES ?= 10
+# Only the dev stack needs its CA; SSL_CERT_FILE would replace the system
+# roots a remote's certificates chain to.
+stress: ## Join MACHINES tsnet clients to each of ORGS cached orgs on BASE_DOMAIN (STRESS_ARGS)
+ifeq ($(BASE_DOMAIN),ownscale.test)
 	$(require_cert)
-	@SSL_CERT_FILE=$(abspath $(CERT)) STRESS_AUTHKEY="$${STRESS_AUTHKEY:-$(KEY)}" \
-		go run ./e2e/stress -subdomain $(ORG) -base-domain $(BASE_DOMAIN) $(STRESS_ARGS)
+endif
+	$(if $(filter ownscale.test,$(BASE_DOMAIN)),SSL_CERT_FILE=$(abspath $(CERT))) \
+		go run ./e2e/stress -orgs $(ORGS) -n $(MACHINES) -base-domain $(BASE_DOMAIN) $(STRESS_ARGS)
 
 ##@ Checks
 
