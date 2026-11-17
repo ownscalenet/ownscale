@@ -47,10 +47,12 @@ const (
 	maxBindAttempts = 3
 
 	// idleTimeout is how long an organization's headscale runs unused
-	// before RunSleeper stops it.
-	idleTimeout = 30 * time.Minute
+	// before RunSleeper stops it. Waking takes ~100ms, so it can be short,
+	// but it must exceed headscale's 120s ephemeral node timeout, or
+	// disconnected ephemeral nodes are kept until a long enough wake.
+	idleTimeout = 5 * time.Minute
 	// sweepInterval is how often RunSleeper looks for idle organizations.
-	sweepInterval = 2 * time.Minute
+	sweepInterval = time.Minute
 	// sleepTimeout bounds waiting for a headscale instance to stop.
 	sleepTimeout = 30 * time.Second
 	// startTimeout bounds starting a headscale instance.
@@ -353,6 +355,7 @@ func (s *Service) Ensure(ctx context.Context, subdomain string) (_ *hscl.Client,
 		return nil, ErrNotRunning
 	}
 
+	start := time.Now()
 	// A canceled request must not abort a start other callers wait on.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), startTimeout)
 	defer cancel()
@@ -371,6 +374,7 @@ func (s *Service) Ensure(ctx context.Context, subdomain string) (_ *hscl.Client,
 		return nil, err
 	}
 	s.startFailures.Delete(subdomain)
+	s.logger.Info("woke organization", "subdomain", subdomain, "duration", time.Since(start))
 	inst, ok := s.running(subdomain)
 	if !ok {
 		return nil, ErrNotRunning // createFn built no instance (tests)
