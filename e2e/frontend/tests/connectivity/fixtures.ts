@@ -95,7 +95,9 @@ export const test = base.extend<{ harness: Harness }, { orgs: OrgUI[] }>({
           await recovery.restored(snapshot.org)
         })
       }))
-      if (!cleanupErrors.length) await attempt(`finish private recovery journal ${recovery.file}`, () => recovery.finish())
+      // finish refuses a journal that still owns anything, so a failure that
+      // left nothing behind (e.g. bridge shutdown) doesn't block later runs.
+      await attempt(`finish private recovery journal ${recovery.file}`, () => recovery.finish())
       if (harness) await testInfo.attach('connectivity-observations', {
         body: JSON.stringify(harness.observations, null, 2), contentType: 'application/json',
       })
