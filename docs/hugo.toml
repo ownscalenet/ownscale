@@ -50,11 +50,6 @@ title = "ownscale"
 
 [menu]
   [[menu.main]]
-    name = "Documentation"
-    pageRef = "/docs"
-    weight = 1
-
-  [[menu.main]]
     name = "Search"
     weight = 2
     [menu.main.params]

@@ -1,6 +1,6 @@
 ---
 title: Terminology
-weight: 5
+weight: 30
 ---
 
 Terms used in ownscale's docs and console. Most come from Tailscale; the
@@ -42,8 +42,9 @@ organizations, users, machines, keys and policies are managed.
 ### Content domain
 
 An optional second domain (`CONTENT_DOMAIN`) that serves funnels and
-machines' MagicDNS names. It keeps that content off the main domain. See
-[Domains and URLs]({{< relref "domains-and-urls.md" >}}).
+machines' MagicDNS names. It exists to keep user-provided content off
+the main domain and avoid sharing cookies and search engine reputation
+problems.
 
 ### Coordination server
 

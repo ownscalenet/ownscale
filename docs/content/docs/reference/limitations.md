@@ -1,6 +1,6 @@
 ---
 title: Limitations
-weight: 4
+weight: 20
 ---
 
 ownscale uses Headscale, so most of what Headscale supports works, and

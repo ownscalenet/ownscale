@@ -1,14 +1,15 @@
 ---
 title: Documentation
+linkTitle: Top
 aliases:
   - /docs/get-started/
   - /docs/getting-started/
 weight: 10
 ---
 
-Ownscale is a self-hosted control plane and web console for Tailscale
-clients. It is built on [Headscale](https://headscale.net), the open-source
-implementation of the Tailscale coordination server. This documentation
+Ownscale is a self-hosted coordination server and web console for Tailscale
+clients. It is built on [Headscale](https://headscale.net), an open-source
+implementation of the Tailscale server. This documentation
 relies on the concepts introduced in the
 [Tailscale documentation](https://tailscale.com/docs).
 

@@ -1,6 +1,6 @@
 ---
 title: Connecting devices
-weight: 5
+weight: 30
 aliases:
   - /docs/connecting-devices/
 ---

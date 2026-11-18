@@ -1,6 +1,6 @@
 ---
 title: ownscale.net
-weight: 2
+weight: 20
 ---
 
 [ownscale.net](https://ownscale.net) is a free Ownscale instance for users

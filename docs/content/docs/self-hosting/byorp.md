@@ -1,7 +1,7 @@
 ---
 title: Bring your own reverse proxy
 linkTitle: Own reverse proxy
-weight: 3
+weight: 30
 ---
 
 The `ownscale` container serves everything on plain HTTP port `8080`: the

@@ -1,6 +1,6 @@
 ---
 title: Self-hosting
-weight: 5
+weight: 10
 ---
 
 Run ownscale on your own server. Unless specified, the documentation here
