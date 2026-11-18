@@ -3,6 +3,7 @@
 package orgs
 
 import (
+	"cmp"
 	"context"
 	"crypto/rand"
 	"database/sql"
@@ -326,6 +327,10 @@ var (
 	// organizations already exist.
 	ErrMaxOrgs = errors.New("organization limit reached")
 
+	// ErrAtCapacity is returned when starting an organization's headscale
+	// would exceed config.Config.MaxAwakeOrgs and every awake one is in use.
+	ErrAtCapacity = fmt.Errorf("%w: too many organizations awake", ErrNotRunning)
+
 	errClosed = fmt.Errorf("%w: shutting down", ErrNotRunning)
 )
 
@@ -368,6 +373,9 @@ func (s *Service) Ensure(ctx context.Context, subdomain string) (_ *hscl.Client,
 	}
 	if !s.hasDatabase(subdomain) {
 		return nil, ErrDatabaseMissing
+	}
+	if err := s.admit(ctx, subdomain); err != nil {
+		return nil, err
 	}
 	if err := s.startLocked(ctx, org.ID, subdomain, hsCfg); err != nil {
 		s.startFailures.Store(subdomain, time.Now())
@@ -621,7 +629,9 @@ func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organ
 	// The stored config, as Ensure would start it with.
 	_, startCfg, err := s.loadConfig(ctx, subdomain)
 	if err == nil {
-		err = s.startLocked(ctx, org.ID, subdomain, startCfg)
+		if err = s.admit(ctx, subdomain); err == nil {
+			err = s.startLocked(ctx, org.ID, subdomain, startCfg)
+		}
 	}
 	if err != nil {
 		if delErr := s.queries.DeleteOrganization(ctx, org.ID); delErr != nil {
@@ -885,6 +895,12 @@ func (s *Service) restartHeadscale(ctx context.Context, subdomain string) (err e
 		return err
 	}
 
+	// A running org keeps its slot; starting a sleeping one needs one.
+	if _, ok := s.running(subdomain); !ok {
+		if err := s.admit(ctx, subdomain); err != nil {
+			return err
+		}
+	}
 	if rt, ok := s.orgs.Load(subdomain); ok {
 		if err := stopLocked(ctx, rt); err != nil {
 			return err
@@ -938,6 +954,77 @@ func (s *Service) sleepHeadscale(ctx context.Context, subdomain string) (err err
 		s.onSleep(subdomain)
 	}
 	return nil
+}
+
+// admit makes room within config.Config.MaxAwakeOrgs for starting
+// subdomain's headscale, which isn't running. At the limit it puts the least
+// recently used org without connections to sleep, or returns ErrAtCapacity
+// if there's none. It's not synchronized: concurrent wakes may briefly go
+// over the limit.
+func (s *Service) admit(ctx context.Context, subdomain string) error {
+	if s.cfg.MaxAwakeOrgs <= 0 {
+		return nil
+	}
+	for s.awake() >= s.cfg.MaxAwakeOrgs {
+		if !s.evictIdlest(ctx, subdomain) {
+			s.logger.Warn("too many organizations awake", "subdomain", subdomain, "max", s.cfg.MaxAwakeOrgs)
+			return ErrAtCapacity
+		}
+	}
+	return nil
+}
+
+// awake counts the running headscale instances.
+func (s *Service) awake() int {
+	n := 0
+	for sub := range s.orgs.Range {
+		if _, ok := s.running(sub); ok {
+			n++
+		}
+	}
+	return n
+}
+
+// evictIdlest puts the least recently used running org without connections,
+// other than except, to sleep, and reports whether it did. Callers hold
+// except's lock, so it only takes free locks of other orgs.
+func (s *Service) evictIdlest(ctx context.Context, except string) bool {
+	type candidate struct {
+		sub  string
+		last int64
+	}
+	var cands []candidate
+	for sub, rt := range s.orgs.Range {
+		if _, ok := s.running(sub); ok && sub != except && rt.idle(time.Now(), 0) {
+			cands = append(cands, candidate{sub, rt.lastActivity.Load()})
+		}
+	}
+	slices.SortFunc(cands, func(a, b candidate) int { return cmp.Compare(a.last, b.last) })
+	for _, c := range cands {
+		mu := s.orgLock(c.sub)
+		if !mu.TryLock() {
+			continue
+		}
+		rt, _ := s.orgs.Load(c.sub)
+		if _, ok := s.running(c.sub); !ok || !rt.idle(time.Now(), 0) {
+			mu.Unlock()
+			continue
+		}
+		stopCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), sleepTimeout)
+		err := stopLocked(stopCtx, rt)
+		cancel()
+		mu.Unlock()
+		if err != nil {
+			s.logger.Warn("evict organization", "subdomain", c.sub, "error", err)
+			continue
+		}
+		if s.onSleep != nil {
+			s.onSleep(c.sub)
+		}
+		s.logger.Info("put organization to sleep to wake another", "subdomain", c.sub, "for", except)
+		return true
+	}
+	return false
 }
 
 // deleteOrg stops subdomain's headscale and deletes the organization with

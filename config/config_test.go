@@ -448,6 +448,14 @@ func TestValidate(t *testing.T) {
 		}
 	})
 
+	t.Run("negative max_awake_orgs rejected", func(t *testing.T) {
+		cfg := fullyPopulatedConfig()
+		cfg.MaxAwakeOrgs = -1
+		if err := cfg.Validate(); err == nil {
+			t.Error("Validate: want error, got nil")
+		}
+	})
+
 	t.Run("relative data_dir rejected", func(t *testing.T) {
 		cfg := fullyPopulatedConfig()
 		cfg.DataDir = "relative/data"

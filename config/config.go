@@ -41,6 +41,9 @@ type Config struct {
 	FixedSubdomains []string `env:"OWNSCALE_FIXED_SUBDOMAINS" envSeparator:","`
 	// MaxOrgs caps how many organizations can exist; 0 means no cap.
 	MaxOrgs int `env:"OWNSCALE_MAX_ORGS"`
+	// MaxAwakeOrgs caps how many organizations' headscales run at once, so
+	// waking orgs can't exhaust memory; 0 means no cap.
+	MaxAwakeOrgs int `env:"OWNSCALE_MAX_AWAKE_ORGS"`
 	// NoIndex asks search engines not to index ownscale's own sites.
 	NoIndex bool `env:"OWNSCALE_NOINDEX"`
 	// TrustedProxies are the reverse proxies whose X-Forwarded-For header
@@ -477,6 +480,9 @@ EOF`)
 	}
 	if c.MaxOrgs < 0 {
 		return fmt.Errorf("OWNSCALE_MAX_ORGS must not be negative, got %d", c.MaxOrgs)
+	}
+	if c.MaxAwakeOrgs < 0 {
+		return fmt.Errorf("OWNSCALE_MAX_AWAKE_ORGS must not be negative, got %d", c.MaxAwakeOrgs)
 	}
 	if err := c.Backup.Validate(); err != nil {
 		return err
