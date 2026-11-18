@@ -65,7 +65,7 @@ func (c *Ctl) MethodName(ctx context.Context, subdomain string) (_ string, err e
 - use table-driven tests whenever it fits, for example several tests for the same
   function, but with different inputs and expected outputs
 
-## Testing
+## Test authoring
 
 Try to create as few as possible fakes/mocks when testing the code. For example,
 code that relies on hscl.Client runs against a real Client, not a

@@ -3,6 +3,7 @@ title: Documentation
 aliases:
   - /docs/get-started/
   - /docs/getting-started/
+weight: 10
 ---
 
 Ownscale is a self-hosted control plane and web console for Tailscale
@@ -10,6 +11,26 @@ clients. It is built on [Headscale](https://headscale.net), the open-source
 implementation of the Tailscale coordination server. This documentation
 relies on the concepts introduced in the
 [Tailscale documentation](https://tailscale.com/docs).
+
+## Features
+
+**Many tailnets, one server**\
+Organizations are used for splitting users into groups. Each organization
+gets its own tailnet, backed by its own Headscale instance and subdomain.
+Users from one organization can only access resources from their organization.
+
+**Web console**\
+Manage machines, users, access control, DNS and auth keys from the browser.
+
+**Single sign-on and passkeys**\
+Log in with OIDC, Google, Microsoft, GitHub or a passkey.
+
+**Funnels**\
+Expose a service running on a machine in your tailnet to the public internet.
+
+**Tailscale features**\
+MagicDNS, split DNS, subnet routers, exit nodes, tags, ACLs, grants,
+Tailscale SSH, Taildrop, HTTPS certificates...
 
 ## Relation with Tailscale and Headscale
 

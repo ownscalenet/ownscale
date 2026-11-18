@@ -48,19 +48,6 @@ It downloads the release's `compose.yaml`, `example.env` and `Makefile`, sets
 `OWNSCALE_VERSION` in `.env`, then pulls and restarts the stack. Compare
 `example.env` with your `.env` for new settings.
 
-## Installing from source
-
-Clone the repository, copy `example.env` to `.env`, configure it, then build
-the images and run them. `make frontend docs` needs Node.js, Go and Hugo;
-`make help` lists the other targets.
-
-```sh
-make frontend docs
-docker build -t ghcr.io/ownscalenet/ownscale:dev .
-docker build -t ghcr.io/ownscalenet/ownscale-caddy:dev -f etc/caddy/Dockerfile .
-OWNSCALE_VERSION=dev docker compose up -d
-```
-
 ## Next steps
 
 - [Limitations]({{< relref "/docs/reference/limitations.md" >}}): what

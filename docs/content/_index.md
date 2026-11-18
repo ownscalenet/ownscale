@@ -34,24 +34,11 @@ Because the development team is small, Ownscale implements a smaller list
 of features. Bug-fixes and a stable execution will be prioritised over
 porting over Tailscale features.
 
-## Features
+## Contributing
 
-**Many tailnets, one server**\
-Organizations are used for splitting users into groups. Each organization
-gets its own tailnet, backed by its own Headscale instance and subdomain.
-Users from one organization can only access resources from their organization.
-
-**Web console**\
-Manage machines, users, access control, DNS and auth keys from the browser.
-
-**Single sign-on and passkeys**\
-Log in with OIDC, Google, Microsoft, GitHub or a passkey.
-
-**Funnels**\
-Expose a service running on a machine in your tailnet to the public internet.
-
-**Tailscale features**\
-MagicDNS, split DNS, subnet routers, exit nodes, tags, ACLs, grants,
-Tailscale SSH, Taildrop, HTTPS certificates...
+PRs welcome! Please open an issue first and explain the problem.
+For adding or changing a feature, please open an issue to discuss it
+before spending time writing the code. See
+[CONTRIBUTING.md](https://github.com/ownscalenet/ownscale/blob/master/.github/CONTRIBUTING.md).
 
 </div>

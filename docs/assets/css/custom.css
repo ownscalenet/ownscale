@@ -131,3 +131,10 @@
   margin-left: auto;
   align-self: center;
 }
+
+/* Keep footnotes and their back-references clear of the sticky navbar when
+   jumping to them. */
+.content [id^="fn:"],
+.content [id^="fnref:"] {
+  scroll-margin-top: calc(var(--hextra-navbar-height) + var(--hextra-banner-height, 0px) + 1rem);
+}
