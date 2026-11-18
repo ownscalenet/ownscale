@@ -8,6 +8,26 @@ import (
 )
 
 const authRequestLifetime = 15 * time.Minute
+
+// maxAuthRequests and maxAuthRequestBytes bound the memory of pending auth
+// requests, which anyone with a client's public ID can create.
+const (
+	maxAuthRequests     = 10_000
+	maxAuthRequestBytes = 8 << 10
+)
+
+// size is roughly how many bytes of caller-chosen data authReq holds.
+func size(authReq *oidc.AuthRequest) int {
+	n := len(authReq.RedirectURI) + len(authReq.State) + len(authReq.Nonce) + len(authReq.CodeChallenge)
+	for _, s := range authReq.Scopes {
+		n += len(s)
+	}
+	for _, s := range authReq.Prompt {
+		n += len(s)
+	}
+	return n
+}
+
 const refreshTokenLifetime = 24 * time.Hour
 
 type authRequest struct {

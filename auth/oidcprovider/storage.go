@@ -135,11 +135,7 @@ func (s *Storage) cleanupLoop() {
 func (s *Storage) cleanupExpired(now time.Time) {
 	s.lock.Lock()
 	defer s.lock.Unlock()
-	for id, req := range s.authRequests {
-		if req.CreationDate.Add(authRequestLifetime).Before(now) {
-			delete(s.authRequests, id)
-		}
-	}
+	s.expireAuthRequestsLocked(now)
 	for code, entry := range s.codes {
 		if entry.expiresAt.Before(now) {
 			delete(s.codes, code)
@@ -157,16 +153,35 @@ func (s *Storage) cleanupExpired(now time.Time) {
 	}
 }
 
+// expireAuthRequestsLocked drops auth requests older than
+// authRequestLifetime. Callers hold s.lock.
+func (s *Storage) expireAuthRequestsLocked(now time.Time) {
+	for id, req := range s.authRequests {
+		if req.CreationDate.Add(authRequestLifetime).Before(now) {
+			delete(s.authRequests, id)
+		}
+	}
+}
+
 func (s *Storage) CreateAuthRequest(ctx context.Context, authReq *oidc.AuthRequest, userID string) (_ op.AuthRequest, err error) {
 	if len(authReq.Prompt) == 1 && authReq.Prompt[0] == oidc.PromptNone && userID == "" {
 		return nil, oidc.ErrLoginRequired()
 	}
 
+	if size(authReq) > maxAuthRequestBytes {
+		return nil, oidc.ErrInvalidRequest().WithDescription("authorization request too large")
+	}
 	req := newAuthRequest(authReq, userID)
 	req.ID = xid.New().String()
 
 	s.lock.Lock()
 	defer s.lock.Unlock()
+	if len(s.authRequests) >= maxAuthRequests {
+		s.expireAuthRequestsLocked(time.Now())
+		if len(s.authRequests) >= maxAuthRequests {
+			return nil, oidc.ErrServerError().WithDescription("too many authorization requests in progress, try again later")
+		}
+	}
 	s.authRequests[req.ID] = req
 	return req, nil
 }

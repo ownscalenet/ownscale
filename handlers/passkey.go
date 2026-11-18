@@ -72,6 +72,28 @@ func clearPasskeyCeremonyCookie(w http.ResponseWriter) {
 	})
 }
 
+// saveCeremony stores c and sets its cookie, or writes an error response
+// and returns false.
+func (h *Handlers) saveCeremony(w http.ResponseWriter, r *http.Request, c passkeyCeremony) bool {
+	// Keeps each stored ceremony small, as the request body may be 1 MiB.
+	if len(c.Next) > maxCeremonyFieldLen || len(c.Name) > maxCeremonyFieldLen {
+		h.writeError(w, http.StatusBadRequest, "next or name is too long")
+		return false
+	}
+	tok, err := h.passkeySessions.save(c)
+	if errors.Is(err, errTooManyCeremonies) {
+		h.logger.Warn("passkey ceremony store full")
+		h.writeError(w, http.StatusServiceUnavailable, "too many sign-ins in progress, try again in a moment")
+		return false
+	}
+	if err != nil {
+		h.serverError(w, r, err)
+		return false
+	}
+	setPasskeyCeremonyCookie(w, tok)
+	return true
+}
+
 // takePasskeyCeremony reads the ceremony cookie from r and pops the
 // matching ceremony from the store, writing a 400 response and returning
 // false if it's missing or expired.
@@ -163,19 +185,16 @@ func (h *Handlers) PasskeyRegisterBegin(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	tok, err := h.passkeySessions.save(passkeyCeremony{
+	if !h.saveCeremony(w, r, passkeyCeremony{
 		Session:       session,
 		Username:      username,
 		Email:         email,
 		PendingUserID: pendingID,
 		Name:          defaultPasskeyName,
 		Next:          req.Next,
-	})
-	if err != nil {
-		h.serverError(w, r, err)
+	}) {
 		return
 	}
-	setPasskeyCeremonyCookie(w, tok)
 	h.writeJSON(w, http.StatusOK, creation)
 }
 
@@ -221,7 +240,7 @@ func (h *Handlers) PasskeyRegisterFinish(w http.ResponseWriter, r *http.Request)
 			h.writeError(w, http.StatusForbidden, errMaxOrgsMessage)
 			return
 		}
-		if errors.Is(err, errHeadscaleUnavailable) {
+		if errors.Is(err, errHeadscaleUnavailable) || errors.Is(err, orgs.ErrNotRunning) {
 			h.logger.Warn("sign-up: create headscale user", "error", err)
 			h.writeError(w, http.StatusServiceUnavailable, "headscale is unavailable right now, try again in a moment")
 			return
@@ -262,12 +281,9 @@ func (h *Handlers) PasskeyLoginBegin(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	tok, err := h.passkeySessions.save(passkeyCeremony{Session: session, Next: req.Next})
-	if err != nil {
-		h.serverError(w, r, err)
+	if !h.saveCeremony(w, r, passkeyCeremony{Session: session, Next: req.Next}) {
 		return
 	}
-	setPasskeyCeremonyCookie(w, tok)
 	h.writeJSON(w, http.StatusOK, assertion)
 }
 
@@ -379,12 +395,9 @@ func (h *Handlers) PasskeyAddBegin(w http.ResponseWriter, r *http.Request) {
 		h.serverError(w, r, err)
 		return
 	}
-	tok, err := h.passkeySessions.save(passkeyCeremony{Session: session, UserID: user.ID, Name: name})
-	if err != nil {
-		h.serverError(w, r, err)
+	if !h.saveCeremony(w, r, passkeyCeremony{Session: session, UserID: user.ID, Name: name}) {
 		return
 	}
-	setPasskeyCeremonyCookie(w, tok)
 	h.writeJSON(w, http.StatusOK, creation)
 }
 

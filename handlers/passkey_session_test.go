@@ -1,6 +1,8 @@
 package handlers
 
 import (
+	"errors"
+	"strconv"
 	"testing"
 	"time"
 )
@@ -29,6 +31,35 @@ func TestPasskeyCeremonyStoreUnknownToken(t *testing.T) {
 	s := newPasskeyCeremonyStore()
 	if _, ok := s.take("does-not-exist"); ok {
 		t.Error("take unknown token: want ok=false")
+	}
+}
+
+// TestPasskeyCeremonyStoreFull verifies a full store makes room by dropping
+// expired ceremonies, and refuses new ones otherwise.
+func TestPasskeyCeremonyStoreFull(t *testing.T) {
+	tests := []struct {
+		name    string
+		age     time.Duration
+		wantErr error
+	}{
+		{"all live", 0, errTooManyCeremonies},
+		{"all expired", 2 * passkeyCeremonyTTL, nil},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newPasskeyCeremonyStore()
+			created := time.Now().Add(-tt.age)
+			for i := range maxPasskeyCeremonies {
+				s.byTok[strconv.Itoa(i)] = passkeyCeremony{CreatedAt: created}
+			}
+			_, err := s.save(passkeyCeremony{})
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("save: err = %v, want %v", err, tt.wantErr)
+			}
+			if len(s.byTok) > maxPasskeyCeremonies {
+				t.Errorf("store holds %d ceremonies, want at most %d", len(s.byTok), maxPasskeyCeremonies)
+			}
+		})
 	}
 }
 

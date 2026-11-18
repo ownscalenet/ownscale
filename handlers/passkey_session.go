@@ -3,6 +3,7 @@ package handlers
 import (
 	"crypto/rand"
 	"encoding/hex"
+	"errors"
 	"sync"
 	"time"
 
@@ -11,6 +12,15 @@ import (
 
 const passkeyCeremonyTTL = 5 * time.Minute
 const passkeyCeremonyCookie = "__Host-ownscale_webauthn_session"
+
+// maxPasskeyCeremonies bounds the store's memory, as anyone can begin a
+// ceremony.
+const maxPasskeyCeremonies = 10_000
+
+// maxCeremonyFieldLen bounds the caller-chosen strings a ceremony stores.
+const maxCeremonyFieldLen = 2048
+
+var errTooManyCeremonies = errors.New("too many passkey ceremonies in progress")
 
 // passkeyCeremony holds everything a register/login "begin" step needs to
 // pass along to its matching "finish" step. Email is set only for
@@ -52,8 +62,9 @@ func randomCeremonyToken() (string, error) {
 	return hex.EncodeToString(buf), nil
 }
 
-// save stores c, evicts expired entries opportunistically, and returns the
-// token the caller should set as the ceremony cookie's value.
+// save stores c and returns the token the caller should set as the ceremony
+// cookie's value. Once the store is full it evicts expired entries, and
+// returns errTooManyCeremonies if that frees none.
 func (s *passkeyCeremonyStore) save(c passkeyCeremony) (string, error) {
 	tok, err := randomCeremonyToken()
 	if err != nil {
@@ -63,7 +74,12 @@ func (s *passkeyCeremonyStore) save(c passkeyCeremony) (string, error) {
 
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	s.evictExpiredLocked()
+	if len(s.byTok) >= maxPasskeyCeremonies {
+		s.evictExpiredLocked()
+		if len(s.byTok) >= maxPasskeyCeremonies {
+			return "", errTooManyCeremonies
+		}
+	}
 	s.byTok[tok] = c
 	return tok, nil
 }
