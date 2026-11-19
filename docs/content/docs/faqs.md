@@ -1,6 +1,6 @@
 ---
 title: FAQs
-weight: 50
+weight: 70
 ---
 
 ## ownscale-agent user & machine
@@ -41,41 +41,11 @@ visual policy editor.
 
 ## How do I enable Tailscale SSH?
 
-Tailscale SSH is controlled by the `ssh` section of your organization's access
-control policy ([Access control](/console/access-control) in the console). For example, to let every user
-SSH into their own machines:
-
-```jsonc
-"ssh": [
-  {
-    "action": "accept",
-    "src": ["autogroup:member"],
-    "dst": ["autogroup:self"],
-    "users": ["autogroup:nonroot", "root"],
-  },
-],
-```
-
-`src` and `dst` can't be `*`: use `autogroup:member`, `autogroup:self`,
-`autogroup:tagged`, groups, users or tags. The `acls` must also allow port 22
-between the machines.
-
-Each machine you want to SSH into must run `tailscale set --ssh`. Then connect
-with `ssh user@machine` from another machine in the tailnet.
+See [SSH into machines]({{< relref "use-cases/ssh.md" >}}).
 
 ## How do I resolve internal domains with split DNS?
 
-Split DNS sends queries for a domain, and its subdomains, to specific
-nameservers instead of the global ones. Use it to resolve private names such
-as `corp.example.com` from an internal DNS server.
-
-Add the domain and its nameservers under Split DNS on the DNS page.
-Nameservers can be IP addresses or `https://` DNS-over-HTTPS URLs. A
-nameserver inside your network is usually reached through a machine that
-advertises its subnet route, or is itself a machine in the tailnet.
-
-Machines only use it when they accept DNS settings from the tailnet
-(`tailscale set --accept-dns`, the default).
+See [Resolve internal domains]({{< relref "use-cases/split-dns.md" >}}).
 
 ## Why can't my teammate see my machines?
 
@@ -102,12 +72,10 @@ machine's menu.
 
 ## Why is the subnet route or exit node not working?
 
-Advertised routes and exit nodes must be approved by a manager on the
-machine's **Routes** dialog. Then, on the other machines:
-
-- subnet routes: Linux clients must run `tailscale set --accept-routes`;
-- exit node: select it with `tailscale set --exit-node=<machine>`, or from
-  the client's menu.
+Routes and exit nodes must be approved in the machine's **Edit route
+settings**, and Linux clients must run `tailscale set --accept-routes`. See
+[Reach devices at home]({{< relref "use-cases/home-network.md" >}}) and
+[Use an exit node]({{< relref "use-cases/exit-node.md" >}}).
 
 ## Can I move my existing Headscale server to ownscale?
 

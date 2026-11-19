@@ -24,7 +24,9 @@
   <div class="hextra-scrollbar hx:overflow-y-auto hx:overflow-x-hidden hx:p-4 hx:grow hx:md:h-[calc(100vh-var(--hextra-navbar-height)-var(--menu-height))]">
     <ul class="hx:flex hx:flex-col hx:gap-1 hx:md:hidden">
       <!-- Nav -->
-      {{ template "sidebar-main" (dict "context" site.Home "pageURL" $pageURL "page" $context "toc" true) -}}
+      {{- /* The docs section, not the home page, so its pages are listed
+        directly instead of under a Documentation entry. */ -}}
+      {{ template "sidebar-main" (dict "context" (site.GetPage "/docs") "pageURL" $pageURL "page" $context "toc" true) -}}
       {{ template "sidebar-footer" }}
     </ul>
 
@@ -34,11 +36,6 @@
       {{ .context.Store.Set "enableFooterSwitches" true }}
     {{- else -}}
       <ul class="hx:flex hx:flex-col hx:gap-1 hx:max-md:hidden">
-        {{- /* The section's own page isn't in its tree; link it first. */ -}}
-        {{- if ne $navRoot site.Home }}
-          {{- $active := eq (strings.TrimSuffix "/" $pageURL) (strings.TrimSuffix "/" $navRoot.RelPermalink) }}
-          <li>{{ template "sidebar-item-link" dict "active" $active "open" false "title" (partial "utils/title" $navRoot) "link" $navRoot.RelPermalink }}</li>
-        {{- end }}
         {{ template "sidebar-main" (dict "context" $navRoot "page" $context  "pageURL" $pageURL) }}
         {{ template "sidebar-footer" }}
       </ul>
@@ -174,7 +171,7 @@
     {{- if eq $level 0 -}}
       {{- /* Fall back to the page tree when no menu entry is page-backed,
         so mobile navigation isn't limited to external menu links (#1024).
-        It comes before those links so Documentation is listed first. */ -}}
+        It comes before those links so the pages are listed first. */ -}}
       {{- if not $hasPageEntry -}}
         {{- range $items.ByWeight }}
           {{- if .Params.sidebar.separator -}}

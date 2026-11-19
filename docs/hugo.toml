@@ -21,7 +21,13 @@ title = "ownscale"
 
   [params.navbar]
     displayTitle = true
-    displayLogo = false
+    displayLogo = true
+
+    [params.navbar.logo]
+      path = "logo.svg"
+      dark = "logo-dark.svg"
+      width = 28
+      height = 28
 
   [params.theme]
     default = "system"
