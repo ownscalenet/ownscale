@@ -139,6 +139,7 @@ jobs:
           docker run --rm -e TAG --entrypoint sh "ghcr.io/ownscalenet/ownscale-caddy:$TAG" -ec '
             test -s /etc/caddy/Caddyfile
             caddy list-modules | grep -q dns.providers.cloudflare
+            caddy list-modules | grep -q http.handlers.rate_limit
           '
       - name: Verify embedded frontend and docs over HTTP
         shell: bash

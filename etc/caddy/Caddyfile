@@ -15,6 +15,10 @@
 		level {$CADDY_LOG_LEVEL:INFO}
 	}
 
+	# rate_limit comes from the caddy-ratelimit module, see the ratelimit_*
+	# snippets below.
+	order rate_limit before reverse_proxy
+
 	# Drop slow-header and idle clients. No read/write timeouts: tailnet
 	# long-polls and funnel WebSockets stay open.
 	servers {
@@ -25,12 +29,77 @@
 	}
 }
 
+# Per-client-IP request rate limits, in events per minute. Which organizations
+# a client may use is limited by ownscale itself (OWNSCALE_MAX_ORGS_PER_IP).
+# Behind a CDN or load balancer, set trusted_proxies in the servers options so
+# {client_ip} is the visitor's. The OIDC provider's server-side endpoints
+# (/oauth/*, /userinfo, /keys, ...) aren't limited: the in-process headscales
+# call them through this proxy, all from one IP.
+(ratelimit_console) {
+	rate_limit {
+		# Each /authorize takes one of ownscale's 10 000 pending login slots
+		# for 15 minutes.
+		zone oidc {
+			match {
+				path /authorize /device_authorization
+			}
+			key {client_ip}
+			events {$RATELIMIT_OIDC:30}
+			window 1m
+		}
+		zone console {
+			match {
+				path /api/* /auth/* /logout
+			}
+			key {client_ip}
+			events {$RATELIMIT_CONSOLE:500}
+			window 1m
+		}
+		# The web UI's files.
+		zone console_web {
+			match {
+				not path /api/* /auth/* /logout /authorize /authorize/* /device_authorization /oauth/* /userinfo /revoke /end_session /keys /.well-known/* /healthz /ready
+			}
+			key {client_ip}
+			events {$RATELIMIT_WEB:1200}
+			window 1m
+		}
+	}
+}
+
+(ratelimit_docs) {
+	rate_limit {
+		zone docs {
+			key {client_ip}
+			events {$RATELIMIT_WEB:1200}
+			window 1m
+		}
+	}
+}
+
+# Funnels have their own limits in ownscale, so only organizations'
+# headscales are limited here. Their names never contain "-", funnels' do.
+(ratelimit_org) {
+	rate_limit {
+		zone org {
+			match {
+				host *.{$BASE_DOMAIN}
+				not expression {http.request.host}.contains('-')
+			}
+			key {client_ip}
+			events {$RATELIMIT_ORG:1200}
+			window 1m
+		}
+	}
+}
+
 # The Ownscale console (web UI, API, its own OIDC provider) is at
 # console.{$BASE_DOMAIN}; everything else goes to ownscale below.
 console.{$BASE_DOMAIN} {
 	# Caddy would otherwise serve it from the *.{$BASE_DOMAIN} site's
 	# certificate, which is per-host on demand without a DNS provider.
 	tls force_automate
+	import ratelimit_console
 	reverse_proxy ownscale:8080
 }
 
@@ -40,6 +109,7 @@ import /etc/caddy/dev/sites*.caddyfile
 # The docs site and the content domain's landing page. CONTENT_DOMAIN defaults
 # to BASE_DOMAIN (see compose.yaml); a repeated address is fine.
 {$BASE_DOMAIN}, {$CONTENT_DOMAIN} {
+	import ratelimit_docs
 	reverse_proxy ownscale:8080
 }
 
@@ -49,6 +119,7 @@ import /etc/caddy/dev/sites*.caddyfile
 	# Only "none" has a site file; an unmatched glob is a no-op.
 	import /etc/caddy/providers/{$DNS_PROVIDER:none}-site*.caddyfile
 
+	import ratelimit_org
 	reverse_proxy ownscale:8080 {
 		lb_try_duration 5s
 		lb_try_interval 250ms
