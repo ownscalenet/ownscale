@@ -456,6 +456,14 @@ func TestValidate(t *testing.T) {
 		}
 	})
 
+	t.Run("negative max_orgs_per_ip rejected", func(t *testing.T) {
+		cfg := fullyPopulatedConfig()
+		cfg.MaxOrgsPerIP = -1
+		if err := cfg.Validate(); err == nil {
+			t.Error("Validate: want error, got nil")
+		}
+	})
+
 	t.Run("relative data_dir rejected", func(t *testing.T) {
 		cfg := fullyPopulatedConfig()
 		cfg.DataDir = "relative/data"

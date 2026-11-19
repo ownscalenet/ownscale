@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/ownscalenet/ownscale/handlers"
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 // maxConsoleBodyBytes limits request bodies to the console API and OIDC endpoints.
@@ -121,6 +122,8 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 	noIndex := h.NoIndex()
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		// RemoteAddr is the real client by now, see TrustedProxies.
+		r = r.WithContext(orgs.WithClient(r.Context(), r.RemoteAddr))
 		var next http.Handler
 		route := classifyHost(r.Host, baseDomain, contentDomain)
 		// Funnels serve users' own content; indexing is their call.
@@ -129,6 +132,12 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 		}
 		switch route.kind {
 		case hostOrg:
+			// Checked per request, as pooled connections to an awake org
+			// don't dial again.
+			if err := h.AllowClient(r.Context(), route.subdomain); err != nil {
+				http.Error(w, err.Error(), http.StatusTooManyRequests)
+				return
+			}
 			// Headscale's own responses; orgProxy logs at debug level.
 			orgHeadscale.serve(w, r, route.subdomain)
 			return

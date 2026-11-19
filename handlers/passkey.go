@@ -240,6 +240,10 @@ func (h *Handlers) PasskeyRegisterFinish(w http.ResponseWriter, r *http.Request)
 			h.writeError(w, http.StatusForbidden, errMaxOrgsMessage)
 			return
 		}
+		if errors.Is(err, orgs.ErrClientLimit) {
+			h.writeError(w, http.StatusTooManyRequests, err.Error())
+			return
+		}
 		if errors.Is(err, errHeadscaleUnavailable) || errors.Is(err, orgs.ErrNotRunning) {
 			h.logger.Warn("sign-up: create headscale user", "error", err)
 			h.writeError(w, http.StatusServiceUnavailable, "headscale is unavailable right now, try again in a moment")

@@ -97,6 +97,8 @@ type Service struct {
 	// certs is nil when node certificates are disabled.
 	certs *nodeCerts
 
+	clients clientLimiter
+
 	// createFn defaults to createHeadscale; override in tests to skip
 	// real headscale startup.
 	createFn func(p headscaleParams) (*hscontrol.Headscale, error)
@@ -349,6 +351,9 @@ func (s *Service) Ensure(ctx context.Context, subdomain string) (_ *hscl.Client,
 		s.touch(subdomain)
 		return inst.client, nil
 	}
+	if err := s.AllowClient(ctx, subdomain); err != nil {
+		return nil, err
+	}
 	s.orgLock(subdomain).Lock()
 	defer s.orgLock(subdomain).Unlock()
 	// Another caller may have started it while this one waited.
@@ -557,6 +562,9 @@ func (s *Service) Create(ctx context.Context, subdomain string) (_ sqlcgen.Organ
 	defer derrors.Wrap(&err, "s.Create(%q)", subdomain)
 
 	if err := ValidateSubdomain(subdomain); err != nil {
+		return sqlcgen.Organization{}, err
+	}
+	if err := s.AllowClient(ctx, subdomain); err != nil {
 		return sqlcgen.Organization{}, err
 	}
 	// A new org must not inherit a deleted org's headscale database.

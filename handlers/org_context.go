@@ -9,6 +9,7 @@ import (
 	"github.com/ownscalenet/ownscale/auth"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/hscl"
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 type orgContextKey int
@@ -67,6 +68,10 @@ func (h *Handlers) RequireHeadscaleClient(next http.HandlerFunc) http.HandlerFun
 		}
 		r = r.WithContext(h.withOrgLogger(r.Context(), org.Subdomain))
 		client, err := h.hs.Ensure(r.Context(), org.Subdomain)
+		if errors.Is(err, orgs.ErrClientLimit) {
+			h.writeError(w, http.StatusTooManyRequests, err.Error())
+			return
+		}
 		if err != nil {
 			h.loggerFromContext(r.Context()).Warn("get headscale client", "error", err)
 			h.writeError(w, http.StatusServiceUnavailable, "headscale is unavailable right now, try again in a moment")

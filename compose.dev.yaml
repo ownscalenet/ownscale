@@ -73,6 +73,8 @@ services:
       # Dex user aaaa@ownscale.test gets subdomain aaaa, and so on; the e2e
       # setup relies on it.
       OWNSCALE_FIXED_SUBDOMAINS: aaaa,bbbb,cccc,dddd,eeee,ffff,gggg,hhhh,iiii,jjjj
+      # The e2e tests use many organizations from one IP.
+      OWNSCALE_MAX_ORGS_PER_IP: "0"
 
   caddy:
     image: ownscale-caddy:latest

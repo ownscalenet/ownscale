@@ -165,6 +165,12 @@ func (h *Handlers) ServeLanding(w http.ResponseWriter, r *http.Request) {
 	h.landing.ServeHTTP(w, r)
 }
 
+// AllowClient returns orgs.ErrClientLimit if the client in ctx uses too many
+// organizations (see orgs.Service.AllowClient).
+func (h *Handlers) AllowClient(ctx context.Context, subdomain string) error {
+	return h.orgs.AllowClient(ctx, subdomain)
+}
+
 // DialOrg connects to subdomain's in-process headscale instance.
 func (h *Handlers) DialOrg(ctx context.Context, subdomain string) (net.Conn, error) {
 	return h.orgs.DialOrg(ctx, subdomain)

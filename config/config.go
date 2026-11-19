@@ -44,6 +44,10 @@ type Config struct {
 	// MaxAwakeOrgs caps how many organizations' headscales run at once, so
 	// waking orgs can't exhaust memory; 0 means no cap.
 	MaxAwakeOrgs int `env:"OWNSCALE_MAX_AWAKE_ORGS"`
+	// MaxOrgsPerIP caps how many different organizations one client address
+	// can use per hour, so it can't keep many awake or create many; 0 means
+	// no cap.
+	MaxOrgsPerIP int `env:"OWNSCALE_MAX_ORGS_PER_IP"`
 	// NoIndex asks search engines not to index ownscale's own sites.
 	NoIndex bool `env:"OWNSCALE_NOINDEX"`
 	// TrustedProxies are the reverse proxies whose X-Forwarded-For header
@@ -344,9 +348,10 @@ const DefaultDERPMapURL = "https://controlplane.tailscale.com/derpmap/default"
 
 func defaults() *Config {
 	return &Config{
-		Addr:       ":8080",
-		DataDir:    "data",
-		LocalCADir: "local-ca",
+		Addr:         ":8080",
+		DataDir:      "data",
+		LocalCADir:   "local-ca",
+		MaxOrgsPerIP: 20,
 		Funnel: FunnelConfig{
 			MaxBodyBytes:  32 << 20,
 			RatePerSecond: 100,
@@ -483,6 +488,9 @@ EOF`)
 	}
 	if c.MaxAwakeOrgs < 0 {
 		return fmt.Errorf("OWNSCALE_MAX_AWAKE_ORGS must not be negative, got %d", c.MaxAwakeOrgs)
+	}
+	if c.MaxOrgsPerIP < 0 {
+		return fmt.Errorf("OWNSCALE_MAX_ORGS_PER_IP must not be negative, got %d", c.MaxOrgsPerIP)
 	}
 	if err := c.Backup.Validate(); err != nil {
 		return err
