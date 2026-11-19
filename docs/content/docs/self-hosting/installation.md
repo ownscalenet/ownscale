@@ -8,7 +8,7 @@ aliases:
 ownscale ships as a Docker Compose stack:
 
 - the `ownscale` container runs the console, the API and one Headscale
-  instances, all in a single process;
+  instance per organization, all in a single process;
 - the `ownscale` container also serves this documentation site, every
   organization's login server and every funnel;
 - the `caddy` container handles TLS and forwards requests to `ownscale`. You
@@ -21,7 +21,7 @@ Check the [requirements]({{< relref "requirements.md" >}}) first.
 On the server, run:
 
 ```sh
-curl -fsSL https://raw.githubusercontent.com/ownscalenet/ownscale/main/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/ownscalenet/ownscale/master/install.sh | sh
 ```
 
 It asks for a directory, your domain and your reverse proxy, then:
@@ -35,6 +35,17 @@ It asks for a directory, your domain and your reverse proxy, then:
 Then start ownscale as the script shows, and [sign in](#sign-in).
 The `Makefile` is the usual way to interact with the ownscale deployment.
 Run `make help` to see a list of available commands.
+
+## Sign in
+
+Start the stack with `make up` and open `https://console.<BASE_DOMAIN>`.
+The first sign-in creates your organization, and you're its owner. Invite
+others from [Invitations](/console/invitations).
+
+By default anyone who can reach the server can sign up and create their own
+organization. For a private server, set `OWNSCALE_MAX_ORGS=1` in `.env`
+before starting: once your organization exists, only invited users can sign
+in.
 
 ## Upgrading
 

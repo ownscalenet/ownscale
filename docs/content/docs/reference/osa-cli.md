@@ -37,7 +37,7 @@ socket. It needs the running server, and the organization must be awake.
 For example:
 
 ```sh
-make osa organization list
+make osa headscale aaaa nodes list
 ```
 
 Prefer the console for routine changes. This command is for inspection and

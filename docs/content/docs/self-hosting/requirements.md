@@ -12,8 +12,8 @@ weight: 10
   organization's database live there.
 
 ownscale is designed to run many organizations on a small server. Each
-organization's Headscale instance runs in-process and is stopped after 30
-minutes of inactivity.
+organization's Headscale instance runs in-process, is stopped after a few
+minutes of inactivity, and starts again on the next request.
 
 ## Domains
 
@@ -30,9 +30,8 @@ own subdomain.
 
 A second, separate domain for user content, called `CONTENT_DOMAIN`
 is very much recommended. Ownscale serves user-provided content
-through funnels and that allows setting cookies on on the domain.
-The content domain needs its own wildcard record. See
-[Domains and URLs]({{< relref "/docs/reference/domains-and-urls.md" >}}).
+through funnels and that allows setting cookies on the domain.
+The content domain needs its own wildcard record.
 
 ## DNS provider (optional)
 
@@ -68,3 +67,6 @@ any of the following:
   container, or a local path. See
   [`osa restore`]({{< relref "/docs/reference/osa-cli.md#restore" >}}).
 - **A separate small server** for a [custom DERP relay](https://tailscale.com/kb/1118/custom-derp-servers).
+  By default, machines that can't connect directly relay their traffic,
+  end-to-end encrypted, through Tailscale's public DERP servers. Set
+  `OWNSCALE_DERP_MAP_URL` to use your own.

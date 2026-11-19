@@ -11,9 +11,9 @@ proxy examples](/docs/self-hosting/byorp).
 
 {{< cards >}}
   {{< card link="/docs/self-hosting/requirements/" title="Requirements" icon="clipboard-check" subtitle="Server, domains, DNS provider and login provider." >}}
-  {{< card link="/docs/self-hosting/installation/" title="Installation" icon="download" subtitle="Install script or manual Docker Compose setup." >}}
+  {{< card link="/docs/self-hosting/installation/" title="Installation" icon="download" subtitle="Install script, first sign-in and upgrades." >}}
   {{< card link="/docs/self-hosting/byorp/" title="Own reverse proxy" icon="switch-horizontal" subtitle="Run ownscale behind nginx, Traefik or another proxy." >}}
 {{< /cards >}}
 
 [`example.env`](https://github.com/ownscalenet/ownscale/blob/master/example.env)
-is the documentation document for ownscale settings.
+documents every ownscale setting.

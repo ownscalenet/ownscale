@@ -69,8 +69,9 @@ Machines only use it when they accept DNS settings from the tailnet
 ## Why can't my teammate see my machines?
 
 Each account belongs to one organization. If your teammate signed in without
-an invite, they got their own organization. Create an invitation for them
-and
+an invite, they got their own organization. Create one on
+[Invitations](/console/invitations) and send them the link: signing in
+through it adds them to your organization.
 
 ## Why can't machines reach each other?
 
@@ -90,8 +91,12 @@ machine's menu.
 
 ## Why is the subnet route or exit node not working?
 
-Advertised routes must be approved by a manager on the machine's **Routes**
-dialog, and Linux clients must run `tailscale set --accept-routes`. See
+Advertised routes and exit nodes must be approved by a manager on the
+machine's **Routes** dialog. Then, on the other machines:
+
+- subnet routes: Linux clients must run `tailscale set --accept-routes`;
+- exit node: select it with `tailscale set --exit-node=<machine>`, or from
+  the client's menu.
 
 ## Can I move my existing Headscale server to ownscale?
 
