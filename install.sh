@@ -1,6 +1,6 @@
 #!/bin/sh
 # Installs ownscale with Docker Compose:
-#   curl -fsSL https://raw.githubusercontent.com/ownscalenet/ownscale/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/ownscalenet/ownscale/master/install.sh | sh
 #
 # OWNSCALE_VERSION picks a release instead of the latest one, and
 # OWNSCALE_INSTALL_URL downloads the files from elsewhere (tests use a checkout).

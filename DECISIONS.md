@@ -65,3 +65,11 @@ gets a random tailnet label under `os.<CONTENT_DOMAIN>` that can't be changed,
 so names are unique and don't reveal the organization's subdomain.
 Node sites are user content, so like funnels they live on the content domain,
 not on the console's site. Drawback: the provider credentials can write the whole zone.
+
+### 9. Litestream replicates every organization database, awake or asleep
+The process for putting orgs to sleep and waking them does not
+touch the litestream replication.
+Cons: 160KB heap, 4 goroutines, 6 fds open per org, even if orgs are sleeping
+Pros: Fewer requests to the destination bucket for backup: both the sleep and
+the wake call need to make calls to the remote. If orgs wake and sleep often,
+that might be a high cost. Don't know yet if that's the case, needs profiling.
