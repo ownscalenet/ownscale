@@ -19,6 +19,17 @@ Tailscale clients connect to instead of Tailscale's hosted service. It's built
 on [Headscale](https://headscale.net) and isn't affiliated with Tailscale
 Inc.
 
+## How does ownscale compare to NetBird?
+
+Both are self-hosted mesh VPNs built on WireGuard. ownscale's strengths:
+works with the official Tailscale clients, can  host many tailnets on
+one small server, passwordless sign-in with passkeys, continuous backups,
+BSD 3-Clause license.
+
+Netbird positives that are missing from ownscale: device posture checks,
+audit log, API tokens and a Terraform provider for automation, the
+visual policy editor.
+
 ## What's the difference between the console URL, the login server and the tailnet name?
 
 - **Console**: `https://console.<BASE_DOMAIN>`, where you manage everything
