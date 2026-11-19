@@ -47,6 +47,34 @@ random_secret() {
 		od -An -N32 -tx1 /dev/urandom | tr -d ' \n'
 }
 
+# resolves NAME: whether NAME resolves from this host. Without a lookup tool,
+# it can't tell, so it says yes.
+resolves() {
+	if command -v getent >/dev/null 2>&1; then
+		getent hosts "$1" >/dev/null 2>&1
+	elif command -v host >/dev/null 2>&1; then
+		host "$1" >/dev/null 2>&1
+	elif command -v nslookup >/dev/null 2>&1; then
+		nslookup "$1" >/dev/null 2>&1
+	fi
+}
+
+# check_docker warns early when Docker is installed but can't be used, which
+# compose would otherwise only report at the first start.
+check_docker() {
+	command -v docker >/dev/null 2>&1 || return 0
+	out=$(docker info 2>&1) && return 0
+	case $out in
+	*"permission denied"*)
+		say "warning: $(id -un) can't use Docker. Add yourself to the docker group,"
+		say "then log out and back in:"
+		say "  sudo usermod -aG docker $(id -un)"
+		;;
+	*) say "warning: Docker isn't running ('docker info' failed)." ;;
+	esac
+	say ""
+}
+
 valid_domain() {
 	printf '%s' "$1" | grep -Eq '^([a-z0-9]([a-z0-9-]*[a-z0-9])?\.)+[a-z]([a-z0-9-]*[a-z0-9])?$'
 }
@@ -202,6 +230,7 @@ main() {
 	if ! docker compose version >/dev/null 2>&1; then
 		say "warning: Docker Compose not found; install it before starting ownscale."
 	fi
+	check_docker
 
 	say "This installs ownscale with Docker Compose. See"
 	say "https://github.com/$REPO for the documentation."
@@ -221,8 +250,20 @@ main() {
 	while :; do
 		ask "Domain for ownscale, with a wildcard DNS record (e.g. example.com)" ""
 		domain=$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')
-		valid_domain "$domain" && break
-		say "\"$answer\" isn't a domain name like example.com."
+		if ! valid_domain "$domain"; then
+			say "\"$answer\" isn't a domain name like example.com."
+			continue
+		fi
+		# A random name checks the wildcard record, the one most often missing.
+		missing=
+		for name in "$domain" "check-$(random_secret | cut -c1-8).$domain"; do
+			resolves "$name" || missing="$missing $name"
+		done
+		[ -n "$missing" ] || break
+		say "warning: these names don't resolve from this host:$missing"
+		say "Certificates and clients won't work until $domain and *.$domain do."
+		ask "Continue anyway? [y/N]" n
+		case $answer in [Yy]*) break ;; esac
 	done
 
 	say ""
@@ -295,7 +336,10 @@ main() {
 	heading "Next steps"
 	say "1. Point DNS records for $domain and *.$domain at this server."
 	if [ "$proxy" = bundled ]; then
-		say "   Ports 80 and 443 must be free and reachable."
+		say "   Open these ports, and keep them free for Caddy:"
+		say "     80/tcp   HTTP, redirects to HTTPS and answers ACME challenges"
+		say "     443/tcp  HTTPS: console, login servers, funnels"
+		say "     443/udp  HTTP/3"
 	fi
 	say "2. Optionally, edit $dir/.env to add login providers (passkeys work"
 	say "   without any), backups, or a DNS provider for machine certificates."
