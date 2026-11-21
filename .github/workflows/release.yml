@@ -42,6 +42,8 @@ jobs:
           ref: refs/tags/${{ env.TAG }}
           path: source
           persist-credentials: false
+          # Full history, for the docs pages' "Last updated" dates.
+          fetch-depth: 0
 
       - name: Validate Compose images
         working-directory: source

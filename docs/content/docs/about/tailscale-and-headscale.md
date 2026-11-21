@@ -12,7 +12,7 @@ server.
 
 Common points:
 - Tailscale, Headscale and Ownscale are server components. For day to day
-usage users will interact with the Tailscale client applications for Linux,
+usage users interact with the Tailscale client applications for Linux,
 MacOS, Windows, iOS, Android which are all compatible with the servers.
 
 - Your traffic never goes through Ownscale. Machines talk to each other

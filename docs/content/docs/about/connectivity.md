@@ -14,16 +14,6 @@ By default ownscale uses Tailscale's public DERP servers. To use your own,
 run a [DERP server](https://tailscale.com/kb/1118/custom-derp-servers), serve
 a DERP map listing it, and set `OWNSCALE_DERP_MAP_URL`.
 
-## Server ports
-
-With the bundled Caddy, open these inbound:
-
-| Port | Used for |
-| --- | --- |
-| 80/tcp | Redirect to HTTPS, ACME challenges |
-| 443/tcp | Console, login servers, funnels |
-| 443/udp | HTTP/3 |
-
 ## Client firewalls
 
 Machines need no inbound ports. Outbound, they need:
@@ -36,3 +26,13 @@ Machines need no inbound ports. Outbound, they need:
 
 Blocking outbound UDP still works, but all traffic then goes through relays,
 which is slower.
+
+## Server ports
+
+With the bundled Caddy, open these inbound:
+
+| Port | Used for |
+| --- | --- |
+| 80/tcp | Redirect to HTTPS, ACME challenges |
+| 443/tcp | Console, login servers, funnels |
+| 443/udp | HTTP/3 |

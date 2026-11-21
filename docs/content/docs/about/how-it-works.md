@@ -1,6 +1,6 @@
 ---
 title: How ownscale works
-weight: 10
+weight: 50
 ---
 
 ownscale runs as two containers:

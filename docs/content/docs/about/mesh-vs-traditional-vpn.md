@@ -5,9 +5,11 @@ weight: 20
 
 ## Traditional VPN
 
-A traditional VPN sends every device's traffic through one central server:
+A traditional VPN sends every device's traffic through one central server.
+Such a setup can work well in many situations, but there could be
+challenges related to:
 
-- **Bottleneck**: all traffic crosses the server, adding latency and bandwidth
+- **Bottlenecks**: all traffic crosses the server, adding latency and bandwidth
   costs, even between two devices in the same office.
 - **Single point of failure**: when the server is down, nobody can work.
 - **All or nothing**: once connected, a device is usually trusted with the

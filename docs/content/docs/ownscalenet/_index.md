@@ -3,6 +3,13 @@ title: ownscale.net
 weight: 30
 ---
 
+> [!IMPORTANT]
+> ownscale.net is primarily for testing ownscale. It isn't a regular SaaS
+> offering. It is set up for high-availability and to prevent data loss,
+> but at the moment we don't afford the responsibility of a SaaS.
+> For anything you depend on, [host your
+> own]({{< relref "/docs/self-hosting/_index.md" >}}).
+
 [ownscale.net](https://ownscale.net) is a free Ownscale instance for users
 to evaluate. New features are first deployed on ownscale.net and the
 integration tests are run on it. Backups and alerts are working on

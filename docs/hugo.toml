@@ -1,6 +1,12 @@
 baseURL = "/"
 locale = "en-US"
 title = "ownscale"
+# Pages' "Last updated" dates come from their last commit.
+enableGitInfo = true
+
+[frontmatter]
+  # A page's own lastmod wins, to override a cosmetic commit.
+  lastmod = ["lastmod", ":git"]
 
 [module]
   # Fetch the theme through the Go module proxy rather than git.
@@ -18,6 +24,8 @@ title = "ownscale"
 [params]
   # Repository for the edit and view-source buttons next to page titles.
   repo = "https://github.com/ownscalenet/ownscale"
+  displayUpdatedDate = true
+  dateFormat = "January 2, 2006"
 
   [params.navbar]
     displayTitle = true
