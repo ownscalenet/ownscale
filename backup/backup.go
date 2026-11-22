@@ -111,13 +111,13 @@ func (r *Replicator) Remove(ctx context.Context, relPath string) (err error) {
 	if err := r.store.UnregisterDB(ctx, filepath.Join(r.dataDir, relPath)); err != nil {
 		return err
 	}
-	return DeleteReplica(ctx, r.cfg, relPath)
+	return deleteReplica(ctx, r.cfg, relPath)
 }
 
-// DeleteReplica deletes the replica of the database at relPath. It's a
+// deleteReplica deletes the replica of the database at relPath. It's a
 // no-op with backups disabled.
-func DeleteReplica(ctx context.Context, cfg config.BackupConfig, relPath string) (err error) {
-	defer derrors.Wrap(&err, "DeleteReplica(%q)", relPath)
+func deleteReplica(ctx context.Context, cfg config.BackupConfig, relPath string) (err error) {
+	defer derrors.Wrap(&err, "deleteReplica(%q)", relPath)
 
 	if !cfg.Enabled() {
 		return nil

@@ -17,7 +17,7 @@ make osa <command>
 | Command | Description |
 | --- | --- |
 | `make osa organization list` | List organizations. |
-| `make osa organization delete <subdomain>...` | Delete organizations with their machines, data and backups. Needs ownscale stopped. |
+| `make osa organization delete <subdomain>...` | Delete organizations with their machines, data and backups. Needs the running server. |
 
 ## user
 

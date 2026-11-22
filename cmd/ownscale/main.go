@@ -16,6 +16,7 @@ import (
 	"github.com/ownscalenet/ownscale/auth/oidcprovider"
 	"github.com/ownscalenet/ownscale/backup"
 	"github.com/ownscalenet/ownscale/config"
+	"github.com/ownscalenet/ownscale/control"
 	"github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/debugserver"
 	"github.com/ownscalenet/ownscale/handlers"
@@ -160,6 +161,17 @@ func run() error {
 		}()
 	}
 
+	cln, err := listenControl(cfg.DataDir)
+	if err != nil {
+		return err
+	}
+	defer cln.Close()
+	ctlSrv := &http.Server{
+		Handler:           control.Handler(h.DeleteOrganization, logger),
+		ReadHeaderTimeout: 10 * time.Second,
+	}
+	go func() { _ = ctlSrv.Serve(cln) }()
+
 	ctx, stop := signal.NotifyContext(ctx, os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	h.Start(ctx)
@@ -229,4 +241,23 @@ func run() error {
 		logger.Info("shutdown complete")
 	}
 	return nil
+}
+
+// listenControl listens on the control socket osa uses to reach this
+// server. The caller holds the data dir lock, so a socket file left there
+// belongs to a process that's gone.
+func listenControl(dataDir string) (net.Listener, error) {
+	path := control.SocketPath(dataDir)
+	if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, err
+	}
+	ln, err := net.Listen("unix", path)
+	if err != nil {
+		return nil, fmt.Errorf("listen on %q: %w", path, err)
+	}
+	if err := os.Chmod(path, 0o600); err != nil {
+		ln.Close()
+		return nil, err
+	}
+	return ln, nil
 }

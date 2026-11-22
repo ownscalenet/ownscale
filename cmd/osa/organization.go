@@ -7,7 +7,6 @@ import (
 	"io"
 	"log/slog"
 	"os"
-	"path/filepath"
 	"slices"
 	"strconv"
 	"strings"
@@ -15,8 +14,8 @@ import (
 
 	"github.com/peterbourgon/ff/v4"
 
-	"github.com/ownscalenet/ownscale/backup"
 	"github.com/ownscalenet/ownscale/config"
+	"github.com/ownscalenet/ownscale/control"
 	"github.com/ownscalenet/ownscale/db"
 	"github.com/ownscalenet/ownscale/derrors"
 	"github.com/ownscalenet/ownscale/hscl"
@@ -131,47 +130,30 @@ func newOrganizationDeleteCommand(parent *ff.FlagSet) *ff.Command {
 	return &ff.Command{
 		Name:      "delete",
 		Usage:     "osa organization delete SUBDOMAIN...",
-		ShortHelp: "delete organizations, their data and backups; ownscale must be stopped",
+		ShortHelp: "delete organizations, their data and backups; ownscale must be running",
 		Flags:     flags,
 		Exec: func(ctx context.Context, args []string) error {
 			if len(args) == 0 {
 				return errors.New("usage: osa organization delete SUBDOMAIN...")
 			}
-			res, cleanup, err := newOrgResources()
-			defer cleanup()
+			cfg, _, err := loadConfigAndLogger()
 			if err != nil {
 				return err
 			}
-			return deleteOrganizations(ctx, os.Stdout, res.cfg, res.queries, args)
+			return deleteOrganizations(ctx, os.Stdout, control.NewClient(cfg.DataDir), args)
 		},
 	}
 }
 
-// deleteOrganizations deletes each organization's row, which cascades to
-// its memberships, then its backup and data directory. It holds the data
-// dir lock so it can't race a running ownscale.
-func deleteOrganizations(ctx context.Context, out io.Writer, cfg *config.Config, queries *db.TxQueries, subdomains []string) (err error) {
+// deleteOrganizations asks the running ownscale to delete each
+// organization, as only it can stop the organization's headscale and
+// backup. It stops at the first failure.
+func deleteOrganizations(ctx context.Context, out io.Writer, client *control.Client, subdomains []string) (err error) {
 	defer derrors.Wrap(&err, "deleteOrganizations(%q)", subdomains)
 
-	unlock, err := orgs.LockDataDir(cfg.DataDir)
-	if err != nil {
-		return err
-	}
-	defer unlock()
-
 	for _, sub := range subdomains {
-		org, err := queries.GetOrganizationBySubdomain(ctx, sub)
-		if err != nil {
-			return fmt.Errorf("organization %q: %w", sub, err)
-		}
-		if err := queries.DeleteOrganization(ctx, org.ID); err != nil {
+		if err := client.DeleteOrganization(ctx, sub); err != nil {
 			return err
-		}
-		if err := errors.Join(
-			backup.DeleteReplica(ctx, cfg.Backup, orgs.DBFile(sub)),
-			os.RemoveAll(filepath.Join(cfg.DataDir, sub)),
-		); err != nil {
-			return fmt.Errorf("organization %q deleted, but its files remain: %w", sub, err)
 		}
 		_, _ = fmt.Fprintf(out, "deleted %s\n", sub)
 	}

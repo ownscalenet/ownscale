@@ -2,19 +2,20 @@ package main
 
 import (
 	"context"
-	"io"
+	"database/sql"
+	"log/slog"
+	"net"
+	"net/http"
 	"os"
 	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/ownscalenet/ownscale/config"
+	"github.com/ownscalenet/ownscale/control"
 	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/hscl"
 	"github.com/ownscalenet/ownscale/hscl/hstest"
-	"github.com/ownscalenet/ownscale/orgs"
 )
 
 func TestListOrganizations(t *testing.T) {
@@ -123,57 +124,64 @@ func TestListOrganizationSubdomains(t *testing.T) {
 
 func TestDeleteOrganizations(t *testing.T) {
 	tests := []struct {
-		name       string
-		running    bool
-		delete     []string
-		wantErr    bool
-		wantRemain []string
+		name        string
+		serving     bool
+		delete      []string
+		wantErr     bool
+		wantDeleted []string
 	}{
-		{"deletes data and backups", false, []string{"acme"}, false, []string{"globex"}},
-		{"refuses while ownscale runs", true, []string{"acme"}, true, []string{"acme", "globex"}},
-		{"stops at an unknown organization", false, []string{"acme", "nope", "globex"}, true, []string{"globex"}},
+		{"deletes through the server", true, []string{"acme", "globex"}, false, []string{"acme", "globex"}},
+		{"stops at an unknown organization", true, []string{"acme", "nope", "globex"}, true, []string{"acme"}},
+		{"ownscale not running", false, []string{"acme"}, true, nil},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			replicaDir := t.TempDir()
-			bcfg := config.BackupConfig{ReplicaURL: "file://" + replicaDir, SyncInterval: 10 * time.Millisecond}
-			cfg := &config.Config{DataDir: t.TempDir(), Backup: bcfg}
-			_, queries := dbtest.New(t)
-			for _, sub := range []string{"acme", "globex"} {
-				dbtest.CreateOrg(t, queries.Queries, sub)
-				backUpOrg(t, bcfg, replicaDir, sub, sub)
-				if err := os.MkdirAll(filepath.Join(cfg.DataDir, sub), 0o755); err != nil {
-					t.Fatal(err)
-				}
+			// Unix socket paths are limited to ~100 bytes.
+			dataDir, err := os.MkdirTemp("", "osa")
+			if err != nil {
+				t.Fatal(err)
 			}
-			if tt.running {
-				unlock, err := orgs.LockDataDir(cfg.DataDir)
-				if err != nil {
-					t.Fatal(err)
+			t.Cleanup(func() { os.RemoveAll(dataDir) })
+			var deleted []string
+			if tt.serving {
+				deleteOrg := func(_ context.Context, sub string) error {
+					if sub != "acme" && sub != "globex" {
+						return sql.ErrNoRows
+					}
+					deleted = append(deleted, sub)
+					return nil
 				}
-				defer unlock()
+				serveControl(t, dataDir, deleteOrg)
 			}
 
-			err := deleteOrganizations(t.Context(), io.Discard, cfg, queries, tt.delete)
+			var out strings.Builder
+			err = deleteOrganizations(t.Context(), &out, control.NewClient(dataDir), tt.delete)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("deleteOrganizations err = %v, wantErr %v", err, tt.wantErr)
 			}
-
-			var remain []string
-			for _, sub := range []string{"acme", "globex"} {
-				_, dbErr := queries.GetOrganizationBySubdomain(t.Context(), sub)
-				_, dirErr := os.Stat(filepath.Join(cfg.DataDir, sub))
-				backedUp := hasFiles(t, filepath.Join(replicaDir, orgs.DBFile(sub)))
-				if (dbErr == nil) != (dirErr == nil) || (dbErr == nil) != backedUp {
-					t.Errorf("%s: row err %v, dir err %v, backed up %v; want all present or all gone", sub, dbErr, dirErr, backedUp)
-				}
-				if dbErr == nil {
-					remain = append(remain, sub)
-				}
+			if !slices.Equal(deleted, tt.wantDeleted) {
+				t.Errorf("deleted = %v, want %v", deleted, tt.wantDeleted)
 			}
-			if !slices.Equal(remain, tt.wantRemain) {
-				t.Errorf("remaining = %v, want %v", remain, tt.wantRemain)
+			var wantOut string
+			for _, sub := range tt.wantDeleted {
+				wantOut += "deleted " + sub + "\n"
+			}
+			if out.String() != wantOut {
+				t.Errorf("output = %q, want %q", out.String(), wantOut)
 			}
 		})
 	}
+}
+
+// serveControl serves the control socket in dataDir like a running
+// ownscale, deleting organizations with deleteOrg.
+func serveControl(t *testing.T, dataDir string, deleteOrg func(context.Context, string) error) {
+	t.Helper()
+	ln, err := net.Listen("unix", control.SocketPath(dataDir))
+	if err != nil {
+		t.Fatal(err)
+	}
+	srv := &http.Server{Handler: control.Handler(deleteOrg, slog.New(slog.DiscardHandler))}
+	go func() { _ = srv.Serve(ln) }()
+	t.Cleanup(func() { _ = srv.Close() })
 }

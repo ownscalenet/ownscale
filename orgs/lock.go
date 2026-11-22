@@ -9,13 +9,13 @@ import (
 	"github.com/ownscalenet/ownscale/derrors"
 )
 
-// ErrDataDirLocked is returned by LockDataDir while another process, such
+// errDataDirLocked is returned by LockDataDir while another process, such
 // as the running ownscale server, holds the lock.
-var ErrDataDirLocked = errors.New("data directory is in use by a running ownscale")
+var errDataDirLocked = errors.New("data directory is in use by a running ownscale")
 
 // LockDataDir takes an exclusive lock on dataDir until unlock is called or
-// the process exits. ownscale holds it while running, so offline commands
-// can tell it's stopped even when every organization sleeps.
+// the process exits. ownscale holds it while running, so two servers never
+// share a data directory.
 func LockDataDir(dataDir string) (unlock func() error, err error) {
 	defer derrors.Wrap(&err, "LockDataDir(%q)", dataDir)
 
@@ -29,7 +29,7 @@ func LockDataDir(dataDir string) (unlock func() error, err error) {
 	if err := syscall.Flock(int(f.Fd()), syscall.LOCK_EX|syscall.LOCK_NB); err != nil {
 		f.Close()
 		if errors.Is(err, syscall.EWOULDBLOCK) {
-			return nil, ErrDataDirLocked
+			return nil, errDataDirLocked
 		}
 		return nil, err
 	}

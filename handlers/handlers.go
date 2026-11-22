@@ -142,6 +142,19 @@ func (h *Handlers) Domains() (baseDomain, contentDomain string) {
 	return h.baseDomain, h.contentDomain
 }
 
+// DeleteOrganization deletes the organization with subdomain like the
+// console does when its last member leaves. It returns sql.ErrNoRows if
+// there is no such organization.
+func (h *Handlers) DeleteOrganization(ctx context.Context, subdomain string) (err error) {
+	defer derrors.Wrap(&err, "h.DeleteOrganization(%q)", subdomain)
+
+	org, err := h.queries.GetOrganizationBySubdomain(ctx, subdomain)
+	if err != nil {
+		return err
+	}
+	return h.orgs.ForOrg(org).Delete(ctx)
+}
+
 // Development reports whether ownscale runs in development mode.
 func (h *Handlers) Development() bool { return h.development }
 
