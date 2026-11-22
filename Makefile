@@ -197,7 +197,7 @@ e2e-ssh: ## Run the Tailscale SSH and split DNS suite (needs /dev/net/tun)
 	npm --prefix e2e/frontend run test:ssh -- $(E2E_SSH_ARGS)
 
 REMOTE_BASE_DOMAIN ?= "beastbb.bond"
-REMOTE_CONTENT_DOMAIN ?= "ownsc.net"
+REMOTE_CONTENT_DOMAIN ?= "beastbb.bond"
 REMOTE_E2E_ENV = E2E_BASE_URL=https://console.$(REMOTE_BASE_DOMAIN) E2E_BASE_DOMAIN=$(REMOTE_BASE_DOMAIN) \
 	E2E_CONTENT_DOMAIN=$(REMOTE_CONTENT_DOMAIN) E2E_CA_FILE=
 

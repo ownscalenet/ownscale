@@ -13,7 +13,7 @@ FROM golang:1.27-alpine AS build
 # regularly upstream tailscaled clients are updated (see cmd/derper's own
 # README: "you should update this binary approximately as regularly as you
 # update Tailscale nodes").
-ARG TAILSCALE_VERSION=v1.102.3
+ARG TAILSCALE_VERSION=v1.104.7
 
 WORKDIR /src
 RUN --mount=type=cache,target=/go/pkg/mod \
