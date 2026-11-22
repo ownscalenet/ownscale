@@ -30,7 +30,7 @@ Self-hosted Mesh VPN
   {{< hextra/feature-card
     title="Many networks, one server"
     icon="collection"
-    subtitle="Each organization gets its own tailnet, Headscale instance and login server, isolated from the others."
+    subtitle="Host multiple isolated networks from the same backend."
     link="/docs/use-cases/organizations/"
     class="ownscale-feature-accent"
   >}}
