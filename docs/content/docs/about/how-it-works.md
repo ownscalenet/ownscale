@@ -16,14 +16,6 @@ ownscale runs as two containers:
     [content domain](/docs/self-hosting/content-domain/));
   - this documentation, at `<BASE_DOMAIN>`.
 
-## Organizations sleep
-
-Each organization's Headscale starts on its first request. It stops a few
-minutes after its last machine goes offline and nobody uses it in the
-console. Waking takes about 100 ms, so it isn't noticeable, and the server
-only needs memory for organizations with machines online.
-`OWNSCALE_MAX_AWAKE_ORGS` caps how many run at once.
-
 Traffic between machines never goes through ownscale: they talk WireGuard to
 each other directly.
 

@@ -41,8 +41,7 @@ service or from a standalone Headscale.
 - **Invites** aren't emailed. Share the link yourself.
 - **One organization per account.** To move to another organization, the
   account must be removed from its current one.
-- **Funnels**: HTTP only to the target, 32 MiB request bodies by default, and
-  no response while the organization is asleep.
+- **Funnels**: HTTP only to the target, and 32 MiB request bodies by default.
 - **Machine certificates** are issued by Let's Encrypt. Names are public in
   Certificate Transparency logs, and all organizations share a limit of 50
   new certificates per registered domain per week.

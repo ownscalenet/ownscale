@@ -33,7 +33,7 @@ make osa headscale <subdomain> [headscale args...]
 ```
 
 Runs the Headscale CLI against one organization's instance, through its unix
-socket. It needs the running server, and the organization must be awake.
+socket. It needs the running server.
 For example:
 
 ```sh
