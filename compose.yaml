@@ -68,7 +68,13 @@ services:
       OWNSCALE_BACKUP_SYNC_INTERVAL: ${OWNSCALE_BACKUP_SYNC_INTERVAL:-10s}
       OWNSCALE_DEVELOPMENT: ${OWNSCALE_DEVELOPMENT:-}
     volumes:
-      - ${OWNSCALE_DATA_DIR:-./data}:/data
+      # make up and make restore create the directory. Docker would create a
+      # missing one as root, unwritable when running as HOST_UID.
+      - type: bind
+        source: ${OWNSCALE_DATA_DIR:-./data}
+        target: /data
+        bind:
+          create_host_path: false
     restart: unless-stopped
     logging: &logging
       # Every request is logged, so a request flood mustn't fill the disk.

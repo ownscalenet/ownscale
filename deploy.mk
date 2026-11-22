@@ -8,6 +8,11 @@ DEPLOY_MK := $(lastword $(MAKEFILE_LIST))
 
 RELEASE_URL := https://raw.githubusercontent.com/ownscalenet/ownscale
 
+# Creates the data directory (OWNSCALE_DATA_DIR in .env, or data) as the
+# user running make. Docker would create a missing one as root, which a
+# container running as HOST_UID can't write to.
+MKDIR_DATA = mkdir -p "$$(sed -n 's/^OWNSCALE_DATA_DIR=//p' .env 2>/dev/null | tail -n 1 | tr -d "\"'" | grep . || echo data)"
+
 # osa and restore pass their remaining goals to osa as arguments, so no other
 # rule may exist then: `make osa migrate down` must not run `down`.
 ifneq ($(filter osa restore,$(firstword $(MAKECMDGOALS))),)
@@ -21,6 +26,7 @@ osa:
 	docker compose exec ownscale osa $(OSA_ARGS)
 else
 restore:
+	@$(MKDIR_DATA)
 	docker compose run --rm --entrypoint osa ownscale restore $(OSA_ARGS)
 endif
 
@@ -37,6 +43,7 @@ help: ## Show this help
 		/^[a-zA-Z0-9_-]+:.*## / {printf "  \033[36m%-24s\033[0m %s\n", $$1, $$2}' $(DEPLOY_MK) $(filter-out $(DEPLOY_MK),$(MAKEFILE_LIST))
 
 up: ## Start the stack in the background
+	@$(MKDIR_DATA)
 	docker compose up -d
 
 down: ## Stop the stack
