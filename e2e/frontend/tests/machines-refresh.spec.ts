@@ -4,7 +4,10 @@ import { registerRealMachine, teardownRealMachine } from './support/realMachine'
 
 // openMachines opens the Machines page with filters in a new tab and marks
 // the loaded document, so the test can tell a refresh from a reload.
-async function openMachines(page: Page, filters: string): Promise<{ tab: Page; reloaded: () => Promise<boolean> }> {
+async function openMachines(
+  page: Page,
+  filters: string,
+): Promise<{ tab: Page; reloaded: () => Promise<boolean> }> {
   const tab = await page.context().newPage()
   await tab.goto(`/machines?${filters}`)
   await expect(tab.getByRole('heading', { name: 'Machines' })).toBeVisible()
@@ -27,7 +30,9 @@ test('the machines list refreshes on its own and keeps its filters', async ({ pa
 
     // The machine is online, so a refresh of the offline-filtered list must
     // still leave it out.
-    await excluded.tab.waitForResponse((r) => new URL(r.url()).pathname === '/api/machines', { timeout: 15_000 })
+    await excluded.tab.waitForResponse((r) => new URL(r.url()).pathname === '/api/machines', {
+      timeout: 15_000,
+    })
     await expect(row(excluded.tab)).toBeHidden()
     expect(await excluded.reloaded()).toBe(false)
   } finally {

@@ -141,6 +141,7 @@ ci: ## Run .github/workflows/ci.yml locally, fixing formatting in place
 	@mkdir -p bin && $(worktree_state) > bin/ci-worktree-state
 	npm --prefix frontend run lint -- --fix
 	npm --prefix frontend run format
+	npm --prefix e2e/frontend run format
 	cd frontend && npx tsc -b
 	go fix ./...
 	go mod tidy
@@ -213,7 +214,7 @@ e2e-remote-serve: ## Run the serve suite against REMOTE_BASE_DOMAIN
 ##@ Remote host
 
 .PHONY: deploy-local
-DEPLOY_HOST ?= az
+DEPLOY_HOST ?= beastbb
 
 # Releases are deployed on the host with `make upgrade TAG=...`. Here nothing
 # is pushed to ghcr; the images are streamed over ssh, gzipped since the upload

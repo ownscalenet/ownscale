@@ -69,30 +69,51 @@ readline.createInterface({ input: process.stdin }).on('line', line => {
 test('serveTLS returns the certificate domain and probe forwards serverName', async () => {
   const bridge = await start('tls')
   try {
-    expect(await bridge.serveTLS('one', 's')).toMatchObject({ port: 443, domain: 'host.org.example.com' })
-    expect(await bridge.probe('two', 'https://100.64.0.1', 'id', 1000, 'host.org.example.com')).toMatchObject({ ok: true })
+    expect(await bridge.serveTLS('one', 's')).toMatchObject({
+      port: 443,
+      domain: 'host.org.example.com',
+    })
+    expect(
+      await bridge.probe('two', 'https://100.64.0.1', 'id', 1000, 'host.org.example.com'),
+    ).toMatchObject({ ok: true })
   } finally {
     await bridge.shutdown()
   }
 })
 
 async function start(mode: string) {
-  return Bridge.start({ command: process.execPath, args: ['-e', mock, mode],
-    rpcGraceMs: 50, shutdownGraceMs: 50, killGraceMs: 100 })
+  return Bridge.start({
+    command: process.execPath,
+    args: ['-e', mock, mode],
+    rpcGraceMs: 50,
+    shutdownGraceMs: 50,
+    killGraceMs: 100,
+  })
 }
 
 test('partial framing, concurrent calls, child environment, and secret-free diagnostics', async () => {
   const bridge = await start('partial')
   try {
-    const node = await bridge.create({ node: 'one', hostname: 'host',
-      controlURL: 'https://aaaa.ownscale.test', authKey: secret })
+    const node = await bridge.create({
+      node: 'one',
+      hostname: 'host',
+      controlURL: 'https://aaaa.ownscale.test',
+      authKey: secret,
+    })
     expect(node.addresses).toEqual(['100.64.0.1'])
     // Calls are ID-correlated by the JSON-RPC client, not queued, so this
     // also exercises multiple requests in flight at once.
-    const results = await Promise.all([bridge.status('one'), bridge.status('two'), bridge.status('three')])
-    expect(results.map(r => r.node)).toEqual(['one', 'two', 'three'])
+    const results = await Promise.all([
+      bridge.status('one'),
+      bridge.status('two'),
+      bridge.status('three'),
+    ])
+    expect(results.map((r) => r.node)).toEqual(['one', 'two', 'three'])
     const probe = await bridge.probe('one', 'http://100.64.0.1:80', 'identity', 100)
-    expect(probe).toMatchObject({ ok: false, error: { code: 'timeout', message: 'Operation deadline exceeded' } })
+    expect(probe).toMatchObject({
+      ok: false,
+      error: { code: 'timeout', message: 'Operation deadline exceeded' },
+    })
     expect(bridge.diagnostics()).not.toContain(secret)
     expect(JSON.parse(bridge.diagnostics()).stderrBytes).toBeGreaterThan(65_536)
   } finally {
@@ -102,7 +123,16 @@ test('partial framing, concurrent calls, child environment, and secret-free diag
   expect(JSON.parse(bridge.diagnostics())).toMatchObject({ exited: true, forcedCleanup: false })
 })
 
-for (const mode of ['malformed', 'wrong-id', 'wrong-jsonrpc', 'wrong-shape', 'both', 'unknown-error', 'exit', 'timeout']) {
+for (const mode of [
+  'malformed',
+  'wrong-id',
+  'wrong-jsonrpc',
+  'wrong-shape',
+  'both',
+  'unknown-error',
+  'exit',
+  'timeout',
+]) {
   test(`rejects ${mode} output without leaking data or stranding queued calls`, async () => {
     const bridge = await start(mode)
     const pid = JSON.parse(bridge.diagnostics()).pid as number
@@ -131,7 +161,9 @@ test('structured errors are sanitized and do not poison a responsive process', a
   try {
     await expect(bridge.status('missing')).rejects.toThrow('invalid_command')
     await expect(bridge.status('missing')).rejects.not.toThrow(secret)
-  } finally { await bridge.shutdown() }
+  } finally {
+    await bridge.shutdown()
+  }
   expect(JSON.parse(bridge.diagnostics()).forcedCleanup).toBe(false)
 })
 
@@ -139,13 +171,17 @@ test('non-cooperative shutdown escalates only the owned PID and reports failure'
   const bridge = await start('stubborn')
   const pid = JSON.parse(bridge.diagnostics()).pid as number
   await expect(bridge.shutdown()).rejects.toThrow('cleanup failed')
-  expect(JSON.parse(bridge.diagnostics())).toMatchObject({ exited: true, forcedCleanup: true, exitSignal: 'SIGKILL' })
+  expect(JSON.parse(bridge.diagnostics())).toMatchObject({
+    exited: true,
+    forcedCleanup: true,
+    exitSignal: 'SIGKILL',
+  })
   expect(() => process.kill(pid, 0)).toThrow()
 })
 
 test('shutdown remains bounded behind an unresponsive in-flight call', async () => {
   const bridge = await start('timeout')
-  const pending = bridge.status('one').catch(error => error)
+  const pending = bridge.status('one').catch((error) => error)
   // The mock still replies to shutdown promptly and exits cleanly (it isn't
   // "stuck" itself); shutdown() still surfaces a failure because the
   // status('one') call was abandoned without a reply, so no force-kill is
@@ -156,14 +192,26 @@ test('shutdown remains bounded behind an unresponsive in-flight call', async () 
 })
 
 test('spawn failure is bounded and sanitized', async () => {
-  await expect(Bridge.start({ command: `${root}/bin/nonexistent-bridge-${secret}`,
-    helloTimeoutMs: 50, killGraceMs: 50 })).rejects.not.toThrow(secret)
+  await expect(
+    Bridge.start({
+      command: `${root}/bin/nonexistent-bridge-${secret}`,
+      helloTimeoutMs: 50,
+      killGraceMs: 50,
+    }),
+  ).rejects.not.toThrow(secret)
 })
 
 for (const mode of ['hello-timeout', 'hello-exit', 'hello-malformed']) {
   test(`startup handles ${mode} without leaking data`, async () => {
-    await expect(Bridge.start({ command: process.execPath, args: ['-e', mock, mode],
-      helloTimeoutMs: 200, rpcGraceMs: 50, killGraceMs: 100 })).rejects.not.toThrow(secret)
+    await expect(
+      Bridge.start({
+        command: process.execPath,
+        args: ['-e', mock, mode],
+        helloTimeoutMs: 200,
+        rpcGraceMs: 50,
+        killGraceMs: 100,
+      }),
+    ).rejects.not.toThrow(secret)
   })
 }
 
@@ -171,33 +219,62 @@ test('compiled Go binary negotiates hello and rejects invalid operations', async
   const bridge = await Bridge.start()
   try {
     await expect(bridge.status('missing')).rejects.toThrow('unknown_handle')
-  } finally { await bridge.shutdown() }
+  } finally {
+    await bridge.shutdown()
+  }
   const child = spawn(bridgeBinary, [], {
-    cwd: root, env: { ...process.env, ...(caFile ? { SSL_CERT_FILE: caFile } : {}), TS_NO_LOGS_NO_SUPPORT: 'true', TMPDIR: scratchDir },
+    cwd: root,
+    env: {
+      ...process.env,
+      ...(caFile ? { SSL_CERT_FILE: caFile } : {}),
+      TS_NO_LOGS_NO_SUPPORT: 'true',
+      TMPDIR: scratchDir,
+    },
     stdio: ['pipe', 'pipe', 'pipe'],
   })
   const closed = once(child, 'close')
   const replies: unknown[] = []
   let buffer = ''
   child.stdout.setEncoding('utf8')
-  child.stdout.on('data', data => {
+  child.stdout.on('data', (data) => {
     buffer += data
     let newline: number
     while ((newline = buffer.indexOf('\n')) >= 0) {
       replies.push(JSON.parse(buffer.slice(0, newline)))
       buffer = buffer.slice(newline + 1)
-      if (replies.length === 1) child.stdin.write(JSON.stringify({
-        jsonrpc: '2.0', id: 2, method: 'shutdown', params: { timeout: '1000ms' },
-      }) + '\n')
+      if (replies.length === 1)
+        child.stdin.write(
+          JSON.stringify({
+            jsonrpc: '2.0',
+            id: 2,
+            method: 'shutdown',
+            params: { timeout: '1000ms' },
+          }) + '\n',
+        )
     }
   })
   child.stderr.resume()
   const timer = setTimeout(() => child.kill('SIGKILL'), 5000)
   try {
-    child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'not-a-command', params: { timeout: '1000ms' } }) + '\n')
+    child.stdin.write(
+      JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'not-a-command',
+        params: { timeout: '1000ms' },
+      }) + '\n',
+    )
     expect(await closed).toEqual([0, null])
     expect(replies).toEqual([
-      { jsonrpc: '2.0', id: 1, error: { code: 1, message: 'Invalid command or arguments', data: { code: 'invalid_command', message: 'Invalid command or arguments' } } },
+      {
+        jsonrpc: '2.0',
+        id: 1,
+        error: {
+          code: 1,
+          message: 'Invalid command or arguments',
+          data: { code: 'invalid_command', message: 'Invalid command or arguments' },
+        },
+      },
       { jsonrpc: '2.0', id: 2, result: { closed: true } },
     ])
   } finally {

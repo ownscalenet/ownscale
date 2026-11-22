@@ -10,10 +10,13 @@ export const contentDomain = process.env.E2E_CONTENT_DOMAIN ?? baseDomain
 export const consoleDomain = `console.${baseDomain}`
 export const baseURL = process.env.E2E_BASE_URL ?? `https://${consoleDomain}`
 export const privateDir = resolve(root, 'e2e/.connectivity-private')
-export const caFile = process.env.E2E_CA_FILE === ''
-  ? undefined
-  : resolve(root, process.env.E2E_CA_FILE ??
-      `${process.env.OWNSCALE_DATA_DIR ?? 'data'}/local-ca/root.crt`)
+export const caFile =
+  process.env.E2E_CA_FILE === ''
+    ? undefined
+    : resolve(
+        root,
+        process.env.E2E_CA_FILE ?? `${process.env.OWNSCALE_DATA_DIR ?? 'data'}/local-ca/root.crt`,
+      )
 // localTLS is true for a stack whose certificates come from the local dev CA
 // (caFile set). Browsers can't be pointed at that CA, so only they skip
 // certificate validation, and only here; public stacks are always validated.

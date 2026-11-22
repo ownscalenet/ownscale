@@ -47,7 +47,10 @@ test('DNS settings reach a running device', async ({ page, account }) => {
         await dnsPageLoaded(page)
         if (await searchDomainBadge.isVisible()) return
         await page.getByPlaceholder('internal.example.com').fill(searchDomain)
-        await page.locator('.card', { hasText: 'Search Domains' }).getByRole('button', { name: 'Add' }).click()
+        await page
+          .locator('.card', { hasText: 'Search Domains' })
+          .getByRole('button', { name: 'Add' })
+          .click()
       },
       async () => expect(searchDomainBadge).toBeVisible({ timeout: 8_000 }),
     )
@@ -60,21 +63,26 @@ test('DNS settings reach a running device', async ({ page, account }) => {
         if (await recordRow.isVisible()) return
         await page.getByPlaceholder('Name (e.g. server.example.com)').fill(recordName)
         await page.getByPlaceholder('Value (e.g. 10.0.0.1)').fill('10.0.0.42')
-        await page.locator('.card', { hasText: 'DNS Records' }).getByRole('button', { name: 'Add' }).click()
+        await page
+          .locator('.card', { hasText: 'DNS Records' })
+          .getByRole('button', { name: 'Add' })
+          .click()
       },
       async () => expect(recordRow).toBeVisible({ timeout: 8_000 }),
     )
 
     // The device's netmap only changes once headscale has restarted with the
     // new config and the device has reconnected to it.
-    await expect.poll(async () => {
-      const got = await dns()
-      return {
-        nameserver: [...got.resolvers, ...got.fallbackResolvers].includes(nameserver),
-        searchDomain: got.domains.includes(searchDomain),
-        record: got.extraRecords.some(r => r.name === recordName && r.value === '10.0.0.42'),
-      }
-    }, converge).toEqual({ nameserver: true, searchDomain: true, record: true })
+    await expect
+      .poll(async () => {
+        const got = await dns()
+        return {
+          nameserver: [...got.resolvers, ...got.fallbackResolvers].includes(nameserver),
+          searchDomain: got.domains.includes(searchDomain),
+          record: got.extraRecords.some((r) => r.name === recordName && r.value === '10.0.0.42'),
+        }
+      }, converge)
+      .toEqual({ nameserver: true, searchDomain: true, record: true })
 
     // Remove everything again so repeat runs start from the same state.
     await retryUntil(
@@ -114,12 +122,17 @@ test('DNS settings reach a running device', async ({ page, account }) => {
       },
     )
 
-    await expect.poll(async () => {
-      const got = await dns()
-      return [
-        ...got.resolvers, ...got.fallbackResolvers, ...got.domains, ...got.extraRecords.map(r => r.name),
-      ].filter(v => [nameserver, searchDomain, recordName].includes(v))
-    }, converge).toEqual([])
+    await expect
+      .poll(async () => {
+        const got = await dns()
+        return [
+          ...got.resolvers,
+          ...got.fallbackResolvers,
+          ...got.domains,
+          ...got.extraRecords.map((r) => r.name),
+        ].filter((v) => [nameserver, searchDomain, recordName].includes(v))
+      }, converge)
+      .toEqual([])
 
     // MagicDNS on/off is delivered as the netmap's DNS "proxied" flag.
     const magicDnsToggle = page.locator('input[type="checkbox"].toggle')
@@ -163,10 +176,10 @@ async function registerLoginStatus(page: Page, org: string, authURL: string): Pr
     // An auth ID read just before a headscale restart gets a 410 instead of
     // the redirect to the login, so return that for the caller to poll again.
     const callback = tab.waitForResponse(
-      r => r.request().isNavigationRequest() && (
-        r.url().startsWith(`https://${org}.${baseDomain}/oidc/callback`) ||
-        (r.url().startsWith(`https://${org}.${baseDomain}/register/`) && r.status() !== 302)
-      ),
+      (r) =>
+        r.request().isNavigationRequest() &&
+        (r.url().startsWith(`https://${org}.${baseDomain}/oidc/callback`) ||
+          (r.url().startsWith(`https://${org}.${baseDomain}/register/`) && r.status() !== 302)),
       { timeout: 30_000 },
     )
     // goto itself may report "interrupted by another navigation" as the
@@ -191,8 +204,8 @@ test('login restrictions are enforced by headscale', async ({ page, account }) =
   // logins below must reuse the person's existing headscale user instead.
   const headscaleUsers = async () => {
     const response = await page.request.get('/api/auth-keys')
-    const body = await response.json() as { users: { name: string }[] }
-    return body.users.map(u => u.name).sort()
+    const body = (await response.json()) as { users: { name: string }[] }
+    return body.users.map((u) => u.name).sort()
   }
 
   const save = async (content: string, marker: string) => {

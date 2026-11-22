@@ -19,7 +19,9 @@ function sshPolicy(dst: string): string {
 `
 }
 
-test('an ssh section can be saved in the policy, and invalid ssh rules are rejected', async ({ page }) => {
+test('an ssh section can be saved in the policy, and invalid ssh rules are rejected', async ({
+  page,
+}) => {
   await page.goto('/access-control')
   await expect(page.getByRole('heading', { name: 'Access Control' })).toBeVisible()
 

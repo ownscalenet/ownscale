@@ -60,7 +60,7 @@ test.describe('signing up with a passkey', () => {
       await expect(page).toHaveURL(/\/login/)
       await page.getByRole('button', { name: 'Sign in with a passkey' }).click()
       await expect(logout).toBeVisible({ timeout: 15_000 })
-      const session = await page.request.get('/api/session').then(r => r.json())
+      const session = await page.request.get('/api/session').then((r) => r.json())
       expect(session.user?.Name).toBe(username)
     } finally {
       const deleted = await page.request.delete('/api/account')

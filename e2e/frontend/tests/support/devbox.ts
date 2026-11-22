@@ -34,19 +34,50 @@ export interface DevboxOptions {
 // startDevbox starts container name and joins it to org's tailnet as
 // hostname. Its node belongs to org's first headscale user and is
 // ephemeral, so headscale drops it after the container is removed.
-export async function startDevbox(name: string, org: string, hostname: string, opts: DevboxOptions = {}): Promise<void> {
-  if (!caFile) throw new Error('devbox containers need the local dev CA; unset E2E_CA_FILE only for public stacks')
+export async function startDevbox(
+  name: string,
+  org: string,
+  hostname: string,
+  opts: DevboxOptions = {},
+): Promise<void> {
+  if (!caFile)
+    throw new Error(
+      'devbox containers need the local dev CA; unset E2E_CA_FILE only for public stacks',
+    )
   await docker([
-    'run', '-d', '--rm', '--init', '--name', name, '--network', await stackNetwork(),
-    '--cap-add=NET_ADMIN', '--cap-add=NET_RAW', '--device=/dev/net/tun',
+    'run',
+    '-d',
+    '--rm',
+    '--init',
+    '--name',
+    name,
+    '--network',
+    await stackNetwork(),
+    '--cap-add=NET_ADMIN',
+    '--cap-add=NET_RAW',
+    '--device=/dev/net/tun',
     `--add-host=${org}.${baseDomain}:host-gateway`,
-    '-v', `${caFile}:/usr/local/share/ca-certificates/ownscale-local-ca.crt:ro`,
+    '-v',
+    `${caFile}:/usr/local/share/ca-certificates/ownscale-local-ca.crt:ro`,
     ...(opts.dockerArgs ?? []),
-    devboxImage, 'sleep', 'infinity',
+    devboxImage,
+    'sleep',
+    'infinity',
   ])
   for (const network of opts.networks ?? []) await docker(['network', 'connect', network, name])
   const authKey = await docker(['compose', 'exec', '-T', 'ownscale', 'osa', 'devbox-key', org])
-  await docker(['exec', name, 'devbox-up', `https://${org}.${baseDomain}`, authKey, hostname, ...(opts.upFlags ?? [])], 60_000)
+  await docker(
+    [
+      'exec',
+      name,
+      'devbox-up',
+      `https://${org}.${baseDomain}`,
+      authKey,
+      hostname,
+      ...(opts.upFlags ?? []),
+    ],
+    60_000,
+  )
 }
 
 // stackNetwork returns the dev stack's docker network. Devboxes join it
@@ -58,9 +89,15 @@ let network: Promise<string> | undefined
 function stackNetwork(): Promise<string> {
   network ??= (async () => {
     const id = await docker(['compose', 'ps', '-q', 'ownscale'])
-    const names = await docker(['inspect', id, '--format', '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}'])
+    const names = await docker([
+      'inspect',
+      id,
+      '--format',
+      '{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}',
+    ])
     const name = names.split(' ')[0]
-    if (!name) throw new Error('the ownscale container is on no docker network; is the dev stack running?')
+    if (!name)
+      throw new Error('the ownscale container is on no docker network; is the dev stack running?')
     return name
   })()
   return network
@@ -75,8 +112,13 @@ export async function removeDevbox(name: string): Promise<void> {
 // from containers attached to it, and returns its IPv4 subnet.
 export async function createPrivateNetwork(name: string): Promise<string> {
   await docker(['network', 'create', '--internal', name])
-  return docker(['network', 'inspect', name, '--format', '{{range .IPAM.Config}}{{.Subnet}} {{end}}'])
-    .then(out => out.split(' ').find(s => s.includes('.')) ?? '')
+  return docker([
+    'network',
+    'inspect',
+    name,
+    '--format',
+    '{{range .IPAM.Config}}{{.Subnet}} {{end}}',
+  ]).then((out) => out.split(' ').find((s) => s.includes('.')) ?? '')
 }
 
 export async function removeNetwork(name: string): Promise<void> {
@@ -87,8 +129,25 @@ export async function removeNetwork(name: string): Promise<void> {
 // HTTP on port 8080, and returns its IP on that network.
 export async function startWebHost(name: string, network: string, body: string): Promise<string> {
   await docker([
-    'run', '-d', '--rm', '--init', '--name', name, '--network', network, '-e', `BODY=${body}`, devboxImage,
-    'sh', '-c', 'mkdir -p /tmp/www && printf %s "$BODY" > /tmp/www/index.html && cd /tmp/www && exec python3 -m http.server 8080',
+    'run',
+    '-d',
+    '--rm',
+    '--init',
+    '--name',
+    name,
+    '--network',
+    network,
+    '-e',
+    `BODY=${body}`,
+    devboxImage,
+    'sh',
+    '-c',
+    'mkdir -p /tmp/www && printf %s "$BODY" > /tmp/www/index.html && cd /tmp/www && exec python3 -m http.server 8080',
   ])
-  return docker(['inspect', name, '--format', `{{(index .NetworkSettings.Networks "${network}").IPAddress}}`])
+  return docker([
+    'inspect',
+    name,
+    '--format',
+    `{{(index .NetworkSettings.Networks "${network}").IPAddress}}`,
+  ])
 }

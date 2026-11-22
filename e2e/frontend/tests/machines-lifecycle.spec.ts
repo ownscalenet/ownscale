@@ -9,7 +9,10 @@ import { registerRealMachine, teardownRealMachine, type RealMachine } from './su
 
 let machine: RealMachine
 
-test('registering a real device and managing it from the Machines page', async ({ page, account }) => {
+test('registering a real device and managing it from the Machines page', async ({
+  page,
+  account,
+}) => {
   test.setTimeout(120_000)
   machine = await registerRealMachine(page, account.org)
   try {

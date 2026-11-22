@@ -111,5 +111,6 @@ jobs:
       # The e2e tests import the console's API types.
       - run: npm ci --prefix ../../frontend
       - run: npm ci
+      - run: npm run format:check
       - run: npx tsc --noEmit
       - run: npm run test:connectivity:contract

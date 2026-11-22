@@ -2,7 +2,13 @@ import { randomBytes } from 'node:crypto'
 import type { Page } from '@playwright/test'
 import { expect, test } from '../support/account'
 import {
-  createPrivateNetwork, docker, ensureDevboxImage, removeDevbox, removeNetwork, startDevbox, startWebHost,
+  createPrivateNetwork,
+  docker,
+  ensureDevboxImage,
+  removeDevbox,
+  removeNetwork,
+  startDevbox,
+  startWebHost,
 } from '../support/devbox'
 import { getPolicy, putPolicy } from '../support/policy'
 import { retryUntil } from '../support/retry'
@@ -29,15 +35,24 @@ async function machine(page: Page, hostname: string): Promise<Machine | undefine
   const res = await page.request.get('/api/machines')
   expect(res.ok(), await res.text()).toBe(true)
   const { machines } = (await res.json()) as { machines: Machine[] }
-  return machines.find(m => m.givenName === hostname)
+  return machines.find((m) => m.givenName === hostname)
 }
 
-async function routes(page: Page, hostname: string): Promise<{ available: string[]; approved: string[] }> {
+async function routes(
+  page: Page,
+  hostname: string,
+): Promise<{ available: string[]; approved: string[] }> {
   const m = await machine(page, hostname)
-  return { available: [...(m?.availableRoutes ?? [])].sort(), approved: [...(m?.approvedRoutes ?? [])].sort() }
+  return {
+    available: [...(m?.availableRoutes ?? [])].sort(),
+    approved: [...(m?.approvedRoutes ?? [])].sort(),
+  }
 }
 
-test('subnet routers and exit nodes forward traffic only while their routes are approved', async ({ page, account }) => {
+test('subnet routers and exit nodes forward traffic only while their routes are approved', async ({
+  page,
+  account,
+}) => {
   test.setTimeout(15 * 60_000)
   await ensureDevboxImage()
 
@@ -50,13 +65,21 @@ test('subnet routers and exit nodes forward traffic only while their routes are 
   const routerName = `rtr-${suffix}`
   const router2Name = `rtr2-${suffix}`
   const identity = `lan-web-${randomBytes(8).toString('hex')}`
-  const routerArgs = ['--sysctl', 'net.ipv4.ip_forward=1', '--sysctl', 'net.ipv6.conf.all.forwarding=1']
+  const routerArgs = [
+    '--sysctl',
+    'net.ipv4.ip_forward=1',
+    '--sysctl',
+    'net.ipv6.conf.all.forwarding=1',
+  ]
   let webIP = ''
 
   // reach reports whether client gets the web host's identity over HTTP.
   async function reach(): Promise<string> {
     try {
-      const out = await docker(['exec', client, 'curl', '-s', '--max-time', '5', `http://${webIP}:8080/`], 20_000)
+      const out = await docker(
+        ['exec', client, 'curl', '-s', '--max-time', '5', `http://${webIP}:8080/`],
+        20_000,
+      )
       return out === identity ? 'reached' : `unexpected response: ${out}`
     } catch {
       return 'unreachable'
@@ -67,7 +90,12 @@ test('subnet routers and exit nodes forward traffic only while their routes are 
 
   // editRoutes sets hostname's approved routes through the "Edit route
   // settings" dialog on the machines page.
-  async function editRoutes(hostname: string, subnet: string, approveSubnet: boolean, approveExit?: boolean) {
+  async function editRoutes(
+    hostname: string,
+    subnet: string,
+    approveSubnet: boolean,
+    approveExit?: boolean,
+  ) {
     const row = page.getByRole('row').filter({ has: page.getByText(hostname, { exact: true }) })
     const want = [...(approveSubnet ? [subnet] : []), ...(approveExit ? exitRoutes : [])].sort()
     await retryUntil(
@@ -77,7 +105,8 @@ test('subnet routers and exit nodes forward traffic only while their routes are 
         await page.getByRole('menuitem', { name: 'Edit route settings', exact: true }).click()
         const dialog = page.getByRole('dialog')
         await dialog.getByLabel(subnet).setChecked(approveSubnet)
-        if (approveExit !== undefined) await dialog.getByLabel('Use as exit node').setChecked(approveExit)
+        if (approveExit !== undefined)
+          await dialog.getByLabel('Use as exit node').setChecked(approveExit)
         await dialog.getByRole('button', { name: 'Save', exact: true }).click()
         await expect(dialog).toBeHidden()
       },
@@ -91,7 +120,7 @@ test('subnet routers and exit nodes forward traffic only while their routes are 
   // columns of hostname's machine detail page.
   async function subnetsCard(hostname: string) {
     const m = await machine(page, hostname)
-    await page.goto(`/machines/${m!.ipAddresses.find(ip => ip.includes('.'))}`)
+    await page.goto(`/machines/${m!.ipAddresses.find((ip) => ip.includes('.'))}`)
     const card = page.locator('.card', { hasText: 'Subnets and routing' })
     return {
       approved: card.getByText('Approved routes', { exact: true }).locator('..'),
@@ -106,12 +135,16 @@ test('subnet routers and exit nodes forward traffic only while their routes are 
     expect(subnet).toMatch(/^\d+\.\d+\.\d+\.\d+\/\d+$/)
     webIP = await startWebHost(webHost, lan, identity)
     await startDevbox(router, account.org, routerName, {
-      dockerArgs: routerArgs, networks: [lan], upFlags: [`--advertise-routes=${subnet}`],
+      dockerArgs: routerArgs,
+      networks: [lan],
+      upFlags: [`--advertise-routes=${subnet}`],
     })
     await startDevbox(client, account.org, `rcli-${suffix}`, { upFlags: ['--accept-routes'] })
 
-    await test.step('an advertised subnet awaits approval and isn\'t routed', async () => {
-      await expect.poll(async () => (await routes(page, routerName)).available, { timeout: 60_000 }).toEqual([subnet])
+    await test.step("an advertised subnet awaits approval and isn't routed", async () => {
+      await expect
+        .poll(async () => (await routes(page, routerName)).available, { timeout: 60_000 })
+        .toEqual([subnet])
       const card = await subnetsCard(routerName)
       await expect(card.awaiting.getByText(subnet, { exact: true })).toBeVisible()
       await expect(card.approved.getByText(subnet, { exact: true })).toBeHidden()
@@ -133,22 +166,30 @@ test('subnet routers and exit nodes forward traffic only while their routes are 
       await expectReach('unreachable')
     })
 
-    await test.step('an approved exit node forwards traffic, an unapproved one doesn\'t', async () => {
+    await test.step("an approved exit node forwards traffic, an unapproved one doesn't", async () => {
       await docker(['exec', router, 'tailscale', 'set', '--advertise-exit-node'])
       await expect
         .poll(async () => (await routes(page, routerName)).available, { timeout: 60_000 })
         .toEqual([...exitRoutes, subnet].sort())
       await page.goto('/machines')
       const row = page.getByRole('row').filter({ has: page.getByText(routerName, { exact: true }) })
-      await expect(row.getByText('Exit node · awaiting approval', { exact: true })).toBeVisible({ timeout: 30_000 })
+      await expect(row.getByText('Exit node · awaiting approval', { exact: true })).toBeVisible({
+        timeout: 30_000,
+      })
 
       await editRoutes(routerName, subnet, false, true)
       await expect(row.getByText('Exit node', { exact: true })).toBeVisible({ timeout: 30_000 })
       const routerIP = await docker(['exec', router, 'tailscale', 'ip', '-4'])
       // The client only accepts it as an exit node once its netmap says so.
       await expect
-        .poll(async () => docker(['exec', client, 'tailscale', 'set', `--exit-node=${routerIP}`]).then(() => 'set', () => 'not yet'),
-          { timeout: 60_000, intervals: [2_000] })
+        .poll(
+          async () =>
+            docker(['exec', client, 'tailscale', 'set', `--exit-node=${routerIP}`]).then(
+              () => 'set',
+              () => 'not yet',
+            ),
+          { timeout: 60_000, intervals: [2_000] },
+        )
         .toBe('set')
       // The web host isn't in any approved subnet, so only the exit node
       // (0.0.0.0/0) can carry this traffic.
@@ -159,7 +200,7 @@ test('subnet routers and exit nodes forward traffic only while their routes are 
       await docker(['exec', client, 'tailscale', 'set', '--exit-node='])
     })
 
-    await test.step('autoApprovers approve a new router\'s routes without manual approval', async () => {
+    await test.step("autoApprovers approve a new router's routes without manual approval", async () => {
       // Log out so headscale deletes the ephemeral node now, leaving router2
       // as the only path to the subnet.
       await docker(['exec', router, 'tailscale', 'logout'])
@@ -167,15 +208,20 @@ test('subnet routers and exit nodes forward traffic only while their routes are 
 
       const owner = (await machine(page, `rcli-${suffix}`))!.user!
       const approver = owner.email || `${owner.name}@`
-      await putPolicy(page, `{
+      await putPolicy(
+        page,
+        `{
   "acls": [{"action": "accept", "src": ["*"], "dst": ["*:*"]}],
   "autoApprovers": {
     "routes": {"${subnet}": ["${approver}"]},
     "exitNode": ["${approver}"],
   },
-}`)
+}`,
+      )
       await startDevbox(router2, account.org, router2Name, {
-        dockerArgs: routerArgs, networks: [lan], upFlags: [`--advertise-routes=${subnet}`, '--advertise-exit-node'],
+        dockerArgs: routerArgs,
+        networks: [lan],
+        upFlags: [`--advertise-routes=${subnet}`, '--advertise-exit-node'],
       })
       await expect
         .poll(async () => (await routes(page, router2Name)).approved, { timeout: 60_000 })

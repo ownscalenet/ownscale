@@ -13,7 +13,10 @@ const allowAll = `{
   "acls": [{"action": "accept", "src": ["*"], "dst": ["*:*"]}],
 }`
 
-test('split DNS sends queries for a domain to its nameserver on the tailnet', async ({ page, account }) => {
+test('split DNS sends queries for a domain to its nameserver on the tailnet', async ({
+  page,
+  account,
+}) => {
   test.setTimeout(10 * 60_000)
   await ensureDevboxImage()
 
@@ -46,13 +49,24 @@ test('split DNS sends queries for a domain to its nameserver on the tailnet', as
     await startDevbox(client, account.org, `dns-cli-${suffix}`)
     const serverIP = await docker(['exec', server, 'tailscale', 'ip', '-4'])
     await docker([
-      'exec', '-d', server, 'dnsmasq', '--keep-in-foreground', '--no-resolv', '--no-hosts',
-      `--listen-address=${serverIP}`, '--bind-interfaces', `--address=/${domain}/${answerIP}`,
+      'exec',
+      '-d',
+      server,
+      'dnsmasq',
+      '--keep-in-foreground',
+      '--no-resolv',
+      '--no-hosts',
+      `--listen-address=${serverIP}`,
+      '--bind-interfaces',
+      `--address=/${domain}/${answerIP}`,
     ])
 
     expect(await lookup()).not.toBe('resolved')
 
-    const row = page.locator('.card', { hasText: 'Split DNS' }).getByRole('row').filter({ hasText: domain })
+    const row = page
+      .locator('.card', { hasText: 'Split DNS' })
+      .getByRole('row')
+      .filter({ hasText: domain })
     await retryUntil(
       page,
       async () => {
@@ -60,7 +74,10 @@ test('split DNS sends queries for a domain to its nameserver on the tailnet', as
         if (await row.isVisible()) return
         await page.getByPlaceholder('Domain (e.g. corp.example.com)').fill(domain)
         await page.getByPlaceholder('Nameservers (e.g. 10.0.0.53, 10.0.0.54)').fill(serverIP)
-        await page.locator('.card', { hasText: 'Split DNS' }).getByRole('button', { name: 'Add' }).click()
+        await page
+          .locator('.card', { hasText: 'Split DNS' })
+          .getByRole('button', { name: 'Add' })
+          .click()
       },
       async () => {
         await expect(row).toBeVisible({ timeout: 8_000 })

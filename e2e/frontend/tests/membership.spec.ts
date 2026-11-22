@@ -8,7 +8,10 @@ import { registerRealMachine, teardownRealMachine } from './support/realMachine'
 // signIn signs a fresh, logged-out browser context in through Dex as email
 // and returns its page, left wherever the login flow ends.
 async function signIn(browser: Browser, email: string, startURL: string): Promise<Page> {
-  const context = await browser.newContext({ storageState: { cookies: [], origins: [] }, ignoreHTTPSErrors: localTLS })
+  const context = await browser.newContext({
+    storageState: { cookies: [], origins: [] },
+    ignoreHTTPSErrors: localTLS,
+  })
   const page = await context.newPage()
   await page.goto(startURL)
   const joinLink = page.getByRole('link', { name: 'Create account to join' })
@@ -31,14 +34,19 @@ async function signIn(browser: Browser, email: string, startURL: string): Promis
   return page
 }
 
-test("a user of another organization can't sign in to its tailnet until switching to a member account", async ({ browser, account }) => {
+test("a user of another organization can't sign in to its tailnet until switching to a member account", async ({
+  browser,
+  account,
+}) => {
   const login = await startPendingLogin(account.org)
   // bbbb owns another org. Signing in from the tailnet's login page is
   // refused by the console...
   const outsider = emailOf('bbbb')
   const page = await signIn(browser, outsider, await login.authURL())
   try {
-    await expect(page.getByText("You aren't a member of this organization")).toBeVisible({ timeout: 15_000 })
+    await expect(page.getByText("You aren't a member of this organization")).toBeVisible({
+      timeout: 15_000,
+    })
 
     // ...and with a console session already in place, the OIDC provider
     // asks to sign in with another account instead of failing.
@@ -48,7 +56,9 @@ test("a user of another organization can't sign in to its tailnet until switchin
     // Switching to a member (the worker's account owns its org) hands
     // headscale an identity.
     const callback = page.waitForRequest(
-      (r) => r.isNavigationRequest() && r.url().startsWith(`https://${account.org}.${baseDomain}/oidc/callback`),
+      (r) =>
+        r.isNavigationRequest() &&
+        r.url().startsWith(`https://${account.org}.${baseDomain}/oidc/callback`),
       { timeout: 30_000 },
     )
     await page.getByRole('link', { name: 'Sign in with SSO' }).click()
@@ -62,7 +72,11 @@ test("a user of another organization can't sign in to its tailnet until switchin
   }
 })
 
-test("removing a member removes their machines from the tailnet", async ({ page, browser, account }) => {
+test('removing a member removes their machines from the tailnet', async ({
+  page,
+  browser,
+  account,
+}) => {
   test.setTimeout(300_000)
 
   await page.goto('/invitations')
@@ -86,7 +100,9 @@ test("removing a member removes their machines from the tailnet", async ({ page,
       const machineNames = async () => {
         const res = await page.request.get('/api/machines')
         expect(res.ok()).toBe(true)
-        return ((await res.json()) as { machines: { givenName: string }[] }).machines.map((m) => m.givenName)
+        return ((await res.json()) as { machines: { givenName: string }[] }).machines.map(
+          (m) => m.givenName,
+        )
       }
       expect(await machineNames()).toContain(machine.hostname)
 
@@ -105,7 +121,11 @@ test("removing a member removes their machines from the tailnet", async ({ page,
   }
 })
 
-test('a member deletes their own account, which the owner can only do once alone', async ({ page, browser, account }) => {
+test('a member deletes their own account, which the owner can only do once alone', async ({
+  page,
+  browser,
+  account,
+}) => {
   test.setTimeout(300_000)
 
   await page.goto('/invitations')
@@ -126,8 +146,13 @@ test('a member deletes their own account, which the owner can only do once alone
     // instead, and the server refuses too.
     await page.goto('/user-settings')
     const deleteButton = page.getByRole('button', { name: 'Delete account' })
-    await expect(page.getByText('You own this organization and it still has other members.')).toBeVisible()
-    await expect(page.getByRole('main').getByRole('link', { name: 'Users' })).toHaveAttribute('href', '/users')
+    await expect(
+      page.getByText('You own this organization and it still has other members.'),
+    ).toBeVisible()
+    await expect(page.getByRole('main').getByRole('link', { name: 'Users' })).toHaveAttribute(
+      'href',
+      '/users',
+    )
     await expect(deleteButton).toBeDisabled()
     expect((await page.request.delete('/api/account')).status()).toBe(409)
 
@@ -136,7 +161,9 @@ test('a member deletes their own account, which the owner can only do once alone
       const machineNames = async () => {
         const res = await page.request.get('/api/machines')
         expect(res.ok()).toBe(true)
-        return ((await res.json()) as { machines: { givenName: string }[] }).machines.map((m) => m.givenName)
+        return ((await res.json()) as { machines: { givenName: string }[] }).machines.map(
+          (m) => m.givenName,
+        )
       }
       expect(await machineNames()).toContain(machine.hostname)
 
@@ -146,7 +173,9 @@ test('a member deletes their own account, which the owner can only do once alone
       await expect(member).toHaveURL(/\/login/, { timeout: 15_000 })
       expect((await member.request.get('/api/session')).status()).toBe(401)
 
-      const members = (await page.request.get('/api/members').then((r) => r.json())) as { members: { email: string }[] }
+      const members = (await page.request.get('/api/members').then((r) => r.json())) as {
+        members: { email: string }[]
+      }
       expect(members.members.map((m) => m.email)).not.toContain(account.invitee)
       expect(await machineNames()).not.toContain(machine.hostname)
 
@@ -154,7 +183,9 @@ test('a member deletes their own account, which the owner can only do once alone
       // worker's account is shared with the other tests.
       await page.reload()
       await expect(deleteButton).toBeEnabled()
-      await expect(page.getByText('You own this organization and it still has other members.')).toBeHidden()
+      await expect(
+        page.getByText('You own this organization and it still has other members.'),
+      ).toBeHidden()
       await expect(page.getByText(/delete your account and this organization/)).toBeVisible()
     } finally {
       await teardownRealMachine(machine)
@@ -164,7 +195,11 @@ test('a member deletes their own account, which the owner can only do once alone
   }
 })
 
-test('a member sees the tailnet name on the DNS page but cannot change DNS settings', async ({ page, browser, account }) => {
+test('a member sees the tailnet name on the DNS page but cannot change DNS settings', async ({
+  page,
+  browser,
+  account,
+}) => {
   await page.goto('/invitations')
   await page.getByRole('button', { name: 'Invite member' }).click()
   const dialog = page.getByRole('dialog')

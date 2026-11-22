@@ -16,7 +16,10 @@ const withoutSSH = `{
 
 // `osa devbox-key` mints keys for the org's first headscale user, so both
 // devboxes below belong to the same user, as autogroup:self requires.
-test('Tailscale SSH works between two machines only while the policy allows it', async ({ page, account }) => {
+test('Tailscale SSH works between two machines only while the policy allows it', async ({
+  page,
+  account,
+}) => {
   test.setTimeout(10 * 60_000)
   await ensureDevboxImage()
 
@@ -30,7 +33,10 @@ test('Tailscale SSH works between two machines only while the policy allows it',
   let serverIP = ''
   async function sshEcho(): Promise<string> {
     try {
-      const out = await docker(['exec', client, 'tailscale', 'ssh', `root@${serverIP}`, 'echo', 'ssh-ok'], 20_000)
+      const out = await docker(
+        ['exec', client, 'tailscale', 'ssh', `root@${serverIP}`, 'echo', 'ssh-ok'],
+        20_000,
+      )
       return out === 'ssh-ok' ? 'ok' : `unexpected output: ${out}`
     } catch (err) {
       const stderr = (err as { stderr?: string }).stderr?.trim()
@@ -49,7 +55,10 @@ test('Tailscale SSH works between two machines only while the policy allows it',
     // Only the ssh rule grants access: without it the same command fails.
     await putPolicy(page, withoutSSH)
     await expect
-      .poll(async () => ((await sshEcho()) === 'ok' ? 'allowed' : 'denied'), { timeout: 90_000, intervals: [2_000] })
+      .poll(async () => ((await sshEcho()) === 'ok' ? 'allowed' : 'denied'), {
+        timeout: 90_000,
+        intervals: [2_000],
+      })
       .toBe('denied')
   } finally {
     await removeDevbox(client)

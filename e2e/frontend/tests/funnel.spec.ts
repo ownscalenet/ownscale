@@ -40,7 +40,9 @@ test('creating and deleting a funnel route', async ({ page, account }) => {
     await machineRow.getByRole('button', { name: 'Actions', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Remove', exact: true }).click()
     const dialog = page.getByRole('dialog')
-    await expect(dialog.getByText(new RegExp(`^Funnel ${label}-\\S+ will stop working\\.$`))).toBeVisible()
+    await expect(
+      dialog.getByText(new RegExp(`^Funnel ${label}-\\S+ will stop working\\.$`)),
+    ).toBeVisible()
     await dialog.getByRole('button', { name: 'Cancel', exact: true }).click()
 
     await page.goto('/funnels')
@@ -85,21 +87,32 @@ async function getFunnel(hostname: string): Promise<{ status: number; body: stri
 
 // createFunnel creates a funnel route through the Funnel page and returns
 // its public hostname.
-async function createFunnel(page: Page, label: string, machineHostname: string, port: number): Promise<string> {
+async function createFunnel(
+  page: Page,
+  label: string,
+  machineHostname: string,
+  port: number,
+): Promise<string> {
   await page.goto('/funnels')
   await page.locator('#funnel-label').fill(label)
   await page.locator('#funnel-machine').selectOption({ label: machineHostname })
   await page.locator('#funnel-port').fill(String(port))
-  const created = page.waitForResponse((r) => new URL(r.url()).pathname === '/api/funnel' && r.request().method() === 'POST', {
-    timeout: 60_000,
-  })
+  const created = page.waitForResponse(
+    (r) => new URL(r.url()).pathname === '/api/funnel' && r.request().method() === 'POST',
+    {
+      timeout: 60_000,
+    },
+  )
   await page.getByRole('button', { name: 'Create' }).click()
   const response = await created
   expect(response.ok()).toBe(true)
   return ((await response.json()) as { funnelRoute: { hostname: string } }).funnelRoute.hostname
 }
 
-test('a funnel works again after its internal funnel machine is deleted', async ({ page, account }) => {
+test('a funnel works again after its internal funnel machine is deleted', async ({
+  page,
+  account,
+}) => {
   test.setTimeout(240_000)
   const funnelMachine = 'ownscale-agent'
   const target = await registerRealMachine(page, account.org)
@@ -107,10 +120,15 @@ test('a funnel works again after its internal funnel machine is deleted', async 
     const service = await target.bridge.serve(target.hostname, `${target.hostname}web`, 0)
     const servesTarget = async (hostname: string) => {
       await expect
-        .poll(async () => {
-          const res = await getFunnel(hostname)
-          return res.status === 200 ? (JSON.parse(res.body) as { identity?: string }).identity : `HTTP ${res.status}: ${res.body.trim()}`
-        }, { timeout: 30_000 })
+        .poll(
+          async () => {
+            const res = await getFunnel(hostname)
+            return res.status === 200
+              ? (JSON.parse(res.body) as { identity?: string }).identity
+              : `HTTP ${res.status}: ${res.body.trim()}`
+          },
+          { timeout: 30_000 },
+        )
         .toBe(service.identity)
     }
 

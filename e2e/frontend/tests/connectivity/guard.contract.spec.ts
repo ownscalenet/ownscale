@@ -22,5 +22,7 @@ test('exclusive run guard releases only its own token and never adopts an existi
     await release()
     const nextRelease = await acquireRunGuard(path)
     await nextRelease()
-  } finally { await rm(dir, { recursive: true, force: true }) }
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
 })

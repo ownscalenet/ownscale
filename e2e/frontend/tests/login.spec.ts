@@ -5,7 +5,10 @@ import { expect, test } from './support/account'
 // playwright.config.ts) -- it needs to start every test unauthenticated.
 test.use({ storageState: { cookies: [], origins: [] } })
 
-test('signing in via SSO reaches the app, and logout returns to /login', async ({ page, account }) => {
+test('signing in via SSO reaches the app, and logout returns to /login', async ({
+  page,
+  account,
+}) => {
   // Provisioning a brand-new organization can take longer than Playwright's
   // default 30s test timeout on a completely fresh dev-up stack.
   test.setTimeout(90_000)

@@ -21,7 +21,10 @@ async function apiTailnetName(page: Page): Promise<string> {
 }
 
 test.describe('tailnet name', () => {
-  test('is shown on the DNS page, matches the API and is not the login URL', async ({ page, account }) => {
+  test('is shown on the DNS page, matches the API and is not the login URL', async ({
+    page,
+    account,
+  }) => {
     await page.goto('/dns')
     await dnsPageLoaded(page)
 
@@ -88,16 +91,34 @@ test.describe('tailnet name', () => {
       }
 
       const suffix = Date.now()
-      await save(dns => { dns.nameservers.global = [...dns.nameservers.global, `10.${suffix % 200}.0.1`] })
-      await save(dns => { dns.searchDomains = [...dns.searchDomains, `internal-${suffix}.example.com`] })
-      await save(dns => {
-        dns.extraRecords = [...dns.extraRecords, { name: `e2e-${suffix}.example.com`, type: 'A', value: '10.0.0.42' }]
+      await save((dns) => {
+        dns.nameservers.global = [...dns.nameservers.global, `10.${suffix % 200}.0.1`]
       })
-      await save(dns => { dns.nameservers.split = { ...dns.nameservers.split, [`split-${suffix}.example.com`]: ['10.0.0.53'] } })
-      await save(dns => { dns.magicDns = !dns.magicDns })
-      await save(dns => { dns.magicDns = !dns.magicDns })
+      await save((dns) => {
+        dns.searchDomains = [...dns.searchDomains, `internal-${suffix}.example.com`]
+      })
+      await save((dns) => {
+        dns.extraRecords = [
+          ...dns.extraRecords,
+          { name: `e2e-${suffix}.example.com`, type: 'A', value: '10.0.0.42' },
+        ]
+      })
+      await save((dns) => {
+        dns.nameservers.split = {
+          ...dns.nameservers.split,
+          [`split-${suffix}.example.com`]: ['10.0.0.53'],
+        }
+      })
+      await save((dns) => {
+        dns.magicDns = !dns.magicDns
+      })
+      await save((dns) => {
+        dns.magicDns = !dns.magicDns
+      })
       // A client-supplied base domain is ignored.
-      await save(dns => { dns.baseDomain = `other-${suffix}.example.com` })
+      await save((dns) => {
+        dns.baseDomain = `other-${suffix}.example.com`
+      })
 
       await page.reload()
       await dnsPageLoaded(page)

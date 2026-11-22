@@ -14,7 +14,9 @@ export function guardPath(suite: string): string {
 export async function acquireRunGuard(path: string): Promise<() => Promise<void>> {
   const owner = JSON.stringify({ pid: process.pid, token: randomUUID() })
   await mkdir(dirname(path), { recursive: true })
-  const occupied = new Error(`Run guard ${path} is occupied or unavailable. Stop competing runs of this suite; inspect the lock and recovery artifacts before manually removing a stale guard.`)
+  const occupied = new Error(
+    `Run guard ${path} is occupied or unavailable. Stop competing runs of this suite; inspect the lock and recovery artifacts before manually removing a stale guard.`,
+  )
   let file
   try {
     file = await open(path, 'wx', 0o600)
@@ -24,7 +26,7 @@ export async function acquireRunGuard(path: string): Promise<() => Promise<void>
     const stale = await staleGuard(path)
     if (!stale) throw occupied
     // Re-read so a guard another run just replaced it with survives.
-    if (await readFile(path, 'utf8').catch(() => '') !== stale.content) throw occupied
+    if ((await readFile(path, 'utf8').catch(() => '')) !== stale.content) throw occupied
     await unlink(path)
     console.warn(`Removed stale run guard ${path} of exited process ${stale.pid}`)
     try {
@@ -41,7 +43,7 @@ export async function acquireRunGuard(path: string): Promise<() => Promise<void>
   let released = false
   return async () => {
     if (released) return
-    if (await readFile(path, 'utf8') !== owner)
+    if ((await readFile(path, 'utf8')) !== owner)
       throw new Error('Frontend run guard ownership changed; refusing to remove it')
     await unlink(path)
     released = true
@@ -72,5 +74,7 @@ async function staleGuard(path: string): Promise<{ pid: number; content: string 
 // setup locks the suite of the config it runs for, named after the config
 // file: playwright.config.ts -> .playwright-run.lock.
 export default async function setup(config: FullConfig) {
-  return acquireRunGuard(guardPath(basename(config.configFile ?? 'playwright', '.ts').replace(/\.config$/, '')))
+  return acquireRunGuard(
+    guardPath(basename(config.configFile ?? 'playwright', '.ts').replace(/\.config$/, '')),
+  )
 }

@@ -20,12 +20,17 @@ export class Recovery {
   readonly policies: PolicySnapshot[] = []
   readonly resources: OwnedResource[] = []
   private writes: Promise<void> = Promise.resolve()
-  private constructor(readonly file: string, readonly runID: string) {}
+  private constructor(
+    readonly file: string,
+    readonly runID: string,
+  ) {}
 
   static async assertClean(directory: string): Promise<void> {
     await mkdir(directory, { recursive: true, mode: 0o700 })
     if ((await readdir(directory)).length) {
-      throw new Error(`Unresolved connectivity recovery artifacts in ${directory}; restore the recorded ACLs and remove only recorded resources before retrying. Do not adopt the current policy.`)
+      throw new Error(
+        `Unresolved connectivity recovery artifacts in ${directory}; restore the recorded ACLs and remove only recorded resources before retrying. Do not adopt the current policy.`,
+      )
     }
   }
 
@@ -39,13 +44,14 @@ export class Recovery {
   }
 
   async snapshot(org: string, original: string): Promise<void> {
-    if (this.policies.some(p => p.org === org)) throw new Error(`Policy already captured for ${org}`)
+    if (this.policies.some((p) => p.org === org))
+      throw new Error(`Policy already captured for ${org}`)
     this.policies.push({ org, original })
     await this.persist()
   }
 
   async restored(org: string): Promise<void> {
-    const index = this.policies.findIndex(p => p.org === org)
+    const index = this.policies.findIndex((p) => p.org === org)
     if (index >= 0) this.policies.splice(index, 1)
     await this.persist()
   }
@@ -55,7 +61,10 @@ export class Recovery {
     await this.persist()
   }
 
-  async update(resource: OwnedResource, metadata: Pick<OwnedResource, 'id' | 'addresses'>): Promise<void> {
+  async update(
+    resource: OwnedResource,
+    metadata: Pick<OwnedResource, 'id' | 'addresses'>,
+  ): Promise<void> {
     Object.assign(resource, metadata)
     await this.persist()
   }
@@ -68,7 +77,9 @@ export class Recovery {
 
   async finish(): Promise<void> {
     if (this.policies.length || this.resources.length) {
-      throw new Error(`Owned resources or policies remain; private recovery instructions: ${this.file}`)
+      throw new Error(
+        `Owned resources or policies remain; private recovery instructions: ${this.file}`,
+      )
     }
     await unlink(this.file)
     await this.syncDirectory()
@@ -84,9 +95,18 @@ export class Recovery {
     const next = `${this.file}.next`
     const handle = await open(next, 'w', 0o600)
     try {
-      await handle.writeFile(JSON.stringify({
-        version: 1, runID: this.runID, policies: this.policies, resources: this.resources,
-      }, null, 2))
+      await handle.writeFile(
+        JSON.stringify(
+          {
+            version: 1,
+            runID: this.runID,
+            policies: this.policies,
+            resources: this.resources,
+          },
+          null,
+          2,
+        ),
+      )
       await handle.sync()
     } finally {
       await handle.close()
@@ -97,6 +117,10 @@ export class Recovery {
 
   private async syncDirectory(): Promise<void> {
     const directory = await open(path.dirname(this.file), 'r')
-    try { await directory.sync() } finally { await directory.close() }
+    try {
+      await directory.sync()
+    } finally {
+      await directory.close()
+    }
   }
 }

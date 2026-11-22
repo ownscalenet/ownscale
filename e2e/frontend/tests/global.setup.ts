@@ -1,7 +1,14 @@
 import { lookup } from 'node:dns/promises'
 import { test as setup } from '@playwright/test'
 import { baseDomain, baseURL, localTLS } from './connectivity/environment'
-import { accounts, emailOf, removeInvitee, resetAuthRestrictions, signIn, storageStateOf } from './support/account'
+import {
+  accounts,
+  emailOf,
+  removeInvitee,
+  resetAuthRestrictions,
+  signIn,
+  storageStateOf,
+} from './support/account'
 
 // Each config's setup project picks the accounts it needs (setupProject).
 setup.describe.configure({ mode: 'parallel' })
@@ -12,11 +19,13 @@ for (const account of accounts) {
     try {
       const page = await context.newPage()
       await signIn(page, emailOf(account.name))
-      const session = await page.request.get('/api/session').then(r => r.json())
+      const session = await page.request.get('/api/session').then((r) => r.json())
       const org = String(session.organization?.Domain ?? '').split('.')[0]
       if (org !== account.name) {
-        throw new Error(`${account.name} landed on org "${org}", not "${account.name}": ` +
-          `the stack needs ${account.name} in OWNSCALE_FIXED_SUBDOMAINS, with no other org on that subdomain`)
+        throw new Error(
+          `${account.name} landed on org "${org}", not "${account.name}": ` +
+            `the stack needs ${account.name} in OWNSCALE_FIXED_SUBDOMAINS, with no other org on that subdomain`,
+        )
       }
       await context.storageState({ path: storageStateOf(account.name) })
       await checkHost(org)

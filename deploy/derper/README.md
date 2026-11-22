@@ -2,9 +2,11 @@
 
 [DERP](https://tailscale.com/kb/1232/derp-servers) is a fallback relay
 Tailscale/headscale nodes use when a direct peer-to-peer connection can't be
-established. By default, every organization's headscale instance uses Tailscale's public DERP map, which ownscale fetches every 3h from `OWNSCALE_DERP_MAP_URL`. This
-directory lets you run your own instead, and have every organization's
-headscale point at it (see `OWNSCALE_DERP_MAP_URL` in the root `example.env`).
+established. By default, every organization's headscale instance uses
+Tailscale's public DERP map, which ownscale fetches every 3h from
+`OWNSCALE_DERP_MAP_URL`. This directory lets you run your own instead,
+and have every organization's headscale point at it
+(see `OWNSCALE_DERP_MAP_URL` in the root `example.env`).
 
 ## Why a separate server?
 
@@ -14,11 +16,7 @@ HTTP to a custom binary protocol that most proxies (including Caddy, used
 for every other ownscale-managed service) break. `derper` therefore needs to
 own ports 80/443 (for its own Let's Encrypt cert) and UDP 3478 (STUN)
 directly, rather than sitting behind the same Caddy container that fronts
-`ownscale` (including every organization's headscale) and `dex`.
-
-The simplest way to satisfy that without any port juggling on the main
-ownscale host is to run `derper` on its own separate server, with its own
-public DNS name.
+`ownscale`.
 
 ## Setup
 

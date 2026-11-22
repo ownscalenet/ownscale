@@ -26,7 +26,7 @@ async function consoleNodes(page: Page): Promise<{ id: string; name: string }[]>
   const res = await page.request.get('/api/machines')
   expect(res.ok(), await res.text()).toBe(true)
   const { machines } = (await res.json()) as { machines: { id: string; name: string }[] }
-  return machines.filter(m => m.name.endsWith('-console-ssh'))
+  return machines.filter((m) => m.name.endsWith('-console-ssh'))
 }
 
 // openTerminal opens the SSH page for hostname and waits for a root prompt.
@@ -64,14 +64,14 @@ test('SSH from the browser into a real machine', async ({ page, account }) => {
   // The wasm client logs its whole tailnet handshake to the console, which
   // is the only way to debug a failed connection: E2E_BROWSER_LOGS=1 keeps it.
   if (process.env.E2E_BROWSER_LOGS) {
-    page.on('console', msg => console.log(`[browser:${msg.type()}] ${msg.text()}`))
+    page.on('console', (msg) => console.log(`[browser:${msg.type()}] ${msg.text()}`))
   }
-  page.on('pageerror', err => console.log(`[browser:pageerror] ${err.message}`))
+  page.on('pageerror', (err) => console.log(`[browser:pageerror] ${err.message}`))
 
   // The upstream wasm build uploads client logs to Tailscale's log
   // service; the SSH page stubs those out (muteTailscaleLogs).
   const telemetry: string[] = []
-  page.on('request', req => {
+  page.on('request', (req) => {
     if (req.url().includes('log.tailscale.com')) telemetry.push(req.url())
   })
 
@@ -109,7 +109,6 @@ test('SSH from the browser into a real machine', async ({ page, account }) => {
   }
 })
 
-
 // A finished session must not leave the browser's tailnet client running:
 // it would keep polling headscale for as long as the tab stays open.
 test('the browser node goes away when the SSH session ends', async ({ page, account }) => {
@@ -126,9 +125,9 @@ test('the browser node goes away when the SSH session ends', async ({ page, acco
     await putPolicy(page, policyWithSSH)
     await startDevbox(server, account.org, hostname)
 
-    const before = new Set((await consoleNodes(page)).map(m => m.id))
+    const before = new Set((await consoleNodes(page)).map((m) => m.id))
     await openTerminal(page, hostname)
-    const mine = async () => (await consoleNodes(page)).filter(m => !before.has(m.id))
+    const mine = async () => (await consoleNodes(page)).filter((m) => !before.has(m.id))
     expect(await mine()).toHaveLength(1)
     await page.keyboard.type('exit')
     await page.keyboard.press('Enter')

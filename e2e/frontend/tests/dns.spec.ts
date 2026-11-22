@@ -61,7 +61,10 @@ test('adding and removing a nameserver, split DNS domain, DNS record, and search
         if (await recordRow.isVisible()) return
         await page.getByPlaceholder('Name (e.g. server.example.com)').fill(recordName)
         await page.getByPlaceholder('Value (e.g. 10.0.0.1)').fill('10.0.0.42')
-        await page.locator('.card', { hasText: 'DNS Records' }).getByRole('button', { name: 'Add' }).click()
+        await page
+          .locator('.card', { hasText: 'DNS Records' })
+          .getByRole('button', { name: 'Add' })
+          .click()
       },
       async () => {
         await expect(recordRow).toBeVisible({ timeout: 8_000 })
@@ -93,8 +96,12 @@ test('adding and removing a nameserver, split DNS domain, DNS record, and search
         await dnsPageLoaded(page)
         if (await splitRow.isVisible()) return
         // Mixed case and a trailing dot are stored in canonical form.
-        await page.getByPlaceholder('Domain (e.g. corp.example.com)').fill(`${splitDomain.toUpperCase()}.`)
-        await page.getByPlaceholder('Nameservers (e.g. 10.0.0.53, 10.0.0.54)').fill('10.0.0.53, 10.0.0.54')
+        await page
+          .getByPlaceholder('Domain (e.g. corp.example.com)')
+          .fill(`${splitDomain.toUpperCase()}.`)
+        await page
+          .getByPlaceholder('Nameservers (e.g. 10.0.0.53, 10.0.0.54)')
+          .fill('10.0.0.53, 10.0.0.54')
         await splitCard.getByRole('button', { name: 'Add' }).click()
       },
       async () => {

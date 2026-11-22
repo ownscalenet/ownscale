@@ -74,51 +74,89 @@ const messages: Record<string, string> = {
   bridge_failure: 'Bridge operation or cleanup failed',
   certificate_unavailable: 'Node could not get an HTTPS certificate',
 }
-const handle = (v: unknown): v is string => typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(v)
-const text = (v: unknown, max = 256): v is string => typeof v === 'string' && v.length <= max && !/[\x00-\x1f\x7f]/.test(v)
+const handle = (v: unknown): v is string =>
+  typeof v === 'string' && /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/.test(v)
+const text = (v: unknown, max = 256): v is string =>
+  typeof v === 'string' && v.length <= max && !/[\x00-\x1f\x7f]/.test(v)
 const integer = (v: unknown, min: number, max: number): v is number =>
   typeof v === 'number' && Number.isSafeInteger(v) && v >= min && v <= max
-const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
+const object = (v: unknown): v is Record<string, unknown> =>
+  !!v && typeof v === 'object' && !Array.isArray(v)
 const keys = (v: Record<string, unknown>, required: string[], optional: string[] = []) =>
-  required.every(k => Object.hasOwn(v, k)) && Object.keys(v).every(k => [...required, ...optional].includes(k))
+  required.every((k) => Object.hasOwn(v, k)) &&
+  Object.keys(v).every((k) => [...required, ...optional].includes(k))
 const protocolError = (v: unknown): v is { code: string; message: string } =>
-  object(v) && keys(v, ['code', 'message']) && typeof v.code === 'string' &&
-  Object.hasOwn(messages, v.code) && text(v.message, 256)
-const nodeInfo = (v: unknown): v is NodeInfo => object(v) &&
+  object(v) &&
+  keys(v, ['code', 'message']) &&
+  typeof v.code === 'string' &&
+  Object.hasOwn(messages, v.code) &&
+  text(v.message, 256)
+const nodeInfo = (v: unknown): v is NodeInfo =>
+  object(v) &&
   keys(v, ['node', 'hostname', 'addresses', 'backendState'], ['authURL']) &&
-  handle(v.node) && handle(v.hostname) && text(v.backendState, 64) &&
+  handle(v.node) &&
+  handle(v.hostname) &&
+  text(v.backendState, 64) &&
   (v.authURL === undefined || (text(v.authURL, 2048) && URL.canParse(v.authURL))) &&
-  Array.isArray(v.addresses) && v.addresses.length <= 16 &&
-  v.addresses.every(a => typeof a === 'string' && isIP(a) !== 0)
+  Array.isArray(v.addresses) &&
+  v.addresses.length <= 16 &&
+  v.addresses.every((a) => typeof a === 'string' && isIP(a) !== 0)
 const textList = (v: unknown): v is string[] =>
-  Array.isArray(v) && v.length <= 64 && v.every(item => text(item, 512))
-const dnsInfo = (v: unknown): v is DNSInfo => object(v) &&
+  Array.isArray(v) && v.length <= 64 && v.every((item) => text(item, 512))
+const dnsInfo = (v: unknown): v is DNSInfo =>
+  object(v) &&
   keys(v, ['node', 'magicDns', 'domains', 'resolvers', 'fallbackResolvers', 'extraRecords']) &&
-  handle(v.node) && typeof v.magicDns === 'boolean' &&
-  textList(v.domains) && textList(v.resolvers) && textList(v.fallbackResolvers) &&
-  Array.isArray(v.extraRecords) && v.extraRecords.length <= 256 &&
-  v.extraRecords.every(r => object(r) && keys(r, ['name', 'type', 'value']) &&
-    text(r.name, 512) && text(r.type, 16) && text(r.value, 512))
-const resolveInfo = (v: unknown): v is ResolveInfo => object(v) &&
-  keys(v, ['node', 'name', 'addresses']) && handle(v.node) && text(v.name, 253) &&
-  Array.isArray(v.addresses) && v.addresses.length <= 16 &&
-  v.addresses.every(a => typeof a === 'string' && isIP(a) !== 0)
-const serviceInfo = (v: unknown): v is ServiceInfo => object(v) &&
+  handle(v.node) &&
+  typeof v.magicDns === 'boolean' &&
+  textList(v.domains) &&
+  textList(v.resolvers) &&
+  textList(v.fallbackResolvers) &&
+  Array.isArray(v.extraRecords) &&
+  v.extraRecords.length <= 256 &&
+  v.extraRecords.every(
+    (r) =>
+      object(r) &&
+      keys(r, ['name', 'type', 'value']) &&
+      text(r.name, 512) &&
+      text(r.type, 16) &&
+      text(r.value, 512),
+  )
+const resolveInfo = (v: unknown): v is ResolveInfo =>
+  object(v) &&
+  keys(v, ['node', 'name', 'addresses']) &&
+  handle(v.node) &&
+  text(v.name, 253) &&
+  Array.isArray(v.addresses) &&
+  v.addresses.length <= 16 &&
+  v.addresses.every((a) => typeof a === 'string' && isIP(a) !== 0)
+const serviceInfo = (v: unknown): v is ServiceInfo =>
+  object(v) &&
   keys(v, ['node', 'service', 'identity', 'addresses', 'port'], ['domain']) &&
-  handle(v.node) && handle(v.service) && text(v.identity) && v.identity.length > 0 &&
+  handle(v.node) &&
+  handle(v.service) &&
+  text(v.identity) &&
+  v.identity.length > 0 &&
   (v.domain === undefined || (text(v.domain, 253) && v.domain.length > 0)) &&
-  integer(v.port, 1, 65535) && Array.isArray(v.addresses) && v.addresses.length > 0 &&
-  v.addresses.length <= 16 && v.addresses.every(a => {
+  integer(v.port, 1, 65535) &&
+  Array.isArray(v.addresses) &&
+  v.addresses.length > 0 &&
+  v.addresses.length <= 16 &&
+  v.addresses.every((a) => {
     if (typeof a !== 'string') return false
     const match = /^(?:\[([^\]]+)\]|([^:]+)):(\d+)$/.exec(a)
     return !!match && isIP(match[1] ?? match[2]) !== 0 && Number(match[3]) === v.port
   })
-const probeResult = (v: unknown): v is ProbeResult => object(v) &&
+const probeResult = (v: unknown): v is ProbeResult =>
+  object(v) &&
   keys(v, ['ok', 'statusCode', 'identity', 'durationMs'], ['error']) &&
-  typeof v.ok === 'boolean' && integer(v.statusCode, 0, 599) &&
+  typeof v.ok === 'boolean' &&
+  integer(v.statusCode, 0, 599) &&
   (v.statusCode === 0 || (v.statusCode as number) >= 100) &&
-  text(v.identity) && integer(v.durationMs, 0, 300_000) &&
-  (v.ok ? !Object.hasOwn(v, 'error') && v.statusCode === 200 && v.identity.length > 0 : protocolError(v.error))
+  text(v.identity) &&
+  integer(v.durationMs, 0, 300_000) &&
+  (v.ok
+    ? !Object.hasOwn(v, 'error') && v.statusCode === 200 && v.identity.length > 0
+    : protocolError(v.error))
 
 export class Bridge {
   private readonly child: ChildProcessWithoutNullStreams
@@ -155,22 +193,32 @@ export class Bridge {
     this.killGraceMs = options.killGraceMs ?? 2000
     this.child = spawn(options.command ?? bridgeBinary, options.args ?? [], {
       cwd: root,
-      env: { ...process.env, ...(caFile ? { SSL_CERT_FILE: caFile } : {}), TS_NO_LOGS_NO_SUPPORT: 'true', TMPDIR: scratchDir },
+      env: {
+        ...process.env,
+        ...(caFile ? { SSL_CERT_FILE: caFile } : {}),
+        TS_NO_LOGS_NO_SUPPORT: 'true',
+        TMPDIR: scratchDir,
+      },
       stdio: ['pipe', 'pipe', 'pipe'],
     })
-    this.rpc = new JSONRPCClient(request => {
+    this.rpc = new JSONRPCClient((request) => {
       const frame = JSON.stringify(request) + '\n'
       return new Promise((resolve, reject) => {
-        this.child.stdin.write(frame, error => { if (error) reject(error); else resolve() })
+        this.child.stdin.write(frame, (error) => {
+          if (error) reject(error)
+          else resolve()
+        })
       })
     })
-    this.exit = new Promise(resolve => {
+    this.exit = new Promise((resolve) => {
       this.child.once('close', (code, signal) => {
         this.exited = true
         this.exitCode = code
         this.exitSignal = signal
         if (this.lineBuffer.length || this.inFlight > 0 || !this.stopping || code !== 0)
-          this.fail(`Bridge exited unexpectedly${this.stderrText ? `: ${this.stderrText.trim()}` : ''}`)
+          this.fail(
+            `Bridge exited unexpectedly${this.stderrText ? `: ${this.stderrText.trim()}` : ''}`,
+          )
         resolve()
       })
     })
@@ -191,45 +239,77 @@ export class Bridge {
   static async start(options: StartOptions = {}): Promise<Bridge> {
     const bridge = new Bridge(options)
     try {
-      await bridge.call('hello', {}, options.helloTimeoutMs ?? 5000, value => object(value) &&
-        keys(value, ['ready']) && value.ready === true)
+      await bridge.call(
+        'hello',
+        {},
+        options.helloTimeoutMs ?? 5000,
+        (value) => object(value) && keys(value, ['ready']) && value.ready === true,
+      )
       return bridge
     } catch (error) {
       await bridge.terminate()
-      throw new Error(`${error instanceof Error ? error.message : 'Bridge startup failed'}; ${bridge.diagnostics()}`)
+      throw new Error(
+        `${error instanceof Error ? error.message : 'Bridge startup failed'}; ${bridge.diagnostics()}`,
+      )
     }
   }
 
-  create(args: { node: string; hostname: string; controlURL: string; authKey: string },
-    timeoutMs = enrollmentTimeoutMs): Promise<NodeInfo> {
+  create(
+    args: { node: string; hostname: string; controlURL: string; authKey: string },
+    timeoutMs = enrollmentTimeoutMs,
+  ): Promise<NodeInfo> {
     if (args.authKey) this.secrets.add(args.authKey)
-    return this.call('create', args, timeoutMs, v => nodeInfo(v) && v.node === args.node && v.hostname === args.hostname)
+    return this.call(
+      'create',
+      args,
+      timeoutMs,
+      (v) => nodeInfo(v) && v.node === args.node && v.hostname === args.hostname,
+    )
   }
 
   /** login starts a node without an auth key, waiting at its authURL until close. */
-  login(args: { node: string; hostname: string; controlURL: string },
-    timeoutMs = enrollmentTimeoutMs): Promise<NodeInfo> {
-    return this.call('login', args, timeoutMs, v => nodeInfo(v) && v.node === args.node && !!v.authURL)
+  login(
+    args: { node: string; hostname: string; controlURL: string },
+    timeoutMs = enrollmentTimeoutMs,
+  ): Promise<NodeInfo> {
+    return this.call(
+      'login',
+      args,
+      timeoutMs,
+      (v) => nodeInfo(v) && v.node === args.node && !!v.authURL,
+    )
   }
 
   status(node: string): Promise<NodeInfo> {
-    return this.call('status', { node }, 5000, v => nodeInfo(v) && v.node === node)
+    return this.call('status', { node }, 5000, (v) => nodeInfo(v) && v.node === node)
   }
 
   dns(node: string): Promise<DNSInfo> {
-    return this.call('dns', { node }, 10_000, v => dnsInfo(v) && v.node === node)
+    return this.call('dns', { node }, 10_000, (v) => dnsInfo(v) && v.node === node)
   }
 
   /** resolve looks name up with node's own resolver (MagicDNS included). */
   async resolve(node: string, name: string): Promise<string[]> {
-    const info = await this.call<ResolveInfo>('resolve', { node, name }, 10_000,
-      v => resolveInfo(v) && v.node === node && v.name === name)
+    const info = await this.call<ResolveInfo>(
+      'resolve',
+      { node, name },
+      10_000,
+      (v) => resolveInfo(v) && v.node === node && v.name === name,
+    )
     return info.addresses
   }
 
   serve(node: string, service: string, port: number): Promise<ServiceInfo> {
-    return this.call('serve', { node, service, port }, 5000,
-      v => serviceInfo(v) && v.node === node && v.service === service && (port === 0 || v.port === port))
+    return this.call(
+      'serve',
+      { node, service, port },
+      5000,
+      (v) =>
+        serviceInfo(v) &&
+        v.node === node &&
+        v.service === service &&
+        (port === 0 || v.port === port),
+    )
   }
 
   /**
@@ -238,30 +318,55 @@ export class Bridge {
    * challenge propagating, hence the long default deadline.
    */
   serveTLS(node: string, service: string, timeoutMs = 240_000): Promise<ServiceInfo> {
-    return this.call('serveTLS', { node, service }, timeoutMs,
-      v => serviceInfo(v) && v.node === node && v.service === service && v.port === 443 && !!v.domain)
+    return this.call(
+      'serveTLS',
+      { node, service },
+      timeoutMs,
+      (v) =>
+        serviceInfo(v) && v.node === node && v.service === service && v.port === 443 && !!v.domain,
+    )
   }
 
   /** probe fetches url from node; serverName makes it https, verifying the certificate for that name. */
-  async probe(node: string, url: string, expectedIdentity: string, timeoutMs = 5000, serverName?: string): Promise<ProbeResult> {
+  async probe(
+    node: string,
+    url: string,
+    expectedIdentity: string,
+    timeoutMs = 5000,
+    serverName?: string,
+  ): Promise<ProbeResult> {
     const args = { node, url, expectedIdentity, ...(serverName ? { serverName } : {}) }
-    const result = await this.call<ProbeResult>('probe', args, timeoutMs,
-      v => probeResult(v) && (!v.ok || v.identity === expectedIdentity))
+    const result = await this.call<ProbeResult>(
+      'probe',
+      args,
+      timeoutMs,
+      (v) => probeResult(v) && (!v.ok || v.identity === expectedIdentity),
+    )
     if (result.error) result.error.message = messages[result.error.code]
     return result
   }
 
   async close(node: string): Promise<void> {
-    await this.call('close', { node }, 10_000,
-      v => object(v) && keys(v, ['node', 'closed']) && v.node === node && v.closed === true)
+    await this.call(
+      'close',
+      { node },
+      10_000,
+      (v) => object(v) && keys(v, ['node', 'closed']) && v.node === node && v.closed === true,
+    )
   }
 
   diagnostics(): string {
     return JSON.stringify({
-      pid: this.child.pid ?? null, requests: this.requests, replies: this.replies,
-      stderrBytes: this.stderrBytes, stderrTail: this.stderrText.trim() || undefined,
-      exited: this.exited, exitCode: this.exitCode,
-      exitSignal: this.exitSignal, forcedCleanup: this.forced, failed: !!this.fault,
+      pid: this.child.pid ?? null,
+      requests: this.requests,
+      replies: this.replies,
+      stderrBytes: this.stderrBytes,
+      stderrTail: this.stderrText.trim() || undefined,
+      exited: this.exited,
+      exitCode: this.exitCode,
+      exitSignal: this.exitSignal,
+      forcedCleanup: this.forced,
+      failed: !!this.fault,
     })
   }
 
@@ -276,16 +381,28 @@ export class Bridge {
     let timer: NodeJS.Timeout | undefined
     try {
       await Promise.race([
-        this.call('shutdown', {}, this.shutdownGraceMs,
-          v => object(v) && keys(v, ['closed']) && v.closed === true, true),
+        this.call(
+          'shutdown',
+          {},
+          this.shutdownGraceMs,
+          (v) => object(v) && keys(v, ['closed']) && v.closed === true,
+          true,
+        ),
         new Promise<never>((_, reject) => {
-          timer = setTimeout(() => reject(new Error('Bridge shutdown deadline exceeded')),
-            this.shutdownGraceMs + this.rpcGraceMs)
+          timer = setTimeout(
+            () => reject(new Error('Bridge shutdown deadline exceeded')),
+            this.shutdownGraceMs + this.rpcGraceMs,
+          )
         }),
       ])
       this.child.stdin.end()
-      if (!await this.waitExit(this.shutdownGraceMs)) error = new Error('Bridge did not exit after shutdown')
-    } catch (caught) { error = caught } finally { clearTimeout(timer) }
+      if (!(await this.waitExit(this.shutdownGraceMs)))
+        error = new Error('Bridge did not exit after shutdown')
+    } catch (caught) {
+      error = caught
+    } finally {
+      clearTimeout(timer)
+    }
     if (!this.exited) await this.terminate()
     if (error || this.forced || this.fault)
       throw new Error(`Bridge cleanup failed; ${this.diagnostics()}`)
@@ -296,8 +413,13 @@ export class Bridge {
   // protocol there's no need to queue calls one at a time on this side --
   // the Go bridge already serializes its own handler execution
   // (jrpc2.ServerOptions.Concurrency: 1).
-  private async call<T>(op: string, args: unknown, timeoutMs: number,
-    validate: (value: unknown) => boolean, teardown = false): Promise<T> {
+  private async call<T>(
+    op: string,
+    args: unknown,
+    timeoutMs: number,
+    validate: (value: unknown) => boolean,
+    teardown = false,
+  ): Promise<T> {
     if (!integer(timeoutMs, 1, 300_000)) throw new Error('Invalid bridge operation timeout')
     if (this.stopping && !teardown) throw new Error('Bridge is shutting down')
     if (this.fault || this.exited) throw this.fault ?? new Error('Bridge is closed')
@@ -306,9 +428,15 @@ export class Bridge {
     try {
       let result: unknown
       try {
-        result = await this.rpc.timeout(timeoutMs + this.rpcGraceMs).request(op, { ...(args as object), timeout: `${timeoutMs}ms` })
+        result = await this.rpc
+          .timeout(timeoutMs + this.rpcGraceMs)
+          .request(op, { ...(args as object), timeout: `${timeoutMs}ms` })
       } catch (error) {
-        if (error instanceof JSONRPCErrorException && error.code === appErrorCode && protocolError(error.data)) {
+        if (
+          error instanceof JSONRPCErrorException &&
+          error.code === appErrorCode &&
+          protocolError(error.data)
+        ) {
           const pe = error.data
           throw new Error(`Bridge ${op} operation failed: ${pe.code} (${messages[pe.code]})`)
         }
@@ -334,12 +462,18 @@ export class Bridge {
       const line = this.lineBuffer.slice(0, newline)
       this.lineBuffer = this.lineBuffer.slice(newline + 1)
       let value: unknown
-      try { value = JSON.parse(line) } catch {
+      try {
+        value = JSON.parse(line)
+      } catch {
         this.fail('Bridge returned malformed JSON')
         return
       }
-      if (!object(value) || value.jsonrpc !== '2.0' || !('id' in value) ||
-        !(keys(value, ['jsonrpc', 'id', 'result']) || keys(value, ['jsonrpc', 'id', 'error']))) {
+      if (
+        !object(value) ||
+        value.jsonrpc !== '2.0' ||
+        !('id' in value) ||
+        !(keys(value, ['jsonrpc', 'id', 'result']) || keys(value, ['jsonrpc', 'id', 'error']))
+      ) {
         this.fail('Bridge returned an invalid response shape or request ID')
         return
       }
@@ -356,7 +490,12 @@ export class Bridge {
   private async waitExit(ms: number): Promise<boolean> {
     if (this.exited) return true
     let timer: NodeJS.Timeout | undefined
-    await Promise.race([this.exit, new Promise<void>(resolve => { timer = setTimeout(resolve, ms) })])
+    await Promise.race([
+      this.exit,
+      new Promise<void>((resolve) => {
+        timer = setTimeout(resolve, ms)
+      }),
+    ])
     clearTimeout(timer)
     return this.exited
   }
@@ -370,7 +509,7 @@ export class Bridge {
       this.child.stdin.end()
       // child.kill targets only this owned process, never a process group.
       this.child.kill('SIGTERM')
-      if (!await this.waitExit(this.killGraceMs)) {
+      if (!(await this.waitExit(this.killGraceMs))) {
         this.child.kill('SIGKILL')
         await this.waitExit(this.killGraceMs)
       }

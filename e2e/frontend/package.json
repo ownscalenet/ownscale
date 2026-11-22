@@ -12,12 +12,15 @@
     "test:connectivity:contract": "playwright test --config playwright.connectivity-contract.config.ts",
     "test:ssh": "playwright test --config playwright.ssh.config.ts",
     "test:serve": "playwright test --config playwright.serve.config.ts",
-    "report": "playwright show-report"
+    "report": "playwright show-report",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
     "@playwright/test": "^1.65.1",
     "@types/node": "^26.6.6",
     "json-rpc-2.0": "^1.8.1",
+    "prettier": "^3.10.1",
     "typescript": "~7.0.2"
   }
 }

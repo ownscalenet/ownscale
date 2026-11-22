@@ -15,11 +15,11 @@ export const accounts = [
   { name: 'jjjj', role: 'spare' },
 ] as const
 
-export type Role = typeof accounts[number]['role']
+export type Role = (typeof accounts)[number]['role']
 
 // namesOf lists the accounts with role, e.g. the frontend workers by parallel index.
 export function namesOf(role: Role): string[] {
-  return accounts.filter(a => a.role === role).map(a => a.name)
+  return accounts.filter((a) => a.role === role).map((a) => a.name)
 }
 
 export function emailOf(name: string): string {
@@ -32,5 +32,9 @@ export function storageStateOf(name: string): string {
 
 // setupProject is the "setup" project that signs in only names.
 export function setupProject(names: string[]) {
-  return { name: 'setup', testMatch: /global\.setup\.ts/, grep: new RegExp(`\\b(${names.join('|')}) signs in\\b`) }
+  return {
+    name: 'setup',
+    testMatch: /global\.setup\.ts/,
+    grep: new RegExp(`\\b(${names.join('|')}) signs in\\b`),
+  }
 }

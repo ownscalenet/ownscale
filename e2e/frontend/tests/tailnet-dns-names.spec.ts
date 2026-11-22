@@ -17,16 +17,16 @@ test('devices resolve each other as <name>.<tailnet name>', async ({ page, accou
     b = await registerRealMachine(page, account.org)
     const peer = b
     // MagicDNS answers with the peer's IPv4 address.
-    const peerV4 = peer.addresses.filter(ip => !ip.includes(':'))
+    const peerV4 = peer.addresses.filter((ip) => !ip.includes(':'))
     expect(peerV4).not.toEqual([])
 
-    const tailnetName = ((await (await page.request.get('/api/dns')).json()).dns.baseDomain as string)
+    const tailnetName = (await (await page.request.get('/api/dns')).json()).dns.baseDomain as string
     const resolveOnA = (name: string) => a.bridge.resolve(a.hostname, `${name}.${tailnetName}`)
 
     await test.step('resolve by name', async () => {
-      await expect.poll(() => resolveOnA(peer.hostname), converge).toEqual(
-        expect.arrayContaining(peerV4),
-      )
+      await expect
+        .poll(() => resolveOnA(peer.hostname), converge)
+        .toEqual(expect.arrayContaining(peerV4))
       expect(await resolveOnA(`absent${Date.now()}`)).toEqual([])
     })
 
@@ -34,10 +34,12 @@ test('devices resolve each other as <name>.<tailnet name>', async ({ page, accou
       const { machines } = (await (await page.request.get('/api/machines')).json()) as {
         machines: { id: string; givenName: string }[]
       }
-      const id = machines.find(m => m.givenName === peer.hostname)?.id
+      const id = machines.find((m) => m.givenName === peer.hostname)?.id
       expect(id).toBeTruthy()
       const renamed = `${peer.hostname}-renamed`
-      const response = await page.request.post(`/api/machines/${id}/rename`, { data: { name: renamed } })
+      const response = await page.request.post(`/api/machines/${id}/rename`, {
+        data: { name: renamed },
+      })
       expect(response.ok()).toBeTruthy()
 
       await expect.poll(() => resolveOnA(renamed), converge).toEqual(expect.arrayContaining(peerV4))

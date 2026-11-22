@@ -37,12 +37,16 @@ const defaultAuthRestrictions = '{"domains": [], "groups": [], "users": []}'
 export async function resetAuthRestrictions(page: Page): Promise<void> {
   let lastStatus = 0
   for (let attempt = 1; attempt <= 3; attempt++) {
-    const response = await page.request.put('/api/auth-restrictions', { data: { content: defaultAuthRestrictions } })
+    const response = await page.request.put('/api/auth-restrictions', {
+      data: { content: defaultAuthRestrictions },
+    })
     if (response.ok()) return
     lastStatus = response.status()
-    await new Promise(resolve => setTimeout(resolve, 2_000))
+    await new Promise((resolve) => setTimeout(resolve, 2_000))
   }
-  throw new Error(`resetAuthRestrictions: /api/auth-restrictions PUT failed after retries, last HTTP ${lastStatus}`)
+  throw new Error(
+    `resetAuthRestrictions: /api/auth-restrictions PUT failed after retries, last HTTP ${lastStatus}`,
+  )
 }
 
 // removeInvitee removes invitee, and passkey invitees (see
@@ -51,29 +55,48 @@ export async function resetAuthRestrictions(page: Page): Promise<void> {
 // invitee would join the next test's org with their old role instead.
 export async function removeInvitee(page: Page, invitee: string): Promise<void> {
   const response = await page.request.get('/api/members')
-  if (!response.ok()) throw new Error(`removeInvitee: /api/members GET failed with HTTP ${response.status()}`)
+  if (!response.ok())
+    throw new Error(`removeInvitee: /api/members GET failed with HTTP ${response.status()}`)
   const { members } = (await response.json()) as { members: { id: string; email: string }[] }
-  for (const m of members.filter(m => m.email === invitee || /^invitee\d+@passkey$/.test(m.email))) {
+  for (const m of members.filter(
+    (m) => m.email === invitee || /^invitee\d+@passkey$/.test(m.email),
+  )) {
     const removed = await page.request.delete(`/api/members/${m.id}`)
-    if (!removed.ok()) throw new Error(`removeInvitee: removing ${m.email} failed with HTTP ${removed.status()}`)
+    if (!removed.ok())
+      throw new Error(`removeInvitee: removing ${m.email} failed with HTTP ${removed.status()}`)
   }
 }
 
 function loadAccount(name: string): Account {
-  const entry = accounts.find(a => a.name === name)
+  const entry = accounts.find((a) => a.name === name)
   if (!entry) throw new Error(`unknown account ${name}: add it to accounts`)
-  return { name, email: emailOf(name), org: name, storageState: storageStateOf(name), invitee: 'invitee' in entry ? entry.invitee : '' }
+  return {
+    name,
+    email: emailOf(name),
+    org: name,
+    storageState: storageStateOf(name),
+    invitee: 'invitee' in entry ? entry.invitee : '',
+  }
 }
 
 // test runs each spec as its worker's account, by parallel index, or as
 // accountName when a config sets it (the ssh and serve suites).
-export const test = base.extend<{ storageState: BrowserContextOptions['storageState'] }, { account: Account; accountName: string | undefined }>({
+export const test = base.extend<
+  { storageState: BrowserContextOptions['storageState'] },
+  { account: Account; accountName: string | undefined }
+>({
   accountName: [undefined, { option: true, scope: 'worker' }],
-  account: [async ({ accountName }, use, workerInfo) => {
-    const name = accountName ?? namesOf('worker')[workerInfo.parallelIndex]
-    if (!name) throw new Error(`no account for worker ${workerInfo.parallelIndex}: add a worker to accounts`)
-    await use(loadAccount(name))
-  }, { scope: 'worker' }],
+  account: [
+    async ({ accountName }, use, workerInfo) => {
+      const name = accountName ?? namesOf('worker')[workerInfo.parallelIndex]
+      if (!name)
+        throw new Error(
+          `no account for worker ${workerInfo.parallelIndex}: add a worker to accounts`,
+        )
+      await use(loadAccount(name))
+    },
+    { scope: 'worker' },
+  ],
   storageState: async ({ account }, use) => use(account.storageState),
 })
 
