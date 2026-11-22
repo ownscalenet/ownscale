@@ -32,6 +32,11 @@ It asks for a directory, your domain and your reverse proxy, then:
 - for [your own reverse proxy]({{< relref "byorp.md" >}}), turns off the
   bundled Caddy and prints the config your proxy needs.
 
+> [!IMPORTANT]
+> The [example.env](https://github.com/ownscalenet/ownscale/blob/master/example.env)
+> file is the reference documentation for all possible settings when
+> self-hosting ownscale.
+
 Then start ownscale as the script shows, and [sign in](#sign-in).
 The `Makefile` is the usual way to interact with the ownscale deployment.
 Run `make help` to see a list of available commands.

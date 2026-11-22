@@ -42,9 +42,8 @@ organizations, users, machines, keys and policies are managed.
 ### Content domain
 
 An optional second domain (`CONTENT_DOMAIN`) that serves funnels and
-machines' MagicDNS names. It exists to keep user-provided content off
-the main domain and avoid sharing cookies and search engine reputation
-problems.
+machines' MagicDNS names, away from the console.
+[More](/docs/self-hosting/content-domain/)
 
 ### Coordination server
 

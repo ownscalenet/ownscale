@@ -8,7 +8,8 @@ with no ports to open on that machine.
 
 1. On the [Funnels](/console/funnels) page, choose a **Subdomain**, the
    **Machine** and the **Port** the service listens on.
-2. The service is now public at `https://<subdomain>-<org>.<CONTENT_DOMAIN>`.
+2. The service is now public at `https://<subdomain>-<org>.<CONTENT_DOMAIN>`
+   (see [content domain](/docs/self-hosting/content-domain/)).
 
 `tailscale funnel` doesn't work with ownscale; use this page instead.
 

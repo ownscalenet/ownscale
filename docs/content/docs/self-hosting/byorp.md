@@ -22,10 +22,11 @@ send these hosts to `ownscale:8080`:
 | --- | --- |
 | `example.com` | This documentation site |
 | `*.example.com` | The console, organizations' login servers |
-| `example-content.net` | A short page explaining the content domain |
+| `example-content.net` | The content domain's landing page |
 | `*.example-content.net` | Funnels |
 
-Without a separate `CONTENT_DOMAIN`, the first two rows are enough.
+Without a separate [content domain](/docs/self-hosting/content-domain/), the
+first two rows are enough.
 
 Your proxy must:
 

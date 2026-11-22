@@ -12,7 +12,8 @@ ownscale runs as two containers:
   - the console and its API, at `console.<BASE_DOMAIN>`;
   - one Headscale instance per organization, at `<org>.<BASE_DOMAIN>`,
     which Tailscale clients use as their login server;
-  - funnels, at `<name>-<org>.<CONTENT_DOMAIN>`;
+  - funnels, at `<name>-<org>.<CONTENT_DOMAIN>` (the
+    [content domain](/docs/self-hosting/content-domain/));
   - this documentation, at `<BASE_DOMAIN>`.
 
 ## Organizations sleep

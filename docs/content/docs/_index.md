@@ -10,6 +10,23 @@ Ownscale is a self-hosted coordination server and web console for Tailscale
 clients, built on [Headscale](https://headscale.net). It runs many private
 networks from one server.
 
+## Using these docs
+
+Where to start depends on what you want to do. To try ownscale without
+running anything, start with [ownscale.net](/docs/ownscalenet/). To run it
+on your own server, read [Self-hosting](/docs/self-hosting/), which covers
+the requirements and installation. Once you have an organization, use
+[Connecting devices](/docs/connect/) to add your machines, then
+[Use cases](/docs/use-cases/) for setups such as exit nodes, SSH and
+funnels.
+
+Use the search box at the top of every page to find a page by keyword,
+and the sidebar to move between sections. [Terminology](/docs/reference/terminology/)
+explains the words these docs use, such as organization and login server, and
+the [Reference](/docs/reference/) section lists the CLI commands and settings.
+Every page has buttons next to its title to view or edit its source on
+GitHub. If something is wrong or missing, open a pull request or an issue.
+
 {{< cards >}}
   {{< card link="/docs/about/" title="About" icon="information-circle" subtitle="What ownscale is and how it works" >}}
   {{< card link="/docs/self-hosting/" title="Self-hosting" icon="server" subtitle="Run ownscale on your own server" >}}

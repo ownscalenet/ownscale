@@ -8,12 +8,6 @@ weight: 10
 - A Linux host with **Docker** and **Docker Compose**.
 - A public IP address with inbound **TCP 80**, **TCP 443** and **UDP 443**
   open. Caddy uses all three.
-- Persistent disk for `OWNSCALE_DATA_DIR` (default `./data`). ownscale's own database and every
-  organization's database live there.
-
-ownscale is designed to run many organizations on a small server. Each
-organization's Headscale instance runs in-process, is stopped after a few
-minutes of inactivity, and starts again on the next request.
 
 ## Domains
 
@@ -28,10 +22,8 @@ You need a domain you control, called `BASE_DOMAIN` (for example
 A single record per hostname isn't enough, because each organization gets its
 own subdomain.
 
-A second, separate domain for user content, called `CONTENT_DOMAIN`
-is very much recommended. Ownscale serves user-provided content
-through funnels and that allows setting cookies on the domain.
-The content domain needs its own wildcard record.
+A second domain for user content, the [content
+domain](/docs/self-hosting/content-domain/), is very much recommended.
 
 ## DNS provider (optional)
 
@@ -43,7 +35,8 @@ HTTPS) are disabled.
 With a provider set up, Caddy gets wildcard certificates through an ACME DNS-01 challenge,
 and machines can get certificates. Use one if you expect many organizations or
 funnels: Let's Encrypt issues at most 50 certificates per domain per week. The
-provider must host the zones of `BASE_DOMAIN` and `CONTENT_DOMAIN`.
+provider must host the zones of `BASE_DOMAIN` and the
+[content domain](/docs/self-hosting/content-domain/#setting-it-up).
 Supported providers:
 
 - **Azure DNS**: a service principal with *DNS Zone Contributor* on the zone;
