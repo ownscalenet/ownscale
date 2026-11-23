@@ -14,6 +14,7 @@ import {
 } from '../api'
 import { useConfirm } from '../lib/confirm'
 import { downloadCsv, toCsv } from '../lib/csv'
+import { docPageURL } from '../lib/faq'
 import { CopyIcon } from '../components/CopyButton'
 import { ErrorAlert, PageHeader } from '../components/ui'
 
@@ -69,6 +70,20 @@ export default function Users() {
           Download CSV
         </button>
       </PageHeader>
+
+      <p className="text-sm text-base-content/70 mb-4">
+        Members of this organization&apos;s tailnet, with the role that determines what each may
+        manage.{' '}
+        <a
+          className="link"
+          href={docPageURL('reference/terminology', 'role')}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Learn more
+        </a>
+        .
+      </p>
 
       <ErrorAlert error={error} />
 

@@ -14,6 +14,7 @@ import { useConfirm } from '../lib/confirm'
 import { EmptyRow, ErrorAlert, PageHeader, PageSpinner } from '../components/ui'
 import { CopyIcon } from '../components/CopyButton'
 import { rawTextProps } from '../lib/inputProps'
+import { docPageURL } from '../lib/faq'
 
 export default function Funnel() {
   usePageTitle('Funnels')
@@ -93,15 +94,20 @@ export default function Funnel() {
         subtitle={`${routes.length} public ${routes.length === 1 ? 'route' : 'routes'}`}
       />
 
-      <div role="alert" className="alert alert-warning mb-4">
+      <p className="text-sm text-base-content/70 mb-4">
+        A funnel gives a service on one of your machines a public HTTPS address, with no ports to
+        open on that machine.{' '}
+        <a className="link" href={docPageURL('use-cases/funnels')} target="_blank" rel="noreferrer">
+          Learn more
+        </a>
+        .
+      </p>
+
+      <div role="alert" className="alert alert-info mb-4">
         <div>
           <p>
-            Funnel exposes a machine&apos;s port to the <strong>entire public internet</strong>, not
-            just this tailnet. Anyone with the URL below can reach it, without needing to join this
-            tailnet at all. Only create a funnel route for a service you intend to be publicly
-            reachable.
+            Funnel exposes a machine&apos;s port to the <strong>entire public internet</strong>.
           </p>
-          <p>A machine running on the ownscale server is needed for funnel functionality.</p>
         </div>
       </div>
 

@@ -16,6 +16,7 @@ import { usePageTitle } from '../hooks/usePageTitle'
 import { EmptyRow, ErrorAlert, PageHeader, PageSpinner } from '../components/ui'
 import { CopyIcon } from '../components/CopyButton'
 import { rawTextProps } from '../lib/inputProps'
+import { docPageURL } from '../lib/faq'
 
 const RECORD_TYPES = ['A', 'AAAA', 'CNAME']
 
@@ -304,7 +305,16 @@ export default function DNS() {
             <h2 className="card-title">Magic DNS</h2>
             <p className="text-sm text-base-content/70">
               Automatically register domain names for each device on the tailnet. Devices are
-              accessible at <code>[device].{dns.baseDomain}</code> when Magic DNS is enabled.
+              accessible at <code>[device].{dns.baseDomain}</code> when Magic DNS is enabled.{' '}
+              <a
+                className="link"
+                href={docPageURL('reference/terminology', 'magicdns')}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Learn more
+              </a>
+              .
             </p>
             <label className="fieldset-label cursor-pointer gap-3">
               <input
@@ -369,7 +379,16 @@ function DERPRelays({ saved, canManage }: { saved: DERPSettings; canManage: bool
         <h2 className="card-title">Relays (DERP)</h2>
         <p className="text-sm text-base-content/70">
           Devices that can&apos;t connect to each other directly relay their encrypted traffic
-          through DERP servers. Choose which ones they may use.
+          through{' '}
+          <a
+            className="link"
+            href={docPageURL('reference/terminology', 'derp')}
+            target="_blank"
+            rel="noreferrer"
+          >
+            DERP
+          </a>{' '}
+          servers. Choose which ones they may use.
         </p>
         <form
           className="flex flex-col gap-3"
@@ -524,7 +543,16 @@ function SplitDNS({
         <h2 className="card-title">Split DNS</h2>
         <p className="text-sm text-base-content/70">
           Queries for these domains and their subdomains go to the listed nameservers instead of the
-          global ones.
+          global ones.{' '}
+          <a
+            className="link"
+            href={docPageURL('use-cases/split-dns')}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Learn more
+          </a>
+          .
         </p>
         <div className="overflow-x-auto">
           <table className="table table-sm">
@@ -613,7 +641,16 @@ function TailnetName({
         <h2 className="card-title">Tailnet Name</h2>
         <p className="text-sm text-base-content/70">
           The base domain used for Magic DNS and device names on this tailnet. It is assigned by
-          ownscale and cannot be changed.
+          ownscale and cannot be changed.{' '}
+          <a
+            className="link"
+            href={docPageURL('reference/terminology', 'tailnet-label')}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Learn more
+          </a>
+          .
         </p>
         <div className="flex items-center gap-2">
           <span className="font-mono">{dns.baseDomain}</span>

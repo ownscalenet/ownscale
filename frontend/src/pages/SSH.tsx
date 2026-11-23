@@ -13,6 +13,7 @@ import { useAuth } from '../authContext'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { ErrorAlert, PageHeader } from '../components/ui'
 import { rawTextProps } from '../lib/inputProps'
+import { docPageURL } from '../lib/faq'
 
 // pendingSession is a tailnet-connected client waiting for the terminal
 // container to render.
@@ -240,7 +241,11 @@ export default function SSH() {
           <Link to="/access-control" className="link">
             access control policy
           </Link>{' '}
-          must allow SSH from you to it.
+          must allow SSH from you to it.{' '}
+          <a className="link" href={docPageURL('use-cases/ssh')} target="_blank" rel="noreferrer">
+            Learn more
+          </a>
+          .
         </p>
       )}
 

@@ -16,6 +16,7 @@ import { CopyIcon } from '../components/CopyButton'
 import { ExpiryDialog, RenameDialog, RoutesDialog, TagsDialog } from '../components/MachineDialogs'
 import { RelativeTime } from '../components/RelativeTime'
 import { ErrorAlert, ExitNodeBadge, PageSpinner, StatusBadge } from '../components/ui'
+import { docPageURL } from '../lib/faq'
 const refreshIntervalMs = 10_000
 
 // Attribute is one labelled value of a details card; copyable values get a
@@ -226,7 +227,7 @@ function Card({
   children,
 }: {
   title: string
-  subtitle?: string
+  subtitle?: ReactNode
   children: ReactNode
 }) {
   return (
@@ -321,7 +322,29 @@ function Subnets({
   return (
     <Card
       title="Subnets and routing"
-      subtitle="Subnets expose physical network routes onto the tailnet."
+      subtitle={
+        <>
+          Subnets expose physical network routes onto the tailnet via a{' '}
+          <a
+            className="link"
+            href={docPageURL('use-cases/home-network')}
+            target="_blank"
+            rel="noreferrer"
+          >
+            subnet router
+          </a>
+          ; a machine can also act as an{' '}
+          <a
+            className="link"
+            href={docPageURL('use-cases/exit-node')}
+            target="_blank"
+            rel="noreferrer"
+          >
+            exit node
+          </a>
+          .
+        </>
+      }
     >
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div>

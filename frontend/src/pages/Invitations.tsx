@@ -17,6 +17,7 @@ import {
 import Modal from '../components/Modal'
 import CopyButton, { CopyIcon } from '../components/CopyButton'
 import { downloadCsv, toCsv } from '../lib/csv'
+import { docPageURL } from '../lib/faq'
 import { ErrorAlert, PageHeader, PageSpinner } from '../components/ui'
 
 function roleLabel(role: string): string {
@@ -117,6 +118,20 @@ export default function Invitations() {
           </button>
         </div>
       </PageHeader>
+
+      <p className="text-sm text-base-content/70 mb-4">
+        An invite is a link that adds whoever opens it to this organization with the chosen role.
+        ownscale doesn&apos;t email it, so share it yourself.{' '}
+        <a
+          className="link"
+          href={docPageURL('use-cases/organizations')}
+          target="_blank"
+          rel="noreferrer"
+        >
+          Learn more
+        </a>
+        .
+      </p>
 
       <ErrorAlert error={error} />
 

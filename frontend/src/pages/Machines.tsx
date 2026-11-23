@@ -19,7 +19,7 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tansta
 import { Link, useSearchParams } from 'react-router-dom'
 import { useAuth } from '../authContext'
 import { usePageTitle } from '../hooks/usePageTitle'
-import { shortURL } from '../lib/faq'
+import { docPageURL, shortURL } from '../lib/faq'
 import { useConfirm } from '../lib/confirm'
 import Modal from '../components/Modal'
 import { CopyIcon } from '../components/CopyButton'
@@ -140,7 +140,17 @@ export default function Machines() {
 
   return (
     <>
-      <PageHeader title="Machines">
+      <PageHeader
+        title="Machines"
+        subtitle={
+          <>
+            Devices that have joined this tailnet.{' '}
+            <a className="link" href={docPageURL('connect')} target="_blank" rel="noreferrer">
+              How to add one
+            </a>
+          </>
+        }
+      >
         {!failed && (
           <button
             type="button"

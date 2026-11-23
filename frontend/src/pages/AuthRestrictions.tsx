@@ -12,6 +12,7 @@ import DiffModal from '../components/DiffModal'
 import LineNumberedTextarea from '../components/LineNumberedTextarea'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { ErrorAlert, PageHeader, PageSpinner } from '../components/ui'
+import { docPageURL } from '../lib/faq'
 
 // Cheatsheet is a static reference for the OIDC login allowlist's HuJSON
 // shape, shown next to the editor.
@@ -32,7 +33,16 @@ function Cheatsheet() {
           </a>{' '}
           (JSON with comments and trailing commas allowed). It restricts which OIDC-authenticated
           users can join this organization. Leave a list empty (or omit its key) to not restrict on
-          that field.
+          that field.{' '}
+          <a
+            className="link"
+            href={docPageURL('reference/terminology', 'authentication-restrictions')}
+            target="_blank"
+            rel="noreferrer"
+          >
+            Learn more
+          </a>
+          .
         </p>
 
         <div className="divider my-2">Top-level keys</div>

@@ -19,6 +19,7 @@ import Modal from '../components/Modal'
 import CopyButton from '../components/CopyButton'
 import { ErrorAlert, PageHeader } from '../components/ui'
 import { rawTextProps } from '../lib/inputProps'
+import { docPageURL } from '../lib/faq'
 
 const TAG_ONLY = '__tag_only__'
 
@@ -106,7 +107,16 @@ export default function PreAuthKeys() {
         <>
           <p className="text-sm opacity-60 mb-4">
             Pre-authentication keys let a new machine join this tailnet without an interactive
-            login.
+            login.{' '}
+            <a
+              className="link"
+              href={docPageURL('reference/terminology', 'auth-key')}
+              target="_blank"
+              rel="noreferrer"
+            >
+              Learn more
+            </a>
+            .
           </p>
 
           <form className="flex flex-wrap gap-2 mb-4" onSubmit={(e) => e.preventDefault()}>

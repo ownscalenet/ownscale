@@ -13,6 +13,7 @@ import DiffModal from '../components/DiffModal'
 import LineNumberedTextarea from '../components/LineNumberedTextarea'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { ErrorAlert, PageHeader, PageSpinner } from '../components/ui'
+import { docPageURL } from '../lib/faq'
 
 // Cheatsheet is a static reference for headscale's HuJSON ACL policy syntax
 // (https://headscale.net/stable/ref/acls/), shown next to the editor.
@@ -40,7 +41,16 @@ function Cheatsheet() {
           >
             full reference
           </a>{' '}
-          for what is achievable using policies
+          for what is achievable using policies, or see ownscale&apos;s own{' '}
+          <a
+            className="link"
+            href={docPageURL('reference/terminology', 'access-control-policy')}
+            target="_blank"
+            rel="noreferrer"
+          >
+            terminology
+          </a>
+          .
         </p>
 
         <div className="divider my-2">Top-level keys</div>

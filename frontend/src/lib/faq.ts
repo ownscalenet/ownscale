@@ -25,3 +25,10 @@ export function faqURL(anchor: string): string {
 export function shortURL(slug: string): string {
   return `https://${baseDomain()}/s/${slug}`
 }
+
+// docPageURL builds a link to a docs page under /docs/, optionally to an
+// anchor within it, e.g. docPageURL('use-cases/funnels') or
+// docPageURL('reference/terminology', 'auth-key').
+export function docPageURL(path: string, anchor?: string): string {
+  return `https://${baseDomain()}/docs/${path}/${anchor ? `#${anchor}` : ''}`
+}
