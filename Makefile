@@ -45,6 +45,10 @@ docs: ## Build the docs site into docsite/dist
 backend: ## Build ownscale and osa into bin/
 	go build -ldflags "-X github.com/ownscalenet/ownscale/utils.Version=$(BUILD_VERSION)" -o bin/ ./cmd/ownscale ./cmd/osa
 
+.PHONY: linkcheck
+linkcheck: docs ## Check the console and docs site don't link to a page/route that no longer exists
+	go run ./cmd/linkcheck
+
 ##@ Dev stack
 
 .PHONY: dev-up purge load-cert devbox stress
@@ -151,6 +155,7 @@ ci: ## Run .github/workflows/ci.yml locally, fixing formatting in place
 	go vet ./...
 	go test -shuffle=on -covermode=atomic -coverprofile=coverage.out ./...
 	go run golang.org/x/tools/cmd/deadcode@latest --test ./...
+	$(MAKE) linkcheck
 	@if [ "$$($(worktree_state))" != "$$(cat bin/ci-worktree-state)" ]; then \
 		echo "ci: formatters/linters changed files, review and commit them:"; \
 		git status --short; \
