@@ -39,6 +39,35 @@ func (e *InvalidConfigError) Error() string { return e.msg }
 type HeadscaleConfig struct {
 	DNS  DNSConfig  `yaml:"dns"`
 	OIDC OIDCConfig `yaml:"oidc"`
+	// DERP is nil until the organization changes it; see derpSettings.
+	DERP *DERPSettings `yaml:"derp,omitempty"`
+}
+
+// DERPSettings are the DERP relays an organization's devices may use.
+type DERPSettings struct {
+	// Tailscale includes Tailscale's public relays.
+	Tailscale bool `json:"tailscale" yaml:"tailscale"`
+	// Ownscale includes BuiltinDERPMap.
+	Ownscale bool `json:"ownscale" yaml:"ownscale"`
+	// Servers are the organization's own DERP servers.
+	Servers []DERPServer `json:"servers" yaml:"servers,omitempty"`
+}
+
+// DERPServer is a DERP server run by an organization.
+type DERPServer struct {
+	HostName string `json:"hostName" yaml:"host_name"`
+	// IPv4 and IPv6 are optional; devices resolve HostName without them.
+	IPv4 string `json:"ipv4" yaml:"ipv4,omitempty"`
+	IPv6 string `json:"ipv6" yaml:"ipv6,omitempty"`
+}
+
+// derpSettings returns cfg's DERP settings, Tailscale's relays alone if
+// the organization never changed them.
+func (cfg *HeadscaleConfig) derpSettings() DERPSettings {
+	if cfg == nil || cfg.DERP == nil {
+		return DERPSettings{Tailscale: true}
+	}
+	return *cfg.DERP
 }
 
 // DNSRecord is an extra DNS record served to an organization's nodes.

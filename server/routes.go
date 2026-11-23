@@ -80,6 +80,8 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 
 	mux.HandleFunc("GET /api/dns", requireAuthAPI(h.GetDNSSettings))
 	mux.HandleFunc("PUT /api/dns", requireAuthAPI(h.UpdateDNSSettings))
+	mux.HandleFunc("PUT /api/dns/derp", requireAuthAPI(h.UpdateDERPSettings))
+	mux.HandleFunc("GET "+orgs.BuiltinDERPMapPath, h.ServeBuiltinDERPMap) // public
 
 	mux.HandleFunc("GET /api/funnel", requireAuthAPI(h.RequireHeadscaleClient(h.ListFunnelRoutes)))
 	mux.HandleFunc("POST /api/funnel", requireAuthAPI(h.RequireHeadscaleClient(h.CreateFunnelRoute)))

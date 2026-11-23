@@ -56,8 +56,7 @@ through it.
 ### DERP
 
 Relay servers that forward encrypted traffic when two machines can't connect
-directly. Every organization uses the same DERP map, set by
-`OWNSCALE_DERP_MAP_URL`.
+directly. Each organization chooses its own on the DNS page.
 [Tailscale docs](https://tailscale.com/docs/reference/derp-servers)
 
 ### Ephemeral machine

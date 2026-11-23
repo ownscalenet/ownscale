@@ -61,5 +61,5 @@ any of the following:
   [`osa restore`]({{< relref "/docs/reference/osa-cli.md#restore" >}}).
 - **A separate small server** for a [custom DERP relay](https://tailscale.com/kb/1118/custom-derp-servers).
   By default, machines that can't connect directly relay their traffic,
-  end-to-end encrypted, through Tailscale's public DERP servers. Set
-  `OWNSCALE_DERP_MAP_URL` to use your own.
+  end-to-end encrypted, through Tailscale's public DERP servers.
+  Organizations can add your own on the console's DNS page.

@@ -69,12 +69,11 @@ func newTestHandlersWithConfig(t *testing.T, baseDomain, dataDir string, edit fu
 		_, _ = w.Write([]byte(`{"Regions":{"900":{"RegionID":900,"RegionCode":"test","Nodes":[{"Name":"900a","RegionID":900,"HostName":"derp.example.com"}]}}}`))
 	}))
 	t.Cleanup(derpMap.Close)
-	derpCfg := config.DerpConfig{MapURL: derpMap.URL}
 	cfg := &config.Config{
 		FastOrgs:      true,
 		BaseDomain:    baseDomain,
 		DataDir:       dataDir,
-		Derp:          derpCfg,
+		DERPMapURL:    derpMap.URL,
 		ContentDomain: baseDomain,
 		Funnel:        config.FunnelConfig{MaxBodyBytes: 1 << 20},
 	}

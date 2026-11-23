@@ -56,10 +56,13 @@ type Config struct {
 
 	Auth   AuthConfig
 	Log    LogConfig
-	Derp   DerpConfig
 	Funnel FunnelConfig
 	Backup BackupConfig
 	DNS    DNSConfig
+
+	// DERPMapURL is the DERP map behind the console's "Use Tailscale
+	// servers", DefaultDERPMapURL. It has no env var: only tests change it.
+	DERPMapURL string
 
 	// FastOrgs makes organizations cheaper to create and write to, so tests
 	// don't idle. It has no env var so it can't be turned on in prod.
@@ -336,13 +339,6 @@ type OIDCProviderConfig struct {
 	IDTokenLifetime     string `env:"OWNSCALE_AUTH_OIDC_PROVIDER_ID_TOKEN_LIFETIME"`
 }
 
-// DerpConfig configures the DERP map every organization's headscale uses.
-type DerpConfig struct {
-	// MapURL is where ownscale fetches the DERP map. Defaults to
-	// DefaultDERPMapURL; to use a self-hosted relay, serve a map listing it.
-	MapURL string `env:"OWNSCALE_DERP_MAP_URL"`
-}
-
 // DefaultDERPMapURL is Tailscale's public DERP map.
 const DefaultDERPMapURL = "https://controlplane.tailscale.com/derpmap/default"
 
@@ -430,8 +426,8 @@ func Load() (_ *Config, err error) {
 	if cfg.LocalCADir != "" && cfg.DataDir != "" && !filepath.IsAbs(cfg.LocalCADir) {
 		cfg.LocalCADir = filepath.Join(cfg.DataDir, cfg.LocalCADir)
 	}
-	if cfg.Derp.MapURL == "" {
-		cfg.Derp.MapURL = DefaultDERPMapURL
+	if cfg.DERPMapURL == "" {
+		cfg.DERPMapURL = DefaultDERPMapURL
 	}
 	if cfg.DNS.Provider == "" {
 		cfg.DNS.Provider = DNSProviderNone

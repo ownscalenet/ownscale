@@ -15,6 +15,7 @@ import (
 	"github.com/ownscalenet/ownscale/db/dbtest"
 	"github.com/ownscalenet/ownscale/db/sqlcgen"
 	"github.com/ownscalenet/ownscale/handlers"
+	"github.com/ownscalenet/ownscale/orgs"
 )
 
 func newTestMux(t *testing.T) http.Handler {
@@ -38,6 +39,7 @@ func TestNewMuxProtectedRoutesRequireAuth(t *testing.T) {
 	}{
 		{http.MethodGet, "/api/session"},
 		{http.MethodPost, "/api/logout"},
+		{http.MethodPut, "/api/dns/derp"},
 	}
 	for _, p := range protected {
 		req := httptest.NewRequest(p.method, p.path, nil)
@@ -46,6 +48,21 @@ func TestNewMuxProtectedRoutesRequireAuth(t *testing.T) {
 		if rec.Code != http.StatusUnauthorized {
 			t.Errorf("%s %s: status = %d, want %d", p.method, p.path, rec.Code, http.StatusUnauthorized)
 		}
+	}
+}
+
+func TestNewMuxServesBuiltinDERPMapWithoutAuth(t *testing.T) {
+	mux := newTestMux(t)
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, orgs.BuiltinDERPMapPath, nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+	}
+	if ct := rec.Header().Get("Content-Type"); !strings.HasPrefix(ct, "application/json") {
+		t.Errorf("Content-Type = %q, want JSON", ct)
+	}
+	if !strings.Contains(rec.Body.String(), "derp1eu.ownscale.net") {
+		t.Errorf("body = %s, want the built-in DERP map", rec.Body.String())
 	}
 }
 

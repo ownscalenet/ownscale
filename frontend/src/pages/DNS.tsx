@@ -3,8 +3,11 @@ import { useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   getDNSSettings,
+  updateDERPSettings,
   updateDNSSettings,
   errorMessage,
+  type DERPServer,
+  type DERPSettings,
   type DNSConfig,
   type DNSRecord,
   type DNSSettingsResponse,
@@ -315,6 +318,165 @@ export default function DNS() {
             </label>
           </div>
         </div>
+
+        {query.data && <DERPRelays saved={query.data.derp} canManage={canManage} />}
+      </div>
+    </div>
+  )
+}
+
+const emptyDERPServer: DERPServer = { hostName: '', ipv4: '', ipv6: '' }
+
+// cleanDERPSettings trims d's servers and drops blank rows, so it's what
+// the server stores.
+function cleanDERPSettings(d: DERPSettings): DERPSettings {
+  const servers = d.servers
+    .map((s) => ({ hostName: s.hostName.trim(), ipv4: s.ipv4.trim(), ipv6: s.ipv6.trim() }))
+    .filter((s) => s.hostName || s.ipv4 || s.ipv6)
+  return { ...d, servers }
+}
+
+// DERPRelays edits the DERP relays devices use when they can't connect
+// directly. It saves on its own, without restarting the tailnet's control
+// server like the DNS settings do.
+function DERPRelays({ saved, canManage }: { saved: DERPSettings; canManage: boolean }) {
+  const queryClient = useQueryClient()
+  const [draft, setDraft] = useState<DERPSettings | null>(null)
+  const value = draft ?? {
+    ...saved,
+    servers: saved.servers.length === 0 && canManage ? [emptyDERPServer] : saved.servers,
+  }
+  const mutation = useMutation({
+    mutationFn: updateDERPSettings,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ['dns'] })
+      setDraft(null)
+    },
+  })
+  const saving = mutation.isPending
+  const disabled = !canManage || saving
+  const changed = JSON.stringify(cleanDERPSettings(value)) !== JSON.stringify(saved)
+  const edit = (d: DERPSettings) => {
+    mutation.reset()
+    setDraft(d)
+  }
+  const editServer = (i: number, s: DERPServer) =>
+    edit({ ...value, servers: value.servers.map((old, j) => (j === i ? s : old)) })
+
+  return (
+    <div className="card bg-base-100 shadow">
+      <div className="card-body">
+        <h2 className="card-title">Relays (DERP)</h2>
+        <p className="text-sm text-base-content/70">
+          Devices that can&apos;t connect to each other directly relay their encrypted traffic
+          through DERP servers. Choose which ones they may use.
+        </p>
+        <form
+          className="flex flex-col gap-3"
+          onSubmit={(e) => {
+            e.preventDefault()
+            mutation.mutate(cleanDERPSettings(value))
+          }}
+        >
+          <label className="fieldset-label cursor-pointer gap-3">
+            <input
+              type="checkbox"
+              className="checkbox checkbox-primary checkbox-sm"
+              checked={value.tailscale}
+              disabled={disabled}
+              onChange={(e) => edit({ ...value, tailscale: e.target.checked })}
+            />
+            <span>Use Tailscale servers</span>
+          </label>
+          <label className="fieldset-label cursor-pointer gap-3">
+            <input
+              type="checkbox"
+              className="checkbox checkbox-primary checkbox-sm"
+              checked={value.ownscale}
+              disabled={disabled}
+              onChange={(e) => edit({ ...value, ownscale: e.target.checked })}
+            />
+            <span>Use Ownscale servers</span>
+          </label>
+
+          <div className="flex flex-col gap-2">
+            <span className="text-sm font-medium">Your own DERP servers</span>
+            {value.servers.length === 0 && (
+              <p className="text-sm text-base-content/70">No DERP servers of your own.</p>
+            )}
+            {value.servers.map((srv, i) => (
+              <div key={i} className="flex flex-wrap gap-2">
+                <input
+                  {...rawTextProps}
+                  type="text"
+                  className="input input-bordered input-sm flex-[2] min-w-48 font-mono"
+                  aria-label={`DERP server ${i + 1} hostname`}
+                  placeholder="Hostname (e.g. derp.example.com)"
+                  value={srv.hostName}
+                  disabled={disabled}
+                  onChange={(e) => editServer(i, { ...srv, hostName: e.target.value })}
+                />
+                <input
+                  {...rawTextProps}
+                  type="text"
+                  className="input input-bordered input-sm flex-1 min-w-32 font-mono"
+                  aria-label={`DERP server ${i + 1} IPv4`}
+                  placeholder="IPv4 (optional)"
+                  value={srv.ipv4}
+                  disabled={disabled}
+                  onChange={(e) => editServer(i, { ...srv, ipv4: e.target.value })}
+                />
+                <input
+                  {...rawTextProps}
+                  type="text"
+                  className="input input-bordered input-sm flex-1 min-w-32 font-mono"
+                  aria-label={`DERP server ${i + 1} IPv6`}
+                  placeholder="IPv6 (optional)"
+                  value={srv.ipv6}
+                  disabled={disabled}
+                  onChange={(e) => editServer(i, { ...srv, ipv6: e.target.value })}
+                />
+                {canManage && (
+                  <button
+                    type="button"
+                    className="btn btn-ghost btn-sm"
+                    aria-label={`Remove DERP server ${i + 1}`}
+                    disabled={saving}
+                    onClick={() =>
+                      edit({ ...value, servers: value.servers.filter((_, j) => j !== i) })
+                    }
+                  >
+                    <Trash2 className="size-3.5" aria-hidden="true" />
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+
+          {canManage && (
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                className="btn btn-sm"
+                disabled={saving}
+                onClick={() => edit({ ...value, servers: [...value.servers, emptyDERPServer] })}
+              >
+                <Plus className="size-3.5" aria-hidden="true" />
+                Add
+              </button>
+              <button
+                type="submit"
+                className="btn btn-sm btn-primary ml-auto"
+                disabled={!changed || saving}
+              >
+                {saving && <span className="loading loading-spinner loading-xs" />}
+                Save
+              </button>
+            </div>
+          )}
+        </form>
+        {mutation.error && <ErrorAlert error={errorMessage(mutation.error)} inline />}
+        {mutation.isSuccess && <p className="text-sm text-success">DERP settings saved.</p>}
       </div>
     </div>
   )

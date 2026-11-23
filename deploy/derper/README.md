@@ -2,11 +2,9 @@
 
 [DERP](https://tailscale.com/kb/1232/derp-servers) is a fallback relay
 Tailscale/headscale nodes use when a direct peer-to-peer connection can't be
-established. By default, every organization's headscale instance uses
-Tailscale's public DERP map, which ownscale fetches every 3h from
-`OWNSCALE_DERP_MAP_URL`. This directory lets you run your own instead,
-and have every organization's headscale point at it
-(see `OWNSCALE_DERP_MAP_URL` in the root `example.env`).
+established. By default, organizations use Tailscale's public DERP servers.
+This directory lets you run your own, which organizations can then add to
+the relays they use.
 
 ## Why a separate server?
 
@@ -34,28 +32,7 @@ directly, rather than sitting behind the same Caddy container that fronts
 
 ## Wiring it into ownscale
 
-Once running, serve a DERP map JSON listing this relay (optionally alongside
-Tailscale's regions from https://controlplane.tailscale.com/derpmap/default),
-for example:
-
-```json
-{
-  "Regions": {
-    "900": {
-      "RegionID": 900,
-      "RegionCode": "custom",
-      "RegionName": "Ownscale DERP",
-      "Nodes": [{
-        "Name": "900a",
-        "RegionID": 900,
-        "HostName": "derp.example.com",
-        "IPv4": "203.0.113.5",
-        "STUNPort": 3478
-      }]
-    }
-  }
-}
-```
-
-Set `OWNSCALE_DERP_MAP_URL` to its URL and restart `ownscale`. It fetches the
-map every 3h and pushes it to every org's headscale instance.
+Once running, an owner or admin adds it under **Relays (DERP)** on the
+console's DNS page: its hostname, and optionally its IPv4 and IPv6
+addresses. The change applies right away, without restarting the
+organization.

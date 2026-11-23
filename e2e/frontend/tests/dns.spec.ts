@@ -189,3 +189,51 @@ test('adding and removing a nameserver, split DNS domain, DNS record, and search
     await restore()
   }
 })
+
+test('choosing DERP relays saves them without changing the DNS settings', async ({ page }) => {
+  const before = await (await page.request.get('/api/dns')).json()
+  try {
+    await page.goto('/dns')
+    await dnsPageLoaded(page)
+    const card = page.locator('.card', {
+      has: page.getByRole('heading', { name: 'Relays (DERP)' }),
+    })
+    const tailscale = card.getByRole('checkbox', { name: 'Use Tailscale servers' })
+    const ownscale = card.getByRole('checkbox', { name: 'Use Ownscale servers' })
+    await expect(tailscale).toBeChecked({ checked: before.derp.tailscale })
+    await expect(ownscale).toBeChecked({ checked: before.derp.ownscale })
+
+    await tailscale.uncheck()
+    await ownscale.check()
+    // With no servers saved, the card already shows an empty row.
+    const row = before.derp.servers.length + 1
+    if (row > 1) await card.getByRole('button', { name: 'Add' }).click()
+    await card
+      .getByRole('textbox', { name: `DERP server ${row} hostname` })
+      .fill('derp.example.com')
+    await card.getByRole('textbox', { name: `DERP server ${row} IPv6` }).fill('2001:db8::1')
+    await card.getByRole('button', { name: 'Save' }).click()
+    await expect(card.getByText('DERP settings saved.')).toBeVisible()
+
+    await page.reload()
+    await expect(tailscale).not.toBeChecked()
+    await expect(ownscale).toBeChecked()
+    await expect(card.getByRole('textbox', { name: `DERP server ${row} hostname` })).toHaveValue(
+      'derp.example.com',
+    )
+    await expect(card.getByRole('textbox', { name: `DERP server ${row} IPv4` })).toHaveValue('')
+    await expect(card.getByRole('textbox', { name: `DERP server ${row} IPv6` })).toHaveValue(
+      '2001:db8::1',
+    )
+    const after = await (await page.request.get('/api/dns')).json()
+    expect(after.dns).toEqual(before.dns)
+
+    // IP addresses must be of the right family.
+    await card.getByRole('textbox', { name: `DERP server ${row} IPv4` }).fill('2001:db8::2')
+    await card.getByRole('button', { name: 'Save' }).click()
+    await expect(card.getByRole('alert')).toContainText('invalid IPv4 address')
+  } finally {
+    const response = await page.request.put('/api/dns/derp', { data: before.derp })
+    expect(response.ok()).toBeTruthy()
+  }
+})

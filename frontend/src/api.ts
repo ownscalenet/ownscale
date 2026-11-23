@@ -435,8 +435,24 @@ export interface DNSConfig {
   extraRecords: DNSRecord[]
 }
 
+export interface DERPServer {
+  hostName: string
+  // Optional; devices resolve hostName when empty.
+  ipv4: string
+  ipv6: string
+}
+
+export interface DERPSettings {
+  // Tailscale's public relays.
+  tailscale: boolean
+  // The relays run by ownscale.net.
+  ownscale: boolean
+  servers: DERPServer[]
+}
+
 export interface DNSSettingsResponse {
   dns: DNSConfig
+  derp: DERPSettings
   canManage: boolean
   // Whether the server can issue node certificates; also needs Magic DNS.
   httpsCertificates: boolean
@@ -452,6 +468,13 @@ export function updateDNSSettings(dns: DNSConfig) {
   return request<{ ok: boolean }>('/api/dns', {
     method: 'PUT',
     body: JSON.stringify(dns),
+  })
+}
+
+export function updateDERPSettings(derp: DERPSettings) {
+  return request<{ ok: boolean }>('/api/dns/derp', {
+    method: 'PUT',
+    body: JSON.stringify(derp),
   })
 }
 

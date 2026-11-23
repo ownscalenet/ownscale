@@ -70,7 +70,7 @@ type Service struct {
 	backups *backup.Replicator
 
 	orgs utils.Map[string, *orgRuntime]
-	// derpMap is the last DERP map RunDERPMapUpdater fetched.
+	// derpMap is the last Tailscale DERP map RunDERPMapUpdater fetched.
 	derpMap atomic.Pointer[tailcfg.DERPMap]
 	// restarts counts each org's in-flight restarts, including those still
 	// waiting on their orgLock; a counter as two settings saves can overlap.
@@ -168,6 +168,8 @@ type instance struct {
 	// exited is closed once app.Serve has returned err.
 	exited chan struct{}
 	err    error
+	// derp are the DERP settings the instance's current map was built from.
+	derp atomic.Pointer[DERPSettings]
 }
 
 // NewService builds a Service that manages organizations under
@@ -242,6 +244,9 @@ func (s *Service) ForOrg(org sqlcgen.Organization) *OrgService {
 		},
 		del: func(ctx context.Context) error {
 			return s.deleteOrg(ctx, org.ID, sub)
+		},
+		pushDERP: func(ctx context.Context, d DERPSettings) error {
+			return s.pushDERPMap(ctx, sub, &d)
 		},
 	}
 }
@@ -774,7 +779,8 @@ func (s *Service) startLocked(ctx context.Context, orgID, subdomain string, hsCf
 // and returns why, e.g. a *types.ListenerBindError when port is taken. A
 // nil instance means createFn built none (tests).
 func (s *Service) launch(ctx context.Context, orgID, subdomain string, port int, hsCfg *HeadscaleConfig) (*instance, error) {
-	derpMap, err := s.currentDERPMap(ctx)
+	derpSettings := hsCfg.derpSettings()
+	derpMap, err := s.derpMapFor(ctx, derpSettings)
 	if err != nil {
 		return nil, err
 	}
@@ -811,6 +817,7 @@ func (s *Service) launch(ctx context.Context, orgID, subdomain string, port int,
 		cancel: cancel,
 		exited: make(chan struct{}),
 	}
+	inst.derp.Store(&derpSettings)
 	go func() {
 		defer close(inst.exited)
 		inst.err = app.Serve(serveCtx)

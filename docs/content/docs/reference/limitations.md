@@ -26,8 +26,8 @@ service or from a standalone Headscale.
 - **Fixed settings**: the IP ranges `100.64.0.0/10` and `fd7a:115c:a1e0::/48`,
   sequential IP allocation, the ephemeral node timeout (120 s) and Taildrop
   (always on).
-- **No embedded DERP server.** All organizations share the DERP map from
-  `OWNSCALE_DERP_MAP_URL`.
+- **No embedded DERP server.** Organizations choose Tailscale's DERP servers,
+  ownscale.net's, their own, or a mix; see [Connectivity]({{< relref "/docs/about/connectivity.md" >}}).
 - **Global nameservers are fallbacks only.** ownscale doesn't set Headscale's
   `override_local_dns`.
 - **The tailnet name can't be changed.**

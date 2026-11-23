@@ -37,6 +37,9 @@ type OrgService struct {
 	sleep func(ctx context.Context) error
 	// del deletes the org; see Delete.
 	del func(ctx context.Context) error
+	// pushDERP switches the org's running headscale to the DERP map of
+	// the given settings.
+	pushDERP func(ctx context.Context, d DERPSettings) error
 }
 
 // Delete stops o's headscale and deletes the organization with its
@@ -365,4 +368,82 @@ func normalizeDNSConfig(dns DNSConfig) DNSConfig {
 		dns.ExtraRecords = []DNSRecord{}
 	}
 	return dns
+}
+
+// maxDERPServers bounds an organization's own DERP servers, which use
+// the custom regions from firstCustomDERPRegionID up to 999.
+const maxDERPServers = 50
+
+// GetDERPSettings returns o's DERP settings.
+func (o *OrgService) GetDERPSettings(ctx context.Context) (_ DERPSettings, err error) {
+	defer derrors.Wrap(&err, "o.GetDERPSettings(%q)", o.orgID)
+
+	cfg, err := o.getHeadscaleConfig(ctx)
+	if err != nil {
+		return DERPSettings{}, err
+	}
+	d := cfg.derpSettings()
+	if d.Servers == nil {
+		d.Servers = []DERPServer{}
+	}
+	return d, nil
+}
+
+// SetDERPSettings validates and stores d, and switches o's running
+// headscale to its DERP map without a restart.
+func (o *OrgService) SetDERPSettings(ctx context.Context, d DERPSettings) (err error) {
+	defer derrors.Wrap(&err, "o.SetDERPSettings(%q)", o.orgID)
+
+	d, err = normalizeDERPSettings(d)
+	if err != nil {
+		return err
+	}
+	cfg, err := o.getHeadscaleConfig(ctx)
+	if err != nil {
+		return err
+	}
+	cfg.DERP = &d
+	updated, err := cfg.Marshal()
+	if err != nil {
+		return err
+	}
+	if err := o.persistConfig(ctx, updated, nil); err != nil {
+		return err
+	}
+	return o.pushDERP(ctx, d)
+}
+
+// normalizeDERPSettings trims d's servers and checks they're usable, and
+// that d uses at least one relay.
+func normalizeDERPSettings(d DERPSettings) (DERPSettings, error) {
+	if len(d.Servers) > maxDERPServers {
+		return d, NewInvalidConfigError(fmt.Sprintf("at most %d DERP servers are allowed", maxDERPServers))
+	}
+	servers := make([]DERPServer, 0, len(d.Servers))
+	seen := map[string]bool{}
+	for _, srv := range d.Servers {
+		fqdn, ok := parseDomain(srv.HostName)
+		if !ok {
+			return d, NewInvalidConfigError(fmt.Sprintf("invalid DERP server hostname %q", srv.HostName))
+		}
+		host := fqdn.WithoutTrailingDot()
+		if seen[host] {
+			return d, NewInvalidConfigError(fmt.Sprintf("duplicate DERP server %q", host))
+		}
+		seen[host] = true
+		ipv4 := strings.TrimSpace(srv.IPv4)
+		if ip, err := netip.ParseAddr(ipv4); ipv4 != "" && (err != nil || !ip.Is4()) {
+			return d, NewInvalidConfigError(fmt.Sprintf("invalid IPv4 address %q for DERP server %q", srv.IPv4, host))
+		}
+		ipv6 := strings.TrimSpace(srv.IPv6)
+		if ip, err := netip.ParseAddr(ipv6); ipv6 != "" && (err != nil || !ip.Is6() || ip.Is4In6()) {
+			return d, NewInvalidConfigError(fmt.Sprintf("invalid IPv6 address %q for DERP server %q", srv.IPv6, host))
+		}
+		servers = append(servers, DERPServer{HostName: host, IPv4: ipv4, IPv6: ipv6})
+	}
+	d.Servers = servers
+	if !d.Tailscale && !d.Ownscale && len(d.Servers) == 0 {
+		return d, NewInvalidConfigError("choose at least one set of DERP servers")
+	}
+	return d, nil
 }

@@ -314,37 +314,16 @@ func TestLoadGitHubConfig(t *testing.T) {
 	}
 }
 
-// TestLoadDerpConfig covers OWNSCALE_DERP_MAP_URL and its default.
-func TestLoadDerpConfig(t *testing.T) {
-	cases := []struct {
-		name string
-		env  map[string]string
-		want DerpConfig
-	}{
-		{
-			name: "default map URL",
-			want: DerpConfig{MapURL: DefaultDERPMapURL},
-		},
-		{
-			name: "custom map URL",
-			env:  map[string]string{"OWNSCALE_DERP_MAP_URL": "https://derp.example.com/map"},
-			want: DerpConfig{MapURL: "https://derp.example.com/map"},
-		},
+// TestLoadDERPMapURL checks organizations use Tailscale's DERP map, which
+// no env var can change.
+func TestLoadDERPMapURL(t *testing.T) {
+	t.Setenv("OWNSCALE_DERP_MAP_URL", "https://derp.example.com/map")
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
 	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			for k, v := range tc.env {
-				t.Setenv(k, v)
-			}
-
-			cfg, err := Load()
-			if err != nil {
-				t.Fatalf("Load: %v", err)
-			}
-			if cfg.Derp != tc.want {
-				t.Errorf("Derp = %+v, want %+v", cfg.Derp, tc.want)
-			}
-		})
+	if cfg.DERPMapURL != DefaultDERPMapURL {
+		t.Errorf("DERPMapURL = %q, want %q", cfg.DERPMapURL, DefaultDERPMapURL)
 	}
 }
 
