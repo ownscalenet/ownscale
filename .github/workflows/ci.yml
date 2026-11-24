@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/setup-go@v7.1.0
         with:
           go-version-file: go.mod
 
@@ -68,7 +68,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7.0.1
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/setup-go@v7.1.0
         with:
           go-version-file: go.mod
       - name: Install Hugo
@@ -103,7 +103,7 @@ jobs:
       # Go's Node runner executes the Tailscale WASM client in check:wasm.
       # No cache: this job builds nothing, and as the first to finish it would
       # save an empty cache under the go.sum key every other job restores.
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/setup-go@v7.1.0
         with:
           go-version-file: go.mod
           cache: false
@@ -129,7 +129,7 @@ jobs:
             frontend/package-lock.json
             e2e/frontend/package-lock.json
       # The contract tests build and run tscl-bridge.
-      - uses: actions/setup-go@v7.0.0
+      - uses: actions/setup-go@v7.1.0
         with:
           go-version-file: go.mod
       # The e2e tests import the console's API types.
