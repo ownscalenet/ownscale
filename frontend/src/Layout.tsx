@@ -158,7 +158,7 @@ export default function Layout() {
           aria-label="close sidebar"
           className="drawer-overlay"
         ></label>
-        <aside className="bg-base-100 border-r border-base-300 min-h-full w-64 flex flex-col">
+        <aside className="bg-base-100 border-r border-base-300 min-h-full w-65 flex flex-col">
           <div className="p-4 border-b border-base-300">
             <div className="flex items-center gap-2.5">
               <Logo className="size-7" />
