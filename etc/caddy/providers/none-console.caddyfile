@@ -1,0 +1,3 @@
+# Without a wildcard certificate, the console would fall under the
+# *.{$BASE_DOMAIN} site's on-demand certificates; give it its own instead.
+tls force_automate

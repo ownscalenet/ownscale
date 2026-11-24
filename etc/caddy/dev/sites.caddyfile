@@ -1,7 +1,7 @@
 # Local-dev OIDC provider (dexidp/dex, see compose.dev.yaml) that ownscale
 # federates its own login to.
 dex.{$BASE_DOMAIN} {
-	# See console.{$BASE_DOMAIN} in the Caddyfile.
+	# See etc/caddy/providers/none-console.caddyfile.
 	tls force_automate
 	reverse_proxy dex:5556
 }

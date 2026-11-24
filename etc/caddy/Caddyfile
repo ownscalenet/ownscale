@@ -96,9 +96,9 @@
 # The Ownscale console (web UI, API, its own OIDC provider) is at
 # console.{$BASE_DOMAIN}; everything else goes to ownscale below.
 console.{$BASE_DOMAIN} {
-	# Caddy would otherwise serve it from the *.{$BASE_DOMAIN} site's
-	# certificate, which is per-host on demand without a DNS provider.
-	tls force_automate
+	# With a DNS provider, the wildcard certificate covers it. Only "none" has
+	# a console file; an unmatched glob is a no-op.
+	import /etc/caddy/providers/{$DNS_PROVIDER:none}-console*.caddyfile
 	import ratelimit_console
 	reverse_proxy ownscale:8080
 }
