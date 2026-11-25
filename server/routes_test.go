@@ -107,6 +107,10 @@ func TestNewMuxSiteHosts(t *testing.T) {
 		{"content domain", "example-content.net", "example-content.net", "landing"},
 		{"content domain is base domain", "example.com", "example.com", "docs"},
 		{"console", "example-content.net", "console.example.com", "static"},
+		{"www on base domain", "example-content.net", "www.example.com", "redirect https://example.com/"},
+		{"www on content domain", "example-content.net", "www.example-content.net", "redirect https://example-content.net/"},
+		{"unknown name on content domain", "example-content.net", "login.example-content.net", "not found"},
+		{"nested name on base domain", "example-content.net", "a.b.example.com", "not found"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -133,7 +137,13 @@ func TestNewMuxSiteHosts(t *testing.T) {
 			mux.ServeHTTP(rec, req)
 
 			got := "static"
-			if rec.Code != http.StatusTeapot {
+			switch rec.Code {
+			case http.StatusMovedPermanently:
+				got = "redirect " + rec.Header().Get("Location")
+			case http.StatusNotFound:
+				got = "not found"
+			case http.StatusTeapot:
+			default:
 				got = "docs"
 				if strings.Contains(rec.Body.String(), "is used by") {
 					got = "landing"

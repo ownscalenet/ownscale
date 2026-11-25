@@ -7,6 +7,7 @@ package server
 import (
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/ownscalenet/ownscale/handlers"
 	"github.com/ownscalenet/ownscale/orgs"
@@ -151,6 +152,13 @@ func NewMux(h *handlers.Handlers, requireAuthAPI func(http.HandlerFunc) http.Han
 			next = http.HandlerFunc(h.ServeDocs)
 		case hostLanding:
 			next = http.HandlerFunc(h.ServeLanding)
+		case hostWWW:
+			next = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				host, _ := strings.CutPrefix(strings.ToLower(r.Host), "www.")
+				http.Redirect(w, r, "https://"+host+r.URL.RequestURI(), http.StatusMovedPermanently)
+			})
+		case hostNotFound:
+			next = http.HandlerFunc(http.NotFound)
 		default:
 			next = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				if r.Body != nil {
