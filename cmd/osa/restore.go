@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 
 	"github.com/peterbourgon/ff/v4"
+	"golang.org/x/sync/errgroup"
 
 	"github.com/ownscalenet/ownscale/backup"
 	"github.com/ownscalenet/ownscale/config"
@@ -24,13 +26,37 @@ func restoreOrganizations(ctx context.Context, out io.Writer, cfg config.BackupC
 		return fmt.Errorf("list organizations: %w", err)
 	}
 
-	var errs []error
-	for _, org := range organizations {
-		if err := backup.Restore(ctx, cfg, out, dataDir, orgs.DBFile(org.Subdomain)); err != nil {
-			errs = append(errs, fmt.Errorf("organization %s: %w", org.Subdomain, err))
-		}
+	// Each restore spends most of its time waiting on the replica, so a few at
+	// once cut boot time on a new instance roughly by restoreConcurrency.
+	out = &lockedWriter{w: out}
+	errs := make([]error, len(organizations))
+	var g errgroup.Group
+	g.SetLimit(restoreConcurrency)
+	for i, org := range organizations {
+		g.Go(func() error {
+			if err := backup.Restore(ctx, cfg, out, dataDir, orgs.DBFile(org.Subdomain)); err != nil {
+				errs[i] = fmt.Errorf("organization %s: %w", org.Subdomain, err)
+			}
+			return nil // keep restoring the others, like a serial loop would
+		})
 	}
+	g.Wait()
 	return errors.Join(errs...)
+}
+
+// restoreConcurrency is how many organization databases are restored at once.
+const restoreConcurrency = 4
+
+// lockedWriter keeps concurrent restores' progress lines from interleaving.
+type lockedWriter struct {
+	mu sync.Mutex
+	w  io.Writer
+}
+
+func (l *lockedWriter) Write(p []byte) (int, error) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.w.Write(p)
 }
 
 // newRestoreCommand builds the "restore" subcommand group (db/organizations),
