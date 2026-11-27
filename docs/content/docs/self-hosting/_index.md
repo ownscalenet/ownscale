@@ -16,5 +16,5 @@ file is the reference documentation for all possible settings.
   {{< card link="/docs/self-hosting/requirements/" title="Requirements" icon="clipboard-check" subtitle="Server, domains, DNS provider and login provider" >}}
   {{< card link="/docs/self-hosting/installation/" title="Installation" icon="download" subtitle="Install script, first sign-in and upgrades" >}}
   {{< card link="/docs/self-hosting/byorp/" title="Own reverse proxy" icon="switch-horizontal" subtitle="Run ownscale behind nginx, Traefik or another proxy" >}}
-  {{< card link="/docs/self-hosting/content-domain/" title="Content domain" icon="globe-alt" subtitle="A separate domain for funnels and machine names" >}}
+  {{< card link="/docs/self-hosting/content-domain/" title="Content domain" icon="globe-alt" subtitle="A separate domain for funnels and device names" >}}
 {{< /cards >}}

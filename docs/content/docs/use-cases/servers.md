@@ -3,30 +3,30 @@ title: Servers, containers and CI
 weight: 70
 ---
 
-Machines without a browser register with a **pre-auth key** instead of
+Devices without a browser register with a **pre-auth key** instead of
 signing in.
 
 1. On [Pre-auth Keys](/console/pre-auth-keys), choose **Create pre-auth key**:
-   - **Reusable** to register many machines with one key;
-   - **Ephemeral** for short-lived machines, such as CI runners and
+   - **Reusable** to register many devices with one key;
+   - **Ephemeral** for short-lived devices, such as CI runners and
      containers: they're removed shortly after going offline;
-   - **Tag only** with ACL tags, so the machines belong to the tags rather
+   - **Tag only** with ACL tags, so the devices belong to the tags rather
      than to a user.
-2. Register the machine:
+2. Register the device:
 
    ```sh
    tailscale up --login-server=https://myorg.example.com --authkey=<key>
    ```
 
-Servers' node keys expire like any machine's, and they then need to sign in
-again. To avoid that, choose **Disable key expiry** in the machine's menu on
-**Machines**. Tagged machines' keys don't expire.
+Servers' node keys expire like any device's, and they then need to sign in
+again. To avoid that, choose **Disable key expiry** in the device's menu on
+**Devices**. Tagged devices' keys don't expire.
 
 ## GitHub Actions
 
 The [Tailscale GitHub Action](https://github.com/tailscale/github-action)
 connects a workflow's runner to your tailnet, so jobs can reach private
-machines, for example to deploy to a server or run tests against a database.
+devices, for example to deploy to a server or run tests against a database.
 It works with ownscale when you pass a pre-auth key and your organization's
 login server.
 

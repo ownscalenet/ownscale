@@ -32,7 +32,7 @@ export default function WaitingDeviceDialog({
     e.preventDefault()
     setValidation(null)
     if (!memberId) {
-      setValidation('Choose a user to own this machine.')
+      setValidation('Choose a user to own this device.')
       return
     }
     if (!key.trim()) {

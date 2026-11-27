@@ -5,7 +5,7 @@ weight: 30
 
 By default, a device on your tailnet sends only tailnet traffic through
 Tailscale; everything else goes out over its own internet connection. An
-**exit node** is a machine on the tailnet that other devices can send all of
+**exit node** is a device on the tailnet that other devices can send all of
 their internet traffic through instead. It's useful when:
 
 - you're on an untrusted Wi-Fi network, such as in a café or hotel;
@@ -14,7 +14,7 @@ their internet traffic through instead. It's useful when:
 
 ## How it works
 
-Using an exit node is opt-in on both sides: a machine must advertise itself
+Using an exit node is opt-in on both sides: a device must advertise itself
 as an exit node, an admin must approve it in the console, and each device
 chooses whether to use it. Traffic between the device and the exit node is
 encrypted by WireGuard; from the exit node on, it leaves through the exit
@@ -29,7 +29,7 @@ public Wi-Fi.
 
 ## Prerequisites
 
-- An ownscale organization with at least two machines.
+- An ownscale organization with at least two devices.
 - The exit node runs Linux, macOS, Windows, Android or iOS, and stays online.
 - If your access control policy doesn't allow all traffic, a rule that lets
   the devices use it; see [step 3](#allow-devices-to-use-it).
@@ -38,7 +38,7 @@ public Wi-Fi.
 
 {{% steps %}}
 
-### Advertise a machine as an exit node
+### Advertise a device as an exit node
 
 {{< tabs >}}
 
@@ -51,19 +51,19 @@ echo 'net.ipv6.conf.all.forwarding = 1' | sudo tee -a /etc/sysctl.d/99-tailscale
 sudo sysctl -p /etc/sysctl.d/99-tailscale.conf
 ```
 
-Then advertise the machine:
+Then advertise the device:
 
 ```sh
 sudo tailscale set --advertise-exit-node
 ```
 
-If the machine uses `firewalld`, also allow masquerading:
+If the device uses `firewalld`, also allow masquerading:
 
 ```sh
 sudo firewall-cmd --permanent --add-masquerade
 ```
 
-Make sure the firewall denies forwarding by default, so the machine only
+Make sure the firewall denies forwarding by default, so the device only
 forwards traffic from the tailnet. `ufw` and `firewalld` do.
 {{< /tab >}}
 
@@ -90,7 +90,7 @@ In the Tailscale app, open **Exit Node** and choose **Run as Exit Node**.
 
 ### Approve it in the console
 
-On [Machines](/console/machines), the machine now shows an **Exit node ·
+On [Devices](/console/devices), the device now shows an **Exit node ·
 awaiting approval** badge. Open its menu, choose **Edit route settings**,
 tick **Use as exit node** and save.
 
@@ -118,7 +118,7 @@ destination for the users or devices that may use exit nodes:
 ```
 
 A rule with the exit node itself as the destination only allows connections
-to that machine, such as SSH, not routing through it.
+to that device, such as SSH, not routing through it.
 
 ### Use the exit node
 
@@ -126,14 +126,14 @@ to that machine, such as SSH, not routing through it.
 
 {{< tab name="Linux" >}}
 ```sh
-sudo tailscale set --exit-node=<machine>
+sudo tailscale set --exit-node=<device>
 ```
 
-`<machine>` is the exit node's name or Tailscale IP address, as shown by
+`<device>` is the exit node's name or Tailscale IP address, as shown by
 `tailscale status`. To also allow local network access:
 
 ```sh
-sudo tailscale set --exit-node=<machine> --exit-node-allow-lan-access=true
+sudo tailscale set --exit-node=<device> --exit-node-allow-lan-access=true
 ```
 
 To stop using it:
@@ -144,24 +144,24 @@ sudo tailscale set --exit-node=
 {{< /tab >}}
 
 {{< tab name="macOS" >}}
-In the menu bar, open Tailscale, choose **Exit Nodes** and pick the machine.
+In the menu bar, open Tailscale, choose **Exit Nodes** and pick the device.
 Turn on **Allow Local Network Access** if needed. Choose **None** to stop.
 {{< /tab >}}
 
 {{< tab name="Windows" >}}
 In the system tray, open Tailscale, choose **Exit node** and pick the
-machine. Turn on **Allow local network access** if needed. Choose **None**
+device. Turn on **Allow local network access** if needed. Choose **None**
 to stop.
 {{< /tab >}}
 
 {{< tab name="Android" >}}
-In the Tailscale app, open **Exit Node** and pick the machine. Turn on
+In the Tailscale app, open **Exit Node** and pick the device. Turn on
 **Allow LAN access** if needed. Choose **None** to stop.
 {{< /tab >}}
 
 {{< tab name="iOS" >}}
 In the Tailscale app, tap the exit node picker at the top and pick the
-machine. Choose **None** to stop.
+device. Choose **None** to stop.
 {{< /tab >}}
 
 {{< /tabs >}}
@@ -173,16 +173,16 @@ my IP" site: it should be the exit node's.
 
 ## Caveats
 
-- **Clients only offer approved exit nodes.** A machine that advertises
+- **Clients only offer approved exit nodes.** A device that advertises
   itself but hasn't been approved doesn't appear in the apps' exit node
   menus.
 - **macOS, Windows and Android exit nodes route in userspace**, which is
-  slower than Linux. Prefer a Linux machine for heavy traffic.
+  slower than Linux. Prefer a Linux device for heavy traffic.
 - **The exit node must stay awake.** Disable sleep on macOS and Windows,
   enable **Run unattended** on Windows, and keep Android devices plugged in.
 - **Key expiry.** When the exit node's key expires, devices using it lose
   internet access until it signs in again. Choose **Disable key expiry** in
-  its menu on Machines, or register it with a tagged pre-auth key; see
+  its menu on Devices, or register it with a tagged pre-auth key; see
   [Servers, containers and CI](/docs/use-cases/servers/).
 
 See also Tailscale's [exit node

@@ -47,10 +47,10 @@ function AppRoutes() {
           </RequireAuth>
         }
       >
-        <Route index element={<Navigate to="/machines" replace />} />
-        <Route path="machines" element={<Machines />} />
-        <Route path="machines/:ip" element={<MachineDetail />} />
-        <Route path="machines/:id/ssh" element={<SSH />} />
+        <Route index element={<Navigate to="/devices" replace />} />
+        <Route path="devices" element={<Machines />} />
+        <Route path="devices/:ip" element={<MachineDetail />} />
+        <Route path="devices/:id/ssh" element={<SSH />} />
         <Route path="users" element={<Users />} />
         <Route path="invitations" element={<Invitations />} />
         <Route path="access-control" element={<AccessControl />} />

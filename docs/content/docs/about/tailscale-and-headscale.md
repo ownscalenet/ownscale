@@ -15,7 +15,7 @@ Common points:
 usage users interact with the Tailscale client applications for Linux,
 MacOS, Windows, iOS, Android which are all compatible with the servers.
 
-- Your traffic never goes through Ownscale. Machines talk to each other
+- Your traffic never goes through Ownscale. Devices talk to each other
 directly, or through a DERP relay when a direct path isn't possible.
 
 See [Limitations]({{< relref "/docs/reference/limitations.md" >}}) for what

@@ -17,14 +17,14 @@ make osa <command>
 | Command | Description |
 | --- | --- |
 | `make osa organization list` | List organizations. |
-| `make osa organization delete <subdomain>...` | Delete organizations with their machines, data and backups. Needs the running server. |
+| `make osa organization delete <subdomain>...` | Delete organizations with their devices, data and backups. Needs the running server. |
 
 ## user
 
 | Command | Description |
 | --- | --- |
 | `make osa user list` | List users and their organizations. |
-| `make osa user delete <user_id>` | Delete a user, their Headscale user and all their machines. Needs the running server. |
+| `make osa user delete <user_id>` | Delete a user, their Headscale user and all their devices. Needs the running server. |
 
 ## headscale
 

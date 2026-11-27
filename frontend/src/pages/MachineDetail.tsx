@@ -78,7 +78,7 @@ export default function MachineDetail() {
     <div className="breadcrumbs text-sm">
       <ul>
         <li>
-          <Link to="/machines">All machines</Link>
+          <Link to="/devices">All devices</Link>
         </li>
         <li>{ip}</li>
       </ul>
@@ -90,7 +90,7 @@ export default function MachineDetail() {
     return (
       <div>
         {breadcrumb}
-        <ErrorAlert error={notFound ? 'Machine not found' : errorMessage(query.error)} inline />
+        <ErrorAlert error={notFound ? 'Device not found' : errorMessage(query.error)} inline />
       </div>
     )
   }
@@ -156,7 +156,7 @@ function Header({
                 SSH
               </button>
             ) : (
-              <a className="btn btn-sm" href={`/machines/${m.id}/ssh`}>
+              <a className="btn btn-sm" href={`/devices/${m.id}/ssh`}>
                 <TerminalSquare className="size-3.5" aria-hidden="true" />
                 SSH
               </a>
@@ -168,7 +168,7 @@ function Header({
               onClick={() => onOpen('rename')}
             >
               <Pencil className="size-3.5" aria-hidden="true" />
-              Edit machine name
+              Edit device name
             </button>
             <button
               type="button"
@@ -249,11 +249,11 @@ function MachineDetails({
   deviceInfo: { os: string; clientVersion: string; hostname: string; updateAvailable: boolean }
 }) {
   return (
-    <Card title="Machine details">
+    <Card title="Device details">
       <dl className="grid grid-cols-1 lg:grid-cols-2 gap-x-12">
         <div>
           <Attribute name="Creator" value={m.user?.name} />
-          <Attribute name="Machine name" value={m.givenName} copyable />
+          <Attribute name="Device name" value={m.givenName} copyable />
           <Attribute name="OS hostname" value={deviceInfo.hostname || m.name} copyable />
           <Attribute name="OS" value={deviceInfo.os} />
           <Attribute
@@ -333,7 +333,7 @@ function Subnets({
           >
             subnet router
           </a>
-          ; a machine can also act as an{' '}
+          ; a device can also act as an{' '}
           <a
             className="link"
             href={docPageURL('use-cases/exit-node')}

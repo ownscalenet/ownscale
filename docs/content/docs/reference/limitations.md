@@ -12,7 +12,7 @@ service or from a standalone Headscale.
 
 - **Funnel**: `tailscale funnel` doesn't work. Use ownscale's
   [funnels](/console/funnels) in the web console instead.
-- **Sharing machines between tailnets** (node sharing) isn't supported.
+- **Sharing devices between tailnets** (node sharing) isn't supported.
 - **Tailnet lock**, **app connectors**, **device posture** and **logging and
   audit streaming** aren't available.
 - Some newer policy features may not be supported by Headscale yet. The
@@ -42,7 +42,7 @@ service or from a standalone Headscale.
 - **One organization per account.** To move to another organization, the
   account must be removed from its current one.
 - **Funnels**: HTTP only to the target, and 32 MiB request bodies by default.
-- **Machine certificates** are issued by Let's Encrypt. Names are public in
+- **Device certificates** are issued by Let's Encrypt. Names are public in
   Certificate Transparency logs, and all organizations share a limit of 50
   new certificates per registered domain per week.
 - **Backups** replicate on an interval, so the last few seconds of changes

@@ -86,8 +86,8 @@ function Cheatsheet() {
               Tailscale SSH rules: <code>action</code> (<code>"accept"</code>), <code>src</code>,{' '}
               <code>dst</code>, <code>users</code> (<code>"root"</code>,{' '}
               <code>"autogroup:nonroot"</code>). <code>src</code> and <code>dst</code> can't be{' '}
-              <code>*</code>; use <code>autogroup:self</code> for a user's own machines. Target
-              machines must run <code>tailscale up --ssh</code>, and <code>acls</code> must allow
+              <code>*</code>; use <code>autogroup:self</code> for a user's own devices. Target
+              devices must run <code>tailscale up --ssh</code>, and <code>acls</code> must allow
               port 22.
             </dd>
           </div>
@@ -131,7 +131,7 @@ function Cheatsheet() {
             <code>*</code> - everyone / everything
           </li>
           <li>
-            <code>tag:name</code> - nodes with a tag
+            <code>tag:name</code> - devices with a tag
           </li>
           <li>
             <code>group:name</code> - a defined group
@@ -140,11 +140,11 @@ function Cheatsheet() {
             <code>user@</code> - a specific user
           </li>
           <li>
-            <code>autogroup:member</code> - every user&rsquo;s machines,{' '}
-            <code>autogroup:tagged</code> - tagged machines
+            <code>autogroup:member</code> - every user&rsquo;s devices,{' '}
+            <code>autogroup:tagged</code> - tagged devices
           </li>
           <li>
-            <code>autogroup:self</code> - the user&rsquo;s own machines (as a destination)
+            <code>autogroup:self</code> - the user&rsquo;s own devices (as a destination)
           </li>
           <li>
             <code>host:port</code> or <code>host:*</code> - a destination

@@ -47,7 +47,7 @@ ownscale compresses its responses itself, so don't enable compression in the
 proxy.
 
 Keep the [DNS provider]({{< relref "requirements.md#dns-provider-optional" >}})
-settings in `.env` anyway, if you have one: ownscale uses them to issue machine
+settings in `.env` anyway, if you have one: ownscale uses them to issue device
 certificates.
 
 ## Run ownscale without Caddy

@@ -37,7 +37,7 @@ Self-hosted Mesh VPN
   {{< hextra/feature-card
     title="Web console"
     icon="view-grid"
-    subtitle="Manage machines, users, access control, DNS and auth keys from the browser. Sign in with SSO or a passkey."
+    subtitle="Manage devices, users, access control, DNS and auth keys from the browser. Sign in with SSO or a passkey."
     link="/docs/about/"
   >}}
   {{< hextra/feature-card

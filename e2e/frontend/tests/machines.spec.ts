@@ -5,8 +5,8 @@ import { startPendingLogin } from './support/pendingLogin'
 import { ownMemberID } from './support/realMachine'
 
 test('the client device dialog shows the org-specific login-server command', async ({ page }) => {
-  await page.goto('/machines')
-  await expect(page.getByRole('heading', { name: 'Machines' })).toBeVisible()
+  await page.goto('/devices')
+  await expect(page.getByRole('heading', { name: 'Devices' })).toBeVisible()
 
   await page.getByRole('button', { name: 'Add device' }).click()
   await page.getByRole('menuitem', { name: /Client device/ }).click()
@@ -22,7 +22,7 @@ test('the client device dialog shows the org-specific login-server command', asy
 })
 
 test('the server entry opens the pre-auth key dialog', async ({ page }) => {
-  await page.goto('/machines')
+  await page.goto('/devices')
   await page.getByRole('button', { name: 'Add device' }).click()
   await page.getByRole('menuitem', { name: /Server/ }).click()
   const dialog = page.getByRole('dialog')
@@ -36,7 +36,7 @@ test('a waiting device is registered from its pasted login URL', async ({ page, 
   test.setTimeout(120_000)
   const login = await startPendingLogin(account.org)
   try {
-    await page.goto('/machines')
+    await page.goto('/devices')
     await page.getByRole('button', { name: 'Add device' }).click()
     await page.getByRole('menuitem', { name: /Waiting device/ }).click()
     const dialog = page.getByRole('dialog')
@@ -57,11 +57,11 @@ test('a waiting device is registered from its pasted login URL', async ({ page, 
   }
 })
 
-test('filtering machines by status updates the query string', async ({ page }) => {
-  await page.goto('/machines')
+test('filtering devices by status updates the query string', async ({ page }) => {
+  await page.goto('/devices')
   await page.getByRole('combobox').nth(1).selectOption('online')
   await expect(page).toHaveURL(/status=online/)
 
   await page.getByRole('button', { name: 'Clear' }).click()
-  await expect(page).toHaveURL(/\/machines$/)
+  await expect(page).toHaveURL(/\/devices$/)
 })

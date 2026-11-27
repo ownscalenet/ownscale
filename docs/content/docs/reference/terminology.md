@@ -9,14 +9,14 @@ ownscale-specific ones note how ownscale differs. Tailscale's own
 
 ### Access control policy
 
-The HuJSON document that decides which users and machines can reach each
+The HuJSON document that decides which users and devices can reach each
 other, and who can SSH where. It is edited under
 [Access control](/console/access-control) in the console.
 [Tailscale docs](https://tailscale.com/docs/features/access-control/acls)
 
 ### Auth key
 
-Also called a pre-auth key. A key that registers a machine without an
+Also called a pre-auth key. A key that registers a device without an
 interactive login, which is useful for servers and containers. Keys can be
 reusable, ephemeral, tagged, or any combination of these.
 [Tailscale docs](https://tailscale.com/docs/features/access-control/auth-keys)
@@ -29,20 +29,20 @@ sign in to the organization through OIDC.
 ### Autogroup
 
 A built-in selector in the access control policy, such as `autogroup:member`
-or `autogroup:self`, that matches a set of users or machines without listing
+or `autogroup:self`, that matches a set of users or devices without listing
 them.
 [Tailscale docs](https://tailscale.com/docs/reference/targets-and-selectors)
 
 ### Console
 
 ownscale's web interface at `https://console.<BASE_DOMAIN>`, where
-organizations, users, machines, keys and policies are managed.
+organizations, users, devices, keys and policies are managed.
 [Open the console](/console/)
 
 ### Content domain
 
 An optional second domain (`CONTENT_DOMAIN`) that serves funnels and
-machines' MagicDNS names, away from the console.
+devices' MagicDNS names, away from the console.
 [More](/docs/self-hosting/content-domain/)
 
 ### Coordination server
@@ -55,20 +55,25 @@ through it.
 
 ### DERP
 
-Relay servers that forward encrypted traffic when two machines can't connect
+Relay servers that forward encrypted traffic when two devices can't connect
 directly. Each organization chooses its own on the DNS page.
 [Tailscale docs](https://tailscale.com/docs/reference/derp-servers)
 
-### Ephemeral machine
+### Device
 
-A machine registered with an ephemeral auth key. It is deleted automatically
+A computer, phone, server or process that has joined the tailnet. Tailscale
+also calls it a machine, and Tailscale and Headscale call it a node.
+
+### Ephemeral device
+
+A device registered with an ephemeral auth key. It is deleted automatically
 once it logs out or has been offline for 120 seconds, which suits CI jobs and
 short-lived containers.
 [Tailscale docs](https://tailscale.com/docs/features/ephemeral-nodes)
 
 ### Exit node
 
-A machine that other machines can send all their internet traffic through.
+A device that other devices can send all their internet traffic through.
 The exit node has to be approved before others can use it.
 [Tailscale docs](https://tailscale.com/docs/features/exit-nodes)
 
@@ -100,8 +105,8 @@ doesn't email invitations, so share the link yourself.
 
 ### Key expiry
 
-How long a machine's node key stays valid before the machine has to log in
-again. It can be disabled per machine, and tagged machines never expire.
+How long a device's node key stays valid before the device has to log in
+again. It can be disabled per device, and tagged devices never expire.
 [Tailscale docs](https://tailscale.com/docs/features/access-control/key-expiry)
 
 ### Login server
@@ -110,21 +115,16 @@ The organization's coordination server URL, `https://<org>.<BASE_DOMAIN>`.
 You pass it to `tailscale up --login-server` or set it in the client's
 settings. See [Connecting devices]({{< relref "/docs/connect" >}}).
 
-### Machine
-
-A device or process that has joined the tailnet. Tailscale and Headscale
-also call it a node.
-
 ### MagicDNS
 
-Automatic DNS names for every machine, such as
+Automatic DNS names for every device, such as
 `laptop.<tailnet label>.<CONTENT_DOMAIN>`, which resolve only inside the
 tailnet.
 [Tailscale docs](https://tailscale.com/docs/features/magicdns)
 
 ### Nameservers and split DNS
 
-The DNS servers that machines in the tailnet use. Split DNS sends queries for
+The DNS servers that devices in the tailnet use. Split DNS sends queries for
 specific domains to specific nameservers.
 [Tailscale docs](https://tailscale.com/docs/reference/dns-in-tailscale)
 
@@ -147,25 +147,25 @@ permissions.
 
 ### Subnet router
 
-A machine that advertises routes to a network that can't run Tailscale client
+A device that advertises routes to a network that can't run Tailscale client
 itself, such as a home LAN. Advertised routes must be approved before other
-machines use them.
+devices use them.
 [Tailscale docs](https://tailscale.com/docs/features/subnet-routers)
 
 ### Tags
 
-Labels such as `tag:server` that give a machine an identity separate from the
-user who added it. Policies can target tags, and tagged machines don't expire.
+Labels such as `tag:server` that give a device an identity separate from the
+user who added it. Policies can target tags, and tagged devices don't expire.
 [Tailscale docs](https://tailscale.com/docs/features/tags)
 
 ### Taildrop
 
-Sending files directly between your machines. It's always on in ownscale.
+Sending files directly between your devices. It's always on in ownscale.
 [Tailscale docs](https://tailscale.com/docs/features/taildrop)
 
 ### Tailnet
 
-The private network formed by an organization's machines.
+The private network formed by an organization's devices.
 [Tailscale docs](https://tailscale.com/docs/concepts/tailnet)
 
 ### Tailnet label
@@ -181,11 +181,11 @@ work with ownscale once they're pointed at your login server.
 
 ### Tailscale SSH
 
-SSH access between machines, authorized by the `ssh` section of the access
+SSH access between devices, authorized by the `ssh` section of the access
 control policy instead of SSH keys.
 [Tailscale docs](https://tailscale.com/docs/features/tailscale-ssh)
 
 ### WireGuard
 
-The VPN protocol Tailscale uses to encrypt traffic between machines.
+The VPN protocol Tailscale uses to encrypt traffic between devices.
 [Tailscale docs](https://tailscale.com/docs/concepts/wireguard)

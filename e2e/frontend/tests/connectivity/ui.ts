@@ -284,7 +284,7 @@ export class OrgUI {
         return found.online ? found : undefined
       },
     )
-    await this.page.goto('/machines')
+    await this.page.goto('/devices')
     const row = this.page
       .getByRole('row')
       .filter({ has: this.page.getByText(machine.givenName, { exact: true }) })
@@ -400,7 +400,7 @@ export class OrgUI {
           throw new Error(`${this.org}: refusing to remove changed machine ${resource.reference}`)
         }
         await recovery.update(resource, { id: String(machine.id) })
-        await this.page.goto('/machines')
+        await this.page.goto('/devices')
         const row = this.page
           .getByRole('row')
           .filter({ has: this.page.getByText(machine.givenName, { exact: true }) })

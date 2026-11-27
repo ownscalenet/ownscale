@@ -45,7 +45,7 @@ export default function Funnel() {
     ? `“${label}” is already in use.`
     : label && selectedMachine && targetPort
       ? `https://${label}${hostnameSuffix} → ${selectedMachine.givenName || selectedMachine.name}:${targetPort}`
-      : 'Pick a subdomain, a machine and a port.'
+      : 'Pick a subdomain, a device and a port.'
 
   const create = useMutation({
     mutationFn: createFunnelRoute,
@@ -95,8 +95,8 @@ export default function Funnel() {
       />
 
       <p className="text-sm text-base-content/70 mb-4">
-        A funnel gives a service on one of your machines a public HTTPS address, with no ports to
-        open on that machine.{' '}
+        A funnel gives a service on one of your devices a public HTTPS address, with no ports to
+        open on that device.{' '}
         <a className="link" href={docPageURL('use-cases/funnels')} target="_blank" rel="noreferrer">
           Learn more
         </a>
@@ -106,7 +106,7 @@ export default function Funnel() {
       <div role="alert" className="alert alert-info mb-4">
         <div>
           <p>
-            Funnel exposes a machine&apos;s port to the <strong>entire public internet</strong>.
+            Funnel exposes a device&apos;s port to the <strong>entire public internet</strong>.
           </p>
         </div>
       </div>
@@ -126,7 +126,7 @@ export default function Funnel() {
               <thead>
                 <tr>
                   <th>Public URL</th>
-                  <th>Target machine:port</th>
+                  <th>Target device:port</th>
                   <th>Created by</th>
                   {canManage && <th></th>}
                 </tr>
@@ -147,7 +147,7 @@ export default function Funnel() {
                     </td>
                     <td className="font-mono">
                       {r.targetNodeMissing ? (
-                        <span className="badge badge-warning badge-sm">machine not found</span>
+                        <span className="badge badge-warning badge-sm">device not found</span>
                       ) : (
                         r.targetNodeName
                       )}
@@ -200,14 +200,14 @@ export default function Funnel() {
                   </label>
                 </fieldset>
                 <fieldset className="fieldset">
-                  <legend className="fieldset-legend">Machine</legend>
+                  <legend className="fieldset-legend">Device</legend>
                   <select
                     id="funnel-machine"
                     className="select select-bordered select-sm w-full"
                     value={targetNodeId}
                     onChange={(e) => setTargetNodeId(e.target.value)}
                   >
-                    <option value="">Select a machine</option>
+                    <option value="">Select a device</option>
                     {machines.map((m) => (
                       <option key={m.id} value={m.id}>
                         {m.givenName || m.name}

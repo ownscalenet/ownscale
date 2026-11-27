@@ -21,9 +21,9 @@ const securityCSP = "default-src 'self'; img-src 'self' data:; frame-ancestors '
 const sshCSP = "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; connect-src 'self' https: wss:; img-src 'self' data:; frame-ancestors 'none'; object-src 'none'; base-uri 'self'"
 
 // isSSHPath reports whether path is the console's browser SSH page
-// ("/machines/{id}/ssh"), which the SPA serves as its own document.
+// ("/devices/{id}/ssh"), which the SPA serves as its own document.
 func isSSHPath(path string) bool {
-	rest, ok := strings.CutPrefix(path, "/machines/")
+	rest, ok := strings.CutPrefix(path, "/devices/")
 	if !ok {
 		return false
 	}

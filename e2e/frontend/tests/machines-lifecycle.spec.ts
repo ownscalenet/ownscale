@@ -9,7 +9,7 @@ import { registerRealMachine, teardownRealMachine, type RealMachine } from './su
 
 let machine: RealMachine
 
-test('registering a real device and managing it from the Machines page', async ({
+test('registering a real device and managing it from the Devices page', async ({
   page,
   account,
 }) => {
@@ -33,7 +33,7 @@ test('registering a real device and managing it from the Machines page', async (
     // Rename.
     const newName = `${hostname}-renamed`
     await row.getByRole('button', { name: 'Actions', exact: true }).click()
-    await page.getByRole('menuitem', { name: 'Edit machine name', exact: true }).click()
+    await page.getByRole('menuitem', { name: 'Edit device name', exact: true }).click()
     const renameDialog = page.getByRole('dialog')
     await renameDialog.locator('input[type="text"]').fill(newName)
     await renameDialog.getByRole('button', { name: 'Rename', exact: true }).click()

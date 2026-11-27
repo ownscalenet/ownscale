@@ -16,7 +16,7 @@ Where to start depends on what you want to do. To try ownscale without
 running anything, start with [ownscale.net](/docs/ownscalenet/). To run it
 on your own server, read [Self-hosting](/docs/self-hosting/), which covers
 the requirements and installation. Once you have an organization, use
-[Connecting devices](/docs/connect/) to add your machines, then
+[Connecting devices](/docs/connect/) to add your devices, then
 [Use cases](/docs/use-cases/) for setups such as exit nodes, SSH and
 funnels.
 

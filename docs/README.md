@@ -29,7 +29,7 @@ Conventions:
   `[Access control](/console/access-control)`. ownscale redirects these to
   `https://console.<BASE_DOMAIN>/<path>`; they don't work under `hugo server`.
 - When moving a page, add its old URL to `aliases` in front matter.
-- The console links to `/docs/faqs/#ownscale-agent-user--machine` (via
+- The console links to `/docs/faqs/#ownscale-agent-user--device` (via
   `/s/agent`): keep that heading unchanged.
 - Check facts against the code. Link to tailscale.com/kb for client and
   CLI details instead of copying them.

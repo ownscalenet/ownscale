@@ -90,7 +90,7 @@ export default function Invitations() {
   // Invite management is manager-only; a plain member navigating here
   // directly is bounced to Machines, same as the nav link being hidden.
   if (!canManage) {
-    return <Navigate to="/machines" replace />
+    return <Navigate to="/devices" replace />
   }
 
   return (

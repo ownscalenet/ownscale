@@ -84,7 +84,7 @@ function machinesToCsv(machines: Machine[]): string {
 }
 
 export default function Machines() {
-  usePageTitle('Machines')
+  usePageTitle('Devices')
   const [searchParams, setSearchParams] = useSearchParams()
   const q = searchParams.get('q') ?? ''
   const userFilter = searchParams.get('user') ?? ''
@@ -145,7 +145,7 @@ export default function Machines() {
   return (
     <>
       <PageHeader
-        title="Machines"
+        title="Devices"
         subtitle={
           <>
             Devices that have joined this tailnet.{' '}
@@ -299,7 +299,7 @@ export default function Machines() {
               type="button"
               className="btn btn-sm btn-outline ml-auto"
               disabled={machines.length === 0}
-              onClick={() => downloadCsv('machines.csv', machinesToCsv(machines))}
+              onClick={() => downloadCsv('devices.csv', machinesToCsv(machines))}
             >
               Download CSV
             </button>
@@ -307,7 +307,7 @@ export default function Machines() {
 
           {filtered && (
             <p className="text-sm opacity-60 mb-2">
-              {machines.length} of {total} machines
+              {machines.length} of {total} devices
             </p>
           )}
 
@@ -342,8 +342,8 @@ export default function Machines() {
               ) : (
                 <div className="p-8 text-center opacity-60">
                   {filtered
-                    ? 'No machines match the current filters.'
-                    : 'No machines registered yet.'}
+                    ? 'No devices match the current filters.'
+                    : 'No devices registered yet.'}
                 </div>
               )}
             </div>
@@ -383,7 +383,7 @@ function RemoveInternalDialog({
   return (
     <Modal open onClose={onClose} title={`Remove ${m.givenName}`} className="whitespace-normal">
       <span>
-        This machine is used internally by the funnel feature. The following funnels will be deleted
+        This device is used internally by the funnel feature. The following funnels will be deleted
         and no longer accessible:
       </span>
       {funnelsError ? (
@@ -412,7 +412,7 @@ function RemoveInternalDialog({
           onClick={() => run(() => deleteMachine(m.id))}
         >
           <Trash2 className="size-3.5" aria-hidden="true" />
-          Delete machine and funnels
+          Delete device and funnels
         </button>
         <button type="button" className="btn btn-ghost" onClick={onClose}>
           Cancel
@@ -470,13 +470,13 @@ function MachineRow({
         <div className="font-bold font-mono">
           <span className="inline-flex items-center gap-1">
             {ipv4(m) ? (
-              <Link to={`/machines/${ipv4(m)}`} className="link link-hover">
+              <Link to={`/devices/${ipv4(m)}`} className="link link-hover">
                 {m.givenName}
               </Link>
             ) : (
               m.givenName
             )}
-            <CopyIcon text={m.givenName} label="machine name" />
+            <CopyIcon text={m.givenName} label="device name" />
           </span>
         </div>
         <div className="text-sm opacity-60">
@@ -555,7 +555,7 @@ function MachineRow({
                   // needs its own Content-Security-Policy to run the
                   // Tailscale WebAssembly client (see server.sshCSP).
                   onClick={() => {
-                    window.location.href = `/machines/${m.id}/ssh`
+                    window.location.href = `/devices/${m.id}/ssh`
                   }}
                 >
                   <TerminalSquare className="size-3.5" aria-hidden="true" />
@@ -572,7 +572,7 @@ function MachineRow({
                   onClick={() => onOpen('rename')}
                 >
                   <Pencil className="size-3.5" aria-hidden="true" />
-                  Edit machine name
+                  Edit device name
                 </button>
               </MenuItem>
             </li>

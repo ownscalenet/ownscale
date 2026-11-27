@@ -155,7 +155,7 @@ func (h *Handlers) CreateFunnelRoute(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil {
-		h.writeError(w, http.StatusBadRequest, "target machine not found")
+		h.writeError(w, http.StatusBadRequest, "target device not found")
 		return
 	}
 

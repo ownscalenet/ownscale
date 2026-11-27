@@ -4,18 +4,18 @@ weight: 10
 ---
 
 Devices that can't run Tailscale, such as a NAS, printer or camera, are
-reached through a **subnet router**: one machine on the home network that
+reached through a **subnet router**: one device on the home network that
 forwards tailnet traffic to the rest of it.
 
-1. On a Linux machine at home, advertise the home network, for example:
+1. On a Linux device at home, advertise the home network, for example:
 
    ```sh
    tailscale set --advertise-routes=192.168.1.0/24
    ```
 
-2. In the console, open **Machines**, then that machine's menu, **Edit route
+2. In the console, open **Devices**, then that device's menu, **Edit route
    settings**, and approve the route.
-3. On Linux machines that should use it, run
+3. On Linux devices that should use it, run
    `tailscale set --accept-routes`. Other platforms accept routes by default.
 
 Devices on the home network are now reachable by their local addresses, such

@@ -29,6 +29,6 @@ test('signing in via SSO reaches the app, and logout returns to /login', async (
 })
 
 test('an unauthenticated visit to a protected page redirects to /login', async ({ page }) => {
-  await page.goto('/machines')
-  await expect(page).toHaveURL(/\/login\?next=%2Fmachines/)
+  await page.goto('/devices')
+  await expect(page).toHaveURL(/\/login\?next=%2Fdevices/)
 })

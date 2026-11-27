@@ -72,7 +72,7 @@ test("a user of another organization can't sign in to its tailnet until switchin
   }
 })
 
-test('removing a member removes their machines from the tailnet', async ({
+test('removing a member removes their devices from the tailnet', async ({
   page,
   browser,
   account,
@@ -93,7 +93,7 @@ test('removing a member removes their machines from the tailnet', async ({
 
   const member = await signIn(browser, account.invitee, inviteLink)
   try {
-    await expect(member.getByRole('link', { name: 'Machines' })).toBeVisible({ timeout: 15_000 })
+    await expect(member.getByRole('link', { name: 'Devices' })).toBeVisible({ timeout: 15_000 })
     // The member registers the machine themselves, with a key for their own user.
     const machine = await registerRealMachine(member, account.org)
     try {
@@ -140,7 +140,7 @@ test('a member deletes their own account, which the owner can only do once alone
 
   const member = await signIn(browser, account.invitee, inviteLink)
   try {
-    await expect(member.getByRole('link', { name: 'Machines' })).toBeVisible({ timeout: 15_000 })
+    await expect(member.getByRole('link', { name: 'Devices' })).toBeVisible({ timeout: 15_000 })
 
     // With a member in the org, the owner is pointed at the Users page
     // instead, and the server refuses too.
@@ -213,7 +213,7 @@ test('a member sees the tailnet name on the DNS page but cannot change DNS setti
   const ownerDNS = (await (await page.request.get('/api/dns')).json()).dns
   const member = await signIn(browser, account.invitee, inviteLink)
   try {
-    await expect(member.getByRole('link', { name: 'Machines' })).toBeVisible({ timeout: 15_000 })
+    await expect(member.getByRole('link', { name: 'Devices' })).toBeVisible({ timeout: 15_000 })
     await member.goto('/dns')
     await expect(member.getByText('Only owners and admins can edit DNS settings')).toBeVisible()
     await expect(

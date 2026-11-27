@@ -1,6 +1,6 @@
 import { test, expect } from './fixtures'
 
-test("setting a machine's ACL tags succeeds with or without the tag: prefix, even for brand-new tags", async ({
+test("setting a device's ACL tags succeeds with or without the tag: prefix, even for brand-new tags", async ({
   harness,
 }) => {
   const org = harness.orgs[0]
@@ -9,7 +9,7 @@ test("setting a machine's ACL tags succeeds with or without the tag: prefix, eve
 
   const endpoint = await harness.enroll(org, 0)
   const { page } = org
-  await page.goto('/machines')
+  await page.goto('/devices')
   const row = page
     .getByRole('row')
     .filter({ has: page.getByText(endpoint.info.hostname, { exact: true }) })

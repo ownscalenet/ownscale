@@ -29,11 +29,11 @@ domain](/docs/self-hosting/content-domain/), is very much recommended.
 
 Without a DNS provider, Caddy gets a separate certificate for each
 organization and funnel the first time it's visited.
-Machine certificates (`tailscale cert`, `tailscale serve` over
+Device certificates (`tailscale cert`, `tailscale serve` over
 HTTPS) are disabled.
 
 With a provider set up, Caddy gets wildcard certificates through an ACME DNS-01 challenge,
-and machines can get certificates. Use one if you expect many organizations or
+and devices can get certificates. Use one if you expect many organizations or
 funnels: Let's Encrypt issues at most 50 certificates per domain per week. The
 provider must host the zones of `BASE_DOMAIN` and the
 [content domain](/docs/self-hosting/content-domain/#setting-it-up).
@@ -60,6 +60,6 @@ any of the following:
   container, or a local path. See
   [`osa restore`]({{< relref "/docs/reference/osa-cli.md#restore" >}}).
 - **A separate small server** for a [custom DERP relay](https://tailscale.com/kb/1118/custom-derp-servers).
-  By default, machines that can't connect directly relay their traffic,
+  By default, devices that can't connect directly relay their traffic,
   end-to-end encrypted, through Tailscale's public DERP servers.
   Organizations can add your own on the console's DNS page.

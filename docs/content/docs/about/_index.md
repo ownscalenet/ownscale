@@ -17,13 +17,13 @@ gets its own tailnet, backed by its own Headscale instance and subdomain.
 Users from one organization can only access resources from their organization.
 
 **Web console**\
-Manage machines, users, access control, DNS and auth keys from the browser.
+Manage devices, users, access control, DNS and auth keys from the browser.
 
 **Single sign-on and passkeys**\
 Log in with OIDC, Google, Microsoft, GitHub or a passkey.
 
 **Funnels**\
-Expose a service running on a machine in your tailnet to the public internet.
+Expose a service running on a device in your tailnet to the public internet.
 
 **Tailscale features**\
 MagicDNS, split DNS, subnet routers, exit nodes, tags, ACLs, grants,

@@ -48,7 +48,7 @@ function defaultUsername(machineId: string, email: string | undefined): string {
 // replace a dry EOF message with something more appropiate for a user.
 function sshErrorMessage(raw: string): string {
   if (raw === 'EOF' || raw === 'unexpected EOF') {
-    return 'Connection closed before the SSH session started. This usually means your access control policy doesn’t allow SSH from you to this machine, or the machine isn’t running `tailscale up --ssh`.'
+    return 'Connection closed before the SSH session started. This usually means your access control policy doesn’t allow SSH from you to this device, or the device isn’t running `tailscale up --ssh`.'
   }
   return raw
 }
@@ -126,7 +126,7 @@ export default function SSH() {
     }
   }, [])
 
-  const machineName = session?.machineName ?? 'machine'
+  const machineName = session?.machineName ?? 'device'
   usePageTitle(phase === 'form' ? 'SSH' : `SSH ${machineName}`)
 
   // Once the username is known it's worth remembering, even if the
@@ -199,7 +199,7 @@ export default function SSH() {
           return
         }
         if (state === 'NeedsMachineAuth') {
-          endSession('This tailnet requires manual approval of new machines.')
+          endSession('This tailnet requires manual approval of new devices.')
           return
         }
         if (state !== 'Running') return
@@ -226,9 +226,9 @@ export default function SSH() {
         title={phase === 'form' ? 'SSH' : `SSH ${machineName}`}
         subtitle={
           <>
-            Connects from this browser as a temporary tailnet node.{' '}
-            <Link to="/machines" className="link">
-              Back to machines
+            Connects from this browser as a temporary tailnet device.{' '}
+            <Link to="/devices" className="link">
+              Back to devices
             </Link>
           </>
         }
@@ -237,7 +237,7 @@ export default function SSH() {
       <ErrorAlert error={error} />
       {error && (
         <p className="text-sm text-base-content/60 mb-4">
-          The machine must run <code>tailscale up --ssh</code>, and your{' '}
+          The device must run <code>tailscale up --ssh</code>, and your{' '}
           <Link to="/access-control" className="link">
             access control policy
           </Link>{' '}
@@ -252,7 +252,7 @@ export default function SSH() {
       {phase === 'form' && (
         <form onSubmit={connect} className="flex flex-wrap items-end gap-3">
           <label className="form-control">
-            <span className="label-text text-sm">Username on the machine</span>
+            <span className="label-text text-sm">Username on the device</span>
             <input
               {...rawTextProps}
               className="input input-bordered"

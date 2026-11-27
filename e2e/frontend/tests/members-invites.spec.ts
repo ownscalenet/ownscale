@@ -82,7 +82,7 @@ test('accepting an invite adds a member, whose role can be changed and who can b
     await inviteePage.locator('#password').fill('ownscale')
     await inviteePage.locator('#submit-login').click()
 
-    await expect(inviteePage.getByRole('link', { name: 'Machines' })).toBeVisible({
+    await expect(inviteePage.getByRole('link', { name: 'Devices' })).toBeVisible({
       timeout: 15_000,
     })
   } finally {
@@ -131,7 +131,7 @@ test('creating an account from an invite joins the inviting organization', async
     await inviteePage.locator('#passkey-username').fill(username)
     await inviteePage.getByRole('button', { name: 'Continue with passkey' }).click()
 
-    await expect(inviteePage.getByRole('link', { name: 'Machines' })).toBeVisible({
+    await expect(inviteePage.getByRole('link', { name: 'Devices' })).toBeVisible({
       timeout: 15_000,
     })
   } finally {
@@ -173,7 +173,7 @@ test('transferring ownership promotes the member and demotes the caller to admin
     await memberPage.locator('#login').fill(account.invitee)
     await memberPage.locator('#password').fill('ownscale')
     await memberPage.locator('#submit-login').click()
-    await expect(memberPage.getByRole('link', { name: 'Machines' })).toBeVisible({
+    await expect(memberPage.getByRole('link', { name: 'Devices' })).toBeVisible({
       timeout: 15_000,
     })
 
@@ -256,7 +256,7 @@ test('a plain member cannot see owner/admin-only management controls', async ({
     await memberPage.locator('#login').fill(account.invitee)
     await memberPage.locator('#password').fill('ownscale')
     await memberPage.locator('#submit-login').click()
-    await expect(memberPage.getByRole('link', { name: 'Machines' })).toBeVisible({
+    await expect(memberPage.getByRole('link', { name: 'Devices' })).toBeVisible({
       timeout: 15_000,
     })
 
@@ -271,7 +271,7 @@ test('a plain member cannot see owner/admin-only management controls', async ({
     await expect(memberPage.getByRole('link', { name: 'Invitations' })).toBeHidden()
 
     await memberPage.goto('/invitations')
-    await expect(memberPage).toHaveURL(/\/machines$/)
+    await expect(memberPage).toHaveURL(/\/devices$/)
 
     // Pre-auth keys, DNS, access control and auth restrictions pages are
     // read-only / inaccessible for a plain member.

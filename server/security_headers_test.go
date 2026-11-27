@@ -40,11 +40,11 @@ func TestSecurityHeadersSSHPath(t *testing.T) {
 		path string
 		want string
 	}{
-		{"/machines/5/ssh", sshCSP},
-		{"/machines", securityCSP},
-		{"/machines/5", securityCSP},
-		{"/machines//ssh", securityCSP},
-		{"/machines/5/ssh/more", securityCSP},
+		{"/devices/5/ssh", sshCSP},
+		{"/devices", securityCSP},
+		{"/devices/5", securityCSP},
+		{"/devices//ssh", securityCSP},
+		{"/devices/5/ssh/more", securityCSP},
 		{"/api/machines/5/ssh-session", securityCSP},
 	}
 	for _, tt := range tests {

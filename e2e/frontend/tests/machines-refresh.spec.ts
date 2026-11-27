@@ -9,13 +9,13 @@ async function openMachines(
   filters: string,
 ): Promise<{ tab: Page; reloaded: () => Promise<boolean> }> {
   const tab = await page.context().newPage()
-  await tab.goto(`/machines?${filters}`)
-  await expect(tab.getByRole('heading', { name: 'Machines' })).toBeVisible()
+  await tab.goto(`/devices?${filters}`)
+  await expect(tab.getByRole('heading', { name: 'Devices' })).toBeVisible()
   await tab.evaluate(() => Object.assign(window, { e2eLoaded: true }))
   return { tab, reloaded: async () => !(await tab.evaluate(() => 'e2eLoaded' in window)) }
 }
 
-test('the machines list refreshes on its own and keeps its filters', async ({ page, account }) => {
+test('the devices list refreshes on its own and keeps its filters', async ({ page, account }) => {
   test.setTimeout(120_000)
   // Real machines are named mlc<hex> (see support/realMachine.ts).
   const matching = await openMachines(page, 'q=mlc')

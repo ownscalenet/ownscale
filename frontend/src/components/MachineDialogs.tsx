@@ -180,7 +180,7 @@ export function RoutesDialog({
           </div>
         )}
         {availableRoutes.length === 0 && (
-          <p className="text-sm opacity-60">This machine hasn&rsquo;t advertised any routes.</p>
+          <p className="text-sm opacity-60">This device hasn&rsquo;t advertised any routes.</p>
         )}
         <div className="modal-action">
           <button
@@ -248,12 +248,12 @@ export function ExpiryDialog({
       >
         {disabling ? (
           <p className="text-sm">
-            The machine&rsquo;s key will never expire, so it stays connected until you expire or
+            The device&rsquo;s key will never expire, so it stays connected until you expire or
             remove it.
           </p>
         ) : (
           <>
-            <p className="text-sm">The machine&rsquo;s key will expire on the chosen date.</p>
+            <p className="text-sm">The device&rsquo;s key will expire on the chosen date.</p>
             <select
               className="select select-bordered w-full"
               value={days}

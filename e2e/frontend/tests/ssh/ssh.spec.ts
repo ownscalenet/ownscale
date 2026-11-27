@@ -16,7 +16,7 @@ const withoutSSH = `{
 
 // `osa devbox-key` mints keys for the org's first headscale user, so both
 // devboxes below belong to the same user, as autogroup:self requires.
-test('Tailscale SSH works between two machines only while the policy allows it', async ({
+test('Tailscale SSH works between two devices only while the policy allows it', async ({
   page,
   account,
 }) => {

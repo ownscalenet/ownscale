@@ -1,23 +1,23 @@
 import { expect, test } from './support/account'
 import { registerRealMachine, teardownRealMachine } from './support/realMachine'
 
-test('a machine page opens from the list by IPv4 and shows its details', async ({
+test('a device page opens from the list by IPv4 and shows its details', async ({
   page,
   account,
 }) => {
   test.setTimeout(120_000)
   const machine = await registerRealMachine(page, account.org)
   try {
-    await page.goto('/machines?q=mlc')
+    await page.goto('/devices?q=mlc')
     await page
       .getByRole('row')
       .filter({ hasText: machine.hostname })
       .getByRole('link', { name: machine.hostname })
       .click()
 
-    await expect(page).toHaveURL(/\/machines\/100\.\d+\.\d+\.\d+$/)
+    await expect(page).toHaveURL(/\/devices\/100\.\d+\.\d+\.\d+$/)
     await expect(page.getByRole('heading', { name: machine.hostname, exact: true })).toBeVisible()
-    await expect(page.getByRole('heading', { name: 'Machine details' })).toBeVisible()
+    await expect(page.getByRole('heading', { name: 'Device details' })).toBeVisible()
     await expect(page.getByRole('heading', { name: 'Addresses' })).toBeVisible()
     const ip = new URL(page.url()).pathname.split('/').pop()!
     await expect(page.getByText(ip, { exact: true }).first()).toBeVisible()
@@ -25,7 +25,7 @@ test('a machine page opens from the list by IPv4 and shows its details', async (
 
     await expect(page.getByRole('link', { name: 'SSH' })).toHaveAttribute(
       'href',
-      /\/machines\/\d+\/ssh$/,
+      /\/devices\/\d+\/ssh$/,
     )
 
     // The test machine registers without an expiry.
@@ -39,8 +39,8 @@ test('a machine page opens from the list by IPv4 and shows its details', async (
     await page.getByRole('button', { name: 'Disable expiry' }).click()
     await expect(page.getByText('Never expires')).toBeVisible()
 
-    await page.goto('/machines/100.64.255.255')
-    await expect(page.getByText('Machine not found')).toBeVisible()
+    await page.goto('/devices/100.64.255.255')
+    await expect(page.getByText('Device not found')).toBeVisible()
   } finally {
     await teardownRealMachine(machine)
   }

@@ -9,7 +9,7 @@ ownscale is configured with environment variables in the `.env` file next to
 grouped as:
 
 - **Required**: the domain, the session secret and the reverse proxy.
-- **DNS provider** (optional): wildcard and machine certificates.
+- **DNS provider** (optional): wildcard and device certificates.
 - **Recommended**: the release, data directory, [content
   domain](/docs/self-hosting/content-domain/), organization
   limits, login providers and backups.

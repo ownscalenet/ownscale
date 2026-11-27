@@ -16,7 +16,7 @@ ownscale runs as two containers:
     [content domain](/docs/self-hosting/content-domain/));
   - this documentation, at `<BASE_DOMAIN>`.
 
-Traffic between machines never goes through ownscale: they talk WireGuard to
+Traffic between devices never goes through ownscale: they talk WireGuard to
 each other directly.
 
 ## Data

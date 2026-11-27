@@ -115,6 +115,6 @@ func (h *Handlers) requireNodeAccess(w http.ResponseWriter, r *http.Request, cli
 	if err == nil && node.User != nil && ownsHeadscaleUser(caller, node.User.ID) {
 		return true
 	}
-	h.writeError(w, http.StatusForbidden, "you can only manage your own machines")
+	h.writeError(w, http.StatusForbidden, "you can only manage your own devices")
 	return false
 }

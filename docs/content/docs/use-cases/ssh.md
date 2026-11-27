@@ -1,5 +1,5 @@
 ---
-title: SSH into machines
+title: SSH into devices
 weight: 40
 ---
 
@@ -8,7 +8,7 @@ keys to distribute.
 
 1. Allow it in the `ssh` section of the [Access
    Control](/console/access-control) policy. For example, to let every user
-   SSH into their own machines:
+   SSH into their own devices:
 
    ```jsonc
    "ssh": [
@@ -23,13 +23,13 @@ keys to distribute.
 
    `src` and `dst` can't be `*`: use `autogroup:member`, `autogroup:self`,
    `autogroup:tagged`, groups, users or tags. The `acls` must also allow
-   port 22 between the machines.
+   port 22 between the devices.
 
-2. On each machine to SSH into, run `tailscale set --ssh`.
-3. Connect with `ssh user@machine` from another machine in the tailnet.
+2. On each device to SSH into, run `tailscale set --ssh`.
+3. Connect with `ssh user@device` from another device in the tailnet.
 
 ## From the browser
 
-On **Machines**, open a machine's menu and choose **SSH** to get a terminal
+On **Devices**, open a device's menu and choose **SSH** to get a terminal
 in the browser, with nothing installed. The browser joins the tailnet as you
 for the session, so the same `ssh` rules apply.

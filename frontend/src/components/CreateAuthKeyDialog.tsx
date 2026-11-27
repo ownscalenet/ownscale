@@ -93,7 +93,7 @@ export default function CreateAuthKeyDialog({
               <CopyIcon text={createdKey} label="key" />
             </span>
           </div>
-          <p className="text-sm opacity-60 mb-2">Use it to register a new machine:</p>
+          <p className="text-sm opacity-60 mb-2">Use it to register a new device:</p>
           <div className="relative mb-4">
             <div className="mockup-code text-xs overflow-x-auto">
               <pre data-prefix="$">

@@ -31,12 +31,12 @@ async function consoleNodes(page: Page): Promise<{ id: string; name: string }[]>
 
 // openTerminal opens the SSH page for hostname and waits for a root prompt.
 async function openTerminal(page: Page, hostname: string): Promise<void> {
-  await page.goto('/machines')
+  await page.goto('/devices')
   const row = page.getByRole('row').filter({ hasText: hostname })
   await expect(row).toBeVisible({ timeout: 30_000 })
   await row.getByRole('button', { name: 'Actions', exact: true }).click()
   await page.getByRole('menuitem', { name: 'SSH', exact: true }).click()
-  await page.waitForURL(/\/machines\/\d+\/ssh$/, { timeout: 10_000 })
+  await page.waitForURL(/\/devices\/\d+\/ssh$/, { timeout: 10_000 })
   await connect(page)
 }
 
@@ -52,7 +52,7 @@ async function connect(page: Page): Promise<void> {
 // The browser SSH page joins the tailnet as an ephemeral node owned by the
 // signed-in user, the same headscale user `osa devbox-key` mints keys for,
 // so autogroup:self covers both ends.
-test('SSH from the browser into a real machine', async ({ page, account }) => {
+test('SSH from the browser into a real device', async ({ page, account }) => {
   test.setTimeout(3 * 60_000)
   await ensureDevboxImage()
 
@@ -79,13 +79,13 @@ test('SSH from the browser into a real machine', async ({ page, account }) => {
     await putPolicy(page, policyWithSSH)
     await startDevbox(server, account.org, hostname)
 
-    await page.goto('/machines')
+    await page.goto('/devices')
     const row = page.getByRole('row').filter({ hasText: hostname })
     await expect(row).toBeVisible({ timeout: 30_000 })
     await row.getByRole('button', { name: 'Actions', exact: true }).click()
     await page.getByRole('menuitem', { name: 'SSH', exact: true }).click()
 
-    await page.waitForURL(/\/machines\/\d+\/ssh$/, { timeout: 10_000 })
+    await page.waitForURL(/\/devices\/\d+\/ssh$/, { timeout: 10_000 })
     const pageStyle = () =>
       page.evaluate(() => {
         const html = getComputedStyle(document.documentElement)

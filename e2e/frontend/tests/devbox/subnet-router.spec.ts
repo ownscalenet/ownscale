@@ -120,7 +120,7 @@ test('subnet routers and exit nodes forward traffic only while their routes are 
   // columns of hostname's machine detail page.
   async function subnetsCard(hostname: string) {
     const m = await machine(page, hostname)
-    await page.goto(`/machines/${m!.ipAddresses.find((ip) => ip.includes('.'))}`)
+    await page.goto(`/devices/${m!.ipAddresses.find((ip) => ip.includes('.'))}`)
     const card = page.locator('.card', { hasText: 'Subnets and routing' })
     return {
       approved: card.getByText('Approved routes', { exact: true }).locator('..'),
@@ -152,7 +152,7 @@ test('subnet routers and exit nodes forward traffic only while their routes are 
     })
 
     await test.step('approving the subnet routes traffic to it', async () => {
-      await page.goto('/machines')
+      await page.goto('/devices')
       await editRoutes(routerName, subnet, true)
       await expectReach('reached')
       const card = await subnetsCard(routerName)
@@ -161,7 +161,7 @@ test('subnet routers and exit nodes forward traffic only while their routes are 
     })
 
     await test.step('unapproving the subnet stops routing it', async () => {
-      await page.goto('/machines')
+      await page.goto('/devices')
       await editRoutes(routerName, subnet, false)
       await expectReach('unreachable')
     })
@@ -171,7 +171,7 @@ test('subnet routers and exit nodes forward traffic only while their routes are 
       await expect
         .poll(async () => (await routes(page, routerName)).available, { timeout: 60_000 })
         .toEqual([...exitRoutes, subnet].sort())
-      await page.goto('/machines')
+      await page.goto('/devices')
       const row = page.getByRole('row').filter({ has: page.getByText(routerName, { exact: true }) })
       await expect(row.getByText('Exit node · awaiting approval', { exact: true })).toBeVisible({
         timeout: 30_000,

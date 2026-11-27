@@ -154,7 +154,7 @@ func (h *Handlers) RegisterMachine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if caller, _ := auth.UserFromContext(r.Context()); !canAssignTo(caller, req.MemberID) {
-		h.writeError(w, http.StatusForbidden, "you can only register machines for yourself")
+		h.writeError(w, http.StatusForbidden, "you can only register devices for yourself")
 		return
 	}
 	hsUser, ok := h.requireMemberHeadscaleUser(w, r, client, org, req.MemberID)
@@ -428,7 +428,7 @@ func (h *Handlers) ExpireMachine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if errors.Is(err, hscl.ErrNotFound) {
-		h.writeError(w, http.StatusNotFound, "machine not found")
+		h.writeError(w, http.StatusNotFound, "device not found")
 		return
 	}
 	if err != nil {
@@ -501,7 +501,7 @@ func (h *Handlers) GetMachineByIP(w http.ResponseWriter, r *http.Request) {
 	ip := r.PathValue("ip")
 	i := slices.IndexFunc(nodes, func(n hscl.Node) bool { return slices.Contains(n.IPAddresses, ip) })
 	if i < 0 {
-		h.writeError(w, http.StatusNotFound, "machine not found")
+		h.writeError(w, http.StatusNotFound, "device not found")
 		return
 	}
 	node := nodes[i]

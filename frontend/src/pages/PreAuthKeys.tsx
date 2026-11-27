@@ -95,8 +95,7 @@ export default function PreAuthKeys() {
       {!failed && (
         <>
           <p className="text-sm opacity-60 mb-4">
-            Pre-authentication keys let a new machine join this tailnet without an interactive
-            login.{' '}
+            Pre-authentication keys let a new device join this tailnet without an interactive login.{' '}
             <a
               className="link"
               href={docPageURL('reference/terminology', 'auth-key')}
@@ -223,7 +222,7 @@ function AuthKeyRow({
   const handleExpire = async () => {
     const ok = await confirm({
       title: 'Expire pre-auth key',
-      consequences: ['It will no longer be usable to register new machines.'],
+      consequences: ['It will no longer be usable to register new devices.'],
       confirmLabel: 'Expire key',
       tone: 'danger',
     })

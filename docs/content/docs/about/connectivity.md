@@ -5,12 +5,12 @@ weight: 40
 
 ## Direct connections and relays
 
-Machines connect to each other directly over WireGuard, punching through NAT
+Devices connect to each other directly over WireGuard, punching through NAT
 when they can. When they can't, for example behind strict firewalls, their
 traffic goes through a **DERP relay**. It stays end-to-end encrypted: the
 relay can't read it.
 
-Owners and admins choose the relays their organization's machines may use
+Owners and admins choose the relays their organization's devices may use
 under **Relays (DERP)** on the [DNS](/console/dns) page. Any combination of:
 
 - **Use Tailscale servers**: Tailscale's public relays, around the world.
@@ -18,7 +18,7 @@ under **Relays (DERP)** on the [DNS](/console/dns) page. Any combination of:
 - **Use Ownscale servers**: the relays run by ownscale.net.
 - **Your own DERP servers**: a hostname for each
   [DERP server you run](https://tailscale.com/kb/1118/custom-derp-servers),
-  with optional IPv4 and IPv6 addresses for machines to use instead of
+  with optional IPv4 and IPv6 addresses for devices to use instead of
   looking the hostname up.
 
 > [!INFO]
@@ -28,7 +28,7 @@ under **Relays (DERP)** on the [DNS](/console/dns) page. Any combination of:
 
 ## Client firewalls
 
-Machines need no inbound ports. Outbound, they need:
+Devices need no inbound ports. Outbound, they need:
 
 | Port | Used for |
 | --- | --- |

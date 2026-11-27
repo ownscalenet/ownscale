@@ -6,7 +6,7 @@ weight: 80
 One ownscale server can host many organizations, each with its own tailnet,
 users, policy and login server. Use it to give each team, client or
 family its own network from one server.
-Organizations are isolated: machines in one can't reach another's, and an
+Organizations are isolated: devices in one can't reach another's, and an
 account belongs to one organization.
 Each organization has two URLs associated with it:
 - **login URL**: it's the URL users send to the Tailscale client

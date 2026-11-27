@@ -14,7 +14,7 @@ tailscale set --advertise-routes=10.1.0.0/24 --accept-routes
 tailscale set --advertise-routes=10.2.0.0/24 --accept-routes
 ```
 
-Approve both routes in **Edit route settings** on each machine.
+Approve both routes in **Edit route settings** on each device.
 
 Devices that don't run Tailscale send traffic for the other office to their
 default gateway, so add a static route on each office's router: on office A,

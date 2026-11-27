@@ -204,7 +204,7 @@ function MemberRow({
                 const ok = await confirm({
                   title: `Remove ${m.name} from this organization?`,
                   consequences: [
-                    'Their machines will be removed from the tailnet.',
+                    'Their devices will be removed from the tailnet.',
                     'They lose access to this organization.',
                   ],
                   confirmLabel: 'Remove member',

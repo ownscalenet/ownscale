@@ -78,7 +78,7 @@ export async function registerRealMachine(page: Page, orgSubdomain: string): Pro
     enrollmentTimeoutMs,
   )
 
-  await page.goto('/machines')
+  await page.goto('/devices')
   const row = page.getByRole('row').filter({ hasText: hostname })
   await expect(row).toBeVisible({ timeout: enrollmentTimeoutMs })
   await expect(row.getByText('Connected', { exact: true })).toBeVisible({

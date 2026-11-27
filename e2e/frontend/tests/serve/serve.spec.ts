@@ -7,7 +7,7 @@ const allowAll = `{"acls": [{"action": "accept", "src": ["*"], "dst": ["*:*"]}]}
 
 // Each run issues a Let's Encrypt certificate for a new hostname, using one of the
 // org's weekly certificates, so it only runs where EXTRA_TESTS asks for it.
-test('a machine gets a trusted HTTPS certificate for its MagicDNS name', async ({
+test('a device gets a trusted HTTPS certificate for its MagicDNS name', async ({
   page,
   account,
 }) => {

@@ -10,7 +10,7 @@ using Tailscale's hosted service is that each client must be told to use your
 organization's **login server**, `https://<org>.<BASE_DOMAIN>`, instead of
 Tailscale's servers. The [console](/console/) shows this URL in its header.
 
-The console's **Machines → Add device → Client device** dialog shows the
+The console's **Devices → Add device → Client device** dialog shows the
 steps for each platform with your organization's login server filled in.
 
 Below, replace `https://myorg.example.com` with your own login server. To

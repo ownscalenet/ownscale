@@ -57,20 +57,20 @@ func (h *Handlers) CreateSSHSession(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err != nil || funnelproxy.IsAgentUser(target.User) {
-		h.writeError(w, http.StatusNotFound, "machine not found")
+		h.writeError(w, http.StatusNotFound, "device not found")
 		return
 	}
 	if target.Expired {
-		h.writeError(w, http.StatusConflict, "machine's node key has expired")
+		h.writeError(w, http.StatusConflict, "device's node key has expired")
 		return
 	}
 	if !target.Online {
-		h.writeError(w, http.StatusConflict, "machine is offline")
+		h.writeError(w, http.StatusConflict, "device is offline")
 		return
 	}
 	addr := sshTargetAddress(target)
 	if addr == "" {
-		h.writeError(w, http.StatusConflict, "machine has no tailnet address")
+		h.writeError(w, http.StatusConflict, "device has no tailnet address")
 		return
 	}
 

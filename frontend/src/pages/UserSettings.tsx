@@ -180,12 +180,12 @@ function DeleteAccountCard() {
       consequences: deletesOrg
         ? [
             "You're the last member, so the whole organization is deleted.",
-            'All its machines, including tagged ones, are removed from the tailnet.',
+            'All its devices, including tagged ones, are removed from the tailnet.',
             'Its settings, funnels and your passkeys are deleted.',
             "This can't be undone.",
           ]
         : [
-            'All your machines are removed from the tailnet.',
+            'All your devices are removed from the tailnet.',
             'Your passkeys are deleted.',
             "This can't be undone.",
           ],
@@ -204,7 +204,7 @@ function DeleteAccountCard() {
             <p className="text-sm opacity-60 -mt-1">
               {deletesOrg
                 ? "Permanently delete your account and this organization, since you're its last member."
-                : 'Permanently delete your account and remove your machines from the tailnet.'}
+                : 'Permanently delete your account and remove your devices from the tailnet.'}
             </p>
           </div>
           <button

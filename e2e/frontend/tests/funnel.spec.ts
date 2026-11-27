@@ -35,7 +35,7 @@ test('creating and deleting a funnel route', async ({ page, account }) => {
     await expect(row.getByText(`${machine.hostname}:8080`, { exact: true })).toBeVisible()
 
     // Removing the target machine warns that the funnel stops working.
-    await page.goto('/machines')
+    await page.goto('/devices')
     const machineRow = page.getByRole('row').filter({ hasText: machine.hostname })
     await machineRow.getByRole('button', { name: 'Actions', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Remove', exact: true }).click()
@@ -109,7 +109,7 @@ async function createFunnel(
   return ((await response.json()) as { funnelRoute: { hostname: string } }).funnelRoute.hostname
 }
 
-test('a funnel works again after its internal funnel machine is deleted', async ({
+test('a funnel works again after its internal funnel device is deleted', async ({
   page,
   account,
 }) => {
@@ -136,11 +136,11 @@ test('a funnel works again after its internal funnel machine is deleted', async 
     await servesTarget(first)
 
     // Deleting the internal machine deletes its funnels too.
-    await page.goto('/machines')
+    await page.goto('/devices')
     const funnelRow = page.getByRole('row').filter({ hasText: funnelMachine })
     await funnelRow.getByRole('button', { name: 'Actions', exact: true }).click()
     await page.getByRole('menuitem', { name: 'Remove', exact: true }).click()
-    await confirmDialog(page, 'Delete machine and funnels')
+    await confirmDialog(page, 'Delete device and funnels')
     // The deletion waits for the funnel's tsnet server to close.
     await expect(funnelRow).toBeHidden({ timeout: 30_000 })
     expect((await getFunnel(first)).status).toBe(404)
@@ -148,7 +148,7 @@ test('a funnel works again after its internal funnel machine is deleted', async 
     // A new funnel registers a new internal machine and reaches the target.
     const second = await createFunnel(page, `rc${Date.now()}`, target.hostname, service.port)
     await servesTarget(second)
-    await page.goto('/machines')
+    await page.goto('/devices')
     await expect(page.getByRole('row').filter({ hasText: funnelMachine })).toBeVisible()
 
     await page.goto('/funnels')
