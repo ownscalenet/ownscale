@@ -16,7 +16,7 @@ import {
 import { usePageTitle } from '../hooks/usePageTitle'
 import { useConfirm } from '../lib/confirm'
 import Modal from '../components/Modal'
-import CopyButton from '../components/CopyButton'
+import { CopyIcon } from '../components/CopyButton'
 import { ErrorAlert, PageHeader } from '../components/ui'
 import { rawTextProps } from '../lib/inputProps'
 import { docPageURL } from '../lib/faq'
@@ -361,6 +361,8 @@ function CreateAuthKeyDialog({
     })
   }
 
+  const command = `tailscale up --login-server=${loginServer} --authkey ${createdKey}`
+
   return (
     <Modal
       open
@@ -372,21 +374,29 @@ function CreateAuthKeyDialog({
           <p className="text-sm opacity-60 mb-2">
             Copy this key now &mdash; it won&rsquo;t be shown again.
           </p>
-          <div className="mockup-code text-sm mb-4">
-            <pre data-prefix="$">
-              <code>{createdKey}</code>
-            </pre>
+          <div className="relative mb-4">
+            <div className="mockup-code text-sm overflow-x-auto">
+              <pre data-prefix="$">
+                <code>{createdKey}</code>
+              </pre>
+            </div>
+            {/* The code block is neutral in every theme; the ghost button colors itself with base-content. */}
+            <span className="absolute top-2 right-2 [--color-base-content:var(--color-neutral-content)]">
+              <CopyIcon text={createdKey} label="key" />
+            </span>
           </div>
           <p className="text-sm opacity-60 mb-2">Use it to register a new machine:</p>
-          <div className="mockup-code text-xs mb-4 overflow-x-auto">
-            <pre data-prefix="$">
-              <code>
-                tailscale up --login-server={loginServer} --authkey {createdKey}
-              </code>
-            </pre>
+          <div className="relative mb-4">
+            <div className="mockup-code text-xs overflow-x-auto">
+              <pre data-prefix="$">
+                <code>{command}</code>
+              </pre>
+            </div>
+            <span className="absolute top-2 right-2 [--color-base-content:var(--color-neutral-content)]">
+              <CopyIcon text={command} label="command" />
+            </span>
           </div>
           <div className="modal-action">
-            <CopyButton text={createdKey}>Copy key</CopyButton>
             <button type="button" className="btn btn-primary" onClick={onClose}>
               Done
             </button>
