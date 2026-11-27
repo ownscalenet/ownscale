@@ -3,12 +3,16 @@ import { useDialogAction } from '../hooks/useDialogAction'
 import { RelativeTime } from '../components/RelativeTime'
 import {
   BookOpen,
+  ChevronDown,
   Ellipsis,
   KeyRound,
+  Laptop,
+  Link2,
   LogOut,
   Pencil,
   Plus,
   Route,
+  Server,
   Tag,
   TerminalSquare,
   Trash2,
@@ -17,7 +21,6 @@ import { useEffect, useState } from 'react'
 import { Menu, MenuButton, MenuItem, MenuItems } from '@headlessui/react'
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useSearchParams } from 'react-router-dom'
-import { useAuth } from '../authContext'
 import { usePageTitle } from '../hooks/usePageTitle'
 import { docPageURL, shortURL } from '../lib/faq'
 import { useConfirm } from '../lib/confirm'
@@ -30,10 +33,11 @@ import {
   expireMachine,
   listFunnelRoutes,
   listMachines,
-  registerMachine,
-  type AssignableUser,
   type Machine,
 } from '../api'
+import ClientDeviceDialog from '../components/ClientDeviceDialog'
+import CreateAuthKeyDialog from '../components/CreateAuthKeyDialog'
+import WaitingDeviceDialog from '../components/WaitingDeviceDialog'
 import { ErrorAlert, ExitNodeBadge, PageHeader, StatusBadge } from '../components/ui'
 import { rawTextProps } from '../lib/inputProps'
 import { downloadCsv, toCsv } from '../lib/csv'
@@ -152,19 +156,84 @@ export default function Machines() {
         }
       >
         {!failed && (
-          <button
-            type="button"
-            className="btn btn-sm btn-primary"
-            onClick={() => setDialog({ kind: 'register' })}
-          >
-            <Plus className="size-3.5" aria-hidden="true" />
-            Register machine
-          </button>
+          <Menu>
+            <MenuButton className="btn btn-sm btn-primary">
+              <Plus className="size-3.5" aria-hidden="true" />
+              Add device
+              <ChevronDown className="size-3.5" aria-hidden="true" />
+            </MenuButton>
+            <MenuItems
+              as="ul"
+              anchor="bottom end"
+              className="menu bg-base-100 rounded-box z-10 w-72 p-2 shadow [--anchor-gap:4px] focus:outline-none"
+            >
+              <li>
+                <MenuItem>
+                  <button
+                    type="button"
+                    className="data-focus:bg-base-content/10 items-start"
+                    onClick={() => setDialog({ kind: 'client' })}
+                  >
+                    <Laptop className="size-4 mt-0.5" aria-hidden="true" />
+                    <span>
+                      <span className="block font-medium">Client device</span>
+                      <span className="block text-xs opacity-60">
+                        Laptop or phone that signs in
+                      </span>
+                    </span>
+                  </button>
+                </MenuItem>
+              </li>
+              <li>
+                <MenuItem>
+                  <button
+                    type="button"
+                    className="data-focus:bg-base-content/10 items-start"
+                    onClick={() => setDialog({ kind: 'server' })}
+                  >
+                    <Server className="size-4 mt-0.5" aria-hidden="true" />
+                    <span>
+                      <span className="block font-medium">Server</span>
+                      <span className="block text-xs opacity-60">
+                        Joins without a browser, using a pre-auth key
+                      </span>
+                    </span>
+                  </button>
+                </MenuItem>
+              </li>
+              <li>
+                <MenuItem>
+                  <button
+                    type="button"
+                    className="data-focus:bg-base-content/10 items-start"
+                    onClick={() => setDialog({ kind: 'waiting' })}
+                  >
+                    <Link2 className="size-4 mt-0.5" aria-hidden="true" />
+                    <span>
+                      <span className="block font-medium">Waiting device</span>
+                      <span className="block text-xs opacity-60">
+                        Paste the login URL a device is showing and pick its owner
+                      </span>
+                    </span>
+                  </button>
+                </MenuItem>
+              </li>
+            </MenuItems>
+          </Menu>
         )}
       </PageHeader>
 
-      {dialog?.kind === 'register' && (
-        <RegisterMachineDialog users={assignableUsers} onClose={closeDialog} onDone={reload} />
+      {dialog?.kind === 'client' && <ClientDeviceDialog onClose={closeDialog} />}
+      {dialog?.kind === 'waiting' && (
+        <WaitingDeviceDialog users={assignableUsers} onClose={closeDialog} onDone={reload} />
+      )}
+      {dialog?.kind === 'server' && (
+        <CreateAuthKeyDialog
+          users={assignableUsers}
+          canManage={canManage}
+          onClose={closeDialog}
+          onCreated={() => {}}
+        />
       )}
       {dialog?.kind === 'rename' && (
         <RenameDialog machine={dialog.machine} onClose={closeDialog} onDone={reload} />
@@ -287,112 +356,10 @@ export default function Machines() {
 
 // MachineDialog is the dialog the Machines page has open, if any.
 type MachineDialog =
-  | { kind: 'register' }
+  | { kind: 'client' | 'server' | 'waiting' }
   | { kind: 'rename' | 'tags' | 'routes' | 'expiry' | 'removeInternal'; machine: Machine }
 
-type MachineDialogKind = Exclude<MachineDialog['kind'], 'register'>
-
-function RegisterMachineDialog({
-  users,
-  onClose,
-  onDone,
-}: {
-  users: AssignableUser[]
-  onClose: () => void
-  onDone: () => void
-}) {
-  const [memberId, setMemberId] = useState('')
-  const [key, setKey] = useState('')
-  const [validation, setValidation] = useState<string | null>(null)
-  const { organization, refresh } = useAuth()
-  // The first registration starts the org's headscale, changing its status.
-  const { busy, error, run } = useDialogAction(onClose, () => {
-    onDone()
-    void refresh()
-  })
-  const loginServer = `${window.location.protocol}//${organization?.Domain}`
-  const command = `tailscale up --login-server=${loginServer}`
-
-  const handleSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    setValidation(null)
-    if (!memberId) {
-      setValidation('Choose a user to own this machine.')
-      return
-    }
-    if (!key.trim()) {
-      setValidation('Paste the registration key or URL shown by `tailscale up`.')
-      return
-    }
-    run(() => registerMachine(memberId, key.trim()))
-  }
-
-  return (
-    <Modal open onClose={onClose} title="Register machine">
-      <p className="text-sm opacity-60 mb-2">1. Run this on the device you want to add:</p>
-      <div className="relative mb-4">
-        <div className="mockup-code text-xs overflow-x-auto">
-          <pre data-prefix="$">
-            <code>{command}</code>
-          </pre>
-        </div>
-        {/* The code block is neutral in every theme; the ghost button colors itself with base-content. */}
-        <span className="absolute top-2 right-2 [--color-base-content:var(--color-neutral-content)]">
-          <CopyIcon text={command} label="command" />
-        </span>
-      </div>
-      <p className="text-sm opacity-60 mb-2">2. Follow the instructions from the device.</p>
-      <div className="divider my-2">or</div>
-      <p className="text-sm opacity-60 mb-2">2. Finish registration from this session.</p>
-      <ErrorAlert error={validation ?? error} />
-      <form className="space-y-4" onSubmit={handleSubmit}>
-        <fieldset className="fieldset">
-          <legend className="fieldset-legend">Registration key or URL</legend>
-          <input
-            {...rawTextProps}
-            id="register-machine-key"
-            type="text"
-            className="input input-bordered w-full font-mono"
-            placeholder="hskey-authreq-… or the full registration URL"
-            value={key}
-            onChange={(e) => setKey(e.target.value)}
-            required
-          />
-          <span className="opacity-60 mt-1 text-sm">
-            Printed by the command above once the device is waiting to register.
-          </span>
-        </fieldset>
-        <fieldset className="fieldset">
-          <legend className="fieldset-legend">Owner</legend>
-          <select
-            id="register-machine-user"
-            className="select select-bordered w-full"
-            value={memberId}
-            onChange={(e) => setMemberId(e.target.value)}
-            required
-          >
-            <option value="" disabled>
-              Select a user
-            </option>
-            {users.map((u) => (
-              <option key={u.id} value={u.id}>
-                {u.name || u.email}
-              </option>
-            ))}
-          </select>
-        </fieldset>
-        <div className="modal-action">
-          <button type="submit" className="btn btn-primary" disabled={busy}>
-            Register
-          </button>
-          <button type="button" className="btn btn-ghost" onClick={onClose}>
-            Cancel
-          </button>
-        </div>
-      </form>
-    </Modal>
-  )
-}
+type MachineDialogKind = Exclude<MachineDialog['kind'], 'client' | 'server' | 'waiting'>
 
 // RemoveInternalDialog removes a funnel's internal machine, listing the
 // funnels that go with it.

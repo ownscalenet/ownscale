@@ -5,6 +5,7 @@ import { buildBridge } from '../connectivity/preflight'
 import { baseDomain } from '../connectivity/environment'
 
 export interface PendingLogin {
+  hostname: string
   // authURL returns headscale's current /register/<auth ID> page for the
   // waiting machine. A headscale restart forgets the auth ID and the machine
   // gets a new one, so read it again for each visit.
@@ -36,6 +37,7 @@ export async function startPendingLogin(org: string): Promise<PendingLogin> {
     throw err
   }
   return {
+    hostname: node,
     authURL: async () => {
       const { authURL } = await bridge.status(node)
       if (!authURL) throw new Error(`${node} is not waiting for a login`)
