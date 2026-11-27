@@ -46,7 +46,7 @@ func BuiltinDERPMap() *tailcfg.DERPMap {
 		builtinDERPRegionID: {
 			RegionID:   builtinDERPRegionID,
 			RegionCode: "ownscale-eu",
-			RegionName: "ownscale EU",
+			RegionName: "Ownscale EU",
 			Nodes: []*tailcfg.DERPNode{{
 				Name:     "900a",
 				RegionID: builtinDERPRegionID,

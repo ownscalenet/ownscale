@@ -1,4 +1,4 @@
-// Logo is the ownscale mark (see public/favicon.svg), inlined so its dots
+// Logo is the Ownscale mark (see public/favicon.svg), inlined so its dots
 // follow the current text color and stay visible in both themes.
 export default function Logo({ className }: { className?: string }) {
   return (

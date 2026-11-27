@@ -3,8 +3,8 @@ title: Terminology
 weight: 30
 ---
 
-Terms used in ownscale's docs and console. Most come from Tailscale; the
-ownscale-specific ones note how ownscale differs. Tailscale's own
+Terms used in Ownscale's docs and console. Most come from Tailscale; the
+Ownscale-specific ones note how Ownscale differs. Tailscale's own
 [glossary](https://tailscale.com/docs/reference/glossary) covers more.
 
 ### Access control policy
@@ -35,7 +35,7 @@ them.
 
 ### Console
 
-ownscale's web interface at `https://console.<BASE_DOMAIN>`, where
+Ownscale's web interface at `https://console.<BASE_DOMAIN>`, where
 organizations, users, devices, keys and policies are managed.
 [Open the console](/console/)
 
@@ -48,7 +48,7 @@ devices' MagicDNS names, away from the console.
 ### Coordination server
 
 The server that Tailscale clients register with to exchange keys, policies
-and network maps. It's also called the control plane. ownscale runs one
+and network maps. It's also called the control plane. Ownscale runs one
 Headscale coordination server per organization, and your traffic never passes
 through it.
 [Tailscale docs](https://tailscale.com/docs/concepts/control-data-planes)
@@ -79,9 +79,9 @@ The exit node has to be approved before others can use it.
 
 ### Funnel
 
-ownscale's way of exposing a service in your tailnet to the public internet
+Ownscale's way of exposing a service in your tailnet to the public internet
 at `https://<label>-<org>.<CONTENT_DOMAIN>`. It replaces `tailscale funnel`,
-which doesn't work with ownscale. See
+which doesn't work with Ownscale. See
 [Limitations]({{< relref "limitations.md" >}}).
 
 ### Grants
@@ -94,13 +94,13 @@ feature yet.
 ### Headscale
 
 The open-source implementation of Tailscale's coordination server that
-ownscale is built on. Its CLI is available through
+Ownscale is built on. Its CLI is available through
 [`osa headscale`]({{< relref "osa-cli.md#headscale" >}}).
 [Headscale docs](https://headscale.net)
 
 ### Invitation
 
-A link that lets someone join an organization with a given role. ownscale
+A link that lets someone join an organization with a given role. Ownscale
 doesn't email invitations, so share the link yourself.
 
 ### Key expiry
@@ -130,12 +130,12 @@ specific domains to specific nameservers.
 
 ### Organization
 
-ownscale's unit of tenancy: one tailnet, with its own Headscale instance,
+Ownscale's unit of tenancy: one tailnet, with its own Headscale instance,
 login server, users and policy. An account belongs to one organization.
 
 ### osa
 
-The operator CLI that ships with ownscale, for managing organizations,
+The operator CLI that ships with Ownscale, for managing organizations,
 backups and migrations on the server. See
 [osa CLI]({{< relref "osa-cli.md" >}}).
 
@@ -160,7 +160,7 @@ user who added it. Policies can target tags, and tagged devices don't expire.
 
 ### Taildrop
 
-Sending files directly between your devices. It's always on in ownscale.
+Sending files directly between your devices. It's always on in Ownscale.
 [Tailscale docs](https://tailscale.com/docs/features/taildrop)
 
 ### Tailnet
@@ -177,7 +177,7 @@ created and can't be changed.
 ### Tailscale client
 
 The official Tailscale apps for Linux, macOS, Windows, iOS and Android. They
-work with ownscale once they're pointed at your login server.
+work with Ownscale once they're pointed at your login server.
 
 ### Tailscale SSH
 

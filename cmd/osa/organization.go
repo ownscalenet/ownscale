@@ -130,7 +130,7 @@ func newOrganizationDeleteCommand(parent *ff.FlagSet) *ff.Command {
 	return &ff.Command{
 		Name:      "delete",
 		Usage:     "osa organization delete SUBDOMAIN...",
-		ShortHelp: "delete organizations, their data and backups; ownscale must be running",
+		ShortHelp: "delete organizations, their data and backups; Ownscale must be running",
 		Flags:     flags,
 		Exec: func(ctx context.Context, args []string) error {
 			if len(args) == 0 {

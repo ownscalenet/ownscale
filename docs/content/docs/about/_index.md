@@ -35,13 +35,13 @@ Ownscale builds on Headscale's goal of an open-source alternative to
 Tailscale, adding a way for self-hosters to run several tailnets from the
 same backend and manage them through a web UI.
 
-Because the development team is small, ownscale implements a smaller list of
+Because the development team is small, Ownscale implements a smaller list of
 features. Bug fixes and stable execution are prioritised over porting
 Tailscale features.
 
 {{< cards >}}
-  {{< card link="/docs/about/how-it-works/" title="How ownscale works" icon="cog" subtitle="The pieces and how they fit together" >}}
+  {{< card link="/docs/about/how-it-works/" title="How Ownscale works" icon="cog" subtitle="The pieces and how they fit together" >}}
   {{< card link="/docs/about/mesh-vs-traditional-vpn/" title="Mesh vs Traditional VPN" icon="share" subtitle="Why devices connect directly" >}}
-  {{< card link="/docs/about/tailscale-and-headscale/" title="Tailscale and Headscale" icon="link" subtitle="How ownscale relates to both" >}}
+  {{< card link="/docs/about/tailscale-and-headscale/" title="Tailscale and Headscale" icon="link" subtitle="How Ownscale relates to both" >}}
   {{< card link="/docs/about/connectivity/" title="Connectivity and ports" icon="switch-horizontal" subtitle="Direct connections, relays and firewalls" >}}
 {{< /cards >}}

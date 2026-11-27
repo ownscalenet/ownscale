@@ -30,7 +30,7 @@ first two rows are enough.
 
 Your proxy must:
 
-- **keep the `Host` header**: ownscale routes by host name;
+- **keep the `Host` header**: Ownscale routes by host name;
 - **allow HTTP upgrades**: Tailscale clients upgrade `/ts2021` to their
   control protocol, and funnels can carry WebSockets;
 - **not time out idle requests**: clients keep a long-poll open to their
@@ -38,23 +38,23 @@ Your proxy must:
 - **terminate TLS** with certificates for both wildcards, or [on
   demand](#on-demand-certificates). Wildcard certificates need an ACME
   DNS-01 challenge;
-- **redirect HTTP to HTTPS**: ownscale sends HSTS, but only over HTTPS;
-- **set `X-Forwarded-For`** to the client's address. ownscale only believes it
+- **redirect HTTP to HTTPS**: Ownscale sends HSTS, but only over HTTPS;
+- **set `X-Forwarded-For`** to the client's address. Ownscale only believes it
   from the addresses in `OWNSCALE_TRUSTED_PROXIES`, which `compose.yaml`
   defaults to the private ranges. Set it to your proxy's address otherwise.
 
-ownscale compresses its responses itself, so don't enable compression in the
+Ownscale compresses its responses itself, so don't enable compression in the
 proxy.
 
 Keep the [DNS provider]({{< relref "requirements.md#dns-provider-optional" >}})
-settings in `.env` anyway, if you have one: ownscale uses them to issue device
+settings in `.env` anyway, if you have one: Ownscale uses them to issue device
 certificates.
 
-## Run ownscale without Caddy
+## Run Ownscale without Caddy
 
 Follow the [installation]({{< relref "installation.md" >}}) steps, but set
 `COMPOSE_PROFILES=` (empty) in `.env`, so the bundled Caddy doesn't start.
-Then let your proxy reach ownscale with a `compose.override.yaml` next to
+Then let your proxy reach Ownscale with a `compose.override.yaml` next to
 `compose.yaml`. For a proxy container, join its Docker network, so it reaches
 `ownscale:8080`:
 
@@ -143,7 +143,7 @@ server {
 
 Attach the `ownscale` service to Traefik's network and label it. The
 `certresolver` must use a DNS challenge. `traefik.docker.network` tells
-Traefik which of ownscale's networks to use.
+Traefik which of Ownscale's networks to use.
 
 ```yaml
 services:
@@ -175,7 +175,7 @@ Redirect the `web` entry point to `websecure` if you haven't already.
 
 ## Nginx Proxy Manager
 
-Join ownscale to NPM's Docker network as shown
+Join Ownscale to NPM's Docker network as shown
 [above](#run-ownscale-without-caddy), then add a proxy host:
 
 - **Details**: domain names `example.com` and `*.example.com` (plus the
@@ -195,6 +195,6 @@ Join ownscale to NPM's Docker network as shown
 
 If your proxy can't do DNS-01 but can request certificates on demand (Caddy's
 `on_demand_tls`), point its ask URL at `http://ownscale:8081/tls-allowed`,
-which answers 200 for host names ownscale serves. `compose.yaml` sets
+which answers 200 for host names Ownscale serves. `compose.yaml` sets
 `OWNSCALE_TLS_ASK_ADDR` to `:8081`. It reveals which organizations exist, so
 publish that port on loopback at most.

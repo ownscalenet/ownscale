@@ -3,14 +3,14 @@ title: Limitations
 weight: 20
 ---
 
-ownscale uses Headscale, so most of what Headscale supports works, and
+Ownscale uses Headscale, so most of what Headscale supports works, and
 Headscale's [feature list](https://headscale.net/stable/about/features/)
-applies. This page lists where ownscale differs from Tailscale's hosted
+applies. This page lists where Ownscale differs from Tailscale's hosted
 service or from a standalone Headscale.
 
 ## Compared with Tailscale
 
-- **Funnel**: `tailscale funnel` doesn't work. Use ownscale's
+- **Funnel**: `tailscale funnel` doesn't work. Use Ownscale's
   [funnels](/console/funnels) in the web console instead.
 - **Sharing devices between tailnets** (node sharing) isn't supported.
 - **Tailnet lock**, **app connectors**, **device posture** and **logging and
@@ -28,13 +28,13 @@ service or from a standalone Headscale.
   (always on).
 - **No embedded DERP server.** Organizations choose Tailscale's DERP servers,
   ownscale.net's, their own, or a mix; see [Connectivity]({{< relref "/docs/about/connectivity.md" >}}).
-- **Global nameservers are fallbacks only.** ownscale doesn't set Headscale's
+- **Global nameservers are fallbacks only.** Ownscale doesn't set Headscale's
   `override_local_dns`.
 - **The tailnet name can't be changed.**
 - **Settings changes restart the instance.** Saving [DNS settings](/console/dns) or
   [auth restrictions](/console/auth-restrictions) restarts the organization's Headscale. [Policy](/console/access-control) changes don't.
 
-## ownscale itself
+## Ownscale itself
 
 - **Roles**: `network_admin`, `it_admin` and `auditor` currently have the
   same permissions as `member`.

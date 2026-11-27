@@ -4,7 +4,7 @@ weight: 40
 ---
 
 The content domain, set with `CONTENT_DOMAIN`, is a second domain that serves
-what your users publish, away from `BASE_DOMAIN` and the ownscale console.
+what your users publish, away from `BASE_DOMAIN` and the Ownscale console.
 It's optional, but very much recommended for any server other people use.
 
 ## What it serves
@@ -52,5 +52,5 @@ a separate domain is required.
    `DNS_ZONE` to that zone.
 
 If you [run your own reverse proxy](/docs/self-hosting/byorp/), it must also
-route `example-content.net` and `*.example-content.net` to ownscale and have
+route `example-content.net` and `*.example-content.net` to Ownscale and have
 certificates for them.

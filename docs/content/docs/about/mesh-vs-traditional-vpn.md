@@ -19,11 +19,11 @@ challenges related to:
 
 ## Mesh VPN
 
-In a mesh, devices connect to each other directly. ownscale is the
+In a mesh, devices connect to each other directly. Ownscale is the
 **coordination server**: it tells each device which peers it may talk to and
 how to reach them, but the traffic itself never passes through it.
 
-| | Traditional VPN | Mesh with ownscale |
+| | Traditional VPN | Mesh with Ownscale |
 | --- | --- | --- |
 | Traffic path | through the VPN server | direct between devices |
 | If the server goes down | everything stops | existing connections keep working |
@@ -38,7 +38,7 @@ When no direct path exists, traffic goes through a
 ## When a traditional VPN still fits
 
 - **Inspecting or logging all traffic**, for compliance or content filtering.
-  A mesh has no central point that sees every connection, and ownscale keeps
+  A mesh has no central point that sees every connection, and Ownscale keeps
   no traffic logs.
 - **One outgoing IP address** that partners can allowlist. In a mesh, route
   that traffic through an [exit node]({{< relref "/docs/use-cases/exit-node.md" >}})
@@ -54,7 +54,7 @@ simple. Run by hand, though, every device needs a key pair, a unique address,
 every peer's public key and every peer's endpoint, and all of it must be
 updated whenever a device is added or moves.
 
-The Tailscale clients and ownscale automate this: keys are generated on each
+The Tailscale clients and Ownscale automate this: keys are generated on each
 device and private keys never leave it, addresses are assigned on
 registration, and peers' keys and endpoints are pushed to every device as they
 change.

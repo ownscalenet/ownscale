@@ -18,7 +18,7 @@ oauth2:
 staticClients:
   - id: ownscale
     secret: ownscale-dev-secret
-    name: "ownscale (local dev)"
+    name: "Ownscale (local dev)"
     redirectURIs:
       - https://console.$BASE_DOMAIN/auth/oidc/callback
 

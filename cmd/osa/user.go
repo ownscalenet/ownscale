@@ -22,7 +22,7 @@ func newUserCommand(rootFlags *ff.FlagSet) *ff.Command {
 	userCmd := &ff.Command{
 		Name:      "user",
 		Usage:     "osa user SUBCOMMAND ...",
-		ShortHelp: "manage ownscale users",
+		ShortHelp: "manage Ownscale users",
 		Flags:     userFlags,
 	}
 

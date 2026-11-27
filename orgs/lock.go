@@ -11,7 +11,7 @@ import (
 
 // errDataDirLocked is returned by LockDataDir while another process, such
 // as the running ownscale server, holds the lock.
-var errDataDirLocked = errors.New("data directory is in use by a running ownscale")
+var errDataDirLocked = errors.New("data directory is in use by a running Ownscale")
 
 // LockDataDir takes an exclusive lock on dataDir until unlock is called or
 // the process exits. ownscale holds it while running, so two servers never

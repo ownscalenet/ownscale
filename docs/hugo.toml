@@ -1,6 +1,6 @@
 baseURL = "/"
 locale = "en-US"
-title = "ownscale"
+title = "Ownscale"
 # Pages' "Last updated" dates come from their last commit.
 enableGitInfo = true
 

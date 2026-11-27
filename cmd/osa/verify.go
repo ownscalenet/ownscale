@@ -56,7 +56,7 @@ func newVerifyDBCommand(parent *ff.FlagSet) *ff.Command {
 	return &ff.Command{
 		Name:      "db",
 		Usage:     "osa verify db",
-		ShortHelp: "verify ownscale's own database against its backup",
+		ShortHelp: "verify Ownscale's own database against its backup",
 		Flags:     flags,
 		Exec: func(ctx context.Context, args []string) error {
 			if len(args) != 0 {

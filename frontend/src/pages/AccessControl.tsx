@@ -41,7 +41,7 @@ function Cheatsheet() {
           >
             full reference
           </a>{' '}
-          for what is achievable using policies, or see ownscale&apos;s own{' '}
+          for what is achievable using policies, or see Ownscale&apos;s own{' '}
           <a
             className="link"
             href={docPageURL('reference/terminology', 'access-control-policy')}

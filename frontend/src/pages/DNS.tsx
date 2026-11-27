@@ -641,7 +641,7 @@ function TailnetName({
         <h2 className="card-title">Tailnet Name</h2>
         <p className="text-sm text-base-content/70">
           The base domain used for Magic DNS and device names on this tailnet. It is assigned by
-          ownscale and cannot be changed.{' '}
+          Ownscale and cannot be changed.{' '}
           <a
             className="link"
             href={docPageURL('reference/terminology', 'tailnet-label')}

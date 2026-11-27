@@ -121,7 +121,7 @@ export default function Invitations() {
 
       <p className="text-sm text-base-content/70 mb-4">
         An invite is a link that adds whoever opens it to this organization with the chosen role.
-        ownscale doesn&apos;t email it, so share it yourself.{' '}
+        Ownscale doesn&apos;t email it, so share it yourself.{' '}
         <a
           className="link"
           href={docPageURL('use-cases/organizations')}

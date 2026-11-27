@@ -21,7 +21,7 @@ func main() {
 	rootCmd := &ff.Command{
 		Name:      "osa",
 		Usage:     "osa [FLAGS] SUBCOMMAND ...",
-		ShortHelp: "manage ownscale organizations",
+		ShortHelp: "manage Ownscale organizations",
 		Flags:     rootFlags,
 	}
 	rootCmd.Subcommands = append(rootCmd.Subcommands,

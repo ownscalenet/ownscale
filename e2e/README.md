@@ -1,7 +1,7 @@
 # e2e/frontend
 
 Playwright end-to-end tests for the React SPA (`frontend/`), driven through
-a real browser against a real running ownscale stack -- no mocking of the
+a real browser against a real running Ownscale stack -- no mocking of the
 backend, Dex, Caddy, or headscale.
 
 Kept as its own package (not part of `frontend/package.json`) so

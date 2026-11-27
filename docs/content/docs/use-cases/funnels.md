@@ -11,10 +11,10 @@ with no ports to open on that device.
 2. The service is now public at `https://<subdomain>-<org>.<CONTENT_DOMAIN>`
    (see [content domain](/docs/self-hosting/content-domain/)).
 
-`tailscale funnel` doesn't work with ownscale; use this page instead.
+`tailscale funnel` doesn't work with Ownscale; use this page instead.
 
 Funnels are open to anyone with the address. The service must handle its own
-authentication, and it must speak plain HTTP: ownscale adds the HTTPS.
+authentication, and it must speak plain HTTP: Ownscale adds the HTTPS.
 
 The first funnel creates an internal `ownscale-agent` device that forwards
 the traffic; see the

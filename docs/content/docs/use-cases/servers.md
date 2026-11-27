@@ -27,7 +27,7 @@ again. To avoid that, choose **Disable key expiry** in the device's menu on
 The [Tailscale GitHub Action](https://github.com/tailscale/github-action)
 connects a workflow's runner to your tailnet, so jobs can reach private
 devices, for example to deploy to a server or run tests against a database.
-It works with ownscale when you pass a pre-auth key and your organization's
+It works with Ownscale when you pass a pre-auth key and your organization's
 login server.
 
 1. Create a pre-auth key that is **Reusable**, so every run can use it, and
@@ -51,5 +51,5 @@ login server.
    ```
 
 Use `authkey` only. The action's `oauth-client-id` and `oauth-secret` inputs
-rely on Tailscale's own OAuth clients, which ownscale doesn't have. Leave
+rely on Tailscale's own OAuth clients, which Ownscale doesn't have. Leave
 `tags` unset as well: the key's tags already apply to the runner.

@@ -54,7 +54,7 @@ function sshErrorMessage(raw: string): string {
 }
 
 // muteTailscaleLogs stops the upstream WebAssembly build from uploading
-// client logs to Tailscale's log service: ownscale is self-hosted, so
+// client logs to Tailscale's log service: Ownscale is self-hosted, so
 // nothing should leave the tailnet. It returns a function restoring the
 // original fetch.
 function muteTailscaleLogs(): () => void {

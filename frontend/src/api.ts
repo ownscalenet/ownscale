@@ -48,7 +48,7 @@ export interface Organization {
 }
 
 // AssignableUser is an organization member the caller may register machines
-// and create keys for. id is the member's ownscale user ID.
+// and create keys for. id is the member's Ownscale user ID.
 export interface AssignableUser {
   id: string
   name: string

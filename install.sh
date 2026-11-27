@@ -1,5 +1,5 @@
 #!/bin/sh
-# Installs ownscale with Docker Compose:
+# Installs Ownscale with Docker Compose:
 #   curl -fsSL https://raw.githubusercontent.com/ownscalenet/ownscale/master/install.sh | sh
 #
 # OWNSCALE_VERSION picks a release instead of the latest one, and
@@ -84,7 +84,7 @@ upstream=
 ask_upstream=
 
 # write_override PROXY NETWORK: removes the bundled Caddy and lets the proxy
-# reach ownscale, over a Docker network or on loopback ports.
+# reach Ownscale, over a Docker network or on loopback ports.
 write_override() {
 	set_env COMPOSE_PROFILES ""
 	{
@@ -155,12 +155,12 @@ $domain, *.$domain {
 EOF
 	say ""
 	say "Caddy gets a certificate for each host the first time it's visited,"
-	say "after ownscale confirms the host exists. No DNS provider needed."
+	say "after Ownscale confirms the host exists. No DNS provider needed."
 }
 
 print_traefik() {
 	heading "Traefik"
-	say "compose.override.yaml labels ownscale for Traefik. In Traefik's own config:"
+	say "compose.override.yaml labels Ownscale for Traefik. In Traefik's own config:"
 	say ""
 	say "- Use a certificate resolver named \"letsencrypt\" with a DNS challenge"
 	say "  (wildcard certificates need one), or rename it in compose.override.yaml."
@@ -228,11 +228,11 @@ print_npm() {
 main() {
 	command -v curl >/dev/null 2>&1 || die "curl is required"
 	if ! docker compose version >/dev/null 2>&1; then
-		say "warning: Docker Compose not found; install it before starting ownscale."
+		say "warning: Docker Compose not found; install it before starting Ownscale."
 	fi
 	check_docker
 
-	say "This installs ownscale with Docker Compose. See"
+	say "This installs Ownscale with Docker Compose. See"
 	say "https://github.com/$REPO for the documentation."
 	say ""
 
@@ -248,7 +248,7 @@ main() {
 	url=${OWNSCALE_INSTALL_URL:-https://raw.githubusercontent.com/$REPO/$version}
 
 	while :; do
-		ask "Domain for ownscale, with a wildcard DNS record (e.g. example.com)" ""
+		ask "Domain for Ownscale, with a wildcard DNS record (e.g. example.com)" ""
 		domain=$(printf '%s' "$answer" | tr '[:upper:]' '[:lower:]')
 		if ! valid_domain "$domain"; then
 			say "\"$answer\" isn't a domain name like example.com."
@@ -267,7 +267,7 @@ main() {
 	done
 
 	say ""
-	say "How does HTTPS reach ownscale?"
+	say "How does HTTPS reach Ownscale?"
 	say "  1) Bundled Caddy: gets certificates itself (recommended)"
 	say "  2) My own Caddy"
 	say "  3) My own Traefik"
@@ -304,7 +304,7 @@ main() {
 		;;
 	esac
 
-	heading "Installing ownscale $version in $dir"
+	heading "Installing Ownscale $version in $dir"
 	mkdir -p "$dir"
 	cd "$dir"
 	curl -fsSL -o compose.yaml "$url/compose.yaml" || die "download $url/compose.yaml failed"
@@ -343,7 +343,7 @@ main() {
 	fi
 	say "2. Optionally, edit $dir/.env to add login providers (passkeys work"
 	say "   without any), backups, or a DNS provider for machine certificates."
-	say "3. Start ownscale:"
+	say "3. Start Ownscale:"
 	say "     cd $dir && docker compose up -d"
 	say "4. Sign in at https://console.$domain/login. The first sign-in creates"
 	say "   your organization."

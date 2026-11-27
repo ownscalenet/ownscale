@@ -1,9 +1,9 @@
-# docs/ — ownscale documentation portal
+# docs/ — Ownscale documentation portal
 
 This is a [Hugo](https://gohugo.io) site using the
 [Hextra](https://github.com/imfing/hextra) theme, imported as a
 [Hugo Module](https://gohugo.io/hugo-modules/) (see `go.mod` / `go.sum`).
-It is embedded into the ownscale binary (package `docsite`) and served at
+It is embedded into the Ownscale binary (package `docsite`) and served at
 `{$BASE_DOMAIN}`.
 
 ## Editing docs
@@ -13,7 +13,7 @@ It is embedded into the ownscale binary (package `docsite`) and served at
 
 | Section | Holds |
 | --- | --- |
-| `_index.md` | what ownscale is, where to start |
+| `_index.md` | what Ownscale is, where to start |
 | `concepts/` | how it works, terminology glossary, organizations, architecture |
 | `features/` | one page per console feature: what, who can use it, limits |
 | `self-hosting/` | requirements, installation, own reverse proxy |
@@ -26,7 +26,7 @@ Conventions:
   a cards overview.
 - Link between pages with `relref`, so a broken link fails the build.
 - Link to console pages with `/console/<path>`, e.g.
-  `[Access control](/console/access-control)`. ownscale redirects these to
+  `[Access control](/console/access-control)`. Ownscale redirects these to
   `https://console.<BASE_DOMAIN>/<path>`; they don't work under `hugo server`.
 - When moving a page, add its old URL to `aliases` in front matter.
 - The console links to `/docs/faqs/#ownscale-agent-user--device` (via

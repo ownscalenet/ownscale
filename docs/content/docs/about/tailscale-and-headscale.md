@@ -1,5 +1,5 @@
 ---
-title: ownscale, Tailscale and Headscale
+title: Ownscale, Tailscale and Headscale
 linkTitle: Tailscale and Headscale
 weight: 30
 ---

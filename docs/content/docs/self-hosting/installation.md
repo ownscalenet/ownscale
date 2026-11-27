@@ -5,7 +5,7 @@ aliases:
   - /docs/installation/
 ---
 
-ownscale ships as a Docker Compose stack:
+Ownscale ships as a Docker Compose stack:
 
 - the `ownscale` container runs the console, the API and one Headscale
   instance per organization, all in a single process;
@@ -35,10 +35,10 @@ It asks for a directory, your domain and your reverse proxy, then:
 > [!IMPORTANT]
 > The [example.env](https://github.com/ownscalenet/ownscale/blob/master/example.env)
 > file is the reference documentation for all possible settings when
-> self-hosting ownscale.
+> self-hosting Ownscale.
 
-Then start ownscale as the script shows, and [sign in](#sign-in).
-The `Makefile` is the usual way to interact with the ownscale deployment.
+Then start Ownscale as the script shows, and [sign in](#sign-in).
+The `Makefile` is the usual way to interact with the Ownscale deployment.
 Run `make help` to see a list of available commands.
 
 ## Sign in
@@ -67,4 +67,4 @@ It downloads the release's `compose.yaml`, `example.env` and `Makefile`, sets
 ## Next steps
 
 - [Limitations]({{< relref "/docs/reference/limitations.md" >}}): what
-  ownscale doesn't support yet.
+  Ownscale doesn't support yet.

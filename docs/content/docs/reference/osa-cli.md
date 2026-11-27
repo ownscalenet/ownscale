@@ -58,7 +58,7 @@ so you rarely need these.
 
 | Command | Description |
 | --- | --- |
-| `make osa verify db` | Fail if ownscale's database is missing but has a backup. |
+| `make osa verify db` | Fail if Ownscale's database is missing but has a backup. |
 | `make osa verify organizations` | The same for every organization's database. |
 
 Both run automatically on container start.
@@ -67,7 +67,7 @@ Both run automatically on container start.
 
 | Command | Description |
 | --- | --- |
-| `make osa restore db` | Restore ownscale's database from backup, if missing locally. |
+| `make osa restore db` | Restore Ownscale's database from backup, if missing locally. |
 | `make osa restore organizations` | Restore every organization's database from backup, if missing locally. |
 
 Run `restore db` first. Backups are configured with the

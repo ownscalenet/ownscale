@@ -3,7 +3,7 @@ title: Separate tailnets
 weight: 80
 ---
 
-One ownscale server can host many organizations, each with its own tailnet,
+One Ownscale server can host many organizations, each with its own tailnet,
 users, policy and login server. Use it to give each team, client or
 family its own network from one server.
 Organizations are isolated: devices in one can't reach another's, and an

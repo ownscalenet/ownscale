@@ -80,7 +80,7 @@ func LoadOrGenerate(dir string) (generated bool, err error) {
 
 	template := &x509.Certificate{
 		SerialNumber:          serial,
-		Subject:               pkix.Name{CommonName: "ownscale local development CA", Organization: []string{"ownscale (local dev)"}},
+		Subject:               pkix.Name{CommonName: "Ownscale local development CA", Organization: []string{"Ownscale (local dev)"}},
 		NotBefore:             time.Now().Add(-time.Hour),
 		NotAfter:              time.Now().Add(validity),
 		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageCRLSign | x509.KeyUsageDigitalSignature,

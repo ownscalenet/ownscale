@@ -1,5 +1,5 @@
 ---
-title: ownscale
+title: Ownscale
 layout: hextra-home
 ---
 
@@ -13,7 +13,7 @@ Self-hosted Mesh VPN
 
 <div class="hx:mb-10">
 {{< hextra/hero-subtitle >}}
-  ownscale is a self-hosted coordination server and web console for Tailscale clients,
+  Ownscale is a self-hosted coordination server and web console for Tailscale clients,
   built on Headscale. Run many private networks from one server.
 {{< /hextra/hero-subtitle >}}
 </div>

@@ -29,7 +29,7 @@ public Wi-Fi.
 
 ## Prerequisites
 
-- An ownscale organization with at least two devices.
+- An Ownscale organization with at least two devices.
 - The exit node runs Linux, macOS, Windows, Android or iOS, and stays online.
 - If your access control policy doesn't allow all traffic, a rule that lets
   the devices use it; see [step 3](#allow-devices-to-use-it).

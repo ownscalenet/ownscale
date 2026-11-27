@@ -26,7 +26,7 @@ func SocketPath(dataDir string) string {
 
 // ErrNotRunning is returned by Client methods when no server listens on
 // the control socket.
-var ErrNotRunning = errors.New("ownscale isn't running")
+var ErrNotRunning = errors.New("Ownscale isn't running")
 
 // ErrNotFound is returned by Client.DeleteOrganization for an unknown
 // organization.

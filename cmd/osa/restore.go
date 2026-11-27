@@ -83,7 +83,7 @@ func newRestoreDBCommand(parent *ff.FlagSet) *ff.Command {
 	return &ff.Command{
 		Name:      "db",
 		Usage:     "osa restore db",
-		ShortHelp: "restore ownscale's own database if missing locally",
+		ShortHelp: "restore Ownscale's own database if missing locally",
 		Flags:     flags,
 		Exec: func(ctx context.Context, args []string) error {
 			if len(args) != 0 {

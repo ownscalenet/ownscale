@@ -5,28 +5,28 @@ weight: 70
 
 ## ownscale-agent user & device
 
-When creating a funnel, ownscale automatically creates an `ownscale-agent`
+When creating a funnel, Ownscale automatically creates an `ownscale-agent`
 Headscale user and an `ownscale-agent` device. These show up in your
 listings marked as internal resources. The device is an embedded Tailscale
-client running inside the ownscale server, and it forwards funnel traffic
+client running inside the Ownscale server, and it forwards funnel traffic
 into your tailnet. Removing it deletes all of the organization's funnel
 routes.
 
-## Is ownscale the same as Tailscale?
+## Is Ownscale the same as Tailscale?
 
-No. ownscale is a self-hosted *coordination server* that the official
+No. Ownscale is a self-hosted *coordination server* that the official
 Tailscale clients connect to instead of Tailscale's hosted service. It's built
 on [Headscale](https://headscale.net) and isn't affiliated with Tailscale
 Inc.
 
-## How does ownscale compare to NetBird?
+## How does Ownscale compare to NetBird?
 
-Both are self-hosted mesh VPNs built on WireGuard. ownscale's strengths:
+Both are self-hosted mesh VPNs built on WireGuard. Ownscale's strengths:
 works with the official Tailscale clients, can  host many tailnets on
 one small server, passwordless sign-in with passkeys, continuous backups,
 BSD 3-Clause license.
 
-Netbird positives that are missing from ownscale: device posture checks,
+Netbird positives that are missing from Ownscale: device posture checks,
 audit log, API tokens and a Terraform provider for automation, the
 visual policy editor.
 
@@ -77,7 +77,7 @@ settings**, and Linux clients must run `tailscale set --accept-routes`. See
 [Reach devices at home]({{< relref "use-cases/home-network.md" >}}) and
 [Use an exit node]({{< relref "use-cases/exit-node.md" >}}).
 
-## Can I move my existing Headscale server to ownscale?
+## Can I move my existing Headscale server to Ownscale?
 
 There's no import tool yet. Create an organization and register the devices
 again. The policy file format is the same, so you can paste your existing

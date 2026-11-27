@@ -12,7 +12,7 @@ networks from one server.
 
 ## Using these docs
 
-Where to start depends on what you want to do. To try ownscale without
+Where to start depends on what you want to do. To try Ownscale without
 running anything, start with [ownscale.net](/docs/ownscalenet/). To run it
 on your own server, read [Self-hosting](/docs/self-hosting/), which covers
 the requirements and installation. Once you have an organization, use
@@ -28,8 +28,8 @@ Every page has buttons next to its title to view or edit its source on
 GitHub. If something is wrong or missing, open a pull request or an issue.
 
 {{< cards >}}
-  {{< card link="/docs/about/" title="About" icon="information-circle" subtitle="What ownscale is and how it works" >}}
-  {{< card link="/docs/self-hosting/" title="Self-hosting" icon="server" subtitle="Run ownscale on your own server" >}}
+  {{< card link="/docs/about/" title="About" icon="information-circle" subtitle="What Ownscale is and how it works" >}}
+  {{< card link="/docs/self-hosting/" title="Self-hosting" icon="server" subtitle="Run Ownscale on your own server" >}}
   {{< card link="/docs/ownscalenet/" title="ownscale.net" icon="play" subtitle="Try it without hosting it" >}}
   {{< card link="/docs/connect/" title="Connecting devices" icon="device-mobile" subtitle="Point Tailscale clients at your login server" >}}
   {{< card link="/docs/use-cases/" title="Use cases" icon="light-bulb" subtitle="Home access, exit nodes, SSH, funnels and more" >}}

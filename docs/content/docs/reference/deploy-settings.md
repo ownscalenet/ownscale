@@ -3,7 +3,7 @@ title: Deploy settings
 weight: 40
 ---
 
-ownscale is configured with environment variables in the `.env` file next to
+Ownscale is configured with environment variables in the `.env` file next to
 `compose.yaml`. Every setting is documented in
 [`example.env`](https://github.com/ownscalenet/ownscale/blob/master/example.env),
 grouped as:
