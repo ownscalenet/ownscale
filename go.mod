@@ -20,14 +20,14 @@ require (
 	github.com/rs/xid v1.6.0
 	github.com/rs/zerolog v1.35.1
 	github.com/tailscale/hujson v0.0.0-20260727124030-b80ff77dac4f
-	github.com/zitadel/oidc/v3 v3.52.0
+	github.com/zitadel/oidc/v3 v3.53.0
 	golang.org/x/crypto v0.59.0
-	golang.org/x/net v0.62.0
+	golang.org/x/net v0.63.0
 	golang.org/x/sync v0.25.0
 	golang.org/x/time v0.16.0
 	gopkg.in/yaml.v3 v3.0.1
-	modernc.org/sqlite v1.62.0
-	tailscale.com v1.105.0-pre.0.20261112091541-a2da5fbcaa53
+	modernc.org/sqlite v1.63.0
+	tailscale.com v1.107.0-pre
 )
 
 replace github.com/juanfont/headscale => github.com/ownscalenet/headscale v0.29.8-1
@@ -202,7 +202,7 @@ require (
 	github.com/tailscale/squibble v0.0.0-20260831233316-9a4c8961e6f5 // indirect
 	github.com/tailscale/tailsql v0.0.0-20261014183241-aae04fb51be7 // indirect
 	github.com/tailscale/web-client-prebuilt v0.0.0-20260917222731-e0ed2d0d0fea // indirect
-	github.com/tailscale/wireguard-go v0.0.0-20261110220948-9e10ef9af415 // indirect
+	github.com/tailscale/wireguard-go v0.0.0-20261121000637-a8c4fbf26d6c // indirect
 	github.com/tcnksm/go-latest v0.0.0-20170313132115-e3007ae9052e // indirect
 	github.com/tinylib/msgp v1.6.5 // indirect
 	github.com/wasilibs/go-re2 v1.13.0 // indirect
@@ -232,7 +232,7 @@ require (
 	google.golang.org/protobuf v1.36.12 // indirect
 	gorm.io/driver/postgres v1.6.3 // indirect
 	gorm.io/gorm v1.31.2 // indirect
-	gvisor.dev/gvisor v0.0.0-20260915211658-a6f909f08a72 // indirect
+	gvisor.dev/gvisor v0.0.0-20261117040555-0303b2605d5e // indirect
 	modernc.org/libc v1.80.2 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
