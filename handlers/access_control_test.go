@@ -16,11 +16,11 @@ import (
 // failing "tests" entry.
 const failingPolicy = `{"tests":[{"src":"alice@","deny":["10.0.0.2:22"]}]}`
 
-// rejectPolicy writes headscale's problem+json for a policy whose tests fail.
+// rejectPolicy writes headscale's v1 error body for a policy whose tests fail.
 func rejectPolicy(w http.ResponseWriter) {
-	w.Header().Set("Content-Type", "application/problem+json")
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusBadRequest)
-	fmt.Fprint(w, `{"title":"Bad Request","status":400,"detail":"setting policy","errors":[{"message":"test(s) failed:\nalice@ -> 10.0.0.2:22: expected DENIED, got ALLOWED"}]}`)
+	fmt.Fprint(w, `{"code":3,"message":"setting policy: test(s) failed:\nalice@ -> 10.0.0.2:22: expected DENIED, got ALLOWED","details":[]}`)
 }
 
 // newFakePolicyServer builds a fake implementing headscale's

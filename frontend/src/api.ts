@@ -36,6 +36,12 @@ export function displayName(user: Pick<User, 'Name' | 'Email'>): string {
   return isPasskeyEmail(user.Email) ? '' : user.Email
 }
 
+// loginServerURL is the URL Tailscale clients pass to --login-server. The
+// console and the org's domain share a scheme, so it follows the page's.
+export function loginServerURL(org: Pick<Organization, 'Domain'>): string {
+  return `${window.location.protocol}//${org.Domain}`
+}
+
 export interface Organization {
   ID: string
   Domain: string

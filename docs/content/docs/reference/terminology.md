@@ -113,7 +113,9 @@ again. It can be disabled per device, and tagged devices never expire.
 
 The organization's coordination server URL, `https://<org>.<BASE_DOMAIN>`.
 You pass it to `tailscale up --login-server` or set it in the client's
-settings. See [Connecting devices]({{< relref "/docs/connect" >}}).
+settings. The login server can be found on the
+[User Settings](/console/user-settings) page. See
+[Connecting devices]({{< relref "/docs/connect" >}}).
 
 ### MagicDNS
 

@@ -1,24 +1,7 @@
-import type { ComponentType } from 'react'
 import { useQuery } from '@tanstack/react-query'
-import { KeyRound } from 'lucide-react'
-import { getAuthProviders, type AuthProviders } from '../api'
+import { getAuthProviders } from '../api'
 import { nextQuery } from '../lib/authRedirect'
-import { GitHubIcon, GoogleIcon, MicrosoftIcon } from './ProviderIcons'
-
-// SSOProvider excludes 'passkey': it has its own dedicated button/form on
-// Login and Signup instead of a generic "Sign in with X" link.
-type SSOProvider = Exclude<keyof AuthProviders, 'passkey'>
-
-// ssoButtons maps each SSOProvider to its button copy and icon.
-const ssoButtons: Record<
-  SSOProvider,
-  { label: string; Icon: ComponentType<{ className?: string }> }
-> = {
-  github: { label: 'GitHub', Icon: GitHubIcon },
-  google: { label: 'Google', Icon: GoogleIcon },
-  microsoft: { label: 'Microsoft', Icon: MicrosoftIcon },
-  oidc: { label: 'SSO', Icon: KeyRound },
-}
+import { ssoButtons, type SSOProvider } from '../lib/signInMethods'
 
 const providers: SSOProvider[] = ['github', 'google', 'microsoft', 'oidc']
 

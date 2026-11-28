@@ -251,7 +251,7 @@ func TestPolicy(t *testing.T) {
 		t.Errorf("GetPolicy = %q, want the policy set", got)
 	}
 
-	// headscale's application/problem+json reason reaches the caller.
+	// headscale's error message reaches the caller.
 	err = c.SetPolicy(t.Context(), `{"acls": [{"action": "bogus", "src": ["*"], "dst": ["*:*"]}]}`)
 	if err == nil {
 		t.Fatal("SetPolicy with an invalid action: want error, got nil")

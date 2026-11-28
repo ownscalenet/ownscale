@@ -1,5 +1,6 @@
 import { Download } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
+import { loginServerURL } from '../api'
 import { useAuth } from '../authContext'
 import { docPageURL } from '../lib/faq'
 import { CopyIcon } from './CopyButton'
@@ -60,7 +61,7 @@ function Step({ n, children }: { n: number; children: ReactNode }) {
 export default function ClientDeviceDialog({ onClose }: { onClose: () => void }) {
   const [platform, setPlatform] = useState<PlatformID>(detectPlatform)
   const { organization } = useAuth()
-  const loginServer = `${window.location.protocol}//${organization?.Domain}`
+  const loginServer = organization ? loginServerURL(organization) : ''
   const command = `tailscale up --login-server=${loginServer}`
   const p = platforms.find((x) => x.id === platform)!
 

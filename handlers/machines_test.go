@@ -134,7 +134,7 @@ func newFakeHeadscaleServer(t *testing.T) (*hscl.Client, *[]*http.Request, *stri
 		node, ok := nodes[r.PathValue("id")]
 		if !ok {
 			w.WriteHeader(http.StatusNotFound)
-			fmt.Fprint(w, `{"detail":"node not found"}`)
+			fmt.Fprint(w, `{"code":5,"message":"node not found","details":[]}`)
 			return
 		}
 		fmt.Fprintf(w, `{"node":%s}`, node)

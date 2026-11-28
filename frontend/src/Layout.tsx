@@ -16,7 +16,7 @@ import {
   Users,
 } from 'lucide-react'
 import { useAuth } from './authContext'
-import { displayName, isPasskeyEmail, listMembers, logout } from './api'
+import { displayName, isPasskeyEmail, listMembers, loginServerURL, logout } from './api'
 import { CopyIcon } from './components/CopyButton'
 import Logo from './components/Logo'
 import ThemeToggle from './components/ThemeToggle'
@@ -91,7 +91,7 @@ export default function Layout() {
   )
   const links = [...groups.flatMap((g) => g.links), userSettingsLink]
   const pageTitle = links.find((l) => pathname.startsWith(l.to))?.label ?? 'Ownscale'
-  const loginServer = organization ? `${window.location.protocol}//${organization.Domain}` : ''
+  const loginServer = organization ? loginServerURL(organization) : ''
 
   const handleLogout = async () => {
     await logout()

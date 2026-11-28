@@ -35,7 +35,8 @@ visual policy editor.
 - **Console**: `https://console.<BASE_DOMAIN>`, where you manage everything
   in a browser. [Open the console](/console/).
 - **Login server**: `https://<org>.<BASE_DOMAIN>`, which you pass to
-  `tailscale up --login-server`.
+  `tailscale up --login-server`. The login server can be found on the
+  [User Settings](/console/user-settings) page.
 - **Tailnet name**: the DNS suffix of your devices' MagicDNS names, such as
   `net3k9x2a.example.com`.
 

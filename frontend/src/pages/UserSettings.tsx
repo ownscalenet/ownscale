@@ -10,6 +10,8 @@ import {
   deletePasskey,
   errorMessage,
   getAuthProviders,
+  isPasskeyEmail,
+  loginServerURL,
   passkeyAddBegin,
   passkeyAddFinish,
   type Passkey,
@@ -19,6 +21,8 @@ import { usePageTitle } from '../hooks/usePageTitle'
 import { useConfirm } from '../lib/confirm'
 import { useAuth } from '../authContext'
 import Modal from '../components/Modal'
+import { CopyIcon } from '../components/CopyButton'
+import { signInMethods } from '../lib/signInMethods'
 import { ErrorAlert, PageHeader } from '../components/ui'
 
 export default function UserSettings() {
@@ -28,9 +32,51 @@ export default function UserSettings() {
     <>
       <PageHeader title="User settings" />
 
+      <AccountCard />
       <PasskeysCard />
       <DeleteAccountCard />
     </>
+  )
+}
+
+// AccountCard shows who's signed in and the organization's login server.
+function AccountCard() {
+  const { user, organization } = useAuth()
+  if (!user) return null
+  const method = signInMethods[user.Provider]
+  const loginServer = organization ? loginServerURL(organization) : ''
+
+  return (
+    <div className="card bg-base-100 shadow">
+      <div className="card-body">
+        <h2 className="card-title">Account</h2>
+        <dl className="mt-2 grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-[max-content_1fr]">
+          <dt className="text-sm opacity-60">Name</dt>
+          <dd>{user.Name || '—'}</dd>
+
+          <dt className="text-sm opacity-60">Email</dt>
+          <dd className="break-all">{isPasskeyEmail(user.Email) ? '—' : user.Email}</dd>
+
+          <dt className="text-sm opacity-60">Sign-in method</dt>
+          <dd className="flex items-center gap-1.5">
+            {method && <method.Icon className="size-4" />}
+            {method?.label ?? user.Provider}
+          </dd>
+
+          {loginServer && (
+            <>
+              <dt className="text-sm opacity-60">Login server</dt>
+              <dd>
+                <div className="flex items-center gap-1">
+                  <code className="font-mono text-sm break-all">{loginServer}</code>
+                  <CopyIcon text={loginServer} label="login server" />
+                </div>
+              </dd>
+            </>
+          )}
+        </dl>
+      </div>
+    </div>
   )
 }
 
@@ -83,7 +129,7 @@ function PasskeysCard() {
   }
 
   return (
-    <div className="card bg-base-100 shadow">
+    <div className="card bg-base-100 shadow mt-6">
       <div className="card-body">
         {naming && <PasskeyNameDialog onClose={() => setNaming(false)} onSubmit={handleAdd} />}
         <div className="flex flex-wrap items-center justify-between gap-2">

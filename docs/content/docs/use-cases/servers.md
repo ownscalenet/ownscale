@@ -28,7 +28,8 @@ The [Tailscale GitHub Action](https://github.com/tailscale/github-action)
 connects a workflow's runner to your tailnet, so jobs can reach private
 devices, for example to deploy to a server or run tests against a database.
 It works with Ownscale when you pass a pre-auth key and your organization's
-login server.
+login server. The login server can be found on the
+[User Settings](/console/user-settings) page.
 
 1. Create a pre-auth key that is **Reusable**, so every run can use it, and
    **Ephemeral**, so runners are removed once the job ends. Choose **Tag

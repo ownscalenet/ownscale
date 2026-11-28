@@ -2,7 +2,7 @@ import { KeyRound } from 'lucide-react'
 import { useState } from 'react'
 import { useMutation } from '@tanstack/react-query'
 import { useAuth } from '../authContext'
-import { createAuthKey, errorMessage, type AssignableUser } from '../api'
+import { createAuthKey, errorMessage, loginServerURL, type AssignableUser } from '../api'
 import Modal from './Modal'
 import { CopyIcon } from './CopyButton'
 import { ErrorAlert } from './ui'
@@ -28,7 +28,7 @@ export default function CreateAuthKeyDialog({
   const [reusable, setReusable] = useState(false)
   const [ephemeral, setEphemeral] = useState(false)
   const { organization, refresh } = useAuth()
-  const loginServer = `${window.location.protocol}//${organization?.Domain}`
+  const loginServer = organization ? loginServerURL(organization) : ''
   const [validationError, setValidationError] = useState<string | null>(null)
   const [createdKey, setCreatedKey] = useState<string | null>(null)
   const create = useMutation({
