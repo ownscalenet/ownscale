@@ -131,12 +131,12 @@ type response[T any] interface {
 	StatusCode() int
 	Status() string
 	GetJSON200() *T
-	GetApplicationproblemJSONDefault() *clientv1.ErrorModel
+	GetJSONDefault() *clientv1.Status
 }
 
-// result returns resp's 200 JSON body, or an error carrying the reason from
-// headscale's application/problem+json body when there is one. A 200 without
-// a JSON body is an error too, so callers never see a nil body.
+// result returns resp's 200 JSON body, or an error carrying the message of
+// headscale's error body when there is one. A 200 without a JSON body is an
+// error too, so callers never see a nil body.
 func result[T any, R response[T]](resp R, err error) (*T, error) {
 	if err != nil {
 		return nil, err
@@ -145,17 +145,8 @@ func result[T any, R response[T]](resp R, err error) (*T, error) {
 		return body, nil
 	}
 	var msgs []string
-	if problem := resp.GetApplicationproblemJSONDefault(); problem != nil {
-		if problem.Detail != nil {
-			msgs = append(msgs, *problem.Detail)
-		}
-		if problem.Errors != nil {
-			for _, e := range *problem.Errors {
-				if e.Message != nil {
-					msgs = append(msgs, *e.Message)
-				}
-			}
-		}
+	if status := resp.GetJSONDefault(); status != nil && status.Message != "" {
+		msgs = append(msgs, status.Message)
 	}
 	if resp.StatusCode() == http.StatusOK {
 		msgs = append(msgs, "response has no JSON body")
@@ -321,7 +312,7 @@ func (c *Client) SetApprovedRoutes(ctx context.Context, nodeID string, routes []
 func (c *Client) ExpireNode(ctx context.Context, nodeID string) (err error) {
 	defer derrors.Wrap(&err, "c.ExpireNode(%q)", nodeID)
 
-	_, err = result(c.api.ExpireNodeWithResponse(ctx, nodeID, clientv1.ExpireNodeJSONRequestBody{}))
+	_, err = result(c.api.ExpireNodeWithResponse(ctx, nodeID, nil, clientv1.ExpireNodeJSONRequestBody{}))
 	return err
 }
 
@@ -331,7 +322,7 @@ func (c *Client) ExpireNode(ctx context.Context, nodeID string) (err error) {
 func (c *Client) SetNodeExpiry(ctx context.Context, nodeID string, at time.Time) (err error) {
 	defer derrors.Wrap(&err, "c.SetNodeExpiry(%q, %s)", nodeID, at.Format(time.RFC3339))
 
-	_, err = result(c.api.ExpireNodeWithResponse(ctx, nodeID, clientv1.ExpireNodeJSONRequestBody{Expiry: &at}))
+	_, err = result(c.api.ExpireNodeWithResponse(ctx, nodeID, nil, clientv1.ExpireNodeJSONRequestBody{Expiry: &at}))
 	return err
 }
 
@@ -435,25 +426,12 @@ func (e *PolicyError) Error() string { return e.Reason }
 
 // policyError returns a *PolicyError when headscale rejected the policy
 // itself (400), and otherwise the generic error from result.
-func policyError(status int, problem *clientv1.ErrorModel, err error) error {
-	if status != http.StatusBadRequest || problem == nil || problem.Detail == nil {
+func policyError(status int, body *clientv1.Status, err error) error {
+	if status != http.StatusBadRequest || body == nil || body.Message == "" {
 		return err
 	}
-	// The errors carry the specifics (such as each failing test); detail is
-	// only a generic summary like "setting policy".
-	var msgs []string
-	if problem.Errors != nil {
-		for _, e := range *problem.Errors {
-			if e.Message != nil {
-				msgs = append(msgs, *e.Message)
-			}
-		}
-	}
-	reason := *problem.Detail
-	if len(msgs) > 0 {
-		reason = strings.Join(msgs, "\n")
-	}
-	return &PolicyError{Reason: reason}
+	// SetPolicy prefixes the reason with a generic summary.
+	return &PolicyError{Reason: strings.TrimPrefix(body.Message, "setting policy: ")}
 }
 
 // SetPolicy replaces the organization's access control policy with
@@ -467,7 +445,7 @@ func (c *Client) SetPolicy(ctx context.Context, content string) (err error) {
 	resp, err := c.api.SetPolicyWithResponse(ctx, clientv1.SetPolicyJSONRequestBody{Policy: &content})
 	_, err = result(resp, err)
 	if resp != nil {
-		err = policyError(resp.StatusCode(), resp.ApplicationproblemJSONDefault, err)
+		err = policyError(resp.StatusCode(), resp.JSONDefault, err)
 	}
 	return err
 }
@@ -481,7 +459,7 @@ func (c *Client) CheckPolicy(ctx context.Context, content string) (err error) {
 	resp, err := c.api.CheckPolicyWithResponse(ctx, clientv1.CheckPolicyJSONRequestBody{Policy: &content})
 	_, err = result(resp, err)
 	if resp != nil {
-		err = policyError(resp.StatusCode(), resp.ApplicationproblemJSONDefault, err)
+		err = policyError(resp.StatusCode(), resp.JSONDefault, err)
 	}
 	return err
 }
